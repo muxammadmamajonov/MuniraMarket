@@ -1,6 +1,6 @@
 # ADR 0005 — Order status notification delivery
 
-- Status: open
+- Status: superseded by [0008](0008-order-notification-outbox.md) (option 2, an outbox)
 
 ## Context
 
