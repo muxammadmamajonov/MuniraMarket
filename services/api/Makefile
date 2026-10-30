@@ -1,4 +1,4 @@
-.PHONY: install lint format typecheck test run migrate seed build
+.PHONY: install lint format typecheck test run migrate seed build openapi
 
 install:
 	uv sync --locked
@@ -35,3 +35,7 @@ build:
 	rm -rf dist
 	uv build
 	uv run --no-project --isolated --with dist/*.whl python -c "import app.main, app.models, app.security.service_auth; print('build ok')"
+
+# Regenerate the OpenAPI document consumed by packages/contracts (no database or network needed).
+openapi:
+	uv run python -m app.dev.export_openapi ../../packages/contracts/openapi.json
