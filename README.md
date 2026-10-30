@@ -1,5 +1,76 @@
 # MuniraMarket
 
-E-commerce platform for MuniraMarket.
+E-commerce platform for MuniraMarket: a mobile-first website and a Telegram Mini App backed by one
+Core API.
 
-The repository contains application source code and safe development configuration only. Credentials, operational material, and internal product documentation are intentionally excluded from version control.
+The repository contains application source code and safe development configuration only.
+Credentials, operational material, and internal product documentation are intentionally excluded
+from version control.
+
+## Layout
+
+```
+apps/
+  web/          Next.js — public website + Telegram Mini App UI
+  admin/        Next.js — admin panel
+services/
+  api/          FastAPI Core API (PostgreSQL, Redis)
+  telegram/     Telegram Serverless project (handlers, Mini App endpoints)
+packages/
+  ui/           shared UI components, design tokens, UZS formatter
+  contracts/    shared API types
+infra/          local development services (Docker Compose)
+architecture/   decision records
+```
+
+See [architecture/](architecture/README.md) for the decisions behind this structure.
+
+## Requirements
+
+- Node.js 24 (`.nvmrc`) and pnpm 12
+- Python 3.13 and [uv](https://docs.astral.sh/uv/)
+- Docker (for local PostgreSQL and Redis)
+
+## Getting started
+
+```bash
+pnpm install
+cp infra/.env.example infra/.env            # set a local-only password
+docker compose -f infra/docker-compose.yml --env-file infra/.env up -d
+```
+
+Core API:
+
+```bash
+cd services/api
+cp .env.example .env                        # local placeholders; never commit .env
+make install
+make migrate                                # local database only
+make run                                    # http://localhost:8000/api/v1/health
+```
+
+Web and admin:
+
+```bash
+pnpm --filter @muniramarket/web dev         # http://localhost:3000
+pnpm --filter @muniramarket/admin dev       # http://localhost:3001
+```
+
+The Telegram Serverless project is deployed with the `tgcloud` CLI by an operator who holds the
+bot's credentials; see [services/telegram/README.md](services/telegram/README.md).
+
+## Quality checks
+
+```bash
+pnpm format:check && pnpm lint && pnpm typecheck && pnpm test && pnpm build
+cd services/api && make lint typecheck test build
+```
+
+The same checks, plus a secret scan, run on every pull request.
+
+## Security
+
+- Never commit `.env` files, tokens, database URLs with real credentials, customer data or
+  catalog exports. Use `.env.example` with placeholders.
+- Telegram identity is verified on the server; client-supplied Telegram user IDs are never trusted.
+- Report security issues privately to the maintainers rather than in public issues.
