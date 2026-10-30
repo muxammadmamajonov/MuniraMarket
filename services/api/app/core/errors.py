@@ -2,11 +2,12 @@
 
 import logging
 from http import HTTPStatus
-from typing import Any, cast
+from typing import Any, Literal, cast
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+from pydantic import BaseModel
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 logger = logging.getLogger("app.errors")
@@ -27,6 +28,82 @@ _CODES: dict[int, str] = {
 }
 
 
+# Every machine-readable error code the public API can return. Clients switch on these; the
+# message is for humans and may change. Keep in sync with the generated TypeScript contract.
+ErrorCode = Literal[
+    # generic (derived from the HTTP status)
+    "bad_request",
+    "unauthorized",
+    "forbidden",
+    "not_found",
+    "method_not_allowed",
+    "conflict",
+    "payload_too_large",
+    "unsupported_media_type",
+    "validation_error",
+    "rate_limited",
+    "internal_error",
+    "service_unavailable",
+    # auth / session
+    "invalid_telegram_auth",
+    "session_required",
+    "csrf_failed",
+    "account_blocked",
+    "feature_disabled",
+    # catalog / cart
+    "category_not_found",
+    "product_not_found",
+    "product_inactive",
+    "insufficient_stock",
+    "cart_limit_reached",
+    "cart_item_not_found",
+]
+
+
+class ErrorDetail(BaseModel):
+    loc: list[str]
+    msg: str
+
+
+class ApiErrorBody(BaseModel):
+    code: ErrorCode
+    message: str
+    details: list[ErrorDetail] | None = None
+    # Only set for ``insufficient_stock``: how many units can currently be ordered.
+    available_quantity: int | None = None
+
+
+class ErrorEnvelope(BaseModel):
+    """Shape of every non-2xx JSON response."""
+
+    error: ApiErrorBody
+
+
+class ApiError(Exception):
+    """Raise from routes/services to return a typed error envelope."""
+
+    def __init__(
+        self,
+        status_code: int,
+        code: ErrorCode,
+        message: str,
+        *,
+        headers: dict[str, str] | None = None,
+        **extra: Any,
+    ) -> None:
+        super().__init__(message)
+        self.status_code = status_code
+        self.code = code
+        self.message = message
+        self.headers = headers
+        self.extra = extra
+
+
+def error_responses(*status_codes: int) -> dict[int | str, dict[str, Any]]:
+    """OpenAPI ``responses=`` entries so error shapes appear in the generated contract."""
+    return {status: {"model": ErrorEnvelope} for status in status_codes}
+
+
 def error_body(code: str, message: str, **extra: Any) -> dict[str, Any]:
     return {"error": {"code": code, "message": message, **extra}}
 
@@ -41,6 +118,15 @@ async def _http_exception_handler(_: Request, exc: Exception) -> JSONResponse:
     return JSONResponse(
         status_code=exc.status_code,
         content=error_body(_code_for(exc.status_code), message),
+        headers=exc.headers,
+    )
+
+
+async def _api_error_handler(_: Request, exc: Exception) -> JSONResponse:
+    exc = cast("ApiError", exc)
+    return JSONResponse(
+        status_code=exc.status_code,
+        content=error_body(exc.code, exc.message, **exc.extra),
         headers=exc.headers,
     )
 
@@ -75,6 +161,7 @@ async def _unhandled_exception_handler(request: Request, exc: Exception) -> JSON
 
 
 def register_exception_handlers(app: FastAPI) -> None:
+    app.add_exception_handler(ApiError, _api_error_handler)
     app.add_exception_handler(StarletteHTTPException, _http_exception_handler)
     app.add_exception_handler(RequestValidationError, _validation_exception_handler)
     app.add_exception_handler(Exception, _unhandled_exception_handler)
