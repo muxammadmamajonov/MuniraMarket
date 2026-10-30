@@ -92,25 +92,11 @@ export type UpdateCartItemRequest = Schemas['SetCartItemQuantityRequest'];
 
 // -- Health -----------------------------------------------------------------------------------
 
-/**
- * `GET /api/v1/health` (liveness).
- *
- * The OpenAPI document currently declares this response only as a string map (the route has no
- * response model), so the precise shape is kept here until the API adds one.
- */
-export interface HealthResponse {
-  status: 'ok';
-  service: 'core-api';
-  version: string;
-}
+/** `GET /api/v1/health` (liveness). */
+export type HealthResponse = Schemas['HealthResponse'];
 
-/**
- * `GET /api/v1/health/ready`; HTTP 503 with `unavailable` when the database is unreachable. Kept
- * by hand for the same reason as {@link HealthResponse} (the OpenAPI response schema is empty).
- */
-export interface ReadinessResponse {
-  status: 'ok' | 'unavailable';
-}
+/** `GET /api/v1/health/ready`; HTTP 503 with `unavailable` when the database is unreachable. */
+export type ReadinessResponse = Schemas['ReadinessResponse'];
 
 // -- Runtime lists (checked against the generated types) --------------------------------------
 

@@ -436,6 +436,24 @@ export interface components {
     ErrorEnvelope: {
       error: components['schemas']['ApiErrorBody'];
     };
+    /**
+     * HealthResponse
+     * @description Liveness probe body.
+     */
+    HealthResponse: {
+      /**
+       * Service
+       * @constant
+       */
+      service: 'core-api';
+      /**
+       * Status
+       * @constant
+       */
+      status: 'ok';
+      /** Version */
+      version: string;
+    };
     /** InitDataRequest */
     InitDataRequest: {
       /** Init Data */
@@ -564,6 +582,17 @@ export interface components {
       /** Stock Quantity */
       stock_quantity: number | null;
       unit: components['schemas']['Unit'];
+    };
+    /**
+     * ReadinessResponse
+     * @description Readiness probe body. Status "unavailable" is returned with HTTP 503.
+     */
+    ReadinessResponse: {
+      /**
+       * Status
+       * @enum {string}
+       */
+      status: 'ok' | 'unavailable';
     };
     /**
      * SessionResponse
@@ -939,6 +968,15 @@ export interface operations {
           'application/json': components['schemas']['ErrorEnvelope'];
         };
       };
+      /** @description Service Unavailable */
+      503: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
     };
   };
   add_cart_item_api_v1_cart_items_post: {
@@ -1010,6 +1048,15 @@ export interface operations {
       };
       /** @description Too Many Requests */
       429: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Service Unavailable */
+      503: {
         headers: {
           [name: string]: unknown;
         };
@@ -1097,6 +1144,15 @@ export interface operations {
           'application/json': components['schemas']['ErrorEnvelope'];
         };
       };
+      /** @description Service Unavailable */
+      503: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
     };
   };
   remove_cart_item_api_v1_cart_items__product_id__delete: {
@@ -1173,6 +1229,15 @@ export interface operations {
           'application/json': components['schemas']['ErrorEnvelope'];
         };
       };
+      /** @description Service Unavailable */
+      503: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
     };
   };
   list_categories_api_v1_categories_get: {
@@ -1193,6 +1258,24 @@ export interface operations {
           'application/json': components['schemas']['CategoryTree'];
         };
       };
+      /** @description Too Many Requests */
+      429: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Service Unavailable */
+      503: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
     };
   };
   health_api_v1_health_get: {
@@ -1210,9 +1293,7 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          'application/json': {
-            [key: string]: string;
-          };
+          'application/json': components['schemas']['HealthResponse'];
         };
       };
     };
@@ -1232,7 +1313,16 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          'application/json': unknown;
+          'application/json': components['schemas']['ReadinessResponse'];
+        };
+      };
+      /** @description Database unavailable */
+      503: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ReadinessResponse'];
         };
       };
     };
@@ -1336,6 +1426,24 @@ export interface operations {
           'application/json': components['schemas']['ErrorEnvelope'];
         };
       };
+      /** @description Too Many Requests */
+      429: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Service Unavailable */
+      503: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
     };
   };
   get_product_api_v1_products__slug__get: {
@@ -1369,6 +1477,24 @@ export interface operations {
       };
       /** @description Unprocessable Content */
       422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Too Many Requests */
+      429: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Service Unavailable */
+      503: {
         headers: {
           [name: string]: unknown;
         };

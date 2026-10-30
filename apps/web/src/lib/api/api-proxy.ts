@@ -1,7 +1,7 @@
 import 'server-only';
-import { isIP } from 'node:net';
 import { API_V1_PREFIX } from '@muniramarket/contracts';
 import { getApiInternalUrl, getClientIpHeader } from '@/lib/config';
+import { clientIpFrom } from './client-ip';
 
 /** Largest request body the proxy forwards. The API's own limit is at least as strict. */
 export const MAX_BODY_BYTES = 64 * 1024;
@@ -72,14 +72,10 @@ function buildUpstreamHeaders(request: Request, clientIpHeader: string | null): 
     const value = request.headers.get(name);
     if (value !== null) headers.set(name, value);
   }
-  // Core API trusts this server as its only proxy hop (uvicorn `--forwarded-allow-ips`) and
-  // rate-limits by the `x-forwarded-for` we send. A browser-sent `x-forwarded-for` is therefore
-  // never passed on (it would let anyone pick their own rate-limit bucket); the client IP comes
-  // only from a header the trusted edge overwrites, and must parse as a single IP address.
-  if (clientIpHeader !== null) {
-    const clientIp = request.headers.get(clientIpHeader)?.trim() ?? '';
-    if (isIP(clientIp) !== 0) headers.set('x-forwarded-for', clientIp);
-  }
+  // A browser-sent `x-forwarded-for` is never passed on (it would let anyone pick their own
+  // rate-limit bucket); see `clientIpFrom`.
+  const clientIp = clientIpFrom(request.headers, clientIpHeader);
+  if (clientIp !== null) headers.set('x-forwarded-for', clientIp);
   return headers;
 }
 

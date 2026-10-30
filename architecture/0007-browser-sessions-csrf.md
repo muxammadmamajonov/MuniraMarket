@@ -136,14 +136,14 @@ Fixed window per `(scope, subject)`: `INCR` and `EXPIRE <window> NX` in one `MUL
 `mm:rl:<scope>:<ip|user_id>:<window_start>`; `InMemoryRateLimiter` in tests. Exceeding a limit
 returns `429 rate_limited` with `Retry-After` (seconds to the end of the window).
 
-| Scope          | Endpoints                           | Limit      | Key     |
-| -------------- | ----------------------------------- | ---------- | ------- |
-| `auth_login`   | init-data and login-widget sign-in  | 10 / 60 s  | IP      |
-| `auth_session` | `GET /auth/session`, `POST /logout` | 60 / 60 s  | IP      |
-| `cart_read`    | cart reads                          | 120 / 60 s | user id |
-| `cart_write`   | cart writes                         | 60 / 60 s  | user id |
-| `cart_ip`      | every `/cart` route                 | 300 / 60 s | IP      |
-| `catalog_ip`   | `GET /categories`, `/products`, `/products/{slug}` | 300 / 60 s | IP |
+| Scope          | Endpoints                                          | Limit      | Key     |
+| -------------- | -------------------------------------------------- | ---------- | ------- |
+| `auth_login`   | init-data and login-widget sign-in                 | 10 / 60 s  | IP      |
+| `auth_session` | `GET /auth/session`, `POST /logout`                | 60 / 60 s  | IP      |
+| `cart_read`    | cart reads                                         | 120 / 60 s | user id |
+| `cart_write`   | cart writes                                        | 60 / 60 s  | user id |
+| `cart_ip`      | every `/cart` route                                | 300 / 60 s | IP      |
+| `catalog_ip`   | `GET /categories`, `/products`, `/products/{slug}` | 300 / 60 s | IP      |
 
 `cart_ip` and `catalog_ip` run before the session lookup and any database work, so unauthenticated
 floods are cut off cheaply; the per-user cart limits still apply afterwards. A `429` is always

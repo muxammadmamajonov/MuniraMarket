@@ -6,7 +6,9 @@ import type {
   ProductPage,
   ProductSort,
 } from '@muniramarket/contracts';
-import { internalApiUrl } from '@/lib/config';
+import { headers as requestHeaders } from 'next/headers';
+import { getClientIpHeader, internalApiUrl } from '@/lib/config';
+import { clientIpFrom } from './client-ip';
 import { ApiRequestError, readJson } from './errors';
 
 /**
@@ -16,12 +18,26 @@ import { ApiRequestError, readJson } from './errors';
 
 const REQUEST_TIMEOUT_MS = 10_000;
 
-async function getJson<T>(path: string, init: RequestInit = {}): Promise<T> {
+/**
+ * Core API applies per-IP limits to the catalog. Uncached, per-request fetches carry the visitor's
+ * edge-provided IP so they count against that visitor, not against this web server. Cached fetches
+ * (shared between visitors) deliberately send none, so the cache key stays shared.
+ */
+async function visitorHeaders(): Promise<Record<string, string>> {
+  const clientIp = clientIpFrom(await requestHeaders(), getClientIpHeader());
+  return clientIp === null ? {} : { 'x-forwarded-for': clientIp };
+}
+
+async function getJson<T>(
+  path: string,
+  init: RequestInit = {},
+  extraHeaders: Record<string, string> = {},
+): Promise<T> {
   let response: Response;
   try {
     response = await fetch(internalApiUrl(path), {
       ...init,
-      headers: { accept: 'application/json' },
+      headers: { accept: 'application/json', ...extraHeaders },
       signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     });
   } catch (cause) {
@@ -57,16 +73,22 @@ export function productQueryString(query: ProductQuery): string {
   return text === '' ? '' : `?${text}`;
 }
 
-export function fetchProducts(query: ProductQuery): Promise<ProductPage> {
-  return getJson<ProductPage>(`/products${productQueryString(query)}`, { cache: 'no-store' });
+export async function fetchProducts(query: ProductQuery): Promise<ProductPage> {
+  return getJson<ProductPage>(
+    `/products${productQueryString(query)}`,
+    { cache: 'no-store' },
+    await visitorHeaders(),
+  );
 }
 
 /** Product by slug, or `null` when the API answers 404 `product_not_found`. */
 export async function fetchProduct(slug: string): Promise<ProductDetail | null> {
   try {
-    return await getJson<ProductDetail>(`/products/${encodeURIComponent(slug)}`, {
-      cache: 'no-store',
-    });
+    return await getJson<ProductDetail>(
+      `/products/${encodeURIComponent(slug)}`,
+      { cache: 'no-store' },
+      await visitorHeaders(),
+    );
   } catch (error) {
     if (error instanceof ApiRequestError && error.code === 'product_not_found') return null;
     throw error;
