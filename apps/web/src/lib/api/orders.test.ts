@@ -66,9 +66,11 @@ describe('createOrder', () => {
       ],
     ];
     for (const [response, expected] of cases) {
-      const error = await createOrder(fetcher(response), REQUEST, 'test-idempotency-key-0001').catch(
-        (reason: unknown) => reason,
-      );
+      const error = await createOrder(
+        fetcher(response),
+        REQUEST,
+        'test-idempotency-key-0001',
+      ).catch((reason: unknown) => reason);
       expect(error).toBeInstanceOf(ApiRequestError);
       expect(error).toMatchObject(expected);
     }
@@ -78,9 +80,11 @@ describe('createOrder', () => {
     const apiFetch = vi.fn<(path: string, init?: RequestInit) => Promise<Response>>(async () => {
       throw ApiRequestError.network();
     });
-    await expect(createOrder(apiFetch, REQUEST, 'test-idempotency-key-0001')).rejects.toMatchObject({
-      isNetworkError: true,
-    });
+    await expect(createOrder(apiFetch, REQUEST, 'test-idempotency-key-0001')).rejects.toMatchObject(
+      {
+        isNetworkError: true,
+      },
+    );
   });
 });
 

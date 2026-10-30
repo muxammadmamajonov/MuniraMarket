@@ -239,7 +239,10 @@ describe('api proxy', () => {
     const { fetchMock, call } = setup();
     await call(['orders'], 'http://web.test/api/v1/orders', {
       method: 'POST',
-      headers: { 'content-type': 'application/json', 'idempotency-key': 'test-idempotency-key-0001' },
+      headers: {
+        'content-type': 'application/json',
+        'idempotency-key': 'test-idempotency-key-0001',
+      },
       body: '{}',
     });
     expect(lastCall(fetchMock).headers.get('idempotency-key')).toBe('test-idempotency-key-0001');
