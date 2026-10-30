@@ -7,9 +7,11 @@ import pytest
 from app.dev.seed import (
     DEMO_CATEGORIES,
     DEMO_PRODUCTS,
+    DEMO_ZONES,
     SeedRefusedError,
     ensure_safe_environment,
 )
+from app.domain.delivery import is_district_code
 
 
 @pytest.mark.parametrize("app_env", ["development", "test"])
@@ -57,3 +59,30 @@ def test_covers_the_edge_cases_the_shop_must_handle() -> None:
     for product in DEMO_PRODUCTS:
         assert product.old_price_uzs is None or product.old_price_uzs > product.price_uzs
         assert product.stock_quantity is None or product.stock_quantity >= 0
+
+
+def test_delivery_zones_are_synthetic_and_consistent() -> None:
+    slugs = [zone.slug for zone in DEMO_ZONES]
+    assert len(set(slugs)) == len(slugs)
+    districts = [district for zone in DEMO_ZONES for district in zone.districts]
+    # A district is in at most one zone (``delivery_zone_districts`` has it as primary key).
+    assert len(set(districts)) == len(districts)
+    assert all(is_district_code(district) for district in districts)
+    for zone in DEMO_ZONES:
+        assert zone.slug.startswith("demo-")
+        assert zone.name_uz.startswith("Demo ")
+        assert zone.name_ru.startswith("Демо ")
+        assert zone.districts
+        assert zone.opens_at < zone.closes_at
+        assert zone.delivery_fee_uzs > 0
+        assert zone.delivery_fee_uzs % 1000 == 0
+        assert zone.min_order_uzs % 1000 == 0
+        threshold = zone.free_delivery_threshold_uzs
+        assert threshold is None or (threshold % 1000 == 0 and threshold > zone.min_order_uzs)
+
+
+def test_delivery_zones_cover_the_edge_cases() -> None:
+    assert any(not zone.is_active for zone in DEMO_ZONES)
+    assert any(zone.is_active for zone in DEMO_ZONES)
+    assert any(zone.free_delivery_threshold_uzs is None for zone in DEMO_ZONES if zone.is_active)
+    assert any(zone.free_delivery_threshold_uzs is not None for zone in DEMO_ZONES)

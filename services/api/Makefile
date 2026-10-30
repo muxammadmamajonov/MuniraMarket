@@ -1,4 +1,4 @@
-.PHONY: install lint format typecheck test run migrate seed build openapi
+.PHONY: install lint format typecheck test run migrate seed set-role build openapi
 
 install:
 	uv sync --locked
@@ -29,6 +29,10 @@ migrate:
 # development or test. Idempotent.
 seed:
 	uv run python -m app.dev.seed
+
+# Local development only: `make set-role TG=<telegram_user_id> ROLE=operator` (user must exist).
+set-role:
+	uv run python -m app.dev.set_role $(TG) $(ROLE)
 
 # Build the wheel/sdist, then prove the built wheel installs and imports in a clean venv.
 build:

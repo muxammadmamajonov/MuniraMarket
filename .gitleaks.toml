@@ -10,6 +10,7 @@ regexes = [
   '''change-me-local-only''',
   '''ci-only-password''',
   '''replace-with-at-least-32-random-bytes''',
+  '''test[- _.;]idempotency[- _.;]key[- _.;]\d+''',
 ]
 
 [[allowlists]]

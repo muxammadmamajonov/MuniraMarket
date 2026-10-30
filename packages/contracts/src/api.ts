@@ -90,6 +90,66 @@ export type AddCartItemRequest = Schemas['AddCartItemRequest'];
 
 export type UpdateCartItemRequest = Schemas['SetCartItemQuantityRequest'];
 
+// -- Delivery zones (public) ------------------------------------------------------------------
+
+/** A Tashkent district (`tuman`); zones are matched by district, never by geocoding. */
+export type District = Schemas['District'];
+
+export type DistrictCode = District['code'];
+
+/** Hours are `HH:MM` in Asia/Tashkent; money is integer UZS. */
+export type DeliveryZone = Schemas['DeliveryZonePublic'];
+
+/** `GET /api/v1/delivery/zones`: active zones only. */
+export type DeliveryZoneList = Schemas['DeliveryZoneList'];
+
+// -- Checkout & orders (session required; writes also CSRF) -----------------------------------
+
+/** `POST /api/v1/checkout/quote` body. */
+export type CheckoutQuoteRequest = Schemas['CheckoutQuoteRequest'];
+
+/**
+ * Server-computed quote. Problems are reported in `issues` / `can_place_order` rather than as
+ * errors; send `total_uzs` back as `expected_total_uzs` when placing the order.
+ */
+export type CheckoutQuote = Schemas['CheckoutQuote'];
+
+export type CheckoutQuoteIssue = CheckoutQuote['issues'][number];
+
+export type DeliveryAddress = Schemas['DeliveryAddress'];
+
+/** `POST /api/v1/orders` body; needs an `Idempotency-Key` header (16-128 of `[A-Za-z0-9_-]`). */
+export type CreateOrderRequest = Schemas['CreateOrderRequest'];
+
+export type OrderLine = Schemas['OrderLine'];
+
+export type OrderAddress = Schemas['OrderAddress'];
+
+export type OrderStatusChange = Schemas['OrderStatusChange'];
+
+/** The customer's view of one of their orders. */
+export type OrderDetail = Schemas['OrderDetail'];
+
+export type OrderSummary = Schemas['OrderSummary'];
+
+/** `GET /api/v1/orders` and `GET /api/v1/admin/orders`. */
+export type OrderPage = Schemas['OrderPage'];
+
+/** `POST /api/v1/orders/{id}/cancel` body. */
+export type CancelOrderRequest = Schemas['CancelOrderRequest'];
+
+// -- Back office (operator / admin role; writes also CSRF) -------------------------------------
+
+export type AdminStatusChange = Schemas['AdminStatusChange'];
+
+export type AdminOrderDetail = Schemas['AdminOrderDetail'];
+
+/** `PATCH /api/v1/admin/orders/{id}/status` body. */
+export type OrderStatusUpdateRequest = Schemas['OrderStatusUpdateRequest'];
+
+/** Header that marks a replayed `POST /orders` (same `Idempotency-Key`, same body). */
+export const IDEMPOTENT_REPLAYED_HEADER = 'Idempotent-Replayed';
+
 // -- Health -----------------------------------------------------------------------------------
 
 /** `GET /api/v1/health` (liveness). */
@@ -132,6 +192,17 @@ export const API_ERROR_CODES = [
   'insufficient_stock',
   'cart_limit_reached',
   'cart_item_not_found',
+  // checkout / orders
+  'district_not_served',
+  'cart_empty',
+  'below_min_order',
+  'price_changed',
+  'idempotency_key_conflict',
+  'order_not_found',
+  'order_not_cancellable',
+  'invalid_status_transition',
+  'order_status_conflict',
+  'too_many_open_orders',
 ] as const satisfies readonly ApiErrorCode[];
 
 /** Compile error here means the API added an error code that `API_ERROR_CODES` does not list. */

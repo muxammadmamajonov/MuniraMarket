@@ -17,6 +17,8 @@ def create_engine(settings: Settings) -> AsyncEngine:
         pool_size=5,
         max_overflow=5,
         pool_recycle=1800,
+        # Bound parameters (addresses, phone numbers) never appear in exception text or logs.
+        hide_parameters=True,
     )
 
 

@@ -35,8 +35,8 @@ app/
   main.py            create_app() factory (uvicorn app.main:create_app --factory)
   core/              settings (env validation), clock, error envelope
   db/                declarative Base (naming convention, UUID pk, timestamps), engine/session
-  models/            users, categories, products, carts, orders (money = integer UZS)
-  domain/            pure business rules (order status transitions)
+  models/            users, catalog, carts, delivery zones, orders + history, outbox (integer UZS)
+  domain/            pure business rules (cart, delivery pricing, checkout quote, order status)
   repositories/      persistence behind small interfaces (faked in tests)
   security/          service request signing (ADR 0003), sessions, CSRF, rate limits (ADR 0007)
   telegram/          initData and Login Widget verification
@@ -138,10 +138,13 @@ else `127.0.0.1,::1`) and, when the TCP peer is in that list, replaces the clien
 **right-most `X-Forwarded-For` entry that is not itself trusted**. The application never parses
 `X-Forwarded-For`.
 
-- The web proxy (`apps/web`) is the **only** trusted hop: set `FORWARDED_ALLOW_IPS` to its
-  address(es) only, never a whole shared network and never `*` (settings refuse `*` and an empty
-  value in staging/production; entries must be valid IPs or strict CIDRs, exactly as uvicorn
-  parses them, otherwise uvicorn would silently treat them as never-matching literals).
+- The web proxy (`apps/web`) and the admin proxy (`apps/admin`) are the **only** trusted hops: set
+  `FORWARDED_ALLOW_IPS` to their address(es) only, never a whole shared network and never `*`
+  (settings refuse `*` and an empty value in staging/production; entries must be valid IPs or
+  strict CIDRs, exactly as uvicorn parses them, otherwise uvicorn would silently treat them as
+  never-matching literals). Each must also set `CLIENT_IP_HEADER` in staging/production: without
+  it every request through that proxy shares one per-IP bucket, and ten sign-in attempts a minute
+  from anyone would lock every operator out of the admin sign-in.
 - The proxy must forward only an edge-provided client IP, never a browser-supplied
   `X-Forwarded-For` (that is the web app's side of the contract).
 - Server-side catalog fetches made directly by the web server carry no `X-Forwarded-For`, so they
@@ -231,6 +234,98 @@ UPDATE` that row (this serialises a user's concurrent writes, so stock, the 99 c
   cap cannot be raced), upsert the line with `ON CONFLICT (cart_id, product_id)`, bump
   `carts.updated_at`. Lines are ordered by when they were added (`cart_items.created_at`, then id).
 
+## Delivery zones (public, no session)
+
+`GET /api/v1/delivery/zones` lists **active** zones in display order: `name_uz/ru`,
+`delivery_fee_uzs`, `free_delivery_threshold_uzs` (`null` = never free), `min_order_uzs`,
+`opens_at`/`closes_at` (`HH:MM`, Asia/Tashkent), `is_open_now` and the zone's `districts`
+(`code`, `name_uz`, `name_ru`). Cached and limited like the catalog (`catalog_ip`).
+
+A zone is a set of whole Tashkent districts (`delivery_zone_districts`; the district is the primary
+key, so a district belongs to at most one zone). Matching is by district code only, no geocoding.
+Delivery is free once the subtotal reaches the threshold; the minimum order is compared with the
+subtotal (before delivery). Orders are accepted at any time; outside the hours they are delivered
+from the next opening. Rules: `app/domain/delivery.py`, design: `architecture/0009-checkout-orders.md`.
+
+## Checkout and orders (session required; writes also CSRF)
+
+| Endpoint                         | Notes                                                                  |
+| -------------------------------- | ---------------------------------------------------------------------- |
+| `POST /checkout/quote`           | `{district}`; re-checks the cart, prices delivery. `CheckoutQuote`.    |
+| `POST /orders`                   | `Idempotency-Key` header required; creates the order from the cart.   |
+| `GET /orders?page=&page_size=`   | The customer's orders, newest first (`OrderPage`, page size ≤ 50).    |
+| `GET /orders/{id}`               | `OrderDetail`; `404 order_not_found` also for other users' orders.     |
+| `POST /orders/{id}/cancel`       | `{reason}` (3-300); only `NEW`/`CONFIRMED`; returns tracked stock.     |
+
+- **Quote** never fails because of the cart: `issues` (`cart_empty`, `cart_has_issues`,
+  `below_min_order`) and `can_place_order` say what blocks an order. `409 district_not_served`
+  when no active zone covers the district.
+- **Order body**: structured `address` (`district`, `street`, `house`, optional `apartment`,
+  `entrance`, `floor`, `landmark`), `recipient_name`, `recipient_phone` (`+998` and 9 digits;
+  spaces, dashes and parentheses are ignored and stored normalised), `payment_method`
+  (`cash_on_delivery` | `card_on_delivery`), optional `comment`, and `expected_total_uzs` (the
+  quote's `total_uzs`). Text is trimmed, blank optionals become `null`, control characters are
+  rejected.
+- **Idempotency**: the key is 16-128 characters of `[A-Za-z0-9_-]` (send a UUID), unique per user.
+  Same key + same validated body → the original order, `200` with `Idempotent-Replayed: true`.
+  Same key + different body → `409 idempotency_key_conflict`. A new attempt needs a new key.
+- **Refusals** (nothing is written): `409 cart_empty`, `product_inactive` / `insufficient_stock`
+  (with `product_id`, and `available_quantity` for stock), `below_min_order`,
+  `district_not_served`, `price_changed` (with the new `total_uzs`: quote again, show it, retry
+  with a new key).
+- **Transaction**: lock the cart row, check the key, lock the products `FOR UPDATE` in id order,
+  re-evaluate with the quote's function, insert the order and the line snapshots (name, SKU, unit,
+  unit price, whether stock was taken), decrement tracked stock, empty the cart, append `order_status_history` and a
+  `notification_outbox` row. Cancelling returns tracked stock under the same lock order.
+- **Open orders**: at most 5 orders in `NEW` per customer (`409 too_many_open_orders`); cash or card
+  on delivery costs nothing to place, so this bounds how much stock one account can hold.
+- **Limits** (fixed window): `orders_ip` 300/min per IP on every `/checkout` and `/orders` route,
+  then per user: quote 60/min, create 10/min, reads 120/min, cancel 20/min. Every response is
+  `Cache-Control: no-store`. Addresses and phone numbers are never logged: the engine hides bound
+  parameters and unhandled database errors are logged by class, SQLSTATE and constraint only
+  (PostgreSQL's "failing row contains" detail would otherwise carry the order row).
+
+## Back office (`operator` / `admin` role)
+
+| Endpoint                            | Notes                                                       |
+| ----------------------------------- | ----------------------------------------------------------- |
+| `GET /admin/orders?status=&page=`   | All orders, optionally one status, newest first.            |
+| `GET /admin/orders/{id}`            | `AdminOrderDetail`: history with actor role and reason, and |
+|                                     | `allowed_transitions`.                                      |
+| `PATCH /admin/orders/{id}/status`   | `{status, reason?, expected_status?}` (CSRF).               |
+
+The role is re-read from the database on every request; any other role gets `403 forbidden` before
+an order is read. Transitions follow `app/domain/order_status.py` (one step forward, or `CANCELLED`
+with a reason from any non-final status). `expected_status` turns a lost update into
+`409 order_status_conflict`; a disallowed step is `409 invalid_status_transition`. Limits:
+`admin_ip` 600/min per IP, reads 300/min and writes 120/min per user. The admin web app signs in
+on its own origin, so add that origin to `CSRF_TRUSTED_ORIGINS`.
+
+Back-office routes accept only sessions created by the Telegram **Login Widget** (the admin app's
+sign-in). A Mini App (`initData`) session is a storefront session: it gets `403 forbidden` here even
+for an operator, so a staff member's shopping session (or a replayed `initData`) is never a
+back-office credential. The storefront proxy answers `404` for `/api/v1/admin/**`, and the admin
+proxy forwards only `admin/**` and the Login Widget/session routes.
+
+Locally, give a signed-in user a staff role with
+`make set-role TG=<telegram_user_id> ROLE=operator` (development/test only).
+
+## Notification outbox (internal, signed)
+
+Design: `architecture/0008-order-notification-outbox.md`. Every order creation and status change
+writes an `order.status_changed` row in the same transaction. The Telegram Serverless transport
+drains it with signed requests **without an actor** (an actor gets `403`):
+
+- `POST /internal/telegram/notifications/claim` `{limit 1..50}` leases due rows for 60 s
+  (`FOR UPDATE SKIP LOCKED`) and returns `{items, lease_expires_at}`.
+- `POST /internal/telegram/notifications/{id}/result` `{outcome, error_code?}`: `delivered`,
+  `recipient_blocked`, `failed`, or `retry` (backoff 30 s doubling to 1 h; `failed` after 8
+  attempts). `404` if the row is unknown, finished or not claimed. A row leased 8 times without
+  any report (a transport that crashes on it) is retired as `failed` (`max_attempts`).
+
+The payload holds the order id and number, status, locale, total, the Telegram chat id and, when
+cancelled, the reason; never the address or phone.
+
 ## Dev seed
 
 ```bash
@@ -239,11 +334,14 @@ make migrate          # local database only
 make seed             # or from the repo root: pnpm api:seed
 ```
 
-`python -m app.dev.seed` loads synthetic catalog data (`Demo`/`Демо` names, `DEMO-0001...` SKUs,
+`python -m app.dev.seed` loads synthetic catalog data and delivery zones (`Demo`/`Демо` names, `DEMO-0001...` SKUs,
 round prices, no image URLs). It refuses to run unless `APP_ENV` is `development` or `test`, and is
 idempotent: rows are upserted by slug and an unchanged row is not touched, so a second run writes
 nothing. The data includes products with an old price, untracked stock, an out-of-stock product, an
 inactive product, an inactive category, and an active category under an inactive one (hidden).
+The zones cover Tashkent's districts (each in at most one zone): one with a free-delivery
+threshold, one with a higher minimum, one never free, and an inactive zone whose districts are not
+served.
 
 ## Integration tests
 

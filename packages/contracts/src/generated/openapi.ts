@@ -4,6 +4,66 @@
  */
 
 export interface paths {
+  '/api/v1/admin/orders': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * List Orders
+     * @description All orders (optionally one status), newest first.
+     */
+    get: operations['list_orders_api_v1_admin_orders_get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/admin/orders/{order_id}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Get Order */
+    get: operations['get_order_api_v1_admin_orders__order_id__get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/admin/orders/{order_id}/status': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    /**
+     * Change Status
+     * @description Move an order one step forward, or cancel it (``reason`` required; stock is returned).
+     *
+     *     Send ``expected_status`` (the status you saw) to get ``409 order_status_conflict`` instead of
+     *     overwriting a colleague's change.
+     */
+    patch: operations['change_status_api_v1_admin_orders__order_id__status_patch'];
+    trace?: never;
+  };
   '/api/v1/auth/config': {
     parameters: {
       query?: never;
@@ -188,6 +248,51 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/v1/checkout/quote': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Quote
+     * @description Re-check the cart (status, current price, stock) and price delivery for a district.
+     *
+     *     Never fails because of the cart's contents: problems are reported in ``issues`` and
+     *     ``can_place_order``. ``409 district_not_served`` when no active zone covers the district.
+     */
+    post: operations['quote_api_v1_checkout_quote_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/delivery/zones': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * List Zones
+     * @description Active zones with their districts, fees, minimum order and Asia/Tashkent hours.
+     *
+     *     ``is_open_now`` is as of the response; it may be up to a minute stale from a cache.
+     */
+    get: operations['list_zones_api_v1_delivery_zones_get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/v1/health': {
     parameters: {
       query?: never;
@@ -245,6 +350,45 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/v1/internal/telegram/notifications/claim': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Claim */
+    post: operations['claim_api_v1_internal_telegram_notifications_claim_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/internal/telegram/notifications/{message_id}/result': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Report Result
+     * @description ``retry`` backs off exponentially and gives up (``failed``) after 8 attempts.
+     *
+     *     404 when the message is unknown, already finished, or was never claimed.
+     */
+    post: operations['report_result_api_v1_internal_telegram_notifications__message_id__result_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/v1/internal/telegram/session': {
     parameters: {
       query?: never;
@@ -259,6 +403,70 @@ export interface paths {
      * @description Upsert the user the bot is acting for. The body id must equal the signed actor.
      */
     post: operations['create_session_api_v1_internal_telegram_session_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/orders': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * List Orders
+     * @description The signed-in customer's orders, newest first.
+     */
+    get: operations['list_orders_api_v1_orders_get'];
+    put?: never;
+    /**
+     * Create Order
+     * @description Place an order from the whole cart.
+     *
+     *     The same ``Idempotency-Key`` with the same body returns the original order (``200`` and
+     *     ``Idempotent-Replayed: true``); with a different body it is ``409 idempotency_key_conflict``.
+     */
+    post: operations['create_order_api_v1_orders_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/orders/{order_id}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Get Order */
+    get: operations['get_order_api_v1_orders__order_id__get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/orders/{order_id}/cancel': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Cancel Order
+     * @description Cancel while the order is ``NEW`` or ``CONFIRMED``; tracked stock is returned.
+     */
+    post: operations['cancel_order_api_v1_orders__order_id__cancel_post'];
     delete?: never;
     options?: never;
     head?: never;
@@ -319,6 +527,68 @@ export interface components {
       /** Quantity */
       quantity: number;
     };
+    /** AdminOrderDetail */
+    AdminOrderDetail: {
+      address: components['schemas']['OrderAddress'];
+      /** Allowed Transitions */
+      allowed_transitions: components['schemas']['OrderStatus'][];
+      /** Can Cancel */
+      can_cancel: boolean;
+      /** Cancel Reason */
+      cancel_reason: string | null;
+      /** Comment */
+      comment: string | null;
+      /**
+       * Created At
+       * Format: date-time
+       */
+      created_at: string;
+      /** Delivery Fee Uzs */
+      delivery_fee_uzs: number;
+      /** History */
+      history: components['schemas']['OrderStatusChange'][];
+      /** History Detail */
+      history_detail: components['schemas']['AdminStatusChange'][];
+      /**
+       * Id
+       * Format: uuid
+       */
+      id: string;
+      /** Item Count */
+      item_count: number;
+      /** Items */
+      items: components['schemas']['OrderLine'][];
+      /** Number */
+      number: string;
+      payment_method: components['schemas']['PaymentMethod'];
+      /** Recipient Name */
+      recipient_name: string;
+      /** Recipient Phone */
+      recipient_phone: string;
+      status: components['schemas']['OrderStatus'];
+      /** Subtotal Uzs */
+      subtotal_uzs: number;
+      /** Total Uzs */
+      total_uzs: number;
+      /**
+       * Updated At
+       * Format: date-time
+       */
+      updated_at: string;
+    };
+    /** AdminStatusChange */
+    AdminStatusChange: {
+      actor_role: components['schemas']['UserRole'];
+      /**
+       * At
+       * Format: date-time
+       */
+      at: string;
+      from_status: components['schemas']['OrderStatus'] | null;
+      /** Reason */
+      reason: string | null;
+      status: components['schemas']['OrderStatus'];
+    };
     /** ApiErrorBody */
     ApiErrorBody: {
       /** Available Quantity */
@@ -350,15 +620,35 @@ export interface components {
         | 'product_inactive'
         | 'insufficient_stock'
         | 'cart_limit_reached'
-        | 'cart_item_not_found';
+        | 'cart_item_not_found'
+        | 'district_not_served'
+        | 'cart_empty'
+        | 'below_min_order'
+        | 'price_changed'
+        | 'idempotency_key_conflict'
+        | 'order_not_found'
+        | 'order_not_cancellable'
+        | 'invalid_status_transition'
+        | 'order_status_conflict'
+        | 'too_many_open_orders';
+      current_status?: components['schemas']['OrderStatus'] | null;
       /** Details */
       details?: components['schemas']['ErrorDetail'][] | null;
       /** Message */
       message: string;
+      /** Product Id */
+      product_id?: string | null;
+      /** Total Uzs */
+      total_uzs?: number | null;
     };
     /** AuthConfigResponse */
     AuthConfigResponse: {
       telegram_login_widget: components['schemas']['LoginWidgetConfig'];
+    };
+    /** CancelOrderRequest */
+    CancelOrderRequest: {
+      /** Reason */
+      reason: string;
     };
     /** Cart */
     Cart: {
@@ -422,6 +712,167 @@ export interface components {
       /** Items */
       items: components['schemas']['CategoryNode'][];
     };
+    /** CheckoutQuote */
+    CheckoutQuote: {
+      /** Can Place Order */
+      can_place_order: boolean;
+      /** Delivery Fee Uzs */
+      delivery_fee_uzs: number;
+      /** Free Delivery Remaining Uzs */
+      free_delivery_remaining_uzs: number | null;
+      /** Issues */
+      issues: ('cart_empty' | 'cart_has_issues' | 'below_min_order')[];
+      /** Item Count */
+      item_count: number;
+      /** Items */
+      items: components['schemas']['CartLine'][];
+      /** Subtotal Uzs */
+      subtotal_uzs: number;
+      /** Total Uzs */
+      total_uzs: number;
+      zone: components['schemas']['DeliveryZonePublic'];
+    };
+    /** CheckoutQuoteRequest */
+    CheckoutQuoteRequest: {
+      /**
+       * District
+       * @enum {string}
+       */
+      district:
+        | 'bektemir'
+        | 'chilonzor'
+        | 'mirobod'
+        | 'mirzo_ulugbek'
+        | 'olmazor'
+        | 'sergeli'
+        | 'shayxontohur'
+        | 'uchtepa'
+        | 'yakkasaroy'
+        | 'yangihayot'
+        | 'yashnobod'
+        | 'yunusobod';
+    };
+    /** ClaimResponse */
+    ClaimResponse: {
+      /** Items */
+      items: components['schemas']['OutboxMessagePublic'][];
+      /**
+       * Lease Expires At
+       * Format: date-time
+       */
+      lease_expires_at: string;
+    };
+    /** CreateOrderRequest */
+    CreateOrderRequest: {
+      address: components['schemas']['DeliveryAddress'];
+      /** Comment */
+      comment?: string | null;
+      /** Expected Total Uzs */
+      expected_total_uzs: number;
+      payment_method: components['schemas']['PaymentMethod'];
+      /** Recipient Name */
+      recipient_name: string;
+      /**
+       * Recipient Phone
+       * @description Uzbekistan number: +998 and 9 digits; spaces, dashes and () are ignored
+       */
+      recipient_phone: string;
+    };
+    /** DeliveryAddress */
+    DeliveryAddress: {
+      /** Apartment */
+      apartment?: string | null;
+      /**
+       * District
+       * @enum {string}
+       */
+      district:
+        | 'bektemir'
+        | 'chilonzor'
+        | 'mirobod'
+        | 'mirzo_ulugbek'
+        | 'olmazor'
+        | 'sergeli'
+        | 'shayxontohur'
+        | 'uchtepa'
+        | 'yakkasaroy'
+        | 'yangihayot'
+        | 'yashnobod'
+        | 'yunusobod';
+      /** Entrance */
+      entrance?: string | null;
+      /** Floor */
+      floor?: string | null;
+      /** House */
+      house: string;
+      /** Landmark */
+      landmark?: string | null;
+      /** Street */
+      street: string;
+    };
+    /** DeliveryZoneList */
+    DeliveryZoneList: {
+      /** Items */
+      items: components['schemas']['DeliveryZonePublic'][];
+      /**
+       * Timezone
+       * @default Asia/Tashkent
+       * @constant
+       */
+      timezone: 'Asia/Tashkent';
+    };
+    /** DeliveryZonePublic */
+    DeliveryZonePublic: {
+      /** Closes At */
+      closes_at: string;
+      /** Delivery Fee Uzs */
+      delivery_fee_uzs: number;
+      /** Districts */
+      districts: components['schemas']['District'][];
+      /** Free Delivery Threshold Uzs */
+      free_delivery_threshold_uzs: number | null;
+      /**
+       * Id
+       * Format: uuid
+       */
+      id: string;
+      /** Is Open Now */
+      is_open_now: boolean;
+      /** Min Order Uzs */
+      min_order_uzs: number;
+      /** Name Ru */
+      name_ru: string;
+      /** Name Uz */
+      name_uz: string;
+      /** Opens At */
+      opens_at: string;
+      /** Slug */
+      slug: string;
+    };
+    /** District */
+    District: {
+      /**
+       * Code
+       * @enum {string}
+       */
+      code:
+        | 'bektemir'
+        | 'chilonzor'
+        | 'mirobod'
+        | 'mirzo_ulugbek'
+        | 'olmazor'
+        | 'sergeli'
+        | 'shayxontohur'
+        | 'uchtepa'
+        | 'yakkasaroy'
+        | 'yangihayot'
+        | 'yashnobod'
+        | 'yunusobod';
+      /** Name Ru */
+      name_ru: string;
+      /** Name Uz */
+      name_uz: string;
+    };
     /** ErrorDetail */
     ErrorDetail: {
       /** Loc */
@@ -435,6 +886,11 @@ export interface components {
      */
     ErrorEnvelope: {
       error: components['schemas']['ApiErrorBody'];
+    };
+    /** HTTPValidationError */
+    HTTPValidationError: {
+      /** Detail */
+      detail?: components['schemas']['ValidationError'][];
     };
     /**
      * HealthResponse
@@ -494,6 +950,187 @@ export interface components {
       /** Username */
       username?: string | null;
     };
+    /** OrderAddress */
+    OrderAddress: {
+      /** Apartment */
+      apartment: string | null;
+      /**
+       * District
+       * @enum {string}
+       */
+      district:
+        | 'bektemir'
+        | 'chilonzor'
+        | 'mirobod'
+        | 'mirzo_ulugbek'
+        | 'olmazor'
+        | 'sergeli'
+        | 'shayxontohur'
+        | 'uchtepa'
+        | 'yakkasaroy'
+        | 'yangihayot'
+        | 'yashnobod'
+        | 'yunusobod';
+      /** District Name Ru */
+      district_name_ru: string;
+      /** District Name Uz */
+      district_name_uz: string;
+      /** Entrance */
+      entrance: string | null;
+      /** Floor */
+      floor: string | null;
+      /** House */
+      house: string;
+      /** Landmark */
+      landmark: string | null;
+      /** Street */
+      street: string;
+    };
+    /** OrderDetail */
+    OrderDetail: {
+      address: components['schemas']['OrderAddress'];
+      /** Can Cancel */
+      can_cancel: boolean;
+      /** Cancel Reason */
+      cancel_reason: string | null;
+      /** Comment */
+      comment: string | null;
+      /**
+       * Created At
+       * Format: date-time
+       */
+      created_at: string;
+      /** Delivery Fee Uzs */
+      delivery_fee_uzs: number;
+      /** History */
+      history: components['schemas']['OrderStatusChange'][];
+      /**
+       * Id
+       * Format: uuid
+       */
+      id: string;
+      /** Item Count */
+      item_count: number;
+      /** Items */
+      items: components['schemas']['OrderLine'][];
+      /** Number */
+      number: string;
+      payment_method: components['schemas']['PaymentMethod'];
+      /** Recipient Name */
+      recipient_name: string;
+      /** Recipient Phone */
+      recipient_phone: string;
+      status: components['schemas']['OrderStatus'];
+      /** Subtotal Uzs */
+      subtotal_uzs: number;
+      /** Total Uzs */
+      total_uzs: number;
+      /**
+       * Updated At
+       * Format: date-time
+       */
+      updated_at: string;
+    };
+    /** OrderLine */
+    OrderLine: {
+      /** Line Total Uzs */
+      line_total_uzs: number;
+      /** Name Ru */
+      name_ru: string;
+      /** Name Uz */
+      name_uz: string;
+      /** Product Id */
+      product_id: string | null;
+      /** Quantity */
+      quantity: number;
+      /** Sku */
+      sku: string;
+      unit: components['schemas']['Unit'];
+      /** Unit Price Uzs */
+      unit_price_uzs: number;
+    };
+    /** OrderPage */
+    OrderPage: {
+      /** Items */
+      items: components['schemas']['OrderSummary'][];
+      /** Page */
+      page: number;
+      /** Page Size */
+      page_size: number;
+      /** Total */
+      total: number;
+      /** Total Pages */
+      total_pages: number;
+    };
+    /**
+     * OrderStatus
+     * @enum {string}
+     */
+    OrderStatus:
+      | 'NEW'
+      | 'CONFIRMED'
+      | 'PICKING'
+      | 'READY_FOR_DELIVERY'
+      | 'OUT_FOR_DELIVERY'
+      | 'DELIVERED'
+      | 'CANCELLED';
+    /** OrderStatusChange */
+    OrderStatusChange: {
+      /**
+       * At
+       * Format: date-time
+       */
+      at: string;
+      status: components['schemas']['OrderStatus'];
+    };
+    /** OrderStatusUpdateRequest */
+    OrderStatusUpdateRequest: {
+      expected_status?: components['schemas']['OrderStatus'] | null;
+      /** Reason */
+      reason?: string | null;
+      status: components['schemas']['OrderStatus'];
+    };
+    /** OrderSummary */
+    OrderSummary: {
+      /**
+       * Created At
+       * Format: date-time
+       */
+      created_at: string;
+      /**
+       * Id
+       * Format: uuid
+       */
+      id: string;
+      /** Item Count */
+      item_count: number;
+      /** Number */
+      number: string;
+      status: components['schemas']['OrderStatus'];
+      /** Total Uzs */
+      total_uzs: number;
+    };
+    /** OutboxMessagePublic */
+    OutboxMessagePublic: {
+      /** Attempts */
+      attempts: number;
+      /** Event Type */
+      event_type: string;
+      /**
+       * Id
+       * Format: uuid
+       */
+      id: string;
+      /** Payload */
+      payload: {
+        [key: string]: unknown;
+      };
+    };
+    /**
+     * PaymentMethod
+     * @enum {string}
+     */
+    PaymentMethod: 'cash_on_delivery' | 'card_on_delivery';
     /** ProductDetail */
     ProductDetail: {
       /** Brand */
@@ -646,6 +1283,19 @@ export interface components {
      * @enum {string}
      */
     UserRole: 'customer' | 'operator' | 'admin';
+    /** ValidationError */
+    ValidationError: {
+      /** Context */
+      ctx?: Record<string, never>;
+      /** Input */
+      input?: unknown;
+      /** Location */
+      loc: (string | number)[];
+      /** Message */
+      msg: string;
+      /** Error Type */
+      type: string;
+    };
   };
   responses: never;
   parameters: never;
@@ -655,6 +1305,240 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+  list_orders_api_v1_admin_orders_get: {
+    parameters: {
+      query?: {
+        status?: components['schemas']['OrderStatus'] | null;
+        page?: number;
+        page_size?: number;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['OrderPage'];
+        };
+      };
+      /** @description Unauthorized */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Forbidden */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Unprocessable Content */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Too Many Requests */
+      429: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Service Unavailable */
+      503: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+    };
+  };
+  get_order_api_v1_admin_orders__order_id__get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        order_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['AdminOrderDetail'];
+        };
+      };
+      /** @description Unauthorized */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Forbidden */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Not Found */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Unprocessable Content */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Too Many Requests */
+      429: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Service Unavailable */
+      503: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+    };
+  };
+  change_status_api_v1_admin_orders__order_id__status_patch: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        order_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['OrderStatusUpdateRequest'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['AdminOrderDetail'];
+        };
+      };
+      /** @description Unauthorized */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Forbidden */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Not Found */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Conflict */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Unprocessable Content */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Too Many Requests */
+      429: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Service Unavailable */
+      503: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+    };
+  };
   auth_config_api_v1_auth_config_get: {
     parameters: {
       query?: never;
@@ -1278,6 +2162,122 @@ export interface operations {
       };
     };
   };
+  quote_api_v1_checkout_quote_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['CheckoutQuoteRequest'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['CheckoutQuote'];
+        };
+      };
+      /** @description Unauthorized */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Forbidden */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Conflict */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Unprocessable Content */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Too Many Requests */
+      429: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Service Unavailable */
+      503: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+    };
+  };
+  list_zones_api_v1_delivery_zones_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['DeliveryZoneList'];
+        };
+      };
+      /** @description Too Many Requests */
+      429: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Service Unavailable */
+      503: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+    };
+  };
   health_api_v1_health_get: {
     parameters: {
       query?: never;
@@ -1347,6 +2347,77 @@ export interface operations {
       };
     };
   };
+  claim_api_v1_internal_telegram_notifications_claim_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': {
+          /**
+           * Limit
+           * @default 20
+           */
+          limit?: number;
+        };
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ClaimResponse'];
+        };
+      };
+    };
+  };
+  report_result_api_v1_internal_telegram_notifications__message_id__result_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        message_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': {
+          /** Error Code */
+          error_code?: string | null;
+          /**
+           * Outcome
+           * @enum {string}
+           */
+          outcome: 'delivered' | 'recipient_blocked' | 'retry' | 'failed';
+        };
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
   create_session_api_v1_internal_telegram_session_post: {
     parameters: {
       query?: never;
@@ -1378,6 +2449,329 @@ export interface operations {
         };
         content: {
           'application/json': components['schemas']['UserEnvelope'];
+        };
+      };
+    };
+  };
+  list_orders_api_v1_orders_get: {
+    parameters: {
+      query?: {
+        page?: number;
+        page_size?: number;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['OrderPage'];
+        };
+      };
+      /** @description Unauthorized */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Forbidden */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Unprocessable Content */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Too Many Requests */
+      429: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Service Unavailable */
+      503: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+    };
+  };
+  create_order_api_v1_orders_post: {
+    parameters: {
+      query?: never;
+      header: {
+        /** @description Client-generated, unique per order attempt (a UUID). Required. */
+        'Idempotency-Key': string;
+      };
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['CreateOrderRequest'];
+      };
+    };
+    responses: {
+      /** @description Replay of an earlier identical request */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['OrderDetail'];
+        };
+      };
+      /** @description Successful Response */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['OrderDetail'];
+        };
+      };
+      /** @description Unauthorized */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Forbidden */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Conflict */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Unprocessable Content */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Too Many Requests */
+      429: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Service Unavailable */
+      503: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+    };
+  };
+  get_order_api_v1_orders__order_id__get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        order_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['OrderDetail'];
+        };
+      };
+      /** @description Unauthorized */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Forbidden */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Not Found */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Unprocessable Content */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Too Many Requests */
+      429: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Service Unavailable */
+      503: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+    };
+  };
+  cancel_order_api_v1_orders__order_id__cancel_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        order_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['CancelOrderRequest'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['OrderDetail'];
+        };
+      };
+      /** @description Unauthorized */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Forbidden */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Not Found */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Conflict */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Unprocessable Content */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Too Many Requests */
+      429: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Service Unavailable */
+      503: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
         };
       };
     };

@@ -1,6 +1,8 @@
 """Uniform error envelope: ``{"error": {"code": ..., "message": ...}}``."""
 
 import logging
+import traceback
+import uuid
 from http import HTTPStatus
 from typing import Any, Literal, cast
 
@@ -8,7 +10,10 @@ from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
+from sqlalchemy.exc import DBAPIError
 from starlette.exceptions import HTTPException as StarletteHTTPException
+
+from app.domain.order_status import OrderStatus
 
 logger = logging.getLogger("app.errors")
 
@@ -57,6 +62,17 @@ ErrorCode = Literal[
     "insufficient_stock",
     "cart_limit_reached",
     "cart_item_not_found",
+    # checkout / orders
+    "district_not_served",
+    "cart_empty",
+    "below_min_order",
+    "price_changed",
+    "idempotency_key_conflict",
+    "order_not_found",
+    "order_not_cancellable",
+    "invalid_status_transition",
+    "order_status_conflict",
+    "too_many_open_orders",
 ]
 
 
@@ -71,6 +87,12 @@ class ApiErrorBody(BaseModel):
     details: list[ErrorDetail] | None = None
     # Only set for ``insufficient_stock``: how many units can currently be ordered.
     available_quantity: int | None = None
+    # Order creation: the product a ``product_inactive`` / ``insufficient_stock`` refers to.
+    product_id: uuid.UUID | None = None
+    # ``price_changed``: the order total now (request a new quote before retrying).
+    total_uzs: int | None = None
+    # ``order_not_cancellable`` / ``invalid_status_transition`` / ``order_status_conflict``.
+    current_status: OrderStatus | None = None
 
 
 class ErrorEnvelope(BaseModel):
@@ -148,7 +170,23 @@ async def _validation_exception_handler(_: Request, exc: Exception) -> JSONRespo
 
 
 def log_unhandled_exception(method: str, path: str, exc: BaseException) -> None:
-    """Method, path and traceback only: never headers, cookies, query strings or bodies."""
+    """Method, path and traceback only: never headers, cookies, query strings or bodies.
+
+    Database errors are logged without their message: PostgreSQL's ``DETAIL: Failing row
+    contains (...)`` would otherwise put order data (recipient, phone, address) into the logs.
+    """
+    if isinstance(exc, DBAPIError):
+        orig = getattr(exc.orig, "__cause__", None) or exc.orig
+        logger.error(
+            "Unhandled database error on %s %s: %s (sqlstate=%s, constraint=%s)\n%s",
+            method,
+            path,
+            type(orig).__name__,
+            getattr(orig, "sqlstate", None),
+            getattr(orig, "constraint_name", None),
+            "".join(traceback.format_tb(exc.__traceback__)),
+        )
+        return
     logger.error(
         "Unhandled exception on %s %s",
         method,
