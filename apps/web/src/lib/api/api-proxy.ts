@@ -16,12 +16,21 @@ const FORWARDED_REQUEST_HEADERS = [
   'accept-language',
   'cookie',
   'x-csrf-token',
+  // Lets `POST /orders` be retried safely: the API answers a repeat of the same key and body with
+  // the original order instead of creating a second one.
+  'idempotency-key',
   'origin',
   'user-agent',
 ] as const;
 
 /** Response headers returned to the browser. `set-cookie` is handled separately (multi-value). */
-const FORWARDED_RESPONSE_HEADERS = ['content-type', 'retry-after', 'cache-control'] as const;
+const FORWARDED_RESPONSE_HEADERS = [
+  'content-type',
+  'retry-after',
+  'cache-control',
+  // `true` when `POST /orders` was a replay of an earlier request with the same key.
+  'idempotent-replayed',
+] as const;
 
 export interface ProxyDeps {
   fetch: typeof fetch;
@@ -59,11 +68,17 @@ function hasUnsafeSegment(segments: readonly string[]): boolean {
 }
 
 /**
- * `/api/v1/internal/**` is for Telegram Serverless (service-signed requests) only and must never
- * be reachable from a browser, so the proxy answers as if the route did not exist.
+ * Route groups the storefront never serves, so the proxy answers as if they did not exist:
+ *
+ * - `/api/v1/internal/**` is for Telegram Serverless (service-signed requests) only;
+ * - `/api/v1/admin/**` is the back office, which has its own app (`apps/admin`). The Core API
+ *   enforces roles anyway; this is defence in depth, so a customer-facing origin never even
+ *   forwards such a request.
  */
-function isInternalPath(segments: readonly string[]): boolean {
-  return segments[0]?.toLowerCase() === 'internal';
+const UNSERVED_ROUTE_GROUPS: ReadonlySet<string> = new Set(['internal', 'admin']);
+
+function isUnservedPath(segments: readonly string[]): boolean {
+  return UNSERVED_ROUTE_GROUPS.has(segments[0]?.toLowerCase() ?? '');
 }
 
 function buildUpstreamHeaders(request: Request, clientIpHeader: string | null): Headers {
@@ -115,7 +130,7 @@ export function createApiProxy(deps: ProxyDeps) {
   return async function handle(request: Request, context: ProxyRouteContext): Promise<Response> {
     const { path } = await context.params;
 
-    if (hasUnsafeSegment(path) || isInternalPath(path)) {
+    if (hasUnsafeSegment(path) || isUnservedPath(path)) {
       return errorResponse(404, 'not_found', 'Not Found');
     }
 

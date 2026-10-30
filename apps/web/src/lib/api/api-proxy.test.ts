@@ -212,6 +212,65 @@ describe('api proxy', () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
+  it.each([
+    [['admin', 'orders']],
+    [['Admin', 'orders']],
+    [['ADMIN']],
+    [['admin', 'orders', '1c9f0000-0000-4000-8000-000000000000', 'status']],
+  ])('refuses back-office routes with a 404 envelope: %j', async (path) => {
+    const { fetchMock, call } = setup();
+    const response = await call(path, `http://web.test/api/v1/${path.join('/')}`, {
+      method: 'PATCH',
+      body: '{}',
+    });
+    expect(response.status).toBe(404);
+    expect((await response.json()).error.code).toBe('not_found');
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('still forwards routes that merely contain "admin" or "internal" deeper in the path', async () => {
+    const { fetchMock, call } = setup();
+    await call(['orders', 'admin'], 'http://web.test/api/v1/orders/admin');
+    await call(['products', 'internal'], 'http://web.test/api/v1/products/internal');
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('forwards the Idempotency-Key request header unchanged', async () => {
+    const { fetchMock, call } = setup();
+    await call(['orders'], 'http://web.test/api/v1/orders', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'idempotency-key': 'test-idempotency-key-0001' },
+      body: '{}',
+    });
+    expect(lastCall(fetchMock).headers.get('idempotency-key')).toBe('test-idempotency-key-0001');
+  });
+
+  it('returns the Idempotent-Replayed response header (and status 200) to the browser', async () => {
+    const { call } = setup(
+      () =>
+        new Response(JSON.stringify({ id: 'o1' }), {
+          status: 200,
+          headers: { 'content-type': 'application/json', 'idempotent-replayed': 'true' },
+        }),
+    );
+    const response = await call(['orders'], 'http://web.test/api/v1/orders', {
+      method: 'POST',
+      body: '{}',
+    });
+    expect(response.status).toBe(200);
+    expect(response.headers.get('Idempotent-Replayed')).toBe('true');
+  });
+
+  it('does not invent an Idempotent-Replayed header on a first request', async () => {
+    const { call } = setup(() => Response.json({ id: 'o1' }, { status: 201 }));
+    const response = await call(['orders'], 'http://web.test/api/v1/orders', {
+      method: 'POST',
+      body: '{}',
+    });
+    expect(response.status).toBe(201);
+    expect(response.headers.has('idempotent-replayed')).toBe(false);
+  });
+
   it.each([[['..', 'internal', 'x']], [['auth', '..', 'internal']], [['a/b']], [['a\\b']], [['']]])(
     'refuses traversal-looking segments: %j',
     async (path) => {

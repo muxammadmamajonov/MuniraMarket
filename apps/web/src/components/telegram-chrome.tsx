@@ -11,13 +11,22 @@ export function isHomePath(pathname: string): boolean {
   return localeFromPathname(pathname) !== null && pathname.split('/').filter(Boolean).length === 1;
 }
 
+/** True for `/<locale>/checkout`, whose BackButton always returns to the cart. */
+export function isCheckoutPath(pathname: string): boolean {
+  const segments = pathname.split('/').filter(Boolean);
+  return (
+    localeFromPathname(pathname) !== null && segments.length === 2 && segments[1] === 'checkout'
+  );
+}
+
 /**
  * Mounts Telegram's native chrome for the current page. Renders nothing.
  *
  * - BackButton: visible on every page except home; goes back in history, or to home when there
- *   is no history (for example the Mini App was opened straight on a product).
- * - MainButton: hidden by default; pages that use it (the product page) claim it themselves with
- *   `useMainButton`. The cart page deliberately leaves it hidden, see `app/[locale]/cart`.
+ *   is no history (for example the Mini App was opened straight on a product). On the checkout
+ *   page it always goes to the cart, whatever the history holds.
+ * - MainButton: hidden by default; pages that use it (product, cart, checkout) claim it
+ *   themselves with `useMainButton`.
  * - Theme: mirrors Telegram's theme colours onto the design tokens.
  */
 export function TelegramChrome() {
@@ -32,7 +41,8 @@ export function TelegramChrome() {
   useBackButton({
     visible: !isHomePath(pathname),
     onClick: () => {
-      if (window.history.length > 1) router.back();
+      if (isCheckoutPath(pathname)) router.replace(`/${locale}/cart`);
+      else if (window.history.length > 1) router.back();
       else router.push(`/${locale}`);
     },
   });

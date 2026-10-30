@@ -1,9 +1,13 @@
 import type { Cart, CartLine, ProductSummary } from '@muniramarket/contracts';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { LocaleProvider } from '@/i18n/context';
 import { TelegramProvider } from '@/lib/telegram';
+import { installWebApp, makeWebApp, uninstallWebApp } from '@/lib/telegram/test-helpers';
 import { CartView } from './cart-view';
+
+const nav = vi.hoisted(() => ({ push: vi.fn() }));
+vi.mock('next/navigation', () => ({ useRouter: () => ({ push: nav.push }) }));
 
 const session = vi.hoisted(() => ({
   status: 'authenticated' as 'loading' | 'authenticated' | 'anonymous' | 'error',
@@ -70,7 +74,12 @@ function renderCart(locale: 'uz' | 'ru' = 'uz') {
   );
 }
 
+afterEach(() => {
+  uninstallWebApp();
+});
+
 beforeEach(() => {
+  nav.push.mockReset();
   session.status = 'authenticated';
   session.error = null;
   session.apiFetch.mockReset();
@@ -93,12 +102,36 @@ describe('CartView', () => {
     expect(session.apiFetch).toHaveBeenCalledWith('/cart', { method: 'GET' });
   });
 
-  it('shows the checkout-coming-soon note', async () => {
+  it('offers checkout as a primary link to the checkout page', async () => {
     session.apiFetch.mockResolvedValue(respond(cart()));
     renderCart();
-    expect(await screen.findByTestId('checkout-soon')).toHaveTextContent(
-      'Buyurtma berish tez orada qo‘shiladi.',
+    const link = await screen.findByTestId('checkout-link');
+    expect(link).toHaveAttribute('href', '/uz/checkout');
+    expect(link).toHaveTextContent('Rasmiylashtirish');
+    expect(screen.queryByText(/tez orada/)).toBeNull();
+  });
+
+  it('disables checkout while a line has an issue (no link to follow)', async () => {
+    session.apiFetch.mockResolvedValue(
+      respond(
+        cart({
+          items: [line({ issue: 'product_inactive' })],
+          has_issues: true,
+        }),
+      ),
     );
+    renderCart();
+    const control = await screen.findByTestId('checkout-link');
+    expect(control).toBeDisabled();
+    expect(control.tagName).toBe('BUTTON');
+    expect(control).not.toHaveAttribute('href');
+  });
+
+  it('localizes the checkout link (ru)', async () => {
+    session.apiFetch.mockResolvedValue(respond(cart()));
+    renderCart('ru');
+    expect(await screen.findByTestId('checkout-link')).toHaveAttribute('href', '/ru/checkout');
+    expect(screen.getByTestId('checkout-link')).toHaveTextContent('Оформить заказ');
   });
 
   it('is localized (ru)', async () => {
@@ -262,5 +295,52 @@ describe('CartView', () => {
     renderCart();
     await screen.findByRole('alert');
     expect(session.retry).toHaveBeenCalled();
+  });
+});
+
+describe('CartView in the Telegram Mini App', () => {
+  it('claims the MainButton with the server total and opens the checkout on click', async () => {
+    const webApp = makeWebApp();
+    installWebApp(webApp);
+    session.apiFetch.mockResolvedValue(respond(cart({ total_uzs: 24000 })));
+    renderCart();
+    await screen.findByText('Demo olma');
+
+    await waitFor(() => expect(webApp.MainButton.show).toHaveBeenCalled());
+    expect(webApp.MainButton.setText).toHaveBeenLastCalledWith(
+      'Rasmiylashtirish — 24\u00A0000\u00A0so‘m',
+    );
+    vi.mocked(webApp.MainButton.onClick).mock.calls[0]?.[0]();
+    expect(nav.push).toHaveBeenCalledWith('/uz/checkout');
+  });
+
+  it('keeps the MainButton hidden for an empty cart and for a cart with issues', async () => {
+    const webApp = makeWebApp();
+    installWebApp(webApp);
+    session.apiFetch.mockResolvedValueOnce(
+      respond(cart({ items: [], item_count: 0, subtotal_uzs: 0, total_uzs: 0 })),
+    );
+    const { unmount } = renderCart();
+    await screen.findByText('Savatingiz bo‘sh');
+    expect(webApp.MainButton.show).not.toHaveBeenCalled();
+    unmount();
+
+    session.apiFetch.mockResolvedValueOnce(
+      respond(cart({ items: [line({ issue: 'product_inactive' })], has_issues: true })),
+    );
+    renderCart();
+    await screen.findByTestId('checkout-link');
+    expect(webApp.MainButton.show).not.toHaveBeenCalled();
+  });
+
+  it('releases the MainButton when leaving the cart', async () => {
+    const webApp = makeWebApp();
+    installWebApp(webApp);
+    session.apiFetch.mockResolvedValue(respond(cart()));
+    const { unmount } = renderCart();
+    await waitFor(() => expect(webApp.MainButton.show).toHaveBeenCalled());
+    unmount();
+    expect(webApp.MainButton.hide).toHaveBeenCalled();
+    expect(webApp.MainButton.offClick).toHaveBeenCalled();
   });
 });

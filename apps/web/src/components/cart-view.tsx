@@ -11,6 +11,7 @@ import {
   formatUZS,
 } from '@muniramarket/ui';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useState } from 'react';
 import { useI18n } from '@/i18n/context';
 import { formatMessage } from '@/i18n/format';
@@ -18,7 +19,9 @@ import { getCart, removeCartItem, updateCartItem } from '@/lib/api/cart';
 import { ApiRequestError } from '@/lib/api/errors';
 import { localizedName, maxQuantityFor } from '@/lib/catalog';
 import { useSession } from '@/lib/session';
+import { useMainButton } from '@/lib/telegram';
 import { SignInPrompt } from './sign-in-prompt';
+import { LINK_BUTTON_PRIMARY } from './ui-classes';
 
 type Load = { kind: 'loading' } | { kind: 'ready'; cart: Cart } | { kind: 'failed' };
 
@@ -30,6 +33,7 @@ type Load = { kind: 'loading' } | { kind: 'ready'; cart: Cart } | { kind: 'faile
 export function CartView() {
   const { dict, locale } = useI18n();
   const { status, apiFetch, retry } = useSession();
+  const router = useRouter();
   const [load, setLoad] = useState<Load>({ kind: 'loading' });
   const [busyProduct, setBusyProduct] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -74,6 +78,21 @@ export function CartView() {
     [dict],
   );
 
+  // Telegram: the native MainButton opens the checkout. Only offered for a cart that can be
+  // checked out; it is hidden for an empty cart or one with problem lines (the in-page note says
+  // what to fix) and released when this page unmounts. No-op in a browser.
+  const checkoutHref = `/${locale}/checkout`;
+  const cart = load.kind === 'ready' ? load.cart : null;
+  const canCheckout = cart !== null && cart.items.length > 0 && !cart.has_issues;
+  useMainButton(
+    canCheckout
+      ? {
+          text: `${dict.cart.checkout} — ${formatUZS(cart.total_uzs, locale)}`,
+          onClick: () => router.push(checkoutHref),
+        }
+      : null,
+  );
+
   if (status !== 'authenticated') {
     return status === 'loading' ? <CartSkeleton label={dict.cart.loading} /> : <SignInPrompt />;
   }
@@ -88,7 +107,7 @@ export function CartView() {
     );
   }
 
-  const { cart } = load;
+  if (cart === null) return null;
   if (cart.items.length === 0) {
     return (
       <EmptyState
@@ -150,9 +169,19 @@ export function CartView() {
           <span>{dict.cart.total}</span>
           <span data-testid="cart-total">{formatUZS(cart.total_uzs, locale)}</span>
         </p>
-        <p className="text-sm text-muted-foreground" data-testid="checkout-soon">
-          {dict.cart.checkoutSoon}
-        </p>
+        {canCheckout ? (
+          <Link
+            href={checkoutHref}
+            className={`${LINK_BUTTON_PRIMARY} mt-2`}
+            data-testid="checkout-link"
+          >
+            {dict.cart.checkout}
+          </Link>
+        ) : (
+          <Button size="lg" disabled className="mt-2" data-testid="checkout-link">
+            {dict.cart.checkout}
+          </Button>
+        )}
       </section>
     </div>
   );

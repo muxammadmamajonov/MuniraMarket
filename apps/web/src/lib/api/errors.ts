@@ -1,4 +1,10 @@
-import { API_V1_PREFIX, isApiErrorEnvelope, type ApiErrorCode } from '@muniramarket/contracts';
+import {
+  API_V1_PREFIX,
+  isApiErrorEnvelope,
+  type ApiErrorCode,
+  type ApiErrorDetail,
+  type OrderStatus,
+} from '@muniramarket/contracts';
 
 /** Client-side error codes for failures that never produced an API envelope. */
 export type LocalErrorCode = 'network_error' | 'invalid_response' | 'unknown_error';
@@ -13,6 +19,14 @@ export class ApiRequestError extends Error {
   readonly code: ApiErrorCode | LocalErrorCode;
   /** Only for `insufficient_stock`. */
   readonly availableQuantity: number | null;
+  /** `insufficient_stock` / `product_inactive`: the product that blocked the order. */
+  readonly productId: string | null;
+  /** `price_changed`: the order total the server would charge now. */
+  readonly totalUzs: number | null;
+  /** `order_not_cancellable` and friends: the order's status at the time of the call. */
+  readonly currentStatus: OrderStatus | null;
+  /** `validation_error`: one entry per invalid field (location and message only). */
+  readonly details: readonly ApiErrorDetail[];
   /** Seconds from `Retry-After`, if present. */
   readonly retryAfter: number | null;
 
@@ -21,6 +35,10 @@ export class ApiRequestError extends Error {
     code: ApiErrorCode | LocalErrorCode;
     message: string;
     availableQuantity?: number | null | undefined;
+    productId?: string | null | undefined;
+    totalUzs?: number | null | undefined;
+    currentStatus?: OrderStatus | null | undefined;
+    details?: readonly ApiErrorDetail[] | null | undefined;
     retryAfter?: number | null | undefined;
   }) {
     super(init.message);
@@ -28,6 +46,10 @@ export class ApiRequestError extends Error {
     this.status = init.status;
     this.code = init.code;
     this.availableQuantity = init.availableQuantity ?? null;
+    this.productId = init.productId ?? null;
+    this.totalUzs = init.totalUzs ?? null;
+    this.currentStatus = init.currentStatus ?? null;
+    this.details = init.details ?? [];
     this.retryAfter = init.retryAfter ?? null;
   }
 
@@ -60,6 +82,10 @@ export class ApiRequestError extends Error {
         code: body.error.code,
         message: body.error.message,
         availableQuantity: body.error.available_quantity,
+        productId: body.error.product_id,
+        totalUzs: body.error.total_uzs,
+        currentStatus: body.error.current_status,
+        details: body.error.details,
         retryAfter,
       });
     }

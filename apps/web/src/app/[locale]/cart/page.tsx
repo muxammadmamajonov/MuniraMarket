@@ -5,10 +5,9 @@ import { PageContainer } from '@/components/page-container';
 import { getDictionary } from '@/i18n';
 
 /*
- * Telegram MainButton: deliberately hidden on this page. Checkout does not exist yet, and a
- * permanently disabled native button at the bottom of the Mini App would look broken; the in-page
- * "checkout coming soon" note says it instead. When checkout lands, claim the button here with
- * `useMainButton({ text: "Checkout — <total>", ... })`.
+ * Telegram MainButton: `CartView` claims it ("Rasmiylashtirish — <total>", which opens the
+ * checkout) once the cart is loaded, has lines and no line has an issue. It stays hidden for an
+ * empty or problematic cart, and is released again when this page unmounts.
  */
 export default async function CartPage({ params }: PageProps<'/[locale]/cart'>) {
   const { locale } = await params;
