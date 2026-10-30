@@ -19,3 +19,19 @@ export function getApiInternalUrl(): string {
 export function internalApiUrl(path: string): string {
   return `${getApiInternalUrl()}${API_V1_PREFIX}${path.startsWith('/') ? path : `/${path}`}`;
 }
+
+/** HTTP header names are tokens; anything else in `CLIENT_IP_HEADER` is a misconfiguration. */
+const HEADER_NAME = /^[a-z0-9-]{1,64}$/;
+
+/**
+ * Name of the request header carrying the real client IP, set by the trusted edge in front of the
+ * web server (for example `x-real-ip`), or `null` when not configured.
+ *
+ * The edge MUST overwrite this header on every request; a client-sent value must never pass
+ * through. When unset, the proxy forwards no client IP at all and Core API rate-limits by the web
+ * server's address (shared bucket: stricter, but impossible to spoof).
+ */
+export function getClientIpHeader(): string | null {
+  const raw = process.env['CLIENT_IP_HEADER']?.trim().toLowerCase();
+  return raw !== undefined && HEADER_NAME.test(raw) ? raw : null;
+}

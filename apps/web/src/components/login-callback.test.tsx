@@ -1,6 +1,7 @@
 import { render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { LocaleProvider } from '@/i18n/context';
+import { beginLoginState } from '@/lib/auth/login-state';
 import { LoginCallback, payloadFromSearchParams } from './login-callback';
 
 const mocks = vi.hoisted(() => ({
@@ -20,7 +21,13 @@ vi.mock('@/lib/session', () => ({
 beforeEach(() => {
   mocks.replace.mockReset();
   mocks.loginWithWidget.mockReset();
+  window.sessionStorage.clear();
 });
+
+/** Query string as the widget produces it after a login this tab started. */
+function startedLogin(fields: string): string {
+  return `state=${beginLoginState() ?? ''}&${fields}`;
+}
 
 describe('payloadFromSearchParams', () => {
   it('maps the documented widget fields', () => {
@@ -66,7 +73,7 @@ describe('LoginCallback', () => {
   }
 
   it('posts the payload once and continues to the cart', async () => {
-    mocks.search = 'id=5&first_name=Ann&auth_date=1&hash=h';
+    mocks.search = startedLogin('id=5&first_name=Ann&auth_date=1&hash=h');
     mocks.loginWithWidget.mockResolvedValue(undefined);
     renderCallback();
     await waitFor(() => expect(mocks.replace).toHaveBeenCalledWith('/ru/cart'));
@@ -80,7 +87,7 @@ describe('LoginCallback', () => {
   });
 
   it('shows an error when the API rejects the login', async () => {
-    mocks.search = 'id=5&first_name=Ann&auth_date=1&hash=h';
+    mocks.search = startedLogin('id=5&first_name=Ann&auth_date=1&hash=h');
     mocks.loginWithWidget.mockRejectedValue(new Error('nope'));
     renderCallback();
     expect(await screen.findByRole('alert')).toHaveTextContent('Не удалось войти через Telegram.');
@@ -88,7 +95,22 @@ describe('LoginCallback', () => {
   });
 
   it('shows an error without calling the API for a malformed callback', async () => {
-    mocks.search = 'foo=bar';
+    mocks.search = startedLogin('foo=bar');
+    renderCallback();
+    expect(await screen.findByRole('alert')).toBeInTheDocument();
+    expect(mocks.loginWithWidget).not.toHaveBeenCalled();
+  });
+
+  it('refuses a validly signed payload this tab did not ask for (login CSRF)', async () => {
+    mocks.search = `state=${'a'.repeat(32)}&id=666&first_name=Attacker&auth_date=1&hash=h`;
+    renderCallback();
+    expect(await screen.findByRole('alert')).toBeInTheDocument();
+    expect(mocks.loginWithWidget).not.toHaveBeenCalled();
+  });
+
+  it('refuses a callback without state', async () => {
+    beginLoginState();
+    mocks.search = 'id=5&first_name=Ann&auth_date=1&hash=h';
     renderCallback();
     expect(await screen.findByRole('alert')).toBeInTheDocument();
     expect(mocks.loginWithWidget).not.toHaveBeenCalled();

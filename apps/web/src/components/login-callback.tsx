@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useEffect, useRef, useState } from 'react';
 import { useI18n } from '@/i18n/context';
+import { consumeLoginState } from '@/lib/auth/login-state';
 import { useSession } from '@/lib/session';
 import { PageContainer } from './page-container';
 
@@ -39,7 +40,8 @@ export function payloadFromSearchParams(
 
 /**
  * Landing page of the Telegram Login Widget redirect: posts the signed fields to the API once,
- * then continues to the cart.
+ * then continues to the cart. The redirect must carry the `state` this tab issued when it showed
+ * the widget; otherwise nothing is sent (login CSRF, see `lib/auth/login-state.ts`).
  */
 export function LoginCallback() {
   const { dict, locale } = useI18n();
@@ -52,8 +54,9 @@ export function LoginCallback() {
   useEffect(() => {
     if (started.current) return;
     started.current = true;
+    const stateOk = consumeLoginState(params.get('state'));
     const payload = payloadFromSearchParams(params);
-    if (payload === null) {
+    if (!stateOk || payload === null) {
       // eslint-disable-next-line react-hooks/set-state-in-effect
       setFailed(true);
       return;

@@ -65,8 +65,9 @@ describe('SignInPrompt', () => {
     expect(script?.getAttribute('data-telegram-login')).toBe('muniramarket_test_bot');
     // `data-onauth` would need eval, which the CSP forbids: the redirect mode is used instead.
     expect(script?.hasAttribute('data-onauth')).toBe(false);
-    expect(script?.getAttribute('data-auth-url')).toBe(
-      `${window.location.origin}/uz/auth/telegram`,
+    // A fresh one-time state binds the redirect to this tab (login CSRF defence).
+    expect(script?.getAttribute('data-auth-url')).toMatch(
+      new RegExp(`^${window.location.origin}/uz/auth/telegram\\?state=[0-9a-f]{32}$`),
     );
   });
 

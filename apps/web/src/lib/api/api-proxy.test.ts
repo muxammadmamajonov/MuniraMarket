@@ -63,8 +63,39 @@ describe('api proxy', () => {
       'x-csrf-token': 'csrf',
       origin: 'http://web.test',
       'user-agent': 'UA',
-      'x-forwarded-for': '203.0.113.7',
     });
+  });
+
+  it('never forwards a browser-supplied x-forwarded-for', async () => {
+    const { fetchMock, call } = setup();
+    await call(['cart'], 'http://web.test/api/v1/cart', {
+      headers: { 'x-forwarded-for': '203.0.113.7', 'x-real-ip': '203.0.113.8' },
+    });
+    expect(lastCall(fetchMock).headers.has('x-forwarded-for')).toBe(false);
+  });
+
+  it('forwards the client IP only from the configured edge header, if it is a valid IP', async () => {
+    const fetchMock = vi.fn<typeof fetch>(async () => Response.json({ ok: true }));
+    const handle = createApiProxy({
+      fetch: fetchMock,
+      apiBaseUrl: () => 'http://api.test:8000',
+      clientIpHeader: () => 'x-real-ip',
+    });
+    const send = (headers: Record<string, string>) =>
+      handle(new Request('http://web.test/api/v1/cart', { headers }), {
+        params: Promise.resolve({ path: ['cart'] }),
+      });
+
+    await send({ 'x-real-ip': '198.51.100.4', 'x-forwarded-for': '203.0.113.7' });
+    expect(lastCall(fetchMock).headers.get('x-forwarded-for')).toBe('198.51.100.4');
+
+    await send({ 'x-real-ip': '2001:db8::1' });
+    expect(lastCall(fetchMock).headers.get('x-forwarded-for')).toBe('2001:db8::1');
+
+    for (const bad of ['198.51.100.4, 10.0.0.1', 'not-an-ip', '']) {
+      await send({ 'x-real-ip': bad });
+      expect(lastCall(fetchMock).headers.has('x-forwarded-for')).toBe(false);
+    }
   });
 
   it('forwards a JSON body unchanged', async () => {

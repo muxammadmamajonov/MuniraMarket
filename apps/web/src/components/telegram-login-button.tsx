@@ -2,6 +2,7 @@
 
 import { useEffect, useRef } from 'react';
 import { useI18n } from '@/i18n/context';
+import { beginLoginState } from '@/lib/auth/login-state';
 
 /** Official Telegram Login Widget script. Loaded only when the API says the widget is enabled. */
 export const TELEGRAM_LOGIN_WIDGET_SCRIPT_URL = 'https://telegram.org/js/telegram-widget.js?22';
@@ -25,6 +26,9 @@ export interface TelegramLoginButtonProps {
  * `/<locale>/auth/telegram?id=...&hash=...`, whose page POSTs those fields to
  * `/api/v1/auth/telegram/login-widget`. The script is injected by our own nonce'd bundle, which
  * `'strict-dynamic'` allows, and the widget iframe is covered by `frame-src`.
+ *
+ * The redirect URL carries a one-time `state` (see `lib/auth/login-state.ts`) so the callback only
+ * completes logins started in this tab.
  */
 export function TelegramLoginButton({ botUsername }: TelegramLoginButtonProps) {
   const { locale } = useI18n();
@@ -33,6 +37,8 @@ export function TelegramLoginButton({ botUsername }: TelegramLoginButtonProps) {
   useEffect(() => {
     const element = container.current;
     if (element === null || !BOT_USERNAME.test(botUsername)) return undefined;
+    const state = beginLoginState();
+    if (state === null) return undefined; // no sessionStorage: the callback could not verify it
 
     const script = document.createElement('script');
     script.async = true;
@@ -42,7 +48,7 @@ export function TelegramLoginButton({ botUsername }: TelegramLoginButtonProps) {
     script.setAttribute('data-userpic', 'false');
     script.setAttribute(
       'data-auth-url',
-      `${window.location.origin}/${locale}/${LOGIN_CALLBACK_PATH}`,
+      `${window.location.origin}/${locale}/${LOGIN_CALLBACK_PATH}?state=${state}`,
     );
     element.appendChild(script);
 

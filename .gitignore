@@ -45,3 +45,6 @@ venv/
 # Playwright output
 test-results/
 playwright-report/
+
+# Assistant tooling state (agent worktrees)
+.claude/

@@ -9,3 +9,4 @@ docs/
 test-results/
 playwright-report/
 packages/contracts/openapi.json
+.claude/

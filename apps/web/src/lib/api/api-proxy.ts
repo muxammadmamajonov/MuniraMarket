@@ -1,6 +1,7 @@
 import 'server-only';
+import { isIP } from 'node:net';
 import { API_V1_PREFIX } from '@muniramarket/contracts';
-import { getApiInternalUrl } from '@/lib/config';
+import { getApiInternalUrl, getClientIpHeader } from '@/lib/config';
 
 /** Largest request body the proxy forwards. The API's own limit is at least as strict. */
 export const MAX_BODY_BYTES = 64 * 1024;
@@ -17,8 +18,6 @@ const FORWARDED_REQUEST_HEADERS = [
   'x-csrf-token',
   'origin',
   'user-agent',
-  // Appended-to by the platform in front of us; see the note in `buildUpstreamHeaders`.
-  'x-forwarded-for',
 ] as const;
 
 /** Response headers returned to the browser. `set-cookie` is handled separately (multi-value). */
@@ -28,6 +27,8 @@ export interface ProxyDeps {
   fetch: typeof fetch;
   /** Core API base URL, no trailing slash. */
   apiBaseUrl: () => string;
+  /** Edge-set header holding the real client IP, or `null` (see `getClientIpHeader`). */
+  clientIpHeader?: () => string | null;
 }
 
 export interface ProxyRouteContext {
@@ -65,15 +66,20 @@ function isInternalPath(segments: readonly string[]): boolean {
   return segments[0]?.toLowerCase() === 'internal';
 }
 
-function buildUpstreamHeaders(request: Request): Headers {
+function buildUpstreamHeaders(request: Request, clientIpHeader: string | null): Headers {
   const headers = new Headers();
   for (const name of FORWARDED_REQUEST_HEADERS) {
     const value = request.headers.get(name);
     if (value !== null) headers.set(name, value);
   }
-  // A Route Handler cannot see the TCP peer. The Next server fills `x-forwarded-for` from the
-  // socket when the header is absent, and the edge proxy in front of the web app is expected to
-  // append/overwrite it; the Core API (uvicorn `--proxy-headers`) takes the client IP from it.
+  // Core API trusts this server as its only proxy hop (uvicorn `--forwarded-allow-ips`) and
+  // rate-limits by the `x-forwarded-for` we send. A browser-sent `x-forwarded-for` is therefore
+  // never passed on (it would let anyone pick their own rate-limit bucket); the client IP comes
+  // only from a header the trusted edge overwrites, and must parse as a single IP address.
+  if (clientIpHeader !== null) {
+    const clientIp = request.headers.get(clientIpHeader)?.trim() ?? '';
+    if (isIP(clientIp) !== 0) headers.set('x-forwarded-for', clientIp);
+  }
   return headers;
 }
 
@@ -140,7 +146,7 @@ export function createApiProxy(deps: ProxyDeps) {
     try {
       upstream = await deps.fetch(target, {
         method,
-        headers: buildUpstreamHeaders(request),
+        headers: buildUpstreamHeaders(request, deps.clientIpHeader?.() ?? null),
         ...(body === undefined ? {} : { body: body as BodyInit }),
         // Never follow redirects on behalf of the browser and never reuse a cached response.
         redirect: 'manual',
@@ -181,4 +187,5 @@ export function createApiProxy(deps: ProxyDeps) {
 export const apiProxy = createApiProxy({
   fetch: (...args) => fetch(...args),
   apiBaseUrl: getApiInternalUrl,
+  clientIpHeader: getClientIpHeader,
 });
