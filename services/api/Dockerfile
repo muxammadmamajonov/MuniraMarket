@@ -26,6 +26,7 @@ RUN groupadd --system --gid 10001 app \
     && useradd --system --uid 10001 --gid app --no-create-home --shell /usr/sbin/nologin app
 WORKDIR /srv
 COPY --from=builder /opt/venv /opt/venv
+COPY --from=builder /app/app ./app
 COPY alembic.ini ./
 COPY alembic ./alembic
 USER app

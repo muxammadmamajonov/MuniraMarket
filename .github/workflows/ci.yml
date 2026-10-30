@@ -67,6 +67,12 @@ jobs:
       - run: make typecheck
       - run: make test
       - run: make build
+      - name: Build API container image
+        run: docker build --tag muniramarket-core-api:ci .
+      - name: Smoke-test API container image
+        run: >-
+          docker run --rm --entrypoint python muniramarket-core-api:ci
+          -c "from app.main import create_app; print('container import ok')"
 
   secrets:
     name: Secret scan
