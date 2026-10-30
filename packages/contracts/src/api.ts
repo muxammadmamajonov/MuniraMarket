@@ -1,8 +1,16 @@
-import type { Locale } from './locale';
-import type { ProductUnit, UserRole } from './enums';
+import type { components } from './generated/openapi';
+
+/**
+ * Public API types. Everything here is an alias of a schema generated from the Core API's OpenAPI
+ * document (`openapi.json`, written by `make -C services/api openapi`); regenerate with
+ * `pnpm contracts:generate`. Do not hand-write response shapes: change the API and regenerate.
+ */
+type Schemas = components['schemas'];
 
 /** All public HTTP routes of the Core API are mounted under this prefix. */
 export const API_V1_PREFIX = '/api/v1';
+
+// -- Identity & session -----------------------------------------------------------------------
 
 /**
  * Public representation of a user.
@@ -10,34 +18,106 @@ export const API_V1_PREFIX = '/api/v1';
  * `telegram_user_id` is a Telegram-assigned identifier that the server has verified. Clients may
  * display it but must never send it back as proof of identity.
  */
-export interface UserPublic {
-  id: string;
-  telegram_user_id: number;
-  first_name: string;
-  last_name: string | null;
-  username: string | null;
-  language: Locale;
-  role: UserRole;
-}
+export type UserPublic = Schemas['UserPublic'];
 
-/** `GET /api/v1/health` (liveness). */
+/**
+ * Login response and `GET /auth/session`. `csrf_token` is kept in memory by the client and sent as
+ * `X-CSRF-Token` on every unsafe request.
+ */
+export type SessionResponse = Schemas['SessionResponse'];
+
+/** `POST /auth/telegram/init-data` body: the raw `Telegram.WebApp.initData`, verified server-side. */
+export type TelegramInitDataAuthRequest = Schemas['InitDataRequest'];
+
+/** `POST /auth/telegram/init-data` response. */
+export type TelegramInitDataAuthResponse = SessionResponse;
+
+/** `GET /api/v1/auth/config`. */
+export type AuthConfig = Schemas['AuthConfigResponse'];
+
+/** `POST /auth/telegram/login-widget` body: the fields Telegram's Login Widget passes to onauth. */
+export type TelegramLoginWidgetPayload = Schemas['LoginWidgetRequest'];
+
+// -- Errors -----------------------------------------------------------------------------------
+
+/**
+ * Every machine-readable error code the public API can return. Clients switch on `code`; the
+ * message is for humans and may change.
+ */
+export type ApiErrorCode = Schemas['ApiErrorBody']['code'];
+
+/** One validation error (`validation_error`): location and message only, never submitted values. */
+export type ApiErrorDetail = Schemas['ErrorDetail'];
+
+/** The `error` object inside every non-2xx JSON response. */
+export type ApiErrorBody = Schemas['ApiErrorBody'];
+
+/** Shape of every non-2xx JSON response: `{"error": {...}}`. */
+export type ApiErrorEnvelope = Schemas['ErrorEnvelope'];
+
+// -- Catalog (public) -------------------------------------------------------------------------
+
+export type CategoryNode = Schemas['CategoryNode'];
+
+/** `GET /api/v1/categories`. */
+export type CategoryList = Schemas['CategoryTree'];
+
+export type ProductSort = Schemas['ProductSort'];
+
+export type ProductSummary = Schemas['ProductSummary'];
+
+export type ProductCategoryRef = Schemas['CategoryRef'];
+
+export type ProductDetail = Schemas['ProductDetail'];
+
+/** `GET /api/v1/products`. */
+export type ProductPage = Schemas['ProductPage'];
+
+// -- Cart (session required; writes also CSRF) -----------------------------------------------
+
+export type CartLine = Schemas['CartLine'];
+
+/** Why a cart line is not purchasable as it stands (`null` on the line when it is). */
+export type CartLineIssue = NonNullable<CartLine['issue']>;
+
+/**
+ * Lines with an `issue` stay visible but are excluded from `item_count`, `subtotal_uzs` and
+ * `total_uzs`. All money is computed by the server; clients never sum prices.
+ */
+export type Cart = Schemas['Cart'];
+
+export type AddCartItemRequest = Schemas['AddCartItemRequest'];
+
+export type UpdateCartItemRequest = Schemas['SetCartItemQuantityRequest'];
+
+// -- Health -----------------------------------------------------------------------------------
+
+/**
+ * `GET /api/v1/health` (liveness).
+ *
+ * The OpenAPI document currently declares this response only as a string map (the route has no
+ * response model), so the precise shape is kept here until the API adds one.
+ */
 export interface HealthResponse {
   status: 'ok';
   service: 'core-api';
   version: string;
 }
 
-/** `GET /api/v1/health/ready`; HTTP 503 with `unavailable` when the database is unreachable. */
+/**
+ * `GET /api/v1/health/ready`; HTTP 503 with `unavailable` when the database is unreachable. Kept
+ * by hand for the same reason as {@link HealthResponse} (the OpenAPI response schema is empty).
+ */
 export interface ReadinessResponse {
   status: 'ok' | 'unavailable';
 }
 
+// -- Runtime lists (checked against the generated types) --------------------------------------
+
 /**
- * Every machine-readable error code the public API can return. Clients switch on `code`; the
- * message is for humans and may change.
- *
- * Mirrors `ErrorCode` in `services/api/app/core/errors.py`. Hand-written for now; a later step
- * replaces these with aliases of the OpenAPI-generated types.
+ * Runtime list of {@link ApiErrorCode}. The `satisfies` clause rejects unknown codes and the
+ * exhaustiveness check below rejects missing ones, so this cannot drift from the generated type;
+ * a test additionally compares it with `openapi.json`.
  */
 export const API_ERROR_CODES = [
   // generic (derived from the HTTP status)
@@ -66,163 +146,21 @@ export const API_ERROR_CODES = [
   'insufficient_stock',
   'cart_limit_reached',
   'cart_item_not_found',
-] as const;
+] as const satisfies readonly ApiErrorCode[];
 
-export type ApiErrorCode = (typeof API_ERROR_CODES)[number];
+/** Compile error here means the API added an error code that `API_ERROR_CODES` does not list. */
+export type MissingApiErrorCodes = Exclude<ApiErrorCode, (typeof API_ERROR_CODES)[number]>;
+const assertAllApiErrorCodesListed: [MissingApiErrorCodes] extends [never] ? true : never = true;
+void assertAllApiErrorCodesListed;
 
-export interface ApiErrorDetail {
-  loc: string[];
-  msg: string;
-}
+export const PRODUCT_SORTS = [
+  'newest',
+  'price_asc',
+  'price_desc',
+  'name',
+] as const satisfies readonly ProductSort[];
 
-/** The `error` object inside every non-2xx JSON response. */
-export interface ApiErrorBody {
-  code: ApiErrorCode;
-  message: string;
-  /** Validation errors (`validation_error`): location and message only, never submitted values. */
-  details?: ApiErrorDetail[] | null;
-  /** Only set for `insufficient_stock`: how many units can currently be ordered. */
-  available_quantity?: number | null;
-}
-
-/** Shape of every non-2xx JSON response: `{"error": {...}}`. */
-export interface ApiErrorEnvelope {
-  error: ApiErrorBody;
-}
-
-export interface TelegramInitDataAuthRequest {
-  /** Raw `Telegram.WebApp.initData` string. Verified server-side; never parsed client-side. */
-  init_data: string;
-}
-
-/**
- * Login response and `GET /auth/session`. `csrf_token` is kept in memory by the client and sent as
- * `X-CSRF-Token` on every unsafe request.
- */
-export interface SessionResponse {
-  user: UserPublic;
-  csrf_token: string;
-}
-
-/** `POST /auth/telegram/init-data` response. */
-export type TelegramInitDataAuthResponse = SessionResponse;
-
-/** `GET /api/v1/auth/config`. */
-export interface AuthConfig {
-  telegram_login_widget: {
-    enabled: boolean;
-    bot_username: string | null;
-  };
-}
-
-/** `POST /auth/telegram/login-widget` body: the fields Telegram's Login Widget passes to onauth. */
-export interface TelegramLoginWidgetPayload {
-  id: number;
-  first_name: string;
-  last_name?: string;
-  username?: string;
-  photo_url?: string;
-  auth_date: number;
-  hash: string;
-}
-
-// ---------------------------------------------------------------------------------------------
-// Catalog (public)
-// ---------------------------------------------------------------------------------------------
-
-export interface CategoryNode {
-  id: string;
-  slug: string;
-  name_uz: string;
-  name_ru: string;
-  image_url: string | null;
-  sort_order: number;
-  children: CategoryNode[];
-}
-
-/** `GET /api/v1/categories`. */
-export interface CategoryList {
-  items: CategoryNode[];
-}
-
-export const PRODUCT_SORTS = ['newest', 'price_asc', 'price_desc', 'name'] as const;
-export type ProductSort = (typeof PRODUCT_SORTS)[number];
-
-export interface ProductSummary {
-  id: string;
-  slug: string;
-  sku: string;
-  name_uz: string;
-  name_ru: string;
-  unit: ProductUnit;
-  /** Integer UZS. */
-  price_uzs: number;
-  /** Integer UZS; present when the product is discounted. */
-  old_price_uzs: number | null;
-  /** `null` means stock is not tracked (no limit). */
-  stock_quantity: number | null;
-  in_stock: boolean;
-  image_url: string | null;
-  category_id: string;
-}
-
-export interface ProductCategoryRef {
-  id: string;
-  slug: string;
-  name_uz: string;
-  name_ru: string;
-}
-
-export interface ProductDetail extends ProductSummary {
-  description_uz: string | null;
-  description_ru: string | null;
-  brand: string | null;
-  category: ProductCategoryRef;
-}
-
-/** `GET /api/v1/products`. */
-export interface ProductPage {
-  items: ProductSummary[];
-  page: number;
-  page_size: number;
-  total: number;
-  total_pages: number;
-}
-
-// ---------------------------------------------------------------------------------------------
-// Cart (session required; writes also CSRF)
-// ---------------------------------------------------------------------------------------------
-
-export type CartLineIssue = 'product_inactive' | 'insufficient_stock';
-
-export interface CartLine {
-  product: ProductSummary;
-  quantity: number;
-  /** Integer UZS, computed by the server. */
-  line_total_uzs: number;
-  issue: CartLineIssue | null;
-}
-
-/**
- * Lines with an `issue` stay visible but are excluded from `item_count`, `subtotal_uzs` and
- * `total_uzs`. All money is computed by the server; clients never sum prices.
- */
-export interface Cart {
-  items: CartLine[];
-  /** Sum of quantities of valid lines. */
-  item_count: number;
-  subtotal_uzs: number;
-  total_uzs: number;
-  has_issues: boolean;
-}
-
-export interface AddCartItemRequest {
-  product_id: string;
-  /** 1..99 */
-  quantity: number;
-}
-
-export interface UpdateCartItemRequest {
-  /** 1..99 */
-  quantity: number;
-}
+/** Compile error here means the API added a sort key that `PRODUCT_SORTS` does not list. */
+export type MissingProductSorts = Exclude<ProductSort, (typeof PRODUCT_SORTS)[number]>;
+const assertAllProductSortsListed: [MissingProductSorts] extends [never] ? true : never = true;
+void assertAllProductSortsListed;

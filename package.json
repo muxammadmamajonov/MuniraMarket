@@ -12,7 +12,8 @@
     "build": "pnpm -r --if-present build",
     "api:seed": "make -C services/api seed",
     "format": "prettier --write .",
-    "format:check": "prettier --check ."
+    "format:check": "prettier --check .",
+    "contracts:generate": "make -C services/api openapi && pnpm --filter @muniramarket/contracts generate"
   },
   "devDependencies": {
     "prettier": "3.9.10"

@@ -11,6 +11,7 @@
   },
   "sideEffects": false,
   "scripts": {
+    "generate": "openapi-typescript openapi.json -o src/generated/openapi.ts && prettier --write src/generated/openapi.ts",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
@@ -20,6 +21,7 @@
     "@eslint/js": "10.0.1",
     "@types/node": "26.6.6",
     "eslint": "10.13.0",
+    "openapi-typescript": "7.13.0",
     "typescript": "6.0.3",
     "typescript-eslint": "8.72.1",
     "vitest": "5.0.5"
