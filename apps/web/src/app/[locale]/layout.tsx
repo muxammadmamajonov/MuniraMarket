@@ -24,6 +24,13 @@ export const viewport: Viewport = {
   initialScale: 1,
   // Lets `env(safe-area-inset-*)` work (notch / home indicator), including in the Mini App.
   viewportFit: 'cover',
+  // Keep bottom controls visible when the phone keyboard opens.
+  interactiveWidget: 'resizes-content',
+  colorScheme: 'light dark',
+  themeColor: [
+    { media: '(prefers-color-scheme: light)', color: '#ffffff' },
+    { media: '(prefers-color-scheme: dark)', color: '#09090b' },
+  ],
 };
 
 export async function generateMetadata({ params }: LayoutProps<'/[locale]'>): Promise<Metadata> {
