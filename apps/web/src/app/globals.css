@@ -1,0 +1,12 @@
+@import 'tailwindcss';
+@import '@muniramarket/ui/styles/tokens.css';
+
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    @apply bg-background font-sans text-foreground antialiased;
+  }
+}
