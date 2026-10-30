@@ -50,7 +50,14 @@ async def run_migrations_online() -> None:
     await connectable.dispose()
 
 
-if context.is_offline_mode():
+# Programmatic use (integration tests): the caller hands over an open synchronous connection via
+# ``config.attributes["connection"]`` (inside ``AsyncConnection.run_sync``), so a test can target
+# its own schema through that connection's search_path. Without it the behaviour is unchanged.
+_external_connection: Connection | None = config.attributes.get("connection")
+
+if _external_connection is not None:
+    _do_run_migrations(_external_connection)
+elif context.is_offline_mode():
     run_migrations_offline()
 else:
     asyncio.run(run_migrations_online())

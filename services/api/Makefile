@@ -1,4 +1,4 @@
-.PHONY: install lint format typecheck test run migrate build
+.PHONY: install lint format typecheck test run migrate seed build
 
 install:
 	uv sync --locked
@@ -24,6 +24,11 @@ run:
 # Local development only: never point this at a shared or production database from a laptop.
 migrate:
 	uv run alembic upgrade head
+
+# Local development only: inserts synthetic DEMO-* catalog data; refuses unless APP_ENV is
+# development or test. Idempotent.
+seed:
+	uv run python -m app.dev.seed
 
 # Build the wheel/sdist, then prove the built wheel installs and imports in a clean venv.
 build:

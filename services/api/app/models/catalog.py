@@ -59,6 +59,7 @@ class Product(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     old_price_uzs: Mapped[int | None] = mapped_column(BigInteger)
     # NULL means stock is not tracked for this product.
     stock_quantity: Mapped[int | None] = mapped_column(Integer)
+    image_url: Mapped[str | None] = mapped_column(String(2048))
     is_active: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=True, server_default=text("true")
     )
@@ -68,5 +69,27 @@ class Product(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         CheckConstraint(
             "old_price_uzs IS NULL OR old_price_uzs >= 0", name="old_price_non_negative"
         ),
+        CheckConstraint("stock_quantity IS NULL OR stock_quantity >= 0", name="stock_non_negative"),
         Index("ix_products_category_id", "category_id"),
+        # Catalog listing: active products, filtered by category.
+        Index("ix_products_is_active_category_id", "is_active", "category_id"),
+        # Trigram indexes back the ILIKE '%q%' catalog search (extension pg_trgm, migration 0002).
+        Index(
+            "ix_products_name_uz_trgm",
+            "name_uz",
+            postgresql_using="gin",
+            postgresql_ops={"name_uz": "gin_trgm_ops"},
+        ),
+        Index(
+            "ix_products_name_ru_trgm",
+            "name_ru",
+            postgresql_using="gin",
+            postgresql_ops={"name_ru": "gin_trgm_ops"},
+        ),
+        Index(
+            "ix_products_sku_trgm",
+            "sku",
+            postgresql_using="gin",
+            postgresql_ops={"sku": "gin_trgm_ops"},
+        ),
     )
