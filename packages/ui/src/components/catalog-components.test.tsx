@@ -28,6 +28,16 @@ describe('ImagePlaceholder', () => {
     expect(screen.getByTestId('image-placeholder')).toBeInTheDocument();
     expect(document.querySelector('img')).toBeNull();
   });
+
+  it('is full width by default but never combines w-full with a caller-provided width', () => {
+    const { container, rerender } = render(<ImagePlaceholder src={null} alt="Apple" />);
+    const wrapper = container.firstElementChild as HTMLElement;
+    expect(wrapper).toHaveClass('w-full');
+
+    rerender(<ImagePlaceholder src={null} alt="Apple" className="w-20 shrink-0" />);
+    expect(wrapper).toHaveClass('w-20');
+    expect(wrapper).not.toHaveClass('w-full');
+  });
 });
 
 describe('ProductCard', () => {

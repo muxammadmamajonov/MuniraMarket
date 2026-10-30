@@ -1,7 +1,7 @@
 import { defineConfig, devices } from '@playwright/test';
 
 /**
- * Smoke E2E for the storefront. NOT part of `pnpm test` / CI.
+ * Smoke E2E for the storefront. Not part of `pnpm test`; CI runs it in the separate `e2e` job.
  *
  * Expects:
  * - the web app on `E2E_BASE_URL` (default http://localhost:3000). With `E2E_START_SERVER=1` this

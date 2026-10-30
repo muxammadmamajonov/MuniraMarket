@@ -57,6 +57,7 @@ export default async function ProductPage({ params }: PageProps<'/[locale]/p/[sl
               amount={product.price_uzs}
               {...(product.old_price_uzs === null ? {} : { oldAmount: product.old_price_uzs })}
               locale={locale}
+              data-testid="product-price"
               currentLabel={dict.product.priceCurrentLabel}
               oldLabel={dict.product.priceOldLabel}
             />

@@ -22,11 +22,16 @@ export function ImagePlaceholder({ src, alt, className, ...rest }: ImagePlacehol
   // Remember which URL failed so a different `src` gets a fresh attempt.
   const [failedSrc, setFailedSrc] = useState<string | null>(null);
   const showImage = typeof src === 'string' && src !== '' && failedSrc !== src;
+  // Tailwind does not de-duplicate conflicting utilities: a caller-provided `w-*` must replace the
+  // default `w-full`, otherwise the CSS source order decides and a fixed-width thumbnail in a flex
+  // row can expand to the full row and cover the controls next to it.
+  const hasOwnWidth = /(^|\s)w-/.test(className ?? '');
 
   return (
     <div
       className={cx(
-        'relative aspect-square w-full overflow-hidden rounded-xl bg-surface-muted',
+        'relative aspect-square overflow-hidden rounded-xl bg-surface-muted',
+        !hasOwnWidth && 'w-full',
         className,
       )}
     >
