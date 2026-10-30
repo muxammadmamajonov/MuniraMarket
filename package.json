@@ -10,6 +10,7 @@
     "typecheck": "pnpm -r --if-present typecheck",
     "test": "pnpm -r --if-present test",
     "build": "pnpm -r --if-present build",
+    "api:seed": "make -C services/api seed",
     "format": "prettier --write .",
     "format:check": "prettier --check ."
   },

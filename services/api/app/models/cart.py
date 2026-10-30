@@ -1,6 +1,7 @@
 import uuid
+from datetime import datetime
 
-from sqlalchemy import CheckConstraint, ForeignKey, Integer, UniqueConstraint
+from sqlalchemy import CheckConstraint, DateTime, ForeignKey, Integer, UniqueConstraint, func
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -30,6 +31,10 @@ class CartItem(UUIDPrimaryKeyMixin, Base):
         nullable=False,
     )
     quantity: Mapped[int] = mapped_column(Integer, nullable=False)
+    # Lines are shown in the order they were added.
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
 
     __table_args__ = (
         CheckConstraint("quantity > 0", name="quantity_positive"),
