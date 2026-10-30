@@ -66,14 +66,17 @@ JavaScript). Users of Telegram Web can use the website directly.
 ### Lifetime and rotation
 
 - Idle expiry `SESSION_IDLE_TTL_SECONDS` (default 7 days), sliding: each authenticated request
-  resets the Redis TTL, capped at the remaining absolute lifetime.
+  resets the Redis TTL (`EXPIRE`, which never recreates a deleted key), capped at the remaining
+  absolute lifetime.
 - Absolute lifetime `SESSION_ABSOLUTE_TTL_SECONDS` (default 30 days from `created_at`), never
   extended by use or rotation.
 - Every login issues a new token and deletes the session presented in the request cookie,
   whoever it belonged to (anti-fixation).
 - A request whose session was last rotated more than `SESSION_ROTATE_AFTER_SECONDS` ago (default
-  24 h) gets a new token through `Set-Cookie`; the old key is deleted in the same `MULTI`
-  transaction and the CSRF token is kept. Rotation cookies are attached to every response,
+  24 h) gets a new token through `Set-Cookie` and keeps its CSRF token. The swap is one Lua
+  script that writes the new key and deletes the old one **only if the old key still exists**;
+  if a concurrent logout or block deleted it after the request loaded it, nothing is written and
+  the request fails with `401 session_required` (no revocation bypass). Rotation cookies are attached to every response,
   including error responses, so a route that fails after the rotation does not sign the user out.
   Two requests racing on the old token at the moment of rotation can see one `401`; a client that
   gets an unexpected `401` while signed in should re-check `GET /auth/session` once before showing

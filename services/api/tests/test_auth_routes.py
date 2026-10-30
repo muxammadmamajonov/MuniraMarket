@@ -11,7 +11,12 @@ from redis.asyncio import Redis
 
 from app.api.auth_deps import CsrfProtectedUserDep
 from app.security.rate_limit import InMemoryRateLimiter, RedisRateLimiter
-from app.security.session import InMemorySessionStore, RedisSessionStore, hash_token
+from app.security.session import (
+    InMemorySessionStore,
+    RedisSessionStore,
+    SessionData,
+    hash_token,
+)
 from tests.auth_helpers import (
     CONFIG_PATH,
     INIT_DATA_PATH,
@@ -253,6 +258,30 @@ async def test_rotated_cookie_survives_a_failing_route(
         headers={**cookie_header(rotated.value), "X-CSRF-Token": session.csrf_token},
     )
     assert ok.status_code == 200
+
+
+class _LogoutDuringRotationStore(InMemorySessionStore):
+    """Deletes the old session just before the swap, like a concurrent logout or block."""
+
+    async def replace(
+        self, old_hash: str, new_hash: str, data: SessionData, ttl_seconds: int
+    ) -> bool:
+        await self.delete(old_hash)
+        return await super().replace(old_hash, new_hash, data, ttl_seconds)
+
+
+async def test_concurrent_logout_during_rotation_is_401(
+    clock: FakeClock, users: FakeUserRepository
+) -> None:
+    store = _LogoutDuringRotationStore(clock)
+    async with http_client(build_app(clock, users, session_store=store)) as http:
+        session = await login(http, clock)
+        clock.now += DAY
+        response = await http.get(SESSION_PATH, headers=cookie_header(session.token))
+    assert response.status_code == 401
+    assert response.json()["error"]["code"] == "session_required"
+    assert set_cookies(response) == []
+    assert len(store) == 0  # the revoked session was not resurrected under a new token
 
 
 async def test_blocked_user_is_rejected_and_session_deleted(

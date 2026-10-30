@@ -42,6 +42,7 @@ from app.security.rate_limit import RateLimiter
 from app.security.session import (
     IssuedSession,
     SessionData,
+    SessionGoneError,
     SessionManager,
     StoreUnavailableError,
 )
@@ -147,7 +148,11 @@ async def get_current_session(
             await manager.revoke(token)
             clear_session_cookie(request)
             raise account_blocked()
-        rotated = await manager.rotate_if_due(loaded)
+        try:
+            rotated = await manager.rotate_if_due(loaded)
+        except SessionGoneError:
+            # Logged out / blocked concurrently: nothing to rotate, nothing to set.
+            raise session_required() from None
     except StoreUnavailableError:
         logger.error("Session store unavailable; failing closed")  # noqa: TRY400 - no details
         raise store_unavailable() from None

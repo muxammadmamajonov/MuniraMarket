@@ -14,7 +14,7 @@ from app.api.deps import get_user_repository
 from app.main import create_app
 from app.security.rate_limit import RateLimiter
 from app.security.service_auth import InMemoryNonceStore
-from app.security.session import SessionStore
+from app.security.session import REPLACE_IF_EXISTS_LUA, SessionStore
 from tests.conftest import FakeClock, FakeUserRepository, make_settings
 from tests.test_identity import FAKE_BOT_TOKEN, _base_fields, _user_json, sign_hmac
 
@@ -160,6 +160,16 @@ class FakeRedis:
             return True
         if name == "DEL":
             return sum(1 for k in args if self.data.pop(k, None) is not None)
+        if name == "EVAL":
+            # Only the session store's conditional swap is supported.
+            script, _numkeys, old_key, new_key, value, ttl = args
+            assert script == REPLACE_IF_EXISTS_LUA
+            if old_key not in self.data:
+                return 0
+            self.data[new_key] = value
+            self.ttls[new_key] = int(ttl)
+            del self.data[old_key]
+            return 1
         if name == "INCR":
             self.data[key] = str(int(self.data.get(key, "0")) + 1)
             return int(self.data[key])
@@ -176,6 +186,9 @@ class FakeRedis:
 
     async def delete(self, *keys: str) -> Any:
         return self._run("DEL", *keys)
+
+    async def eval(self, script: str, numkeys: int, *keys_and_args: str) -> Any:
+        return self._run("EVAL", script, numkeys, *keys_and_args)
 
     def pipeline(self, *, transaction: bool = True) -> "FakePipeline":
         assert transaction, "stores must use MULTI/EXEC transactions"

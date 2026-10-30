@@ -35,6 +35,23 @@ class StoreUnavailableError(Exception):
     """The backing store (Redis) failed. Callers fail closed with 503."""
 
 
+class SessionGoneError(Exception):
+    """The session was deleted (logout, block, login elsewhere) while a request was using it."""
+
+
+# Rotation must never resurrect a session that a concurrent logout/block just deleted, so the
+# swap is conditional on the old key still existing, in one atomic script.
+# KEYS[1] = old key, KEYS[2] = new key, ARGV[1] = record JSON, ARGV[2] = TTL seconds.
+REPLACE_IF_EXISTS_LUA: Final = """\
+if redis.call('EXISTS', KEYS[1]) == 0 then
+  return 0
+end
+redis.call('SET', KEYS[2], ARGV[1], 'EX', ARGV[2])
+redis.call('DEL', KEYS[1])
+return 1
+"""
+
+
 def new_token() -> str:
     return secrets.token_urlsafe(TOKEN_BYTES)
 
@@ -105,14 +122,17 @@ class SessionStore(Protocol):
 
     async def set(self, token_hash: str, data: SessionData, ttl_seconds: int) -> None: ...
 
-    async def expire(self, token_hash: str, ttl_seconds: int) -> None: ...
+    async def expire(self, token_hash: str, ttl_seconds: int) -> bool:
+        """Reset the TTL of an existing record; never creates one. ``False`` if it is gone."""
+        ...
 
     async def delete(self, token_hash: str) -> None: ...
 
     async def replace(
         self, old_hash: str, new_hash: str, data: SessionData, ttl_seconds: int
-    ) -> None:
-        """Atomically store ``data`` under ``new_hash`` and delete ``old_hash``."""
+    ) -> bool:
+        """Atomically store ``data`` under ``new_hash`` and delete ``old_hash``, but only if
+        ``old_hash`` still exists. Returns ``False`` (and writes nothing) otherwise."""
         ...
 
 
@@ -156,19 +176,25 @@ class InMemorySessionStore:
     async def set(self, token_hash: str, data: SessionData, ttl_seconds: int) -> None:
         self._records[token_hash] = (data.to_json(), self._clock() + ttl_seconds)
 
-    async def expire(self, token_hash: str, ttl_seconds: int) -> None:
+    async def expire(self, token_hash: str, ttl_seconds: int) -> bool:
         raw = self._live(token_hash)
-        if raw is not None:
-            self._records[token_hash] = (raw, self._clock() + ttl_seconds)
+        if raw is None:
+            return False
+        self._records[token_hash] = (raw, self._clock() + ttl_seconds)
+        return True
 
     async def delete(self, token_hash: str) -> None:
         self._records.pop(token_hash, None)
 
     async def replace(
         self, old_hash: str, new_hash: str, data: SessionData, ttl_seconds: int
-    ) -> None:
-        await self.set(new_hash, data, ttl_seconds)
-        await self.delete(old_hash)
+    ) -> bool:
+        # No await between the check and the writes, so this is atomic on the event loop.
+        if self._live(old_hash) is None:
+            return False
+        self._records[new_hash] = (data.to_json(), self._clock() + ttl_seconds)
+        del self._records[old_hash]
+        return True
 
 
 class RedisSessionStore:
@@ -197,9 +223,10 @@ class RedisSessionStore:
         except RedisError:
             raise StoreUnavailableError from None
 
-    async def expire(self, token_hash: str, ttl_seconds: int) -> None:
+    async def expire(self, token_hash: str, ttl_seconds: int) -> bool:
+        # EXPIRE on a missing key is a no-op returning 0: it never recreates a deleted session.
         try:
-            await self._client.expire(self._key(token_hash), ttl_seconds)
+            return bool(await self._client.expire(self._key(token_hash), ttl_seconds))
         except RedisError:
             raise StoreUnavailableError from None
 
@@ -211,14 +238,19 @@ class RedisSessionStore:
 
     async def replace(
         self, old_hash: str, new_hash: str, data: SessionData, ttl_seconds: int
-    ) -> None:
+    ) -> bool:
         try:
-            async with self._client.pipeline(transaction=True) as pipe:
-                pipe.set(self._key(new_hash), data.to_json(), ex=ttl_seconds)
-                pipe.delete(self._key(old_hash))
-                await pipe.execute()
+            swapped = await self._client.eval(
+                REPLACE_IF_EXISTS_LUA,
+                2,
+                self._key(old_hash),
+                self._key(new_hash),
+                data.to_json(),
+                str(ttl_seconds),
+            )
         except RedisError:
             raise StoreUnavailableError from None
+        return bool(int(swapped))
 
 
 @dataclass(frozen=True, slots=True)
@@ -295,7 +327,8 @@ class SessionManager:
         if remaining <= 0:
             await self._store.delete(token_hash)
             return None
-        await self._store.expire(token_hash, min(self._idle_ttl, remaining))
+        if not await self._store.expire(token_hash, min(self._idle_ttl, remaining)):
+            return None  # deleted concurrently
         return LoadedSession(token=token, data=data, absolute_remaining_seconds=remaining)
 
     async def peek(self, token: str) -> SessionData | None:
@@ -305,16 +338,21 @@ class SessionManager:
         return await self._store.get(hash_token(token))
 
     async def rotate_if_due(self, loaded: LoadedSession) -> IssuedSession | None:
-        """Swap the token once ``rotate_after`` has passed; the CSRF token is kept."""
+        """Swap the token once ``rotate_after`` has passed; the CSRF token is kept.
+
+        Raises :class:`SessionGoneError` if the session was deleted since it was loaded.
+        """
         now = self._now()
         if now - loaded.data.last_rotated_at < self._rotate_after:
             return None
         data = replace(loaded.data, last_rotated_at=now)
         token = new_token()
         remaining = loaded.absolute_remaining_seconds
-        await self._store.replace(
+        swapped = await self._store.replace(
             hash_token(loaded.token), hash_token(token), data, min(self._idle_ttl, remaining)
         )
+        if not swapped:
+            raise SessionGoneError
         return IssuedSession(token=token, data=data, max_age_seconds=remaining)
 
     async def revoke(self, token: str) -> None:

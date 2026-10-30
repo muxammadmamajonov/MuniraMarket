@@ -11,9 +11,11 @@ import pytest
 from redis.asyncio import Redis
 
 from app.security.session import (
+    REPLACE_IF_EXISTS_LUA,
     InMemorySessionStore,
     RedisSessionStore,
     SessionData,
+    SessionGoneError,
     SessionManager,
     StoreUnavailableError,
     hash_token,
@@ -165,6 +167,40 @@ async def test_rotation_after_threshold(manager: SessionManager, clock: FakeCloc
     assert await manager.load(rotated.token) is not None
 
 
+@pytest.mark.parametrize("backend", ["memory", "redis"])
+async def test_rotation_never_resurrects_a_revoked_session(clock: FakeClock, backend: str) -> None:
+    fake = FakeRedis()
+    store = (
+        InMemorySessionStore(clock)
+        if backend == "memory"
+        else RedisSessionStore(cast("Redis", fake))
+    )
+    manager = _manager(store, clock)
+    token, _ = await _create(manager)
+    clock.now += ROTATE
+    loaded = await manager.load(token)
+    assert loaded is not None
+    await manager.revoke(token)  # concurrent logout / block between load and rotation
+    with pytest.raises(SessionGoneError):
+        await manager.rotate_if_due(loaded)
+    if isinstance(store, InMemorySessionStore):
+        assert len(store) == 0
+    else:
+        assert fake.data == {}
+
+
+async def test_touch_never_recreates_a_deleted_session(
+    store: InMemorySessionStore, manager: SessionManager
+) -> None:
+    token, _ = await _create(manager)
+    await manager.revoke(token)
+    assert await store.expire(hash_token(token), IDLE) is False
+    assert len(store) == 0
+    fake = FakeRedis()
+    assert await RedisSessionStore(cast("Redis", fake)).expire("gone", IDLE) is False
+    assert fake.data == {}
+
+
 async def test_create_revokes_the_previous_session(manager: SessionManager) -> None:
     old, _ = await _create(manager)
     new, _ = await _create(manager, previous=old)
@@ -213,11 +249,18 @@ async def test_redis_store_commands(clock: FakeClock) -> None:
     assert rotated is not None
     new_key = f"mm:sess:{hash_token(rotated.token)}"
     assert fake.commands[2:] == [
-        ("MULTI",),
-        ("SET", new_key, rotated.data.to_json(), "EX", IDLE),
-        ("DEL", key),
-        ("EXEC",),
+        (
+            "EVAL",
+            REPLACE_IF_EXISTS_LUA,
+            2,
+            key,
+            new_key,
+            rotated.data.to_json(),
+            str(IDLE),
+        ),
     ]
+    assert key not in fake.data
+    assert fake.ttls[new_key] == IDLE
 
     fake.commands.clear()
     await manager.revoke(rotated.token)

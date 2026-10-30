@@ -4,6 +4,8 @@ The schema is built by the real Alembic migrations in a per-module schema that i
 afterwards (see ``tests/db_support.py``), so nothing else in the database is touched.
 """
 
+import uuid
+
 import pytest
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
