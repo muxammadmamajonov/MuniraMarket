@@ -1,11 +1,13 @@
 import type { NextConfig } from 'next';
 
 /**
- * Security headers.
+ * Security headers that do not depend on the request.
  *
- * Deliberately NOT set: `X-Frame-Options` and CSP `frame-ancestors`. Telegram Web opens Mini Apps
- * inside an iframe, so framing restrictions would break the app there. Revisit with an explicit
- * allow-list if Telegram documents stable embedding origins.
+ * The Content-Security-Policy is NOT set here: it needs a per-request nonce, so `src/proxy.ts`
+ * builds it (see `src/lib/csp.ts`). That policy also owns framing: `frame-ancestors` allows only
+ * this origin and Telegram (`https://web.telegram.org`, `https://*.telegram.org`), because
+ * Telegram Web embeds Mini Apps in an iframe. `X-Frame-Options` is deliberately not set; it cannot
+ * express that allow-list and would break the Mini App in Telegram Web.
  */
 const securityHeaders = [
   { key: 'X-Content-Type-Options', value: 'nosniff' },
