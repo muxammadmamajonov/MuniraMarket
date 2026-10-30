@@ -35,8 +35,31 @@ def run_migrations_offline() -> None:
         context.run_migrations()
 
 
-def _do_run_migrations(connection: Connection) -> None:
-    context.configure(connection=connection, target_metadata=target_metadata, compare_type=True)
+def _not_version_table(
+    _obj: object, name: str | None, type_: str, _reflected: bool, _compare_to: object
+) -> bool:
+    return not (type_ == "table" and name == "alembic_version")
+
+
+def _do_run_migrations(connection: Connection, schema: str | None = None) -> None:
+    if schema is None:
+        context.configure(connection=connection, target_metadata=target_metadata, compare_type=True)
+    else:
+        # Pin everything to ``schema`` instead of relying on search_path visibility: the version
+        # table, every unqualified table/index/enum (schema_translate_map also makes the enums'
+        # ``checkfirst`` look in ``schema`` only), and autogenerate comparisons. Otherwise a
+        # migrated ``public`` later on the search_path is mistaken for this schema's state.
+        connection.execution_options(schema_translate_map={None: schema})
+        context.configure(
+            connection=connection,
+            target_metadata=target_metadata,
+            compare_type=True,
+            version_table_schema=schema,
+            include_schemas=False,
+            # The version table now has an explicit schema, so autogenerate would no longer
+            # recognise it as Alembic's own when comparing the (default) schema.
+            include_object=_not_version_table,
+        )
     with context.begin_transaction():
         context.run_migrations()
 
@@ -51,12 +74,13 @@ async def run_migrations_online() -> None:
 
 
 # Programmatic use (integration tests): the caller hands over an open synchronous connection via
-# ``config.attributes["connection"]`` (inside ``AsyncConnection.run_sync``), so a test can target
-# its own schema through that connection's search_path. Without it the behaviour is unchanged.
+# ``config.attributes["connection"]`` (inside ``AsyncConnection.run_sync``) and the schema to
+# migrate via ``config.attributes["schema"]``, so a test owns its schema completely, whatever
+# else exists in the database. Without them the behaviour is unchanged.
 _external_connection: Connection | None = config.attributes.get("connection")
 
 if _external_connection is not None:
-    _do_run_migrations(_external_connection)
+    _do_run_migrations(_external_connection, config.attributes.get("schema"))
 elif context.is_offline_mode():
     run_migrations_offline()
 else:
