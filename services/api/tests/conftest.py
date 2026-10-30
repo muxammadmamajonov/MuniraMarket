@@ -38,6 +38,8 @@ def make_settings(**overrides: Any) -> Settings:
         "service_auth_keys": f"{TEST_KEY_ID}:{TEST_SECRET}",
         "telegram_bot_id": TEST_BOT_ID,
         "telegram_environment": "test",
+        # Required in staging/production; harmless elsewhere. A private (RFC 1918) address.
+        "forwarded_allow_ips": "10.20.0.2",
     }
     values.update(overrides)
     # model_validate bypasses the process environment and any local .env file.

@@ -30,6 +30,10 @@ AUTH_LOGIN: Final = RateLimitRule("auth_login", 10, 60)  # per IP
 AUTH_SESSION: Final = RateLimitRule("auth_session", 60, 60)  # per IP
 CART_READ: Final = RateLimitRule("cart_read", 120, 60)  # per user
 CART_WRITE: Final = RateLimitRule("cart_write", 60, 60)  # per user
+# Per-IP ceilings checked before any session or database work, so unauthenticated floods are
+# cut off cheaply (ADR 0007).
+CART_IP: Final = RateLimitRule("cart_ip", 300, 60)  # per IP, every /cart route
+CATALOG_IP: Final = RateLimitRule("catalog_ip", 300, 60)  # per IP, public catalog reads
 
 
 @dataclass(frozen=True, slots=True)

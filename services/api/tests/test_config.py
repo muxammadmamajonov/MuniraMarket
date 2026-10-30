@@ -201,7 +201,70 @@ def test_session_defaults() -> None:
     assert settings.session_rotate_after_seconds == 86400
     assert settings.csrf_trusted_origins == []
     assert settings.telegram_login_widget_enabled is False
-    assert settings.telegram_login_max_age_seconds == 86400
+    assert settings.telegram_login_max_age_seconds == 600
+    assert settings.session_rotation_grace_seconds == 60
+
+
+@pytest.mark.parametrize("grace", [0, 1, 300])
+def test_rotation_grace_bounds_accepted(grace: int) -> None:
+    assert make_settings(session_rotation_grace_seconds=grace).session_rotation_grace_seconds == (
+        grace
+    )
+
+
+@pytest.mark.parametrize("grace", [-1, 301, 86400])
+def test_rotation_grace_bounds_rejected(grace: int) -> None:
+    with pytest.raises(ValidationError, match="SESSION_ROTATION_GRACE_SECONDS"):
+        make_settings(session_rotation_grace_seconds=grace)
+
+
+def test_forwarded_allow_ips_parsing() -> None:
+    settings = make_settings(forwarded_allow_ips=" 10.0.0.2 , 172.16.0.0/12,::1, fd00::/8 ")
+    assert settings.forwarded_allow_ips == ["10.0.0.2", "172.16.0.0/12", "::1", "fd00::/8"]
+    # Unset is fine locally: uvicorn then trusts only loopback.
+    assert make_settings(forwarded_allow_ips="").forwarded_allow_ips == []
+    assert make_settings(app_env="development", forwarded_allow_ips="*").forwarded_allow_ips == [
+        "*"
+    ]
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        "proxy.internal",  # names are not resolved by uvicorn's trust check
+        "10.0.0.1/8",  # host bits set: uvicorn would silently treat it as a literal
+        "10.0.0.300",
+        "10.0.0.2,unix:/tmp/sock",
+    ],
+)
+def test_forwarded_allow_ips_must_be_ips_or_networks(value: str) -> None:
+    with pytest.raises(ValidationError, match="FORWARDED_ALLOW_IPS entry"):
+        make_settings(forwarded_allow_ips=value)
+
+
+@pytest.mark.parametrize("app_env", ["staging", "production"])
+def test_forwarded_allow_ips_required_and_not_wildcard_when_deployed(app_env: str) -> None:
+    with pytest.raises(ValidationError, match=r"FORWARDED_ALLOW_IPS .*required"):
+        make_settings(app_env=app_env, forwarded_allow_ips="", **DEPLOYED)
+    with pytest.raises(ValidationError, match="FORWARDED_ALLOW_IPS must not contain"):
+        make_settings(app_env=app_env, forwarded_allow_ips="10.0.0.2,*", **DEPLOYED)
+    settings = make_settings(app_env=app_env, forwarded_allow_ips="10.0.0.2", **DEPLOYED)
+    assert settings.forwarded_allow_ips == ["10.0.0.2"]
+
+
+def test_forwarded_allow_ips_reads_the_uvicorn_variable(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The API validates exactly the variable uvicorn reads (no separate setting to drift)."""
+    monkeypatch.setenv("FORWARDED_ALLOW_IPS", "10.9.8.7")
+    values = {
+        "app_env": "test",
+        "database_url": "postgresql+asyncpg://fake:fake-password@127.0.0.1:1/fake",
+        "redis_url": "redis://localhost:6379/0",
+        "service_auth_keys": f"k:{'x' * 40}",
+        "telegram_bot_id": 1,
+    }
+    for name, value in values.items():
+        monkeypatch.setenv(name.upper(), str(value))
+    assert Settings(_env_file=None).forwarded_allow_ips == ["10.9.8.7"]
 
 
 @pytest.mark.parametrize("app_env", ["development", "test"])

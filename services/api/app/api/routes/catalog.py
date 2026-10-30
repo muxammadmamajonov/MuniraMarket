@@ -1,10 +1,16 @@
-"""Public catalog (no authentication): categories and products."""
+"""Public catalog (no authentication): categories and products.
+
+Successful responses are ``Cache-Control: public, max-age=60``. Every route is rate limited per
+IP (``catalog_ip``) before any database work; a ``429`` is ``no-store`` so no shared cache keeps
+serving it.
+"""
 
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Path, Query, Response
 from pydantic import StringConstraints
 
+from app.api.auth_deps import rate_limit
 from app.api.deps import SessionDep
 from app.core.errors import ApiError, error_responses
 from app.repositories.catalog import (
@@ -15,6 +21,7 @@ from app.repositories.catalog import (
     total_pages,
 )
 from app.schemas.catalog import CategoryNode, CategoryTree, ProductDetail, ProductPage
+from app.security.rate_limit import CATALOG_IP
 
 MAX_PAGE_SIZE = 48
 DEFAULT_PAGE_SIZE = 24
@@ -26,7 +33,14 @@ async def public_cache(response: Response) -> None:
     response.headers["Cache-Control"] = "public, max-age=60"
 
 
-router = APIRouter(tags=["catalog"], dependencies=[Depends(public_cache)])
+# Module-level so tests can replace this exact dependency object in ``dependency_overrides``.
+CATALOG_IP_LIMIT = rate_limit(
+    CATALOG_IP.scope, CATALOG_IP.limit, CATALOG_IP.window_seconds, key="ip"
+)
+
+router = APIRouter(
+    tags=["catalog"], dependencies=[Depends(CATALOG_IP_LIMIT), Depends(public_cache)]
+)
 
 
 def get_catalog_repository(session: SessionDep) -> CatalogRepository:
@@ -39,7 +53,7 @@ CatalogRepositoryDep = Annotated[CatalogRepository, Depends(get_catalog_reposito
 SearchText = Annotated[str, StringConstraints(strip_whitespace=True, min_length=2, max_length=100)]
 
 
-@router.get("/categories", response_model=CategoryTree)
+@router.get("/categories", response_model=CategoryTree, responses=error_responses(429, 503))
 async def list_categories(catalog: CatalogRepositoryDep) -> CategoryTree:
     """Active categories as a tree. An inactive category hides its whole subtree."""
     records = await catalog.list_category_tree()
@@ -49,7 +63,7 @@ async def list_categories(catalog: CatalogRepositoryDep) -> CategoryTree:
 @router.get(
     "/products",
     response_model=ProductPage,
-    responses=error_responses(404, 422),
+    responses=error_responses(404, 422, 429, 503),
 )
 async def list_products(
     catalog: CatalogRepositoryDep,
@@ -91,7 +105,7 @@ async def list_products(
 @router.get(
     "/products/{slug}",
     response_model=ProductDetail,
-    responses=error_responses(404, 422),
+    responses=error_responses(404, 422, 429, 503),
 )
 async def get_product(
     slug: Annotated[str, Path(min_length=1, max_length=160)],

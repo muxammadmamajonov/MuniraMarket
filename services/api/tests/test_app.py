@@ -121,6 +121,24 @@ async def test_openapi_enabled_in_test_env(client: httpx.AsyncClient) -> None:
     assert "/api/v1/internal/telegram/session" in paths
 
 
+async def test_openapi_documents_health_models(client: httpx.AsyncClient) -> None:
+    spec = (await client.get("/api/v1/openapi.json")).json()
+    paths, schemas = spec["paths"], spec["components"]["schemas"]
+
+    def ref(path: str, status: str) -> str:
+        content = paths[path]["get"]["responses"][status]["content"]
+        return str(content["application/json"]["schema"]["$ref"])
+
+    assert ref("/api/v1/health", "200").endswith("/HealthResponse")
+    assert ref("/api/v1/health/ready", "200").endswith("/ReadinessResponse")
+    assert ref("/api/v1/health/ready", "503").endswith("/ReadinessResponse")
+    health = schemas["HealthResponse"]
+    assert health["required"] == ["status", "service", "version"]
+    assert health["properties"]["status"]["const"] == "ok"
+    assert health["properties"]["service"]["const"] == "core-api"
+    assert schemas["ReadinessResponse"]["properties"]["status"]["enum"] == ["ok", "unavailable"]
+
+
 @pytest.mark.parametrize("app_env", ["staging", "production"])
 async def test_openapi_disabled_in_staging_and_production(app_env: str) -> None:
     settings = make_settings(

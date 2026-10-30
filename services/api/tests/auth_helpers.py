@@ -1,5 +1,6 @@
 """Shared helpers for the session / CSRF / rate-limit tests (not collected by pytest)."""
 
+import json
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
@@ -14,7 +15,7 @@ from app.api.deps import get_user_repository
 from app.main import create_app
 from app.security.rate_limit import RateLimiter
 from app.security.service_auth import InMemoryNonceStore
-from app.security.session import REPLACE_IF_EXISTS_LUA, SessionStore
+from app.security.session import ROTATE_SESSION_LUA, SessionStore
 from tests.conftest import FakeClock, FakeUserRepository, make_settings
 from tests.test_identity import FAKE_BOT_TOKEN, _base_fields, _user_json, sign_hmac
 
@@ -135,7 +136,7 @@ class FakeRedis:
         self.data: dict[str, str] = {}
         self.ttls: dict[str, int] = {}
 
-    def _run(self, name: str, *args: Any, **kwargs: Any) -> Any:  # noqa: PLR0911
+    def _run(self, name: str, *args: Any, **kwargs: Any) -> Any:  # noqa: PLR0911, PLR0912
         if self.fail:
             raise RedisConnectionError("fake outage")
         command: tuple[Any, ...] = (name, *args)
@@ -161,14 +162,27 @@ class FakeRedis:
         if name == "DEL":
             return sum(1 for k in args if self.data.pop(k, None) is not None)
         if name == "EVAL":
-            # Only the session store's conditional swap is supported.
-            script, _numkeys, old_key, new_key, value, ttl = args
-            assert script == REPLACE_IF_EXISTS_LUA
-            if old_key not in self.data:
+            # Only the session store's rotation script is supported; this mirrors it line by
+            # line (the real script runs in the TEST_REDIS_URL integration tests).
+            script, _numkeys, old_key, new_key, value, ttl, tombstone, grace = args
+            assert script == ROTATE_SESSION_LUA
+            current = self.data.get(old_key)
+            if current is None:
                 return 0
+            try:
+                record = json.loads(current)
+            except ValueError:
+                record = None
+            if isinstance(record, dict) and record.get("rotated_to") is not None:
+                return 2
             self.data[new_key] = value
             self.ttls[new_key] = int(ttl)
-            del self.data[old_key]
+            if int(grace) > 0:
+                self.data[old_key] = tombstone
+                self.ttls[old_key] = int(grace)
+            else:
+                del self.data[old_key]
+                self.ttls.pop(old_key, None)
             return 1
         if name == "INCR":
             self.data[key] = str(int(self.data.get(key, "0")) + 1)

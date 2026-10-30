@@ -6,8 +6,12 @@ whatever response leaves the app, including error envelopes. Otherwise a token r
 session dependency would be lost (and the user signed out) whenever the route then failed, for
 example with ``409 insufficient_stock`` or ``403 csrf_failed``.
 
-The middleware also marks auth responses and every response that carries a session cookie
-``Cache-Control: no-store``.
+That includes unhandled exceptions: Starlette's catch-all handler runs outside every user
+middleware, so the middleware turns them into the generic ``500 internal_error`` envelope itself,
+cookie included.
+
+The middleware also marks every response under the configured no-store paths (auth, cart) and
+every response that carries a session cookie ``Cache-Control: no-store``.
 """
 
 from typing import Any, Final
@@ -15,6 +19,8 @@ from typing import Any, Final
 from starlette.datastructures import MutableHeaders
 from starlette.requests import Request
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
+
+from app.core.errors import internal_error_response, log_unhandled_exception
 
 _STATE_KEY: Final = "mm_session_cookie"
 _EXPIRED: Final = "Thu, 01 Jan 1970 00:00:00 GMT"
@@ -43,27 +49,45 @@ def queue_session_cookie(request: Request, header_value: str) -> None:
     request.state.mm_session_cookie = header_value  # read back via scope["state"][_STATE_KEY]
 
 
+def _under(path: str, prefixes: tuple[str, ...]) -> bool:
+    """``path`` is one of ``prefixes`` or below it (``/cart`` covers ``/cart/items``, not
+    ``/carts``)."""
+    return any(path == prefix or path.startswith(f"{prefix}/") for prefix in prefixes)
+
+
 class SessionCookieMiddleware:
-    def __init__(self, app: ASGIApp, *, no_store_prefixes: tuple[str, ...] = ()) -> None:
+    def __init__(self, app: ASGIApp, *, no_store_paths: tuple[str, ...] = ()) -> None:
         self.app = app
-        self.no_store_prefixes = no_store_prefixes
+        self.no_store_paths = tuple(path.rstrip("/") for path in no_store_paths)
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         if scope["type"] != "http":
             await self.app(scope, receive, send)
             return
-        path: str = scope["path"]
-        no_store_path = path.startswith(self.no_store_prefixes) if self.no_store_prefixes else False
+        no_store_path = _under(scope["path"], self.no_store_paths)
+        response_started = False
 
-        async def send_with_cookie(message: Message) -> None:
+        async def send_with_cookie(message: Message, *, force_no_store: bool = False) -> None:
+            nonlocal response_started
             if message["type"] == "http.response.start":
+                response_started = True
                 state: dict[str, Any] = scope.get("state") or {}
                 cookie = state.get(_STATE_KEY)
-                if cookie is not None or no_store_path:
+                if cookie is not None or no_store_path or force_no_store:
                     headers = MutableHeaders(scope=message)
                     if cookie is not None:
                         headers.append("set-cookie", cookie)
                     headers["cache-control"] = "no-store"
             await send(message)
 
-        await self.app(scope, receive, send_with_cookie)
+        try:
+            await self.app(scope, receive, send_with_cookie)
+        except Exception as exc:
+            if response_started:
+                raise  # too late for an envelope; the server closes the connection
+            log_unhandled_exception(scope.get("method", ""), scope["path"], exc)
+
+            async def send_error(message: Message) -> None:
+                await send_with_cookie(message, force_no_store=True)
+
+            await internal_error_response()(scope, receive, send_error)

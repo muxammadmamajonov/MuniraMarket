@@ -22,9 +22,26 @@ every `set-cookie`, `retry-after` and `cache-control` header. Consequences:
 
 - the session cookie is first-party and host-only on the web origin;
 - CSP can stay `connect-src 'self'`, and no CORS is needed for the browser;
-- Core API sees the proxy as its peer. uvicorn runs with
-  `--proxy-headers --forwarded-allow-ips=<proxy address>` so `request.client.host` is the real
-  client for rate limiting; the API never parses `X-Forwarded-For` itself.
+- Core API sees the proxy as its peer. See "Client IP and proxy trust" below.
+
+### Client IP and proxy trust
+
+Per-IP rate limits key on `request.client.host`, which uvicorn derives; the API never parses
+`X-Forwarded-For` itself.
+
+- The image runs uvicorn with `--proxy-headers`. uvicorn reads `FORWARDED_ALLOW_IPS` from the
+  environment (comma-separated IPs/CIDRs; its own default is loopback). When the TCP peer is in
+  that list it takes the **right-most `X-Forwarded-For` entry that is not itself trusted** as the
+  client, so entries a client prepends cannot win.
+- The web proxy is the **only** trusted hop: `FORWARDED_ALLOW_IPS` lists its address(es) and
+  nothing else. Settings validate the same variable with `ipaddress` (strict, as uvicorn parses
+  it), refuse `*`, and require it to be non-empty in staging and production, so a deployment
+  cannot start without a deliberate value.
+- The web proxy forwards only an edge-provided client IP, never a browser-supplied
+  `X-Forwarded-For` (separate change in `apps/web`).
+- Server-side catalog fetches by the web server itself carry no forwarded IP and share the web
+  server's address in the per-IP catalog limit; they must forward the visitor's IP or stay well
+  below that limit.
 
 ### Session tokens and storage
 
@@ -74,13 +91,27 @@ JavaScript). Users of Telegram Web can use the website directly.
   whoever it belonged to (anti-fixation).
 - A request whose session was last rotated more than `SESSION_ROTATE_AFTER_SECONDS` ago (default
   24 h) gets a new token through `Set-Cookie` and keeps its CSRF token. The swap is one Lua
-  script that writes the new key and deletes the old one **only if the old key still exists**;
-  if a concurrent logout or block deleted it after the request loaded it, nothing is written and
-  the request fails with `401 session_required` (no revocation bypass). Rotation cookies are attached to every response,
-  including error responses, so a route that fails after the rotation does not sign the user out.
-  Two requests racing on the old token at the moment of rotation can see one `401`; a client that
-  gets an unexpected `401` while signed in should re-check `GET /auth/session` once before showing
-  the signed-out state.
+  script that runs **only if the old key still holds a live record**: it writes the new key and
+  rewrites the old key into a tombstone `{"rotated_to": "<new hash>"}` that expires after
+  `SESSION_ROTATION_GRACE_SECONDS` (default 60, allowed 0..300; 0 deletes the old key instead).
+  - Old key gone (a concurrent logout or block): nothing is written and the request fails with
+    `401 session_required` (no revocation bypass).
+  - Old key already a tombstone (a parallel request rotated first): nothing is written and the
+    request is served without rotating, so the session never forks into two live records.
+  - Grace period: requests the browser sent in parallel with the old cookie resolve through the
+    tombstone to the new record (one hop only, never a chain) and are served **without** another
+    rotation and **without** `Set-Cookie`, so they cannot overwrite the fresh cookie. After the
+    grace period the old token is simply unknown.
+  - Logout, blocking, a user mismatch and re-login revoke through either token: revoking via the
+    old token deletes the tombstone and the live record together; revoking via the new token
+    leaves a tombstone that resolves to nothing until it expires.
+- Rotation cookies are attached to every response, including error responses and the generic
+  `500` for unhandled exceptions (the cookie middleware produces that envelope itself, since
+  Starlette's catch-all handler runs outside every middleware), so a route that fails after the
+  rotation does not sign the user out.
+- A presented cookie that matches no session gets `401 session_required` **without** an expiring
+  `Set-Cookie`: it may be a request that raced a rotation, and clearing the cookie would wipe the
+  new one. Only logout and explicit revocation (blocked user, user mismatch) expire the cookie.
 - `POST /auth/logout` deletes the session and expires the cookie (`204`, idempotent).
 
 ### CSRF
@@ -111,14 +142,23 @@ returns `429 rate_limited` with `Retry-After` (seconds to the end of the window)
 | `auth_session` | `GET /auth/session`, `POST /logout` | 60 / 60 s  | IP      |
 | `cart_read`    | cart reads                          | 120 / 60 s | user id |
 | `cart_write`   | cart writes                         | 60 / 60 s  | user id |
+| `cart_ip`      | every `/cart` route                 | 300 / 60 s | IP      |
+| `catalog_ip`   | `GET /categories`, `/products`, `/products/{slug}` | 300 / 60 s | IP |
+
+`cart_ip` and `catalog_ip` run before the session lookup and any database work, so unauthenticated
+floods are cut off cheaply; the per-user cart limits still apply afterwards. A `429` is always
+`Cache-Control: no-store`, including on the otherwise publicly cached catalog. Because the catalog
+now consults Redis, a Redis outage makes it fail closed (`503`) like everything else. Search keeps
+its 2-character minimum (meaningful short Uzbek/Russian words); `pg_trgm` cannot use its index
+below 3 characters, so such queries scan the visible products, which the per-IP limit bounds.
 
 ### Fail closed
 
 If Redis errors while reading or writing sessions or rate-limit counters, the request fails with
 `503 service_unavailable`; it is never served unauthenticated or unlimited. Logs record only that
 the store was unavailable: tokens, CSRF tokens, token hashes, cookies and `initData` are never
-logged. Responses under `/api/v1/auth/` and every response carrying a session cookie are
-`Cache-Control: no-store`.
+logged. Every response under `/api/v1/auth` and `/api/v1/cart` (errors included) and every
+response carrying a session cookie is `Cache-Control: no-store`.
 
 ### Telegram Login Widget (website, feature flag)
 
@@ -128,8 +168,10 @@ render the widget and with which `TELEGRAM_BOT_USERNAME`. Enabling it requires
 `TELEGRAM_BOT_TOKEN` and `TELEGRAM_BOT_USERNAME` (settings validation), because the widget is
 signed with `HMAC-SHA256(key = SHA-256(bot_token))` over the sorted `key=value` lines of every
 field except `hash`. Only `id`, `first_name`, `last_name`, `username`, `photo_url`, `auth_date` and
-`hash` are accepted; `auth_date` may be at most `TELEGRAM_LOGIN_MAX_AGE_SECONDS` (default 86400)
-old and at most 60 s in the future. Note that configuring the bot token also switches Mini App
+`hash` are accepted; `auth_date` may be at most `TELEGRAM_LOGIN_MAX_AGE_SECONDS` (default 600)
+old and at most 60 s in the future. The website uses the widget's redirect flow, which posts the
+payload immediately after the user authorises, so ten minutes is ample and keeps the replay
+window for a leaked payload short; the value stays configurable. Note that configuring the bot token also switches Mini App
 `initData` verification from Ed25519 to the HMAC method (ADR 0004).
 
 ## Consequences

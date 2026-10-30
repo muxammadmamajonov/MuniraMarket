@@ -136,6 +136,7 @@ def create_app(
         idle_ttl_seconds=settings.session_idle_ttl_seconds,
         absolute_ttl_seconds=settings.session_absolute_ttl_seconds,
         rotate_after_seconds=settings.session_rotate_after_seconds,
+        rotation_grace_seconds=settings.session_rotation_grace_seconds,
     )
     app.state.rate_limiter = rate_limiter
     app.state.login_widget_verifier = build_login_widget_verifier(settings, clock)
@@ -157,9 +158,12 @@ def create_app(
             f"{API_PREFIX}/auth/telegram/login-widget": LOGIN_WIDGET_MAX_BODY_BYTES,
         },
     )
-    # Delivers queued session cookies on every response (errors included) and marks auth
-    # responses no-store.
-    app.add_middleware(SessionCookieMiddleware, no_store_prefixes=(f"{API_PREFIX}/auth/",))
+    # Outermost of our middleware: delivers queued session cookies on every response (errors and
+    # unhandled exceptions included) and marks auth and cart responses no-store.
+    app.add_middleware(
+        SessionCookieMiddleware,
+        no_store_paths=(f"{API_PREFIX}/auth", f"{API_PREFIX}/cart"),
+    )
 
     register_exception_handlers(app)
     app.include_router(api_router)

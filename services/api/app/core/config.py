@@ -1,5 +1,6 @@
 """Environment-driven settings, validated eagerly so a bad deployment fails at startup."""
 
+import ipaddress
 import re
 from functools import lru_cache
 from typing import Annotated, Literal, Self
@@ -21,6 +22,8 @@ _ASYNCPG_SCHEME = "postgresql+asyncpg"
 _DEFAULT_PORTS = {"http": 80, "https": 443}
 
 DAY_SECONDS = 24 * 60 * 60
+# A rotated-away token stays usable this long at most; it only has to cover in-flight requests.
+MAX_ROTATION_GRACE_SECONDS = 300
 
 
 def normalize_origin(value: str) -> str | None:
@@ -95,6 +98,9 @@ class Settings(BaseSettings):
     session_idle_ttl_seconds: int = 7 * DAY_SECONDS
     session_absolute_ttl_seconds: int = 30 * DAY_SECONDS
     session_rotate_after_seconds: int = DAY_SECONDS
+    # How long a rotated-away token keeps resolving to its successor (parallel requests that
+    # still carry the old cookie). 0 disables the grace period.
+    session_rotation_grace_seconds: int = 60
     # Origins allowed to send state-changing requests (CSRF Origin check). Normalised to
     # ``scheme://host[:port]``.
     csrf_trusted_origins: Annotated[list[str], NoDecode] = []
@@ -102,11 +108,21 @@ class Settings(BaseSettings):
     # Telegram Login Widget for the website. Off by default; needs the bot token and username.
     telegram_login_widget_enabled: bool = False
     telegram_bot_username: str | None = None
-    telegram_login_max_age_seconds: int = DAY_SECONDS
+    # The widget's redirect flow posts the signed payload right after the user authorises, so
+    # a short window is enough and limits how long a leaked payload can be replayed.
+    telegram_login_max_age_seconds: int = 600
 
-    @field_validator("cors_allowed_origins", "csrf_trusted_origins", mode="before")
+    # Peers whose X-Forwarded-For uvicorn trusts (``--proxy-headers``): the web proxy only, as
+    # comma-separated IPs/CIDRs. uvicorn reads this same FORWARDED_ALLOW_IPS variable; the API
+    # validates it here so a deployment cannot start without it. Unset in development/test means
+    # uvicorn's loopback default.
+    forwarded_allow_ips: Annotated[list[str], NoDecode] = []
+
+    @field_validator(
+        "cors_allowed_origins", "csrf_trusted_origins", "forwarded_allow_ips", mode="before"
+    )
     @classmethod
-    def _split_origins(cls, value: object) -> object:
+    def _split_comma_list(cls, value: object) -> object:
         if isinstance(value, str):
             return [item.strip() for item in value.split(",") if item.strip()]
         return value
@@ -126,6 +142,25 @@ class Settings(BaseSettings):
                 )
             normalized.append(origin)
         return normalized
+
+    @field_validator("forwarded_allow_ips")
+    @classmethod
+    def _check_forwarded_allow_ips(cls, value: list[str]) -> list[str]:
+        for position, entry in enumerate(value, start=1):
+            if entry == "*":
+                continue  # refused outside development/test by the model validator
+            try:
+                # strict, like uvicorn: "10.0.0.1/8" is not a network there but a literal
+                # that never matches, so it must not pass here either.
+                if "/" in entry:
+                    ipaddress.ip_network(entry)
+                else:
+                    ipaddress.ip_address(entry)
+            except ValueError:
+                raise ValueError(
+                    f"FORWARDED_ALLOW_IPS entry {position} must be an IP address or CIDR network"
+                ) from None
+        return value
 
     @field_validator("telegram_bot_username", mode="before")
     @classmethod
@@ -152,6 +187,15 @@ class Settings(BaseSettings):
     def _check_positive_durations(cls, value: int) -> int:
         if value <= 0:
             raise ValueError("session and login durations must be positive")
+        return value
+
+    @field_validator("session_rotation_grace_seconds")
+    @classmethod
+    def _check_rotation_grace(cls, value: int) -> int:
+        if not 0 <= value <= MAX_ROTATION_GRACE_SECONDS:
+            raise ValueError(
+                f"SESSION_ROTATION_GRACE_SECONDS must be between 0 and {MAX_ROTATION_GRACE_SECONDS}"
+            )
         return value
 
     @field_validator("database_url")
@@ -201,7 +245,18 @@ class Settings(BaseSettings):
             raise ValueError("TELEGRAM_BOT_ID must be a positive integer outside development")
         self._check_session_rules()
         self._check_login_widget_rules()
+        self._check_proxy_rules()
         return self
+
+    def _check_proxy_rules(self) -> None:
+        if self.app_env not in ("staging", "production"):
+            return
+        if not self.forwarded_allow_ips:
+            raise ValueError(
+                "FORWARDED_ALLOW_IPS (the web proxy's address) is required outside development"
+            )
+        if "*" in self.forwarded_allow_ips:
+            raise ValueError("FORWARDED_ALLOW_IPS must not contain '*' outside development")
 
     def _check_session_rules(self) -> None:
         deployed = self.app_env in ("staging", "production")

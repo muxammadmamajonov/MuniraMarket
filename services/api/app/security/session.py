@@ -5,8 +5,13 @@ as the storage key, so a leaked Redis dump does not contain usable session token
 records carry their own CSRF token and the timestamps needed for idle expiry, absolute expiry
 and periodic rotation; the policy lives in :class:`SessionManager`, storage behind the small
 :class:`SessionStore` protocol (Redis in deployed environments, in-memory in tests).
+
+Rotation leaves a short-lived tombstone ``{"rotated_to": "<new hash>"}`` under the old key, so
+requests the browser sent in parallel with the old cookie still resolve to the session during
+``SESSION_ROTATION_GRACE_SECONDS`` instead of failing (and racing the new cookie).
 """
 
+import enum
 import hashlib
 import json
 import logging
@@ -27,6 +32,7 @@ SESSION_KEY_PREFIX: Final = "mm:sess"
 TOKEN_BYTES: Final = 32
 # secrets.token_urlsafe(32) -> 43 URL-safe base64 characters.
 _TOKEN_RE = re.compile(r"[A-Za-z0-9_-]{43}")
+_HASH_RE = re.compile(r"[0-9a-f]{64}")
 
 AuthMethod = Literal["telegram_init_data", "telegram_login_widget"]
 
@@ -39,15 +45,36 @@ class SessionGoneError(Exception):
     """The session was deleted (logout, block, login elsewhere) while a request was using it."""
 
 
+class SwapResult(enum.IntEnum):
+    """Outcome of :meth:`SessionStore.replace` (the value is what the Lua script returns)."""
+
+    GONE = 0  # the old key no longer exists: logged out / blocked concurrently
+    SWAPPED = 1  # new record written, old key turned into a tombstone (or deleted)
+    ALREADY_ROTATED = 2  # a parallel request rotated first: the old key is a tombstone
+
+
 # Rotation must never resurrect a session that a concurrent logout/block just deleted, so the
-# swap is conditional on the old key still existing, in one atomic script.
-# KEYS[1] = old key, KEYS[2] = new key, ARGV[1] = record JSON, ARGV[2] = TTL seconds.
-REPLACE_IF_EXISTS_LUA: Final = """\
-if redis.call('EXISTS', KEYS[1]) == 0 then
+# swap is conditional on the old key still existing, in one atomic script. The old key is not
+# deleted but rewritten into a tombstone pointing at the new key for the grace period (a grace of
+# 0 deletes it). An old key that already is a tombstone is left alone: a parallel request
+# rotated first, and rotating again would fork the session into two live records.
+# KEYS[1] = old key, KEYS[2] = new key, ARGV[1] = record JSON, ARGV[2] = TTL seconds,
+# ARGV[3] = tombstone JSON, ARGV[4] = grace seconds.
+ROTATE_SESSION_LUA: Final = """\
+local current = redis.call('GET', KEYS[1])
+if not current then
   return 0
 end
+local ok, record = pcall(cjson.decode, current)
+if ok and type(record) == 'table' and record['rotated_to'] ~= nil then
+  return 2
+end
 redis.call('SET', KEYS[2], ARGV[1], 'EX', ARGV[2])
-redis.call('DEL', KEYS[1])
+if tonumber(ARGV[4]) > 0 then
+  redis.call('SET', KEYS[1], ARGV[3], 'EX', ARGV[4])
+else
+  redis.call('DEL', KEYS[1])
+end
 return 1
 """
 
@@ -115,10 +142,23 @@ class SessionData:
         )
 
 
+@dataclass(frozen=True, slots=True)
+class RotatedTombstone:
+    """What a rotated-away token's key holds during the grace period."""
+
+    rotated_to: str  # sha256 hex of the successor token
+
+    def to_json(self) -> str:
+        return json.dumps({"rotated_to": self.rotated_to}, separators=(",", ":"))
+
+
+StoredRecord = SessionData | RotatedTombstone
+
+
 class SessionStore(Protocol):
     """Session records keyed by ``sha256(token)`` hex. Raise :class:`StoreUnavailableError`."""
 
-    async def get(self, token_hash: str) -> SessionData | None: ...
+    async def get(self, token_hash: str) -> StoredRecord | None: ...
 
     async def set(self, token_hash: str, data: SessionData, ttl_seconds: int) -> None: ...
 
@@ -126,20 +166,32 @@ class SessionStore(Protocol):
         """Reset the TTL of an existing record; never creates one. ``False`` if it is gone."""
         ...
 
-    async def delete(self, token_hash: str) -> None: ...
+    async def delete(self, *token_hashes: str) -> None: ...
 
     async def replace(
-        self, old_hash: str, new_hash: str, data: SessionData, ttl_seconds: int
-    ) -> bool:
-        """Atomically store ``data`` under ``new_hash`` and delete ``old_hash``, but only if
-        ``old_hash`` still exists. Returns ``False`` (and writes nothing) otherwise."""
+        self,
+        old_hash: str,
+        new_hash: str,
+        data: SessionData,
+        ttl_seconds: int,
+        grace_seconds: int,
+    ) -> SwapResult:
+        """Atomically store ``data`` under ``new_hash`` and turn ``old_hash`` into a tombstone
+        pointing at it for ``grace_seconds`` (deleted when 0), but only if ``old_hash`` still
+        holds a live record. Writes nothing for ``GONE`` and ``ALREADY_ROTATED``."""
         ...
 
 
-def _decode(raw: str | bytes | None) -> SessionData | None:
+def _decode(raw: str | bytes | None) -> StoredRecord | None:
     if raw is None:
         return None
     try:
+        payload = json.loads(raw)
+        if isinstance(payload, dict) and set(payload) == {"rotated_to"}:
+            rotated_to = payload["rotated_to"]
+            if not isinstance(rotated_to, str) or not _HASH_RE.fullmatch(rotated_to):
+                raise ValueError("malformed tombstone")  # noqa: TRY301
+            return RotatedTombstone(rotated_to)
         return SessionData.from_json(raw)
     except (ValueError, TypeError):
         logger.warning("Discarding malformed session record")
@@ -166,12 +218,12 @@ class InMemorySessionStore:
     def __len__(self) -> int:
         return sum(1 for key in list(self._records) if self._live(key) is not None)
 
-    async def get(self, token_hash: str) -> SessionData | None:
+    async def get(self, token_hash: str) -> StoredRecord | None:
         raw = self._live(token_hash)
-        data = _decode(raw)
-        if raw is not None and data is None:
+        record = _decode(raw)
+        if raw is not None and record is None:
             del self._records[token_hash]
-        return data
+        return record
 
     async def set(self, token_hash: str, data: SessionData, ttl_seconds: int) -> None:
         self._records[token_hash] = (data.to_json(), self._clock() + ttl_seconds)
@@ -183,18 +235,32 @@ class InMemorySessionStore:
         self._records[token_hash] = (raw, self._clock() + ttl_seconds)
         return True
 
-    async def delete(self, token_hash: str) -> None:
-        self._records.pop(token_hash, None)
+    async def delete(self, *token_hashes: str) -> None:
+        for token_hash in token_hashes:
+            self._records.pop(token_hash, None)
 
     async def replace(
-        self, old_hash: str, new_hash: str, data: SessionData, ttl_seconds: int
-    ) -> bool:
-        # No await between the check and the writes, so this is atomic on the event loop.
-        if self._live(old_hash) is None:
-            return False
-        self._records[new_hash] = (data.to_json(), self._clock() + ttl_seconds)
-        del self._records[old_hash]
-        return True
+        self,
+        old_hash: str,
+        new_hash: str,
+        data: SessionData,
+        ttl_seconds: int,
+        grace_seconds: int,
+    ) -> SwapResult:
+        # Mirrors ROTATE_SESSION_LUA. No await between the check and the writes, so this is
+        # atomic on the event loop.
+        raw = self._live(old_hash)
+        if raw is None:
+            return SwapResult.GONE
+        if isinstance(_decode(raw), RotatedTombstone):
+            return SwapResult.ALREADY_ROTATED
+        now = self._clock()
+        self._records[new_hash] = (data.to_json(), now + ttl_seconds)
+        if grace_seconds > 0:
+            self._records[old_hash] = (RotatedTombstone(new_hash).to_json(), now + grace_seconds)
+        else:
+            del self._records[old_hash]
+        return SwapResult.SWAPPED
 
 
 class RedisSessionStore:
@@ -207,15 +273,15 @@ class RedisSessionStore:
     def _key(self, token_hash: str) -> str:
         return f"{self._prefix}:{token_hash}"
 
-    async def get(self, token_hash: str) -> SessionData | None:
+    async def get(self, token_hash: str) -> StoredRecord | None:
         try:
             raw = await self._client.get(self._key(token_hash))
         except RedisError:
             raise StoreUnavailableError from None
-        data = _decode(raw)
-        if raw is not None and data is None:
+        record = _decode(raw)
+        if raw is not None and record is None:
             await self.delete(token_hash)
-        return data
+        return record
 
     async def set(self, token_hash: str, data: SessionData, ttl_seconds: int) -> None:
         try:
@@ -230,27 +296,34 @@ class RedisSessionStore:
         except RedisError:
             raise StoreUnavailableError from None
 
-    async def delete(self, token_hash: str) -> None:
+    async def delete(self, *token_hashes: str) -> None:
         try:
-            await self._client.delete(self._key(token_hash))
+            await self._client.delete(*(self._key(token_hash) for token_hash in token_hashes))
         except RedisError:
             raise StoreUnavailableError from None
 
     async def replace(
-        self, old_hash: str, new_hash: str, data: SessionData, ttl_seconds: int
-    ) -> bool:
+        self,
+        old_hash: str,
+        new_hash: str,
+        data: SessionData,
+        ttl_seconds: int,
+        grace_seconds: int,
+    ) -> SwapResult:
         try:
-            swapped = await self._client.eval(
-                REPLACE_IF_EXISTS_LUA,
+            result = await self._client.eval(
+                ROTATE_SESSION_LUA,
                 2,
                 self._key(old_hash),
                 self._key(new_hash),
                 data.to_json(),
                 str(ttl_seconds),
+                RotatedTombstone(new_hash).to_json(),
+                str(grace_seconds),
             )
         except RedisError:
             raise StoreUnavailableError from None
-        return bool(int(swapped))
+        return SwapResult(int(result))
 
 
 @dataclass(frozen=True, slots=True)
@@ -267,6 +340,16 @@ class LoadedSession:
     token: str
     data: SessionData
     absolute_remaining_seconds: int
+    # True when ``token`` was already rotated away and was resolved through its tombstone: the
+    # request is served, but the session is not rotated again and no cookie is sent.
+    via_tombstone: bool = False
+
+
+@dataclass(frozen=True, slots=True)
+class _Resolved:
+    data: SessionData
+    live_hash: str  # where the record lives
+    hashes: tuple[str, ...]  # every key the presented token reached (tombstone, then live)
 
 
 class SessionManager:
@@ -280,12 +363,14 @@ class SessionManager:
         idle_ttl_seconds: int,
         absolute_ttl_seconds: int,
         rotate_after_seconds: int,
+        rotation_grace_seconds: int = 0,
     ) -> None:
         self._store = store
         self._clock = clock
         self._idle_ttl = idle_ttl_seconds
         self._absolute_ttl = absolute_ttl_seconds
         self._rotate_after = rotate_after_seconds
+        self._grace = rotation_grace_seconds
 
     def _now(self) -> int:
         return int(self._clock())
@@ -315,46 +400,82 @@ class SessionManager:
         await self._store.set(hash_token(token), data, min(self._idle_ttl, self._absolute_ttl))
         return IssuedSession(token=token, data=data, max_age_seconds=self._absolute_ttl)
 
-    async def load(self, token: str) -> LoadedSession | None:
-        """Look the session up and slide its idle expiry. ``None`` if unknown or expired."""
+    async def _resolve(self, token: str) -> _Resolved | None:
+        """Find the live record for ``token``, following at most one tombstone. Never a chain:
+        a tombstone pointing at another tombstone resolves to nothing."""
         if not is_well_formed_token(token):
             return None
         token_hash = hash_token(token)
-        data = await self._store.get(token_hash)
-        if data is None:
+        record = await self._store.get(token_hash)
+        if isinstance(record, RotatedTombstone):
+            successor = await self._store.get(record.rotated_to)
+            if not isinstance(successor, SessionData):
+                return None
+            return _Resolved(successor, record.rotated_to, (token_hash, record.rotated_to))
+        if record is None:
             return None
-        remaining = data.created_at + self._absolute_ttl - self._now()
+        return _Resolved(record, token_hash, (token_hash,))
+
+    async def load(self, token: str) -> LoadedSession | None:
+        """Look the session up and slide its idle expiry. ``None`` if unknown or expired."""
+        resolved = await self._resolve(token)
+        if resolved is None:
+            return None
+        remaining = resolved.data.created_at + self._absolute_ttl - self._now()
         if remaining <= 0:
-            await self._store.delete(token_hash)
+            await self._store.delete(*resolved.hashes)
             return None
-        if not await self._store.expire(token_hash, min(self._idle_ttl, remaining)):
+        if not await self._store.expire(resolved.live_hash, min(self._idle_ttl, remaining)):
             return None  # deleted concurrently
-        return LoadedSession(token=token, data=data, absolute_remaining_seconds=remaining)
+        return LoadedSession(
+            token=token,
+            data=resolved.data,
+            absolute_remaining_seconds=remaining,
+            via_tombstone=len(resolved.hashes) > 1,
+        )
 
     async def peek(self, token: str) -> SessionData | None:
         """Look the session up without sliding its expiry (used by logout)."""
-        if not is_well_formed_token(token):
-            return None
-        return await self._store.get(hash_token(token))
+        resolved = await self._resolve(token)
+        return resolved.data if resolved is not None else None
 
     async def rotate_if_due(self, loaded: LoadedSession) -> IssuedSession | None:
         """Swap the token once ``rotate_after`` has passed; the CSRF token is kept.
 
-        Raises :class:`SessionGoneError` if the session was deleted since it was loaded.
+        Returns ``None`` when no rotation is due, when ``loaded`` came through a tombstone, and
+        when a parallel request rotated the same token first (that request's response carries
+        the cookie). Raises :class:`SessionGoneError` if the session was deleted since it was
+        loaded.
         """
+        if loaded.via_tombstone:
+            return None
         now = self._now()
         if now - loaded.data.last_rotated_at < self._rotate_after:
             return None
         data = replace(loaded.data, last_rotated_at=now)
         token = new_token()
         remaining = loaded.absolute_remaining_seconds
-        swapped = await self._store.replace(
-            hash_token(loaded.token), hash_token(token), data, min(self._idle_ttl, remaining)
+        result = await self._store.replace(
+            hash_token(loaded.token),
+            hash_token(token),
+            data,
+            min(self._idle_ttl, remaining),
+            min(self._grace, remaining),
         )
-        if not swapped:
+        if result is SwapResult.GONE:
             raise SessionGoneError
+        if result is SwapResult.ALREADY_ROTATED:
+            return None
         return IssuedSession(token=token, data=data, max_age_seconds=remaining)
 
     async def revoke(self, token: str) -> None:
-        if is_well_formed_token(token):
-            await self._store.delete(hash_token(token))
+        """Delete the session ``token`` belongs to. A rotated-away token still in its grace
+        period takes the tombstone and the live successor down together."""
+        if not is_well_formed_token(token):
+            return
+        token_hash = hash_token(token)
+        record = await self._store.get(token_hash)
+        if isinstance(record, RotatedTombstone):
+            await self._store.delete(token_hash, record.rotated_to)
+        else:
+            await self._store.delete(token_hash)

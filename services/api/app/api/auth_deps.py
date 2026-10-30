@@ -6,7 +6,8 @@ INTERFACE CONTRACT (catalog/cart code depends on these names and semantics):
   ``ApiError(401, "session_required")`` without a valid session cookie and
   ``ApiError(403, "account_blocked")`` for blocked users (their session is deleted). The user is
   re-read from the database on every request. A session due for rotation gets a new token via
-  ``Set-Cookie`` (delivered even if the route then fails).
+  ``Set-Cookie`` (delivered even if the route then fails); a token rotated away less than
+  ``SESSION_ROTATION_GRACE_SECONDS`` ago is still accepted, without rotation or cookie.
 - ``CsrfProtectedUserDep``: same as ``CurrentUserDep`` but additionally enforces the CSRF rules
   (``ApiError(403, "csrf_failed")``): trusted ``Origin`` and ``X-CSRF-Token`` equal to the
   session's token. Use it on every state-changing route (POST/PUT/PATCH/DELETE).
@@ -136,7 +137,9 @@ async def get_current_session(
     try:
         loaded = await manager.load(token)
         if loaded is None:
-            clear_session_cookie(request)
+            # No expiring Set-Cookie here: this request may have raced a rotation whose fresh
+            # cookie the browser already stored, and clearing it would sign the user out. Only
+            # logout and explicit revocation (below) clear the cookie.
             raise session_required()
         user = await users.get_by_id(loaded.data.user_id)
         if user is None or user.telegram_user_id != loaded.data.telegram_user_id:
@@ -217,8 +220,9 @@ async def get_csrf_protected_user(
 
 
 def client_ip(request: Request) -> str:
-    """The peer address. Behind a proxy uvicorn must run with ``--proxy-headers
-    --forwarded-allow-ips=<proxy>`` so this is the real client (never parse XFF here)."""
+    """The peer address as resolved by uvicorn's proxy-header support: with
+    ``FORWARDED_ALLOW_IPS`` listing only the web proxy, it is the right-most untrusted
+    ``X-Forwarded-For`` entry (ADR 0007). Never parse ``X-Forwarded-For`` here."""
     return request.client.host if request.client else "unknown"
 
 
@@ -236,7 +240,8 @@ async def _enforce_limit(
             429,
             "rate_limited",
             "Too many requests",
-            headers={"Retry-After": str(decision.retry_after_seconds)},
+            # Never cacheable, even on otherwise publicly cached catalog routes.
+            headers={"Retry-After": str(decision.retry_after_seconds), "Cache-Control": "no-store"},
         )
 
 

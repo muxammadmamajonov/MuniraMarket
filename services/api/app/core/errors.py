@@ -147,17 +147,27 @@ async def _validation_exception_handler(_: Request, exc: Exception) -> JSONRespo
     )
 
 
-async def _unhandled_exception_handler(request: Request, exc: Exception) -> JSONResponse:
+def log_unhandled_exception(method: str, path: str, exc: BaseException) -> None:
+    """Method, path and traceback only: never headers, cookies, query strings or bodies."""
     logger.error(
         "Unhandled exception on %s %s",
-        request.method,
-        request.url.path,
+        method,
+        path,
         exc_info=(type(exc), exc, exc.__traceback__),
     )
+
+
+def internal_error_response() -> JSONResponse:
     return JSONResponse(
         status_code=500,
         content=error_body("internal_error", "Internal server error"),
     )
+
+
+async def _unhandled_exception_handler(request: Request, exc: Exception) -> JSONResponse:
+    # Last resort for anything raised outside SessionCookieMiddleware, which handles the rest.
+    log_unhandled_exception(request.method, request.url.path, exc)
+    return internal_error_response()
 
 
 def register_exception_handlers(app: FastAPI) -> None:

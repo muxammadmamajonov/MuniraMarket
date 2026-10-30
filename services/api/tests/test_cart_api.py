@@ -197,7 +197,7 @@ async def test_domain_errors_map_to_envelope(
         body = response.json()["error"]
         assert body["code"] == code
         assert "available_quantity" not in body
-        assert "cache-control" not in response.headers
+        assert response.headers["cache-control"] == "no-store"
 
 
 async def test_insufficient_stock_reports_available_quantity(
@@ -347,6 +347,67 @@ async def test_read_and_write_use_their_own_rate_limits(
     ):
         assert response.status_code == 429
         assert response.json()["error"]["code"] == "rate_limited"
+
+
+async def test_ip_limit_runs_before_the_session_lookup(
+    app: FastAPI, client: httpx.AsyncClient, carts: FakeCartRepository
+) -> None:
+    looked_up: list[bool] = []
+
+    async def current_user() -> UserRecord:
+        looked_up.append(True)
+        raise ApiError(401, "session_required", "Sign in required")
+
+    app.dependency_overrides[auth_deps.get_current_user] = current_user
+    # Unauthenticated: the real per-IP limiter counts the request, then the session check fails.
+    assert (await client.get("/api/v1/cart")).status_code == 401
+    counters = app.state.rate_limiter._counters
+    assert any(key.startswith("mm:rl:cart_ip:127.0.0.1:") for key in counters)
+
+    looked_up.clear()
+    limited = ApiError(429, "rate_limited", "Too many requests", headers={"Retry-After": "3"})
+    app.dependency_overrides[cart_routes.CART_IP_LIMIT] = _raiser(limited)
+    for response in (
+        await client.get("/api/v1/cart"),
+        await client.post(ITEMS, json={"product_id": str(PRODUCT_ID), "quantity": 1}),
+        await client.put(f"{ITEMS}/{PRODUCT_ID}", json={"quantity": 1}),
+        await client.delete(f"{ITEMS}/{PRODUCT_ID}"),
+    ):
+        assert response.status_code == 429
+    assert looked_up == []  # rejected before any session (Redis) or database work
+    assert carts.calls == []
+
+
+async def test_cart_ip_limit_is_300_per_minute(
+    app: FastAPI, client: httpx.AsyncClient, carts: FakeCartRepository
+) -> None:
+    for _ in range(300):
+        assert (await client.get("/api/v1/cart")).status_code == 200
+    response = await client.get("/api/v1/cart")
+    assert response.status_code == 429
+    assert response.json()["error"]["code"] == "rate_limited"
+    assert response.headers["cache-control"] == "no-store"
+    assert int(response.headers["retry-after"]) >= 1
+
+
+async def test_every_cart_error_is_no_store(
+    app: FastAPI, client: httpx.AsyncClient, carts: FakeCartRepository
+) -> None:
+    carts.error = InsufficientStockError(available_quantity=1)
+    conflict = await client.post(ITEMS, json={"product_id": str(PRODUCT_ID), "quantity": 5})
+    invalid = await client.post(ITEMS, json={"product_id": "nope", "quantity": 0})
+    app.dependency_overrides[cart_routes.CART_WRITE_LIMIT] = _raiser(
+        ApiError(429, "rate_limited", "Too many requests", headers={"Retry-After": "7"})
+    )
+    limited = await client.delete(f"{ITEMS}/{PRODUCT_ID}")
+    app.dependency_overrides[auth_deps.get_current_user] = _raiser(
+        ApiError(401, "session_required", "Sign in required")
+    )
+    unauthenticated = await client.get("/api/v1/cart")
+    responses = {401: unauthenticated, 409: conflict, 422: invalid, 429: limited}
+    for status, response in responses.items():
+        assert response.status_code == status
+        assert response.headers["cache-control"] == "no-store"
 
 
 async def test_cart_lines_keep_repository_order(

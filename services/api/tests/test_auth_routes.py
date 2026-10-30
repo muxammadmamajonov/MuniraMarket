@@ -2,19 +2,20 @@
 
 import dataclasses
 from collections.abc import AsyncIterator
-from typing import cast
+from typing import Any, cast
 
 import httpx
 import pytest
 from fastapi import FastAPI
 from redis.asyncio import Redis
 
-from app.api.auth_deps import CsrfProtectedUserDep
+from app.api.auth_deps import CsrfProtectedUserDep, CurrentUserDep
 from app.security.rate_limit import InMemoryRateLimiter, RedisRateLimiter
 from app.security.session import (
     InMemorySessionStore,
     RedisSessionStore,
     SessionData,
+    SwapResult,
     hash_token,
 )
 from tests.auth_helpers import (
@@ -37,6 +38,7 @@ from tests.auth_helpers import (
 from tests.conftest import NOW, FakeClock, FakeUserRepository
 
 DAY = 86400
+GRACE = 60  # SESSION_ROTATION_GRACE_SECONDS default
 WRITE_PATH = "/api/v1/test/write"
 
 
@@ -65,6 +67,12 @@ async def api(auth_app: FastAPI) -> AsyncIterator[httpx.AsyncClient]:
 def _block(users: FakeUserRepository, telegram_user_id: int = TELEGRAM_USER_ID) -> None:
     users.users[telegram_user_id] = dataclasses.replace(
         users.users[telegram_user_id], is_blocked=True
+    )
+
+
+def _unblock(users: FakeUserRepository, telegram_user_id: int = TELEGRAM_USER_ID) -> None:
+    users.users[telegram_user_id] = dataclasses.replace(
+        users.users[telegram_user_id], is_blocked=False
     )
 
 
@@ -182,12 +190,13 @@ async def test_session_required(api: httpx.AsyncClient, headers: dict[str, str])
     assert response.headers["cache-control"] == "no-store"
 
 
-async def test_unknown_session_cookie_is_cleared(api: httpx.AsyncClient) -> None:
+async def test_unknown_session_cookie_is_not_cleared(api: httpx.AsyncClient) -> None:
+    # An unknown token may be a request that raced a rotation; expiring the cookie here could
+    # wipe the fresh one the browser just stored. Only logout and revocation clear it.
     response = await api.get(SESSION_PATH, headers=cookie_header("A" * 43))
     assert response.status_code == 401
-    cookie = only_cookie(response)
-    assert cookie.name == SECURE_COOKIE
-    assert cookie.attributes["max-age"] == "0"
+    assert response.json()["error"]["code"] == "session_required"
+    assert set_cookies(response) == []
 
 
 async def test_sliding_idle_expiry(api: httpx.AsyncClient, clock: FakeClock) -> None:
@@ -233,11 +242,135 @@ async def test_rotation_after_threshold(api: httpx.AsyncClient, clock: FakeClock
     assert cookie.attributes["max-age"] == str(29 * DAY)
     assert response.json()["csrf_token"] == session.csrf_token  # CSRF token is kept
 
-    old = await api.get(SESSION_PATH, headers=cookie_header(session.token))
-    assert old.status_code == 401
     new = await api.get(SESSION_PATH, headers=cookie_header(cookie.value))
     assert new.status_code == 200
     assert set_cookies(new) == []
+
+    clock.now += GRACE  # the old token's grace period is over
+    old = await api.get(SESSION_PATH, headers=cookie_header(session.token))
+    assert old.status_code == 401
+    assert set_cookies(old) == []  # must not expire the new cookie in the browser
+
+
+async def test_parallel_request_with_the_old_cookie_within_grace(
+    api: httpx.AsyncClient, clock: FakeClock, store: InMemorySessionStore
+) -> None:
+    session = await login(api, clock)
+    clock.now += DAY
+    rotating = await api.get(SESSION_PATH, headers=cookie_header(session.token))
+    new_token = only_cookie(rotating).value
+
+    # A request the browser sent with the old cookie before the rotation response arrived.
+    clock.now += GRACE - 1
+    parallel = await api.post(
+        WRITE_PATH,
+        headers={**cookie_header(session.token), "X-CSRF-Token": session.csrf_token},
+    )
+    assert parallel.status_code == 200
+    assert set_cookies(parallel) == []  # neither rotated again nor cleared
+    lookup = await api.get(SESSION_PATH, headers=cookie_header(session.token))
+    assert lookup.status_code == 200
+    assert set_cookies(lookup) == []
+    assert lookup.json()["csrf_token"] == session.csrf_token
+    assert len(store) == 2  # tombstone + the one live session
+
+    clock.now += 1
+    expired = await api.get(SESSION_PATH, headers=cookie_header(session.token))
+    assert expired.status_code == 401
+    assert set_cookies(expired) == []
+    assert (await api.get(SESSION_PATH, headers=cookie_header(new_token))).status_code == 200
+
+
+@pytest.mark.parametrize("logout_with", ["old", "new"])
+async def test_logout_with_either_token_ends_the_session(
+    api: httpx.AsyncClient, clock: FakeClock, store: InMemorySessionStore, logout_with: str
+) -> None:
+    session = await login(api, clock)
+    clock.now += DAY
+    new_token = only_cookie(await api.get(SESSION_PATH, headers=cookie_header(session.token))).value
+    token = session.token if logout_with == "old" else new_token
+    response = await api.post(
+        LOGOUT_PATH, headers={**cookie_header(token), "X-CSRF-Token": session.csrf_token}
+    )
+    assert response.status_code == 204
+    assert only_cookie(response).attributes["max-age"] == "0"
+    for presented in (session.token, new_token):
+        assert (await api.get(SESSION_PATH, headers=cookie_header(presented))).status_code == 401
+    if logout_with == "old":
+        assert len(store) == 0  # tombstone and live record deleted together
+
+
+async def test_blocking_seen_through_the_old_token_revokes_the_new_one(
+    api: httpx.AsyncClient, clock: FakeClock, users: FakeUserRepository, store: InMemorySessionStore
+) -> None:
+    session = await login(api, clock)
+    clock.now += DAY
+    new_token = only_cookie(await api.get(SESSION_PATH, headers=cookie_header(session.token))).value
+    _block(users)
+    response = await api.get(SESSION_PATH, headers=cookie_header(session.token))
+    assert response.status_code == 403
+    assert only_cookie(response).attributes["max-age"] == "0"
+    assert len(store) == 0
+    _unblock(users)
+    assert (await api.get(SESSION_PATH, headers=cookie_header(new_token))).status_code == 401
+
+
+async def test_grace_zero_restores_the_strict_swap(
+    clock: FakeClock, users: FakeUserRepository
+) -> None:
+    store = InMemorySessionStore(clock)
+    app = build_app(clock, users, session_store=store, session_rotation_grace_seconds=0)
+    async with http_client(app) as http:
+        session = await login(http, clock)
+        clock.now += DAY
+        rotated = await http.get(SESSION_PATH, headers=cookie_header(session.token))
+        old = await http.get(SESSION_PATH, headers=cookie_header(session.token))
+    assert only_cookie(rotated).value != session.token
+    assert old.status_code == 401
+    assert set_cookies(old) == []
+    assert len(store) == 1
+
+
+async def test_unhandled_error_after_rotation_keeps_the_new_cookie(
+    clock: FakeClock, users: FakeUserRepository, caplog: pytest.LogCaptureFixture
+) -> None:
+    app = build_app(clock, users)
+
+    async def broken(user: CurrentUserDep) -> None:
+        raise ConnectionRefusedError("database down")  # e.g. the cart query after the session
+
+    app.add_api_route("/api/v1/test/broken", broken, methods=["GET"])
+    async with http_client(app) as http:
+        session = await login(http, clock)
+        clock.now += DAY
+        response = await http.get("/api/v1/test/broken", headers=cookie_header(session.token))
+        rotated = only_cookie(response)
+        follow_up = await http.get(SESSION_PATH, headers=cookie_header(rotated.value))
+    assert response.status_code == 500
+    assert response.json() == {
+        "error": {"code": "internal_error", "message": "Internal server error"}
+    }
+    assert rotated.value != session.token
+    assert response.headers["cache-control"] == "no-store"
+    assert follow_up.status_code == 200
+    logged = "\n".join(record.getMessage() for record in caplog.records)
+    assert "Unhandled exception on GET /api/v1/test/broken" in logged
+    assert session.token not in caplog.text
+    assert rotated.value not in caplog.text
+
+
+async def test_auth_500_is_no_store(clock: FakeClock, users: FakeUserRepository) -> None:
+    class BrokenUsers(FakeUserRepository):
+        async def upsert_from_telegram(self, profile: object) -> Any:
+            raise RuntimeError("database down")
+
+    app = build_app(clock, BrokenUsers())
+    async with http_client(app) as http:
+        response = await http.post(INIT_DATA_PATH, json={"init_data": init_data(clock)})
+    assert response.status_code == 500
+    assert response.json()["error"]["code"] == "internal_error"
+    assert response.headers["cache-control"] == "no-store"
+    assert set_cookies(response) == []
 
 
 async def test_rotated_cookie_survives_a_failing_route(
@@ -264,10 +397,15 @@ class _LogoutDuringRotationStore(InMemorySessionStore):
     """Deletes the old session just before the swap, like a concurrent logout or block."""
 
     async def replace(
-        self, old_hash: str, new_hash: str, data: SessionData, ttl_seconds: int
-    ) -> bool:
+        self,
+        old_hash: str,
+        new_hash: str,
+        data: SessionData,
+        ttl_seconds: int,
+        grace_seconds: int,
+    ) -> SwapResult:
         await self.delete(old_hash)
-        return await super().replace(old_hash, new_hash, data, ttl_seconds)
+        return await super().replace(old_hash, new_hash, data, ttl_seconds, grace_seconds)
 
 
 async def test_concurrent_logout_during_rotation_is_401(

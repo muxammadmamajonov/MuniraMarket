@@ -1,9 +1,13 @@
-"""Signed-in user's cart. Reads need a session; writes also need the CSRF token."""
+"""Signed-in user's cart. Reads need a session; writes also need the CSRF token.
+
+Every response under ``/cart`` (errors included) is ``Cache-Control: no-store`` (see
+``SessionCookieMiddleware``).
+"""
 
 import uuid
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Response
+from fastapi import APIRouter, Depends
 
 from app.api.auth_deps import CsrfProtectedUserDep, CurrentUserDep, rate_limit
 from app.api.deps import SessionDep
@@ -19,17 +23,17 @@ from app.domain.cart import (
 )
 from app.repositories.cart import CartRepository, SqlAlchemyCartRepository
 from app.schemas.cart import AddCartItemRequest, Cart, SetCartItemQuantityRequest
+from app.security.rate_limit import CART_IP, CART_READ, CART_WRITE
 
 # Module-level so tests can replace these exact dependency objects in ``dependency_overrides``.
-CART_READ_LIMIT = rate_limit("cart_read", 120, 60, key="user")
-CART_WRITE_LIMIT = rate_limit("cart_write", 60, 60, key="user")
+CART_READ_LIMIT = rate_limit(CART_READ.scope, CART_READ.limit, CART_READ.window_seconds, key="user")
+CART_WRITE_LIMIT = rate_limit(
+    CART_WRITE.scope, CART_WRITE.limit, CART_WRITE.window_seconds, key="user"
+)
+# Router-level, so it runs before the route's session lookup and per-user limits.
+CART_IP_LIMIT = rate_limit(CART_IP.scope, CART_IP.limit, CART_IP.window_seconds, key="ip")
 
-
-async def no_store(response: Response) -> None:
-    response.headers["Cache-Control"] = "no-store"
-
-
-router = APIRouter(prefix="/cart", tags=["cart"], dependencies=[Depends(no_store)])
+router = APIRouter(prefix="/cart", tags=["cart"], dependencies=[Depends(CART_IP_LIMIT)])
 
 
 def get_cart_repository(session: SessionDep) -> CartRepository:
@@ -38,8 +42,8 @@ def get_cart_repository(session: SessionDep) -> CartRepository:
 
 CartRepositoryDep = Annotated[CartRepository, Depends(get_cart_repository)]
 
-_READ_ERRORS = error_responses(401, 403, 429)
-_WRITE_ERRORS = error_responses(401, 403, 404, 409, 422, 429)
+_READ_ERRORS = error_responses(401, 403, 429, 503)
+_WRITE_ERRORS = error_responses(401, 403, 404, 409, 422, 429, 503)
 
 
 _SIMPLE_ERRORS: dict[type[CartError], tuple[int, ErrorCode, str]] = {
