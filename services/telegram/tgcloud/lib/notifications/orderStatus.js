@@ -2,20 +2,10 @@
 /**
  * Order status notification adapter (message formatting + delivery through the Bot API).
  *
- * ############################################################################################
- * # OPEN DECISION: nothing in this repository triggers this adapter yet.                     #
- * #                                                                                          #
- * # The Telegram Serverless platform only runs our code for (a) Telegram updates, via        #
- * # `handlers/`, and (b) Mini App calls, via `endpoints/`. The documentation describes no    #
- * # scheduler, no cron, and no server-initiated or webhook-style trigger for project code.   #
- * # So how an order status change in the Core API reaches `sendOrderStatusNotification` is   #
- * # undecided. Candidate options:                                                            #
- * #   1. The Core API sends the message itself through the Bot API (needs the bot token on   #
- * #      the Core API side), using the same text as `buildOrderStatusMessage`.                #
- * #   2. The Core API writes an outbox; Serverless drains it opportunistically on update or   #
- * #      endpoint traffic (delivery latency then depends on user activity).                   #
- * # No fake trigger is implemented on purpose. See services/telegram/README.md.              #
- * ############################################################################################
+ * Delivery path: Core API writes a transactional outbox row for every status change (ADR 0008);
+ * `drainOrderNotifications` (`./outbox.js`) claims rows and hands each one to a transport
+ * (`./transport.js`), which calls `sendOrderStatusNotification` below. The trigger that runs the
+ * drain is NOT wired yet: no handler or endpoint calls it. See services/telegram/README.md.
  */
 import { BotApiError } from 'sdk';
 import { isOrderStatus, messagesFor, pickLocale } from '../i18n.js';

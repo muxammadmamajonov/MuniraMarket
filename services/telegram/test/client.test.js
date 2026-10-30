@@ -214,3 +214,96 @@ describe('createCoreApiClient', () => {
     expect(wire).not.toContain(ADR_VECTOR.secret);
   });
 });
+
+describe('notification outbox calls', () => {
+  const ID = '0b6f3f6e-6a8c-4a47-9d0e-3b1f2c4d5e6f';
+
+  it('claimNotifications posts {limit} signed with an EMPTY actor', async () => {
+    const fetch = createFakeFetch(() => ({
+      body: '{"items":[],"lease_expires_at":"2026-10-31T10:00:00Z"}',
+    }));
+    const client = createCoreApiClient({ fetch, config: config(), ...fixed });
+    await expect(client.claimNotifications({ limit: 20 })).resolves.toEqual({
+      items: [],
+      lease_expires_at: '2026-10-31T10:00:00Z',
+    });
+    const [call] = fetch.calls;
+    expect(call.url).toBe('https://core.example.test/api/v1/internal/telegram/notifications/claim');
+    expect(call.init.method).toBe('POST');
+    expect(call.init.headers['X-MM-Actor']).toBe('');
+    expect(call.init.headers['Content-Type']).toBe('application/json');
+    expect(call.init.headers['X-MM-Key-Id']).toBe(ADR_VECTOR.keyId);
+    expect(call.init.headers['X-MM-Signature']).toMatch(/^[0-9a-f]{64}$/);
+    expect(new TextDecoder().decode(call.init.body)).toBe('{"limit":20}');
+    expect(verifyWire(call)).toBe(true);
+  });
+
+  it.each([0, 51, 1.5, -1, '5', undefined, NaN])(
+    'claimNotifications rejects limit %j',
+    async (limit) => {
+      const fetch = createFakeFetch();
+      const client = createCoreApiClient({ fetch, config: config(), ...fixed });
+      await expect(client.claimNotifications({ limit })).rejects.toThrow(TypeError);
+      expect(fetch.calls).toHaveLength(0);
+    },
+  );
+
+  it('reportNotification posts the outcome (and error_code) to /{id}/result and returns null on 204', async () => {
+    const fetch = createFakeFetch(() => ({ status: 204, body: '' }));
+    const client = createCoreApiClient({ fetch, config: config(), ...fixed });
+    await expect(
+      client.reportNotification(ID, { outcome: 'retry', errorCode: 'bot_api_429' }),
+    ).resolves.toBeNull();
+    await client.reportNotification(ID, { outcome: 'delivered' });
+
+    const [withCode, without] = fetch.calls;
+    expect(withCode.url).toBe(
+      `https://core.example.test/api/v1/internal/telegram/notifications/${ID}/result`,
+    );
+    expect(withCode.init.method).toBe('POST');
+    expect(withCode.init.headers['X-MM-Actor']).toBe('');
+    expect(JSON.parse(new TextDecoder().decode(withCode.init.body))).toEqual({
+      outcome: 'retry',
+      error_code: 'bot_api_429',
+    });
+    expect(verifyWire(withCode)).toBe(true);
+    expect(new TextDecoder().decode(without.init.body)).toBe('{"outcome":"delivered"}');
+    expect(verifyWire(without)).toBe(true);
+  });
+
+  it('reportNotification validates id, outcome and error code before any request', async () => {
+    const fetch = createFakeFetch();
+    const client = createCoreApiClient({ fetch, config: config(), ...fixed });
+    for (const id of ['', 'x', `${ID}/../claim`, `${ID}?a=1`, `../${ID}`, 42, undefined]) {
+      await expect(client.reportNotification(id, { outcome: 'delivered' })).rejects.toThrow(
+        TypeError,
+      );
+    }
+    await expect(client.reportNotification(ID, { outcome: 'sent' })).rejects.toThrow(TypeError);
+    for (const errorCode of ['', 'Bad Code', 'UPPER', 'a'.repeat(65), 'with space', 5]) {
+      await expect(client.reportNotification(ID, { outcome: 'failed', errorCode })).rejects.toThrow(
+        TypeError,
+      );
+    }
+    expect(fetch.calls).toHaveLength(0);
+  });
+
+  it.each([
+    [401, 'UNAUTHORIZED'],
+    [403, 'UNAUTHORIZED'],
+    [404, 'NOT_FOUND'],
+    [500, 'UPSTREAM_ERROR'],
+  ])('maps HTTP %i on report/claim to CoreApiError %s', async (status, code) => {
+    const fetch = createFakeFetch(() => ({ status, body: '{"detail":"secret-detail"}' }));
+    const client = createCoreApiClient({ fetch, config: config(), ...fixed });
+    for (const call of [
+      () => client.claimNotifications({ limit: 1 }),
+      () => client.reportNotification(ID, { outcome: 'delivered' }),
+    ]) {
+      const error = await call().catch((e) => e);
+      expect(error).toBeInstanceOf(CoreApiError);
+      expect(error).toMatchObject({ status, code });
+      expect(error.message).not.toContain('secret-detail');
+    }
+  });
+});

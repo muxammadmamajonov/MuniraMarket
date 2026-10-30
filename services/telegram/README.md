@@ -15,7 +15,68 @@ behalf using signed requests ([ADR 0003](../../architecture/0003-service-auth-co
 | Core API signer/client | `tgcloud/lib/coreApi/`                                        | HMAC-SHA256 request signing exactly per ADR 0003, incl. its test vector.                                                                                                                           |
 | Crypto                 | `tgcloud/lib/crypto/`                                         | Dependency-free UTF-8, SHA-256, HMAC-SHA256 (WebCrypto is not documented in the runtime). Tested against `node:crypto`.                                                                            |
 | Config                 | `tgcloud/lib/config.js`, `tgcloud/schema.js`                  | Reads `service_config` from the Serverless DB; fails closed.                                                                                                                                       |
-| Order notifications    | `tgcloud/lib/notifications/orderStatus.js`                    | Message builder and sender. **Not wired to any trigger yet, see open decisions.**                                                                                                                  |
+| Order notifications    | `tgcloud/lib/notifications/{orderStatus,transport,outbox}.js` | Message builder/sender, transport interface and the outbox drain ([ADR 0008](../../architecture/0008-order-notification-outbox.md)). **Nothing calls the drain yet, see below.**                   |
+
+## Order notifications: outbox drain (not wired yet)
+
+[ADR 0008](../../architecture/0008-order-notification-outbox.md): Core API writes a notification
+outbox row in the same transaction as every order status change. This service only _drains_ it.
+**No handler or endpoint calls the drain today**, because the platform documents no trigger that
+runs our code without a Telegram update or a Mini App call.
+
+| Piece                                                                     | File                             | Role                                                                                                                          |
+| ------------------------------------------------------------------------- | -------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| `claimNotifications`, `reportNotification`                                | `lib/coreApi/client.js`          | Signed calls with an EMPTY actor (the drain acts for the service, never for a user).                                          |
+| `NotificationTransport`, `createTelegramBotTransport({ api })`            | `lib/notifications/transport.js` | `deliver(notification)` resolves to `{ outcome, errorCode? }`. The Bot API implementation uses `sendOrderStatusNotification`. |
+| `drainOrderNotifications({ coreApi, transport, limit, maxBatches, now })` | `lib/notifications/outbox.js`    | Claim, validate, deliver sequentially, report; returns a summary.                                                             |
+
+**Core API contract** (signed per ADR 0003, empty actor; 401 for any auth failure, 403 if an actor is sent):
+
+- `POST /api/v1/internal/telegram/notifications/claim` with `{"limit": 1..50}` returns
+  `{"items": [{id, event_type, payload, attempts}], "lease_expires_at"}`. The lease is 60 s; a
+  message not reported before it expires is claimable again (at-least-once).
+- `POST /api/v1/internal/telegram/notifications/{id}/result` with
+  `{"outcome": "delivered" | "recipient_blocked" | "retry" | "failed", "error_code"?}` returns 204,
+  or 404 when the message is unknown, finished, or not claimed. `retry` backs off on the server and
+  becomes `failed` after 8 attempts. `error_code` matches `^[a-z0-9_.-]{1,64}$`.
+- `order.status_changed` payload: `order_id`, `order_number`, `status`, `locale` (`uz`|`ru`),
+  `total_uzs` (integer), `chat_id` (integer), optional `cancel_reason`. No address or phone.
+
+**Outcome mapping** (`createTelegramBotTransport`): sent -> `delivered`; Bot API 403 ->
+`recipient_blocked`; Bot API 401 (bad or rotated token), 429 or >= 500 -> `retry` `bot_api_<code>`; other Bot API 4xx ->
+`failed` `bot_api_<code>`; unusable notification -> `failed` `invalid_payload`; anything else
+(network) -> `retry` `transport_error`. The drain itself reports `failed` `unknown_event` for an
+unknown `event_type` and `failed` `invalid_payload` for a malformed payload. Error codes never
+contain message text or user data, and nothing from a payload is logged.
+
+**Drain behaviour:** messages are delivered one at a time. Before each one the remaining lease is
+checked; with less than 10 s left the rest of the batch is left alone (`skipped`) and redelivered
+after the lease expires. A report that fails (network, 404 after a lost lease) never stops the
+batch; it is counted in `reportFailed`. Summary:
+`{ claimed, delivered, blocked, retried, failed, skipped, reportFailed }`. If the first claim
+fails, `drainOrderNotifications` rejects with the `CoreApiError`; wrap the call.
+
+**How a future handler would call it** (illustrative; it does not exist yet):
+
+```js
+import { api } from 'sdk/api';
+import { fetch } from 'sdk/fetch';
+import { createCoreApiClient } from '../lib/coreApi/client.js';
+import { drainOrderNotifications } from '../lib/notifications/outbox.js';
+import { createTelegramBotTransport } from '../lib/notifications/transport.js';
+
+// config: the validated service config (see lib/config.js)
+const coreApi = createCoreApiClient({ fetch, config });
+try {
+  await drainOrderNotifications({ coreApi, transport: createTelegramBotTransport({ api }) });
+} catch {
+  // never let a drain failure break the real update/endpoint work
+}
+```
+
+Either call it opportunistically on update or Mini App endpoint traffic (latency then depends on
+activity; keep `limit` small and `await` it after the user-facing work), or from a platform trigger
+if Telegram ever documents one. Both are product/platform decisions that are not made here.
 
 ## Layout
 
@@ -85,12 +146,9 @@ Behaviour without config: `/start` still greets the user (no button if neither `
 
 ## Open decisions
 
-1. **How do Core API order changes reach Telegram?** The platform only invokes our code for
-   Telegram updates and Mini App calls; there is no documented scheduler or server-initiated
-   trigger. `lib/notifications/orderStatus.js` is therefore an adapter with no caller. Options:
-   (a) the Core API sends via the Bot API directly (needs the bot token on the Core API side);
-   (b) the Core API keeps an outbox that Serverless drains opportunistically on update/endpoint
-   traffic (latency depends on user activity). No fake trigger is implemented.
+1. **What triggers the outbox drain?** Decided in ADR 0008: a Core API outbox drained by
+   `drainOrderNotifications`. Still open: the trigger (opportunistic on update/endpoint traffic, or
+   a platform trigger if one is documented). Nothing calls the drain yet.
 2. **Mini App hosting.** `tgcloud.jsonc` deliberately has no `static` block; whether the Mini App
    is hosted on tgcloud.ai or elsewhere is pending.
 3. **Secret storage** for `service_secret` (see the TODO above).
