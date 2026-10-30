@@ -49,6 +49,8 @@ class UserRepository(Protocol):
 
     async def get_by_telegram_id(self, telegram_user_id: int) -> UserRecord | None: ...
 
+    async def get_by_id(self, user_id: uuid.UUID) -> UserRecord | None: ...
+
 
 def _to_record(user: User) -> UserRecord:
     return UserRecord(
@@ -100,4 +102,8 @@ class SqlAlchemyUserRepository:
             select(User).where(User.telegram_user_id == telegram_user_id)
         )
         user = result.scalar_one_or_none()
+        return _to_record(user) if user else None
+
+    async def get_by_id(self, user_id: uuid.UUID) -> UserRecord | None:
+        user = await self._session.get(User, user_id)
         return _to_record(user) if user else None

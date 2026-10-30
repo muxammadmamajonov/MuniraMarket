@@ -6,3 +6,7 @@ docs/
 **/dist/
 **/out/
 **/coverage/
+test-results/
+playwright-report/
+packages/contracts/openapi.json
+.claude/

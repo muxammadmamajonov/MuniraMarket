@@ -66,7 +66,12 @@ pnpm format:check && pnpm lint && pnpm typecheck && pnpm test && pnpm build
 cd services/api && make lint typecheck test build
 ```
 
-The same checks, plus a secret scan, run on every pull request.
+The same checks, plus a secret scan, a contracts drift check and the Playwright storefront E2E,
+run on every pull request.
+
+`packages/contracts` is generated from the Core API's OpenAPI document. After changing an API
+schema or route, run `pnpm contracts:generate` and commit `packages/contracts/openapi.json` and
+`packages/contracts/src/generated/openapi.ts`; CI fails when they are stale.
 
 ## Security
 

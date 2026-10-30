@@ -41,3 +41,10 @@ venv/
 .DS_Store
 .idea/
 .vscode/
+
+# Playwright output
+test-results/
+playwright-report/
+
+# Assistant tooling state (agent worktrees)
+.claude/

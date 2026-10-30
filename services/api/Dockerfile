@@ -32,4 +32,9 @@ COPY alembic ./alembic
 USER app
 EXPOSE 8000
 # Configuration comes from the environment (see .env.example); nothing secret is baked in.
-CMD ["uvicorn", "app.main:create_app", "--factory", "--host", "0.0.0.0", "--port", "8000"]
+# --proxy-headers: the client IP (rate limits) is taken from X-Forwarded-For, but only when the
+# peer is listed in FORWARDED_ALLOW_IPS, which uvicorn reads from the environment itself (exec
+# form cannot expand variables). It is deliberately not defaulted here: the API refuses to start
+# in staging/production without it, and uvicorn's own default is loopback only.
+CMD ["uvicorn", "app.main:create_app", "--factory", "--host", "0.0.0.0", "--port", "8000", \
+     "--proxy-headers"]

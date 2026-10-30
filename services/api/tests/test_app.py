@@ -121,6 +121,24 @@ async def test_openapi_enabled_in_test_env(client: httpx.AsyncClient) -> None:
     assert "/api/v1/internal/telegram/session" in paths
 
 
+async def test_openapi_documents_health_models(client: httpx.AsyncClient) -> None:
+    spec = (await client.get("/api/v1/openapi.json")).json()
+    paths, schemas = spec["paths"], spec["components"]["schemas"]
+
+    def ref(path: str, status: str) -> str:
+        content = paths[path]["get"]["responses"][status]["content"]
+        return str(content["application/json"]["schema"]["$ref"])
+
+    assert ref("/api/v1/health", "200").endswith("/HealthResponse")
+    assert ref("/api/v1/health/ready", "200").endswith("/ReadinessResponse")
+    assert ref("/api/v1/health/ready", "503").endswith("/ReadinessResponse")
+    health = schemas["HealthResponse"]
+    assert health["required"] == ["status", "service", "version"]
+    assert health["properties"]["status"]["const"] == "ok"
+    assert health["properties"]["service"]["const"] == "core-api"
+    assert schemas["ReadinessResponse"]["properties"]["status"]["enum"] == ["ok", "unavailable"]
+
+
 @pytest.mark.parametrize("app_env", ["staging", "production"])
 async def test_openapi_disabled_in_staging_and_production(app_env: str) -> None:
     settings = make_settings(
@@ -174,6 +192,10 @@ async def test_init_data_upserts_and_returns_public_user(
     init_data = sign_ed25519(_base_fields(user=_user_json(language_code="ru")))
     response = await client.post(INIT_DATA_PATH, json={"init_data": init_data})
     assert response.status_code == 200, response.text
+    assert set(response.json()) == {"user", "csrf_token"}
+    assert response.json()["csrf_token"]
+    assert response.headers["cache-control"] == "no-store"
+    assert response.headers["set-cookie"].startswith("__Host-mm_session=")
     user = response.json()["user"]
     assert user["telegram_user_id"] == 123456789
     assert user["first_name"] == "Aziza"
@@ -198,7 +220,7 @@ async def test_init_data_rejects_invalid_signature(
     response = await client.post(INIT_DATA_PATH, json={"init_data": init_data})
     assert response.status_code == 401
     assert response.json() == {
-        "error": {"code": "unauthorized", "message": "Invalid Telegram init data"}
+        "error": {"code": "invalid_telegram_auth", "message": "Invalid Telegram init data"}
     }
     assert users.users == {}
 
@@ -208,6 +230,8 @@ async def test_init_data_rejects_garbage_with_401(
 ) -> None:
     response = await client.post(INIT_DATA_PATH, json={"init_data": "garbage"})
     assert response.status_code == 401
+    assert response.json()["error"]["code"] == "invalid_telegram_auth"
+    assert "set-cookie" not in response.headers
 
 
 async def test_init_data_with_hmac_verifier(

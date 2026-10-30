@@ -15,11 +15,19 @@ from app.core.clock import Clock, system_clock
 from app.core.config import Settings, get_settings
 from app.core.errors import register_exception_handlers
 from app.db.session import create_engine, create_session_factory
+from app.security.cookies import SessionCookieMiddleware
+from app.security.rate_limit import InMemoryRateLimiter, RateLimiter, RedisRateLimiter
 from app.security.service_auth import (
     InMemoryNonceStore,
     NonceStore,
     RedisNonceStore,
     ServiceAuthenticator,
+)
+from app.security.session import (
+    InMemorySessionStore,
+    RedisSessionStore,
+    SessionManager,
+    SessionStore,
 )
 from app.telegram.identity import (
     TELEGRAM_PUBLIC_KEYS,
@@ -27,10 +35,13 @@ from app.telegram.identity import (
     HmacInitDataVerifier,
     TelegramIdentityVerifier,
 )
+from app.telegram.login_widget import LoginWidgetVerifier
 
 API_PREFIX = "/api/v1"
 # initData is capped at 4096 characters; leave room for JSON framing and URL-encoding overhead.
 INIT_DATA_MAX_BODY_BYTES = 8 * 1024
+# Login Widget payloads are a handful of short fields (the photo URL is the longest).
+LOGIN_WIDGET_MAX_BODY_BYTES = 4 * 1024
 
 
 def build_identity_verifier(settings: Settings, clock: Clock) -> TelegramIdentityVerifier:
@@ -50,25 +61,48 @@ def build_identity_verifier(settings: Settings, clock: Clock) -> TelegramIdentit
     )
 
 
+def build_login_widget_verifier(settings: Settings, clock: Clock) -> LoginWidgetVerifier | None:
+    """``None`` unless the Login Widget is enabled (the settings validator guarantees a token)."""
+    if not settings.telegram_login_widget_enabled or settings.telegram_bot_token is None:
+        return None
+    return LoginWidgetVerifier(
+        bot_token=settings.telegram_bot_token.get_secret_value(),
+        max_age_seconds=settings.telegram_login_max_age_seconds,
+        clock=clock,
+    )
+
+
 def create_app(
     settings: Settings | None = None,
     *,
     clock: Clock = system_clock,
     nonce_store: NonceStore | None = None,
+    session_store: SessionStore | None = None,
+    rate_limiter: RateLimiter | None = None,
 ) -> FastAPI:
     settings = settings or get_settings()
     logging.basicConfig(level=logging.INFO)
 
     engine = create_engine(settings)
+    in_memory = settings.app_env == "test"
+    # One Redis client (connection pool) shared by every Redis-backed store, created only if
+    # some store actually needs it.
     redis_client: Redis | None = None
-    if nonce_store is None:
-        if settings.app_env == "test":
-            nonce_store = InMemoryNonceStore(clock)
-        else:
+
+    def redis() -> Redis:
+        nonlocal redis_client
+        if redis_client is None:
             redis_client = Redis.from_url(
                 settings.redis_url.get_secret_value(), decode_responses=True
             )
-            nonce_store = RedisNonceStore(redis_client)
+        return redis_client
+
+    if nonce_store is None:
+        nonce_store = InMemoryNonceStore(clock) if in_memory else RedisNonceStore(redis())
+    if session_store is None:
+        session_store = InMemorySessionStore(clock) if in_memory else RedisSessionStore(redis())
+    if rate_limiter is None:
+        rate_limiter = InMemoryRateLimiter(clock) if in_memory else RedisRateLimiter(redis(), clock)
 
     @asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
@@ -96,6 +130,16 @@ def create_app(
         nonce_store=nonce_store,
         clock=clock,
     )
+    app.state.session_manager = SessionManager(
+        store=session_store,
+        clock=clock,
+        idle_ttl_seconds=settings.session_idle_ttl_seconds,
+        absolute_ttl_seconds=settings.session_absolute_ttl_seconds,
+        rotate_after_seconds=settings.session_rotate_after_seconds,
+        rotation_grace_seconds=settings.session_rotation_grace_seconds,
+    )
+    app.state.rate_limiter = rate_limiter
+    app.state.login_widget_verifier = build_login_widget_verifier(settings, clock)
 
     if settings.cors_allowed_origins:
         app.add_middleware(
@@ -109,7 +153,16 @@ def create_app(
     app.add_middleware(
         BodySizeLimitMiddleware,
         max_bytes=DEFAULT_MAX_BODY_BYTES,
-        path_limits={f"{API_PREFIX}/auth/telegram/init-data": INIT_DATA_MAX_BODY_BYTES},
+        path_limits={
+            f"{API_PREFIX}/auth/telegram/init-data": INIT_DATA_MAX_BODY_BYTES,
+            f"{API_PREFIX}/auth/telegram/login-widget": LOGIN_WIDGET_MAX_BODY_BYTES,
+        },
+    )
+    # Outermost of our middleware: delivers queued session cookies on every response (errors and
+    # unhandled exceptions included) and marks auth and cart responses no-store.
+    app.add_middleware(
+        SessionCookieMiddleware,
+        no_store_paths=(f"{API_PREFIX}/auth", f"{API_PREFIX}/cart"),
     )
 
     register_exception_handlers(app)

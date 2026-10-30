@@ -3,7 +3,7 @@ title = "MuniraMarket gitleaks config"
 [extend]
 useDefault = true
 
-[allowlist]
+[[allowlists]]
 description = "Documented, obviously fake test values"
 regexes = [
   '''test-only-secret-not-for-production-\d+''',
@@ -11,3 +11,8 @@ regexes = [
   '''ci-only-password''',
   '''replace-with-at-least-32-random-bytes''',
 ]
+
+[[allowlists]]
+description = "Fake API host used only in web unit tests (generic-api-key matches its URL path)"
+regexTarget = "line"
+regexes = ['''['"`]http://api\.test:8000/api/v1/[A-Za-z0-9/_?&=%.-]*['"`]''']

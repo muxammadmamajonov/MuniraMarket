@@ -1,57 +1,24 @@
 """Database-backed tests. Skipped unless TEST_DATABASE_URL points at a disposable PostgreSQL.
 
-Every test run creates and drops its own schema, so nothing else in the database is touched.
+The schema is built by the real Alembic migrations in a per-module schema that is dropped
+afterwards (see ``tests/db_support.py``), so nothing else in the database is touched.
 """
 
-import os
 import uuid
-from collections.abc import AsyncIterator
 
 import pytest
-from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.ext.asyncio import (
-    AsyncEngine,
-    AsyncSession,
-    async_sessionmaker,
-    create_async_engine,
-)
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-import app.models  # noqa: F401
-from app.db.base import Base
 from app.domain.order_status import OrderStatus
 from app.models.catalog import Category, Product
 from app.models.enums import Language, PaymentMethod, Unit
 from app.models.order import Order
 from app.repositories.users import SqlAlchemyUserRepository, TelegramProfile
+from tests.db_support import INTEGRATION_MARKS
 
-pytestmark = pytest.mark.integration
-
-
-@pytest.fixture
-async def engine() -> AsyncIterator[AsyncEngine]:
-    url = os.environ["TEST_DATABASE_URL"]
-    schema = f"mm_test_{uuid.uuid4().hex[:12]}"
-    admin = create_async_engine(url, isolation_level="AUTOCOMMIT")
-    async with admin.connect() as conn:
-        await conn.execute(text(f'CREATE SCHEMA "{schema}"'))
-    test_engine = create_async_engine(
-        url, connect_args={"server_settings": {"search_path": schema}}
-    )
-    try:
-        async with test_engine.begin() as conn:
-            await conn.run_sync(Base.metadata.create_all)
-        yield test_engine
-    finally:
-        await test_engine.dispose()
-        async with admin.connect() as conn:
-            await conn.execute(text(f'DROP SCHEMA "{schema}" CASCADE'))
-        await admin.dispose()
-
-
-@pytest.fixture
-def session_factory(engine: AsyncEngine) -> async_sessionmaker[AsyncSession]:
-    return async_sessionmaker(engine, expire_on_commit=False)
+pytest_plugins = ["tests.db_fixtures"]  # the engine / session_factory fixtures
+pytestmark = INTEGRATION_MARKS
 
 
 async def test_upsert_creates_then_updates(
@@ -78,6 +45,8 @@ async def test_upsert_creates_then_updates(
 
     async with session_factory() as session:
         assert await SqlAlchemyUserRepository(session).get_by_telegram_id(43) is None
+        assert await SqlAlchemyUserRepository(session).get_by_id(created.id) == updated
+        assert await SqlAlchemyUserRepository(session).get_by_id(uuid.uuid4()) is None
 
 
 async def test_database_constraints(session_factory: async_sessionmaker[AsyncSession]) -> None:
