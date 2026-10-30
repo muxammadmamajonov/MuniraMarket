@@ -1,0 +1,6 @@
+{
+  "$schema": "./node_modules/@tgcloud/cli/schema/tgcloud.json",
+  // Mini App static hosting ("static") is intentionally not configured yet: where the Mini App
+  // front-end is hosted is a pending decision. Do not add other keys here without checking the
+  // schema above.
+}

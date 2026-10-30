@@ -1,0 +1,38 @@
+import type { ButtonHTMLAttributes } from 'react';
+import { cx } from '../cx';
+
+export type ButtonVariant = 'primary' | 'secondary';
+export type ButtonSize = 'md' | 'lg';
+
+export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
+  variant?: ButtonVariant;
+  size?: ButtonSize;
+}
+
+const BASE =
+  'inline-flex items-center justify-center gap-2 rounded-xl font-semibold transition-colors ' +
+  'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus ' +
+  'disabled:cursor-not-allowed disabled:opacity-50';
+
+const VARIANTS: Record<ButtonVariant, string> = {
+  primary: 'bg-primary text-primary-foreground hover:bg-primary-hover',
+  secondary: 'border border-border bg-surface text-foreground hover:bg-surface-muted',
+};
+
+// Every size keeps a 44px minimum touch target (WCAG 2.5.5 / Apple HIG).
+const SIZES: Record<ButtonSize, string> = {
+  md: 'min-h-11 min-w-11 px-4 text-base',
+  lg: 'min-h-12 min-w-11 px-6 text-lg',
+};
+
+export function Button({
+  variant = 'primary',
+  size = 'md',
+  type = 'button',
+  className,
+  ...rest
+}: ButtonProps) {
+  return (
+    <button type={type} className={cx(BASE, VARIANTS[variant], SIZES[size], className)} {...rest} />
+  );
+}

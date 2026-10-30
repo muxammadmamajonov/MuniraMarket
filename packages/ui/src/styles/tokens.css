@@ -1,0 +1,57 @@
+/*
+ * MuniraMarket design tokens (placeholder, neutral palette).
+ * Brand colours are TBD: change the values here and both apps pick them up.
+ *
+ * Consume from an app stylesheet, after `@import "tailwindcss";`:
+ *   @import "@muniramarket/ui/styles/tokens.css";
+ */
+
+/* Make Tailwind scan the UI package sources for utility classes. */
+@source "../";
+
+:root {
+  --mm-color-background: #ffffff;
+  --mm-color-surface: #ffffff;
+  --mm-color-surface-muted: #f4f4f5;
+  --mm-color-foreground: #18181b;
+  --mm-color-muted-foreground: #52525b;
+  --mm-color-border: #d4d4d8;
+  --mm-color-primary: #3f3f46;
+  --mm-color-primary-hover: #27272a;
+  --mm-color-primary-foreground: #ffffff;
+  --mm-color-focus: #2563eb;
+
+  --mm-radius-md: 0.75rem;
+  --mm-font-sans:
+    system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, 'Noto Sans', sans-serif;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --mm-color-background: #09090b;
+    --mm-color-surface: #18181b;
+    --mm-color-surface-muted: #27272a;
+    --mm-color-foreground: #fafafa;
+    --mm-color-muted-foreground: #a1a1aa;
+    --mm-color-border: #3f3f46;
+    --mm-color-primary: #e4e4e7;
+    --mm-color-primary-hover: #ffffff;
+    --mm-color-primary-foreground: #18181b;
+    --mm-color-focus: #60a5fa;
+  }
+}
+
+/* Expose the tokens as Tailwind utilities (bg-primary, text-foreground, ...). */
+@theme inline {
+  --color-background: var(--mm-color-background);
+  --color-surface: var(--mm-color-surface);
+  --color-surface-muted: var(--mm-color-surface-muted);
+  --color-foreground: var(--mm-color-foreground);
+  --color-muted-foreground: var(--mm-color-muted-foreground);
+  --color-border: var(--mm-color-border);
+  --color-primary: var(--mm-color-primary);
+  --color-primary-hover: var(--mm-color-primary-hover);
+  --color-primary-foreground: var(--mm-color-primary-foreground);
+  --color-focus: var(--mm-color-focus);
+  --font-sans: var(--mm-font-sans);
+}

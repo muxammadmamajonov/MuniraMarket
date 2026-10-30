@@ -12,17 +12,30 @@ docs/
 *.crt
 secrets/
 
+# Telegram Serverless CLI state (contains the CLI access token)
+.tgcloud/
+
 # Local development state
 node_modules/
 .next/
+out/
 dist/
 build/
 coverage/
+*.tsbuildinfo
+next-env.d.ts
+.turbo/
+.pnpm-store/
 .pytest_cache/
+.mypy_cache/
+.ruff_cache/
 __pycache__/
 *.py[cod]
 .venv/
 venv/
+
+# Assistant tooling state
+.remember/
 
 # Editor and operating-system files
 .DS_Store
