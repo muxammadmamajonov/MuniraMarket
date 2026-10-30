@@ -174,6 +174,10 @@ async def test_init_data_upserts_and_returns_public_user(
     init_data = sign_ed25519(_base_fields(user=_user_json(language_code="ru")))
     response = await client.post(INIT_DATA_PATH, json={"init_data": init_data})
     assert response.status_code == 200, response.text
+    assert set(response.json()) == {"user", "csrf_token"}
+    assert response.json()["csrf_token"]
+    assert response.headers["cache-control"] == "no-store"
+    assert response.headers["set-cookie"].startswith("__Host-mm_session=")
     user = response.json()["user"]
     assert user["telegram_user_id"] == 123456789
     assert user["first_name"] == "Aziza"
@@ -198,7 +202,7 @@ async def test_init_data_rejects_invalid_signature(
     response = await client.post(INIT_DATA_PATH, json={"init_data": init_data})
     assert response.status_code == 401
     assert response.json() == {
-        "error": {"code": "unauthorized", "message": "Invalid Telegram init data"}
+        "error": {"code": "invalid_telegram_auth", "message": "Invalid Telegram init data"}
     }
     assert users.users == {}
 
@@ -208,6 +212,8 @@ async def test_init_data_rejects_garbage_with_401(
 ) -> None:
     response = await client.post(INIT_DATA_PATH, json={"init_data": "garbage"})
     assert response.status_code == 401
+    assert response.json()["error"]["code"] == "invalid_telegram_auth"
+    assert "set-cookie" not in response.headers
 
 
 async def test_init_data_with_hmac_verifier(

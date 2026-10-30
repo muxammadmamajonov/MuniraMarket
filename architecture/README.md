@@ -11,3 +11,4 @@ outside this repository.
 | [0004](0004-telegram-identity-verification.md) | Telegram identity verification in Core API | accepted |
 | [0005](0005-order-notifications-delivery.md)   | Order status notification delivery         | open     |
 | [0006](0006-money-locale-conventions.md)       | Money, locale and time conventions         | accepted |
+| [0007](0007-browser-sessions-csrf.md)          | Browser sessions, CSRF and rate limiting   | accepted |

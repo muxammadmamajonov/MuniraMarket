@@ -74,6 +74,9 @@ class FakeUserRepository:
     async def get_by_telegram_id(self, telegram_user_id: int) -> UserRecord | None:
         return self.users.get(telegram_user_id)
 
+    async def get_by_id(self, user_id: uuid.UUID) -> UserRecord | None:
+        return next((user for user in self.users.values() if user.id == user_id), None)
+
 
 @pytest.fixture
 def clock() -> FakeClock:
@@ -99,13 +102,23 @@ async def client(app: FastAPI) -> AsyncIterator[httpx.AsyncClient]:
         yield http_client
 
 
+def pytest_configure(config: pytest.Config) -> None:
+    config.addinivalue_line(
+        "markers", "redis: requires a real Redis (set TEST_REDIS_URL); skipped otherwise"
+    )
+
+
 def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
-    if os.environ.get("TEST_DATABASE_URL"):
-        return
-    skip = pytest.mark.skip(reason="integration test: set TEST_DATABASE_URL to run")
+    skip_db = pytest.mark.skip(reason="integration test: set TEST_DATABASE_URL to run")
+    skip_redis = pytest.mark.skip(reason="integration test: set TEST_REDIS_URL to run")
+    has_db = bool(os.environ.get("TEST_DATABASE_URL"))
+    has_redis = bool(os.environ.get("TEST_REDIS_URL"))
     for item in items:
-        if "integration" in item.keywords:
-            item.add_marker(skip)
+        if item.get_closest_marker("redis") is not None:
+            if not has_redis:
+                item.add_marker(skip_redis)
+        elif item.get_closest_marker("integration") is not None and not has_db:
+            item.add_marker(skip_db)
 
 
 SettingsFactory = Callable[..., Settings]

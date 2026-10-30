@@ -4,6 +4,8 @@ The schema is built by the real Alembic migrations in a per-module schema that i
 afterwards (see ``tests/db_support.py``), so nothing else in the database is touched.
 """
 
+import uuid
+
 import pytest
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -43,6 +45,8 @@ async def test_upsert_creates_then_updates(
 
     async with session_factory() as session:
         assert await SqlAlchemyUserRepository(session).get_by_telegram_id(43) is None
+        assert await SqlAlchemyUserRepository(session).get_by_id(created.id) == updated
+        assert await SqlAlchemyUserRepository(session).get_by_id(uuid.uuid4()) is None
 
 
 async def test_database_constraints(session_factory: async_sessionmaker[AsyncSession]) -> None:

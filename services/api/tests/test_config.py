@@ -185,3 +185,127 @@ def test_docs_only_enabled_for_development_and_test(app_env: str, enabled: bool)
         telegram_environment="production",
     )
     assert settings.docs_enabled is enabled
+
+
+# --- sessions / CSRF / Login Widget (ADR 0007) ---------------------------------------------------
+
+DEPLOYED = {"cors_allowed_origins": "https://shop.example", "telegram_environment": "production"}
+
+
+def test_session_defaults() -> None:
+    settings = make_settings()
+    assert settings.session_cookie_secure is True
+    assert settings.session_cookie_name == "__Host-mm_session"
+    assert settings.session_idle_ttl_seconds == 7 * 86400
+    assert settings.session_absolute_ttl_seconds == 30 * 86400
+    assert settings.session_rotate_after_seconds == 86400
+    assert settings.csrf_trusted_origins == []
+    assert settings.telegram_login_widget_enabled is False
+    assert settings.telegram_login_max_age_seconds == 86400
+
+
+@pytest.mark.parametrize("app_env", ["development", "test"])
+def test_insecure_cookie_allowed_only_for_local_envs(app_env: str) -> None:
+    settings = make_settings(app_env=app_env, session_cookie_secure=False)
+    assert settings.session_cookie_name == "mm_session"
+
+
+@pytest.mark.parametrize("app_env", ["staging", "production"])
+def test_secure_cookie_required_when_deployed(app_env: str) -> None:
+    with pytest.raises(ValidationError, match="SESSION_COOKIE_SECURE"):
+        make_settings(app_env=app_env, session_cookie_secure=False, **DEPLOYED)
+    assert make_settings(app_env=app_env, **DEPLOYED).session_cookie_secure
+
+
+def test_session_settings_from_environment(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("APP_ENV", "development")
+    monkeypatch.setenv("DATABASE_URL", "postgresql+asyncpg://u:p@localhost/db")
+    monkeypatch.setenv("REDIS_URL", "redis://localhost:6379/1")
+    monkeypatch.setenv("SERVICE_AUTH_KEYS", f"local:{GOOD_SECRET}")
+    monkeypatch.setenv("TELEGRAM_BOT_ID", "42")
+    monkeypatch.setenv("SESSION_COOKIE_SECURE", "false")
+    monkeypatch.setenv("CSRF_TRUSTED_ORIGINS", "http://localhost:3000, https://Shop.Example/")
+    settings = Settings(_env_file=None)
+    assert settings.session_cookie_secure is False
+    assert settings.csrf_trusted_origins == ["http://localhost:3000", "https://shop.example"]
+
+
+@pytest.mark.parametrize(
+    "field",
+    [
+        "session_idle_ttl_seconds",
+        "session_absolute_ttl_seconds",
+        "session_rotate_after_seconds",
+        "telegram_login_max_age_seconds",
+    ],
+)
+def test_durations_must_be_positive(field: str) -> None:
+    with pytest.raises(ValidationError):
+        make_settings(**{field: 0})
+
+
+def test_idle_and_rotation_must_fit_in_absolute_lifetime() -> None:
+    with pytest.raises(ValidationError, match="SESSION_IDLE_TTL_SECONDS"):
+        make_settings(session_idle_ttl_seconds=100, session_absolute_ttl_seconds=50)
+    with pytest.raises(ValidationError, match="SESSION_ROTATE_AFTER_SECONDS"):
+        make_settings(
+            session_idle_ttl_seconds=10,
+            session_rotate_after_seconds=100,
+            session_absolute_ttl_seconds=50,
+        )
+
+
+@pytest.mark.parametrize(
+    "origins",
+    [
+        "*",
+        "https://shop.example,*",
+        "https://shop.example/path",
+        "https://shop.example?x=1",
+        "ftp://shop.example",
+        "shop.example",
+        "https://user:pw@shop.example",
+    ],
+)
+def test_invalid_csrf_origins_rejected(origins: str) -> None:
+    with pytest.raises(ValidationError, match="CSRF_TRUSTED_ORIGINS"):
+        make_settings(csrf_trusted_origins=origins)
+
+
+def test_csrf_origins_are_normalised() -> None:
+    settings = make_settings(
+        csrf_trusted_origins="HTTPS://Shop.Example:443,http://localhost:3000,http://[::1]:8080"
+    )
+    assert settings.csrf_trusted_origins == [
+        "https://shop.example",
+        "http://localhost:3000",
+        "http://[::1]:8080",
+    ]
+
+
+@pytest.mark.parametrize("app_env", ["staging", "production"])
+def test_https_csrf_origins_required_when_deployed(app_env: str) -> None:
+    with pytest.raises(ValidationError, match="CSRF_TRUSTED_ORIGINS"):
+        make_settings(app_env=app_env, csrf_trusted_origins="http://shop.example", **DEPLOYED)
+    make_settings(app_env=app_env, csrf_trusted_origins="https://shop.example", **DEPLOYED)
+
+
+def test_login_widget_requires_token_and_username() -> None:
+    with pytest.raises(ValidationError, match="TELEGRAM_LOGIN_WIDGET_ENABLED"):
+        make_settings(telegram_login_widget_enabled=True)
+    with pytest.raises(ValidationError, match="TELEGRAM_LOGIN_WIDGET_ENABLED"):
+        make_settings(telegram_login_widget_enabled=True, telegram_bot_token="1:fake-token")
+    with pytest.raises(ValidationError, match="TELEGRAM_LOGIN_WIDGET_ENABLED"):
+        make_settings(telegram_login_widget_enabled=True, telegram_bot_username="shop_test_bot")
+    settings = make_settings(
+        telegram_login_widget_enabled=True,
+        telegram_bot_token="1:fake-token",
+        telegram_bot_username="@shop_test_bot",
+    )
+    assert settings.telegram_bot_username == "shop_test_bot"
+
+
+@pytest.mark.parametrize("username", ["abc", "has space", "x" * 33, "dash-bot"])
+def test_bot_username_format(username: str) -> None:
+    with pytest.raises(ValidationError, match="TELEGRAM_BOT_USERNAME"):
+        make_settings(telegram_bot_username=username)
