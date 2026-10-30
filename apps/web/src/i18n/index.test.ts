@@ -1,6 +1,19 @@
 import { SUPPORTED_LOCALES } from '@muniramarket/contracts';
 import { describe, expect, it } from 'vitest';
+import { formatMessage } from './format';
 import { getDictionary } from './index';
+
+function leaves(value: unknown, prefix = ''): Array<[string, string]> {
+  if (typeof value === 'string') return [[prefix, value]];
+  if (typeof value !== 'object' || value === null) return [];
+  return Object.entries(value).flatMap(([key, child]) =>
+    leaves(child, prefix === '' ? key : `${prefix}.${key}`),
+  );
+}
+
+function placeholders(text: string): string[] {
+  return [...text.matchAll(/\{(\w+)\}/g)].map((match) => match[1] ?? '').sort();
+}
 
 function keyPaths(value: unknown, prefix = ''): string[] {
   if (typeof value !== 'object' || value === null) return [prefix];
@@ -32,5 +45,24 @@ describe('dictionaries', () => {
         expect(value, `${locale}.${path}`).not.toBe('');
       }
     }
+  });
+
+  it('uses the same {placeholders} in uz and ru', () => {
+    const ru = new Map(leaves(getDictionary('ru')));
+    for (const [path, uzText] of leaves(getDictionary('uz'))) {
+      expect(placeholders(ru.get(path) ?? ''), path).toEqual(placeholders(uzText));
+    }
+  });
+
+  it('translates unit names for every product unit', () => {
+    expect(Object.keys(getDictionary('uz').units).sort()).toEqual(
+      Object.keys(getDictionary('ru').units).sort(),
+    );
+  });
+});
+
+describe('formatMessage', () => {
+  it('fills placeholders and keeps unknown ones visible', () => {
+    expect(formatMessage('{a} of {b}, {c}', { a: 1, b: 'two' })).toBe('1 of two, {c}');
   });
 });

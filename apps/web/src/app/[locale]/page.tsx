@@ -1,51 +1,57 @@
 import { isLocale } from '@muniramarket/contracts';
-import { Container, Price, Screen } from '@muniramarket/ui';
 import { notFound } from 'next/navigation';
-import { LanguageSwitcher } from '@/components/language-switcher';
-import { TelegramStatus } from '@/components/telegram-status';
+import { CategoryChips } from '@/components/category-chips';
+import { PageContainer } from '@/components/page-container';
+import { ProductGrid } from '@/components/product-grid';
+import { SearchForm } from '@/components/search-form';
 import { getDictionary } from '@/i18n';
+import { fetchCategories, fetchProducts } from '@/lib/api/server';
+
+const NEWEST_COUNT = 12;
 
 export default async function HomePage({ params }: PageProps<'/[locale]'>) {
   const { locale } = await params;
   if (!isLocale(locale)) notFound();
-
   const dict = getDictionary(locale);
 
+  const [categories, newest] = await Promise.all([
+    fetchCategories(),
+    fetchProducts({ sort: 'newest', page: 1, pageSize: NEWEST_COUNT }),
+  ]);
+
   return (
-    <Screen>
-      <Container as="header" className="flex items-center justify-end py-3">
-        <LanguageSwitcher
-          locale={locale}
-          label={dict.language.label}
-          names={{ uz: dict.language.uz, ru: dict.language.ru }}
-        />
-      </Container>
-      <Container className="flex flex-1 flex-col gap-6 py-8">
+    <main className="flex-1">
+      <PageContainer className="flex flex-col gap-6 py-6">
         <div className="flex flex-col gap-2">
           <h1 className="text-3xl font-bold tracking-tight">{dict.home.title}</h1>
           <p className="text-lg text-muted-foreground">{dict.home.tagline}</p>
         </div>
 
-        <section aria-labelledby="demo-price" className="flex flex-col gap-2">
-          <h2 id="demo-price" className="text-sm font-medium text-muted-foreground">
-            {dict.home.demoPriceHeading}
+        <SearchForm locale={locale} dict={dict} />
+
+        <section aria-labelledby="categories-heading" className="flex flex-col gap-3">
+          <h2 id="categories-heading" className="text-xl font-semibold">
+            {dict.home.categoriesHeading}
           </h2>
-          <Price
-            amount={12500}
-            oldAmount={15000}
+          <CategoryChips
+            categories={categories}
             locale={locale}
-            currentLabel={dict.home.priceCurrentLabel}
-            oldLabel={dict.home.priceOldLabel}
-            className="text-2xl"
+            label={dict.home.categoriesHeading}
           />
         </section>
 
-        <TelegramStatus
-          label={dict.status.label}
-          telegramText={dict.status.telegram}
-          browserText={dict.status.browser}
-        />
-      </Container>
-    </Screen>
+        <section aria-labelledby="newest-heading" className="flex flex-col gap-3">
+          <h2 id="newest-heading" className="text-xl font-semibold">
+            {dict.home.newestHeading}
+          </h2>
+          <ProductGrid
+            products={newest.items}
+            locale={locale}
+            dict={dict}
+            label={dict.home.newestHeading}
+          />
+        </section>
+      </PageContainer>
+    </main>
   );
 }

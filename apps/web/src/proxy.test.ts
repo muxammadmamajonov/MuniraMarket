@@ -56,6 +56,28 @@ describe('proxy', () => {
     }
   });
 
+  it('sets a CSP with a fresh nonce on page requests', () => {
+    const first = proxy(request('/uz'));
+    const second = proxy(request('/uz'));
+    const nonceOf = (response: Response) =>
+      /'nonce-([^']+)'/.exec(response.headers.get('content-security-policy') ?? '')?.[1];
+    expect(nonceOf(first)).toBeDefined();
+    expect(nonceOf(first)).not.toBe(nonceOf(second));
+    expect(first.headers.get('content-security-policy')).toContain("script-src 'self' 'nonce-");
+    expect(first.headers.get('content-security-policy')).not.toContain("'unsafe-eval'");
+  });
+
+  it('forwards the same CSP on the request headers so Next can apply the nonce', () => {
+    const response = proxy(request('/uz/cart'));
+    const csp = response.headers.get('content-security-policy');
+    expect(csp).not.toBeNull();
+    expect(response.headers.get('x-middleware-request-content-security-policy')).toBe(csp);
+  });
+
+  it('does not put a CSP on locale redirects', () => {
+    expect(proxy(request('/')).headers.get('content-security-policy')).toBeNull();
+  });
+
   it('excludes Next internals, API and files from the matcher', () => {
     const pattern = new RegExp(`^${config.matcher[0]}$`);
     expect(pattern.test('/')).toBe(true);
