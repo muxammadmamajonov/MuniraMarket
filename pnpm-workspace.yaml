@@ -1,0 +1,9 @@
+packages:
+  - apps/*
+  - packages/*
+  - services/telegram
+
+# Dependency build scripts are denied unless listed here explicitly.
+allowBuilds:
+  # Optional native resolver used by eslint-config-next; prebuilt bindings work without its script.
+  unrs-resolver: false
