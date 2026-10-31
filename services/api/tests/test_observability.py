@@ -79,6 +79,27 @@ def test_redact_is_bounded_on_adversarial_input(text: str) -> None:
 
 def test_long_key_names_are_still_redacted() -> None:
     assert "s3cr3t" not in redact("x_oauth_refresh_access_token=s3cr3t-value")
+    assert "s3cr3t" not in redact(f"{'k' * 200}_token=s3cr3t-value")
+    assert "s3cr3t" not in redact(f"session_{'x' * 500}_secret: s3cr3t-value")
+    # A non-secret key is left alone.
+    assert redact("status=NEW") == "status=NEW"
+
+
+def test_cut_never_keeps_half_a_secret() -> None:
+    # The cut would land inside the URL credentials, before the "@" the URL rule needs.
+    text = "x " * ((MAX_LOG_TEXT - 30) // 2) + "postgresql://app:hunter2hunter2hunter2@db/prod"
+    masked = redact(text)
+    assert "hunter2" not in masked
+    assert "[truncated" in masked
+    phone = "y " * ((MAX_LOG_TEXT - 6) // 2) + "+998 90 123 45 67 tail"
+    assert "123 45" not in redact(phone)
+
+
+def test_traceback_cut_keeps_the_innermost_frames() -> None:
+    text = "outer frame\n" * 2000 + "innermost: secret=s3cr3t"
+    masked = redact(text, keep_end=True)
+    assert masked.endswith("innermost: secret=[redacted]")
+    assert masked.startswith("[truncated")
 
 
 def _record(msg: str, *args: object, exc: BaseException | None = None) -> logging.LogRecord:

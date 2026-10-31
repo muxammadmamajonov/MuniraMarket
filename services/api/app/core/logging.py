@@ -27,25 +27,50 @@ _request_id: ContextVar[str | None] = ContextVar("mm_request_id", default=None)
 REQUEST_ID_PATTERN: Final = re.compile(r"^[A-Za-z0-9._-]{8,128}$")
 
 _REDACTED: Final = "[redacted]"
-_REDACTIONS: Final[tuple[tuple[re.Pattern[str], str], ...]] = (
+
+# Key names whose value is masked wherever the name appears in a longer snake/kebab key
+# (access_token=, bot-token:, client_secret=, "hash": "...").
+_SECRET_KEY_PARTS: Final = re.compile(
+    r"authorization|cookie|token|csrf|hash|signature|init_?data|password|passwd|secret|"
+    r"api_?key|mm_session",
+    re.IGNORECASE,
+)
+
+
+# Any key-like word, taken possessively (linear), and what may follow a key: a separator and a
+# value. A value is masked only when the key before it looks secret, checked in Python.
+_KEY: Final = re.compile(r"(?<![A-Za-z0-9_-])[A-Za-z0-9_-]++")
+_ASSIGNED_VALUE: Final = re.compile(r"\"?\s*+[:=]\s*+\"?([^\s\"',;&]++)")
+
+
+def _mask_secret_values(text: str) -> str:
+    """``access_token=abc`` -> ``access_token=[redacted]``, for keys of any length."""
+    parts: list[str] = []
+    position = 0
+    for key in _KEY.finditer(text):
+        if key.start() < position or not _SECRET_KEY_PARTS.search(key.group()):
+            continue
+        value = _ASSIGNED_VALUE.match(text, key.end())
+        if value is None or value.group(1) == _REDACTED:
+            continue
+        parts.append(text[position : value.start(1)])
+        parts.append(_REDACTED)
+        position = value.end(1)
+    parts.append(text[position:])
+    return "".join(parts)
+
+
+# Every pattern runs in linear time: starts are anchored by lookbehinds, possessive quantifiers
+# (`*+`, `++`) never give characters back, and the other repetitions are bounded.
+_BEFORE_KEYS: Final[tuple[tuple[re.Pattern[str], str], ...]] = (
     # Credentials inside URLs: postgresql+asyncpg://user:password@host, rediss://:password@host.
-    (re.compile(r"(?i)\b([a-z][a-z0-9+.-]*://)[^/\s@]*@"), r"\1" + _REDACTED + "@"),
+    (re.compile(r"(?i)(?<![a-z0-9+.-])([a-z][a-z0-9+.-]*+://)[^/\s@]*+@"), r"\1" + _REDACTED + "@"),
     # Telegram bot tokens: <bot id>:<35+ url-safe characters>.
-    (re.compile(r"\b\d{6,12}:[A-Za-z0-9_-]{30,}\b"), _REDACTED),
+    (re.compile(r"(?<!\d)\d{6,12}:[A-Za-z0-9_-]{30,}+"), _REDACTED),
     # Authorization values with their scheme: "Bearer abc", "Basic abc".
-    (re.compile(r"(?i)\b(bearer|basic)\s+[A-Za-z0-9._~+/=-]+"), r"\1 " + _REDACTED),
-    # Secret-looking assignments, also inside longer snake/kebab keys (access_token=, bot-token:,
-    # client_secret=, "hash": "..."): the key is kept, the value masked.
-    (
-        re.compile(
-            # Anchored at the start of a key and bounded on both sides of the keyword, so a long
-            # run of key characters cannot make the engine backtrack quadratically.
-            r"(?i)(?<![A-Za-z0-9_-])([A-Za-z0-9_-]{0,40}?(?:authorization|cookie|token|csrf|hash|"
-            r"signature|init_?data|password|passwd|secret|api_?key|mm_session)[A-Za-z0-9_-]{0,40})"
-            r"(\"?\s*[:=]\s*\"?)(?!\[redacted\])[^\s\"',;&]+"
-        ),
-        r"\1\2" + _REDACTED,
-    ),
+    (re.compile(r"(?i)\b(bearer|basic)\s++[A-Za-z0-9._~+/=-]++"), r"\1 " + _REDACTED),
+)
+_AFTER_KEYS: Final[tuple[tuple[re.Pattern[str], str], ...]] = (
     # Uzbek phone numbers: +998 / 998 and nine digits, or the nine-digit local form
     # (90 123 45 67, 901234567), with optional separators.
     (re.compile(r"\+?998[\s()-]*\d{2}[\s()-]*\d{3}[\s()-]*\d{2}[\s()-]*\d{2}"), _REDACTED),
@@ -55,16 +80,36 @@ _REDACTIONS: Final[tuple[tuple[re.Pattern[str], str], ...]] = (
 )
 
 
-# Log lines longer than this are cut before redaction: bounds the regex work per line and keeps a
-# runaway message (a dumped payload) out of the logs.
+# Longer log text is cut before redaction (bounds the work per line and keeps dumped payloads out
+# of the logs). The cut goes back to the last whitespace and drops the partial token after it,
+# so half a secret (a password cut before its "@", a phone number cut in two) is never kept.
 MAX_LOG_TEXT: Final = 8000
 
 
-def redact(text: str) -> str:
-    """Mask credentials, tokens and phone numbers in ``text`` (cut to ``MAX_LOG_TEXT``)."""
-    if len(text) > MAX_LOG_TEXT:
-        text = f"{text[:MAX_LOG_TEXT]}...[truncated {len(text) - MAX_LOG_TEXT} chars]"
-    for pattern, replacement in _REDACTIONS:
+def _cut(text: str, *, keep_end: bool = False) -> str:
+    if len(text) <= MAX_LOG_TEXT:
+        return text
+    if keep_end:
+        window = text[-MAX_LOG_TEXT:]
+        first_space = re.search(r"\s", window)
+        kept = window[first_space.end() :] if first_space else ""
+        return f"[truncated {len(text) - len(kept)} chars]...{kept}"
+    window = text[:MAX_LOG_TEXT]
+    boundary = max(window.rfind(" "), window.rfind("\n"), window.rfind("\t"))
+    kept = window[:boundary] if boundary > 0 else ""
+    return f"{kept}...[truncated {len(text) - len(kept)} chars]"
+
+
+def redact(text: str, *, keep_end: bool = False) -> str:
+    """Mask credentials, tokens and phone numbers in ``text``, cut to ``MAX_LOG_TEXT``.
+
+    ``keep_end`` keeps the last part instead of the first (tracebacks: innermost frames).
+    """
+    text = _cut(text, keep_end=keep_end)
+    for pattern, replacement in _BEFORE_KEYS:
+        text = pattern.sub(replacement, text)
+    text = _mask_secret_values(text)
+    for pattern, replacement in _AFTER_KEYS:
         text = pattern.sub(replacement, text)
     return text
 
@@ -127,7 +172,7 @@ class JsonFormatter(logging.Formatter):
             # The exception message can carry data (a URL, a row); keep it, redacted.
             entry["exc_msg"] = redact(str(exc))[:500]
             # Keep the innermost frames (the end) when a traceback is longer than the cap.
-            entry["traceback"] = redact("".join(traceback.format_tb(tb))[-MAX_LOG_TEXT:])
+            entry["traceback"] = redact("".join(traceback.format_tb(tb)), keep_end=True)
         return json.dumps(entry, ensure_ascii=False, default=str)
 
 
