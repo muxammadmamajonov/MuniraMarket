@@ -1,3 +1,12 @@
+import { auditDict } from './sections/audit';
+import { categoriesDict } from './sections/categories';
+import { csvDict } from './sections/csv';
+import { dashboardDict } from './sections/dashboard';
+import { productsDict } from './sections/products';
+import { sharedDict } from './sections/shared';
+import { slotsDict } from './sections/slots';
+import { usersDict } from './sections/users';
+import { zonesDict } from './sections/zones';
 import type { Dictionary } from './types';
 
 export const uz: Dictionary = {
@@ -57,6 +66,7 @@ export const uz: Dictionary = {
     notFoundMessage: 'Bunday buyurtma yo‘q.',
     loading: 'Buyurtma yuklanmoqda…',
     createdAt: 'Yaratilgan',
+    deliverySlot: 'Yetkazib berish oralig‘i',
     payment: 'To‘lov usuli',
     items: { title: 'Mahsulotlar', sku: 'Artikul' },
     totals: { subtotal: 'Mahsulotlar summasi', delivery: 'Yetkazib berish', total: 'Jami' },
@@ -140,4 +150,17 @@ export const uz: Dictionary = {
     rateLimited: 'Juda ko‘p so‘rov. Birozdan keyin qayta urinib ko‘ring.',
     serviceUnavailable: 'Xizmat vaqtincha ishlamayapti. Birozdan keyin qayta urinib ko‘ring.',
   },
+  nav: sharedDict.nav.uz,
+  common: sharedDict.common.uz,
+  permission: sharedDict.permission.uz,
+  validation: sharedDict.validation.uz,
+  apiErrors: sharedDict.apiErrors.uz,
+  dashboard: dashboardDict.uz,
+  products: productsDict.uz,
+  categories: categoriesDict.uz,
+  csv: csvDict.uz,
+  zones: zonesDict.uz,
+  slots: slotsDict.uz,
+  users: usersDict.uz,
+  audit: auditDict.uz,
 };

@@ -23,7 +23,7 @@ export function ordersHref(
   if (status !== null) query.set('status', status);
   if (page > 1) query.set('page', String(page));
   const search = query.toString();
-  return `/${locale}${search === '' ? '' : `?${search}`}`;
+  return `/${locale}/orders${search === '' ? '' : `?${search}`}`;
 }
 
 /** Link to one order. The id is a UUID, but is encoded anyway. */

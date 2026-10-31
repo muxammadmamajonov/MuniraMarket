@@ -25,7 +25,7 @@ export interface FakeCall {
   body: unknown;
 }
 
-export type FakeHandler = (call: FakeCall) => Response | Promise<Response> | undefined;
+export type FakeHandler = (call: FakeCall) => Response | Promise<Response | undefined> | undefined;
 
 export function json(body: unknown, init: ResponseInit = {}): Response {
   return Response.json(body, init);
@@ -55,6 +55,16 @@ export function sessionFor(role: UserRole, csrfToken = 'csrf-1'): SessionRespons
   return { user: userWithRole(role), csrf_token: csrfToken };
 }
 
+/** JSON bodies are parsed; anything else (the CSV import's raw text) is kept as the string it is. */
+function parseBody(raw: unknown): unknown {
+  if (typeof raw !== 'string') return undefined;
+  try {
+    return JSON.parse(raw) as unknown;
+  } catch {
+    return raw;
+  }
+}
+
 /**
  * Replaces `fetch`. Handlers are tried in order; the first to return a Response wins. Anything
  * unhandled fails the request loudly, so a test notices an unexpected call.
@@ -68,7 +78,7 @@ export function installFakeApi(...handlers: FakeHandler[]) {
       method: (init?.method ?? 'GET').toUpperCase(),
       path: `${url.pathname}${url.search}`,
       headers: new Headers(init?.headers),
-      body: typeof raw === 'string' ? (JSON.parse(raw) as unknown) : undefined,
+      body: parseBody(raw),
     };
     calls.push(call);
     for (const handler of handlers) {
@@ -178,6 +188,7 @@ export function orderDetail(overrides: Partial<AdminOrderDetail> = {}): AdminOrd
         at: '2026-10-31T09:05:00Z',
       },
     ],
+    delivery_slot: null,
     allowed_transitions: ['CONFIRMED', 'CANCELLED'],
     ...overrides,
   };

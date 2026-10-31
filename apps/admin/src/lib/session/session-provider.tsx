@@ -16,7 +16,7 @@ import {
   type ReactNode,
 } from 'react';
 import { ApiRequestError, apiPath, readJson } from '@/lib/api/errors';
-import { isStaff } from '@/lib/roles';
+import { isAdmin, isStaff } from '@/lib/roles';
 
 export type SessionStatus = 'loading' | 'authenticated' | 'anonymous' | 'error';
 
@@ -25,6 +25,11 @@ export interface SessionContextValue {
   user: UserPublic | null;
   /** True only for a signed-in operator/admin. Everything that reads order data is gated on it. */
   isStaff: boolean;
+  /**
+   * True only for a signed-in admin. UI convenience (navigation, admin-only pages): Core API
+   * re-reads the role on every request and answers 403 to an operator regardless.
+   */
+  isAdmin: boolean;
   /** Why `status` is `error`; otherwise `null`. */
   error: ApiRequestError | null;
   /**
@@ -206,7 +211,15 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   }, [apiFetch, apply]);
 
   const value = useMemo<SessionContextValue>(
-    () => ({ ...state, isStaff: isStaff(state.user), apiFetch, retry, loginWithWidget, logout }),
+    () => ({
+      ...state,
+      isStaff: isStaff(state.user),
+      isAdmin: isAdmin(state.user),
+      apiFetch,
+      retry,
+      loginWithWidget,
+      logout,
+    }),
     [state, apiFetch, retry, loginWithWidget, logout],
   );
 

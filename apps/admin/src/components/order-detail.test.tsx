@@ -168,6 +168,31 @@ describe('OrderDetailView: content', () => {
   });
 });
 
+describe('OrderDetailView: delivery slot', () => {
+  it('shows the booked window (date and HH:MM–HH:MM) when there is one, and nothing when not', async () => {
+    installFakeApi(
+      sessionHandler('operator'),
+      getOrder(
+        orderDetail({
+          delivery_slot: { date: '2026-11-02', starts_at: '14:00', ends_at: '16:00' },
+        }),
+      ),
+    );
+    const view = renderAdmin(<OrderDetailView id={ORDER_ID} />);
+    expect(await screen.findByTestId('order-delivery-slot')).toHaveTextContent(
+      '02.11.2026, 14:00–16:00',
+    );
+    expect(screen.getByText('Окно доставки')).toBeInTheDocument();
+    view.unmount();
+    vi.unstubAllGlobals();
+
+    installFakeApi(sessionHandler('operator'), getOrder(orderDetail({ delivery_slot: null })));
+    renderAdmin(<OrderDetailView id={ORDER_ID} />);
+    await screen.findByText('Test Recipient');
+    expect(screen.queryByTestId('order-delivery-slot')).not.toBeInTheDocument();
+  });
+});
+
 describe('OrderDetailView: actions', () => {
   it('offers the forward step as the primary action and Cancel from allowed_transitions', async () => {
     installFakeApi(
@@ -178,11 +203,11 @@ describe('OrderDetailView: actions', () => {
     expect(await screen.findByRole('button', { name: 'Подтвердить' })).toBeEnabled();
     expect(screen.getByRole('button', { name: 'Отменить' })).toBeEnabled();
     // Nothing the API did not list is offered.
-    expect(screen.getAllByRole('button').map((button) => button.textContent)).toEqual([
-      'Выйти',
-      'Подтвердить',
-      'Отменить',
-    ]);
+    expect(
+      within(screen.getByRole('main'))
+        .getAllByRole('button')
+        .map((button) => button.textContent),
+    ).toEqual(['Подтвердить', 'Отменить']);
   });
 
   it('labels each forward step and offers only what is allowed (ready -> out for delivery)', async () => {

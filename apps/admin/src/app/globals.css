@@ -1,12 +1,109 @@
 @import 'tailwindcss';
 @import '@muniramarket/ui/styles/tokens.css';
 
+/* "Mobile" is 640px and below, so the desktop layout (`sm:`) starts at 641px. */
+@theme {
+  --breakpoint-sm: 40.0625rem;
+}
+
+:root {
+  /* Strong ease-out for entrances and press feedback; the iOS-like drawer curve for sheets. */
+  --mm-ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --mm-ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
+}
+
 @layer base {
   html {
     -webkit-text-size-adjust: 100%;
+    /* The grey/blue flash on tap fights the `:active` press feedback every control has. */
+    -webkit-tap-highlight-color: transparent;
   }
 
   body {
     @apply bg-background font-sans text-foreground antialiased;
+  }
+
+  /* No 300ms tap delay / double-tap zoom on controls. */
+  button,
+  a,
+  summary,
+  [role='button'],
+  label[for],
+  select {
+    touch-action: manipulation;
+  }
+
+  /* Controls are not content: a long press must not select their label. Content stays selectable. */
+  button,
+  [role='button'] {
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
+  }
+
+  /* iOS Safari zooms the page into any input under 16px and never zooms back out. */
+  input,
+  textarea,
+  select {
+    font-size: max(1rem, 16px);
+  }
+
+  /* Numbers line up in tables and do not jitter when they change. */
+  table,
+  .tabular {
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+/*
+ * Overlays. Entrances use `@starting-style` transitions (interruptible, no JS mounted-flag);
+ * exits are instant, which reads as fast. Centered dialogs scale from 0.97, never from 0;
+ * on phones the same panel is a bottom sheet that slides up on the drawer curve.
+ */
+.mm-backdrop {
+  transition: opacity 180ms var(--mm-ease-out);
+  @starting-style {
+    opacity: 0;
+  }
+}
+
+.mm-panel {
+  transition:
+    opacity 180ms var(--mm-ease-out),
+    transform 200ms var(--mm-ease-out);
+  @starting-style {
+    opacity: 0;
+    transform: scale(0.97);
+  }
+}
+
+@media (max-width: 640px) {
+  .mm-panel {
+    transition: transform 260ms var(--mm-ease-drawer);
+    @starting-style {
+      opacity: 1;
+      transform: translateY(100%);
+    }
+  }
+}
+
+/* Content that changed because of a filter or a refresh dims instead of being replaced by a skeleton. */
+.mm-busy {
+  opacity: 0.6;
+  transition: opacity 150ms var(--mm-ease-out);
+}
+
+/*
+ * Reduced motion: nothing moves or pulses. Colour/opacity changes become instant too, which is
+ * the safe reading of the preference; state is always carried by text and borders, not motion.
+ */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
   }
 }

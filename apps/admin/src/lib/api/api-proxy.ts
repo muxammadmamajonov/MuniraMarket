@@ -5,6 +5,20 @@ import { clientIpFrom } from './client-ip';
 /** Largest request body the proxy forwards. The API's own limit is at least as strict. */
 export const MAX_BODY_BYTES = 64 * 1024;
 
+/**
+ * The one route with a larger limit: the catalog CSV import (a raw `text/csv` body, 1 MiB at the
+ * API as well). Only this exact path (POST) gets it; everything else stays at
+ * {@link MAX_BODY_BYTES}.
+ */
+export const MAX_CSV_IMPORT_BYTES = 1024 * 1024;
+const CSV_IMPORT_PATH = 'admin/catalog/csv/import';
+
+function bodyLimitFor(method: string, segments: readonly string[]): number {
+  return method === 'POST' && segments.join('/') === CSV_IMPORT_PATH
+    ? MAX_CSV_IMPORT_BYTES
+    : MAX_BODY_BYTES;
+}
+
 /** How long we wait for the Core API before answering 504. */
 export const UPSTREAM_TIMEOUT_MS = 15_000;
 
@@ -136,7 +150,7 @@ export function createApiProxy(deps: ProxyDeps) {
 
     let body: Uint8Array | undefined;
     if (hasBody) {
-      const read = await readBodyCapped(request, MAX_BODY_BYTES);
+      const read = await readBodyCapped(request, bodyLimitFor(method, path));
       if (read === null) {
         return errorResponse(413, 'payload_too_large', 'Request body is too large');
       }

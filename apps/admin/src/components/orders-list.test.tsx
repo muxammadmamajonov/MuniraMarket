@@ -96,10 +96,10 @@ describe('OrdersList', () => {
     const links = within(filter).getAllByRole('link');
     expect(links).toHaveLength(ORDER_STATUSES.length + 1);
     expect(links[0]).toHaveTextContent('Все');
-    expect(links[0]).toHaveAttribute('href', '/ru');
+    expect(links[0]).toHaveAttribute('href', '/ru/orders');
     expect(within(filter).getByRole('link', { name: 'Подтверждён' })).toHaveAttribute(
       'href',
-      '/ru?status=CONFIRMED',
+      '/ru/orders?status=CONFIRMED',
     );
     expect(within(filter).getByRole('link', { name: 'Сборка' })).toHaveAttribute(
       'aria-current',
@@ -141,11 +141,11 @@ describe('OrdersList', () => {
     const pager = await screen.findByRole('navigation', { name: 'Страницы' });
     expect(within(pager).getByRole('link', { name: 'Назад' })).toHaveAttribute(
       'href',
-      '/ru?status=NEW',
+      '/ru/orders?status=NEW',
     );
     expect(within(pager).getByRole('link', { name: 'Далее' })).toHaveAttribute(
       'href',
-      '/ru?status=NEW&page=3',
+      '/ru/orders?status=NEW&page=3',
     );
     expect(within(pager).getByText('Страница 2 из 3')).toBeInTheDocument();
   });
@@ -168,7 +168,10 @@ describe('OrdersList', () => {
     renderAdmin(<OrdersList />);
     const last = await screen.findByRole('navigation', { name: 'Страницы' });
     expect(within(last).queryByRole('link', { name: 'Далее' })).not.toBeInTheDocument();
-    expect(within(last).getByRole('link', { name: 'Назад' })).toHaveAttribute('href', '/ru?page=2');
+    expect(within(last).getByRole('link', { name: 'Назад' })).toHaveAttribute(
+      'href',
+      '/ru/orders?page=2',
+    );
   });
 
   it('shows a loading state while the request is open, then the empty state (all and filtered)', async () => {

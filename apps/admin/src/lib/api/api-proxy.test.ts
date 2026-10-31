@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { MAX_BODY_BYTES, createApiProxy } from './api-proxy';
+import { MAX_BODY_BYTES, MAX_CSV_IMPORT_BYTES, createApiProxy } from './api-proxy';
 
 const ORDER_ID = '0b1f4c7e-2d4a-4f3b-9a53-6f0f1b8a7c11';
 
@@ -314,5 +314,42 @@ describe('admin api proxy: forwarding', () => {
     } as RequestInit);
     expect(streamed.status).toBe(413);
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+  it('lets only the CSV import carry up to 1 MiB, as raw text/csv, and refuses more', async () => {
+    const csvPath = ['admin', 'catalog', 'csv', 'import'];
+    const { fetchMock, call } = setup(() => Response.json({ applied: false }));
+    const big = 'a'.repeat(MAX_BODY_BYTES + 10);
+
+    const ok = await call(
+      csvPath,
+      'http://admin.test/api/v1/admin/catalog/csv/import?dry_run=true',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'text/csv' },
+        body: big,
+      },
+    );
+    expect(ok.status).toBe(200);
+    const sent = fetchMock.mock.calls[0]?.[1];
+    expect(new Headers(sent?.headers).get('content-type')).toBe('text/csv');
+    expect(String(fetchMock.mock.calls[0]?.[0])).toContain(
+      '/admin/catalog/csv/import?dry_run=true',
+    );
+
+    const tooBig = await call(csvPath, 'http://admin.test/x', {
+      method: 'POST',
+      headers: { 'content-type': 'text/csv', 'content-length': String(MAX_CSV_IMPORT_BYTES + 1) },
+      body: 'x',
+    });
+    expect(tooBig.status).toBe(413);
+
+    // Any other route keeps the 64 KiB limit, including other CSV routes and other methods.
+    const other = await call(['admin', 'products'], 'http://admin.test/x', {
+      method: 'POST',
+      headers: { 'content-type': 'text/csv' },
+      body: big,
+    });
+    expect(other.status).toBe(413);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 });
