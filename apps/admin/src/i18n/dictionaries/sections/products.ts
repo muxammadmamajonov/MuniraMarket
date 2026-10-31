@@ -62,6 +62,7 @@ export interface ProductsDict {
     preview: string;
     previewAlt: string;
     previewUnavailable: string;
+    previewDisabled: string;
     submitNew: string;
     submitEdit: string;
     created: string;
@@ -143,6 +144,8 @@ export const productsDict: Record<Locale, ProductsDict> = {
       previewAlt: 'Mahsulot rasmi',
       previewUnavailable:
         'Rasm ko‘rsatilmadi: manzil noto‘g‘ri bo‘lishi yoki rasm bu panelda ochilmasligi mumkin.',
+      previewDisabled:
+        'Rasm ko‘rinishi rasm saqlash yoqilgandan keyin paydo bo‘ladi. Manzil baribir saqlanadi.',
       submitNew: 'Mahsulotni yaratish',
       submitEdit: 'Saqlash',
       created: 'Mahsulot yaratildi.',
@@ -232,6 +235,8 @@ export const productsDict: Record<Locale, ProductsDict> = {
       previewAlt: 'Изображение товара',
       previewUnavailable:
         'Изображение не показано: адрес может быть неверным или картинка не открывается в этой панели.',
+      previewDisabled:
+        'Предпросмотр появится после включения хранилища изображений. Адрес всё равно сохранится.',
       submitNew: 'Создать товар',
       submitEdit: 'Сохранить',
       created: 'Товар создан.',

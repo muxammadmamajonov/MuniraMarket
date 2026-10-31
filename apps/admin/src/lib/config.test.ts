@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { getApiInternalUrl, getClientIpHeader } from './config';
+import { getApiInternalUrl, getClientIpHeader, isImagePreviewEnabled } from './config';
 
 afterEach(() => {
   vi.unstubAllEnvs();
@@ -31,5 +31,11 @@ describe('config', () => {
     expect(getClientIpHeader()).toBe('x-real-ip');
     vi.stubEnv('CLIENT_IP_HEADER', 'x-real-ip\r\nx-evil');
     expect(getClientIpHeader()).toBeNull();
+  });
+});
+
+describe('isImagePreviewEnabled', () => {
+  it('is off until an R2 CDN host is allow-listed in the admin CSP (img-src stays self + data:)', () => {
+    expect(isImagePreviewEnabled()).toBe(false);
   });
 });

@@ -1,8 +1,10 @@
 /**
- * Server-side configuration. Only imported by the API proxy (a Route Handler), never by client
- * components. (`apps/web` marks its twin with the `server-only` package; the admin does not depend
- * on it, and nothing here is a secret: `API_INTERNAL_URL` is simply never exposed to the browser
- * because it is not `NEXT_PUBLIC_`-prefixed.)
+ * Configuration. The environment readers (`getApiInternalUrl`, `getClientIpHeader`) are only
+ * imported by the API proxy (a Route Handler); client components may import only the pure feature
+ * switches below (`isImagePreviewEnabled`), which read nothing from the environment. (`apps/web`
+ * marks its twin with the `server-only` package; the admin does not depend on it, and nothing here
+ * is a secret: `API_INTERNAL_URL` is simply never exposed to the browser because it is not
+ * `NEXT_PUBLIC_`-prefixed.)
  */
 
 const DEFAULT_API_INTERNAL_URL = 'http://localhost:8000';
@@ -33,4 +35,18 @@ const HEADER_NAME = /^[a-z0-9-]{1,64}$/;
 export function getClientIpHeader(): string | null {
   const raw = process.env['CLIENT_IP_HEADER']?.trim().toLowerCase();
   return raw !== undefined && HEADER_NAME.test(raw) ? raw : null;
+}
+
+/**
+ * Whether the product form may load the image at `image_url` to preview it.
+ *
+ * Always `false` for now: the admin's Content-Security-Policy is `img-src 'self' data:` (see
+ * `csp.ts`) and must stay that way, so an external image would only be blocked and reported as a
+ * violation. Until image storage (R2) is enabled the form shows its placeholder and a note. This
+ * flips to `true` together with allow-listing the R2 CDN hostname in `img-src`; both changes
+ * belong in one commit. The `image_url` field itself, its validation and saving are unaffected
+ * (an https URL still works on the storefront).
+ */
+export function isImagePreviewEnabled(): boolean {
+  return false;
 }

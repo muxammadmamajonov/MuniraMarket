@@ -18,6 +18,7 @@ import type { FieldKey } from '@/i18n/dictionaries/sections/shared';
 import { readErrorMessage, writeErrorMessage } from '@/lib/api/error-messages';
 import { FORM_LEVEL, fieldErrorsFrom } from '@/lib/api/field-errors';
 import { jsonInit, request } from '@/lib/api/request';
+import { isImagePreviewEnabled } from '@/lib/config';
 import {
   buildCreateRequest,
   buildUpdateRequest,
@@ -126,7 +127,11 @@ function ProductForm({ categories, product: initial, onReload, created }: FormPr
 
   const price = parseIntegerField(values.price, { min: 0, max: 1e12 });
   const imageUrl = values.image_url.trim();
-  const previewSrc = imageUrl !== '' && isValidImageUrl(imageUrl) ? imageUrl : null;
+  // The admin CSP forbids external images, so the URL is never handed to the preview until image
+  // storage is enabled (`isImagePreviewEnabled`).
+  const previewEnabled = isImagePreviewEnabled();
+  const previewSrc =
+    previewEnabled && imageUrl !== '' && isValidImageUrl(imageUrl) ? imageUrl : null;
 
   const handleFailure = (error: Parameters<typeof writeErrorMessage>[2]) => {
     if (error.code === 'validation_error') {
@@ -507,8 +512,14 @@ function ProductForm({ categories, product: initial, onReload, created }: FormPr
                 <ImagePlaceholder src={previewSrc} alt={copy.previewAlt} className="w-32" />
               </div>
             </div>
-            {previewSrc === null ? null : (
-              <p className="text-sm text-muted-foreground">{copy.previewUnavailable}</p>
+            {previewEnabled ? (
+              previewSrc === null ? null : (
+                <p className="text-sm text-muted-foreground">{copy.previewUnavailable}</p>
+              )
+            ) : (
+              <p className="text-sm text-muted-foreground" data-testid="image-preview-note">
+                {copy.previewDisabled}
+              </p>
             )}
           </section>
         </fieldset>
