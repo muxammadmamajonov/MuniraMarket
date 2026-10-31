@@ -43,10 +43,12 @@ class OutboxRepository(Protocol):
         message_id: uuid.UUID,
         outcome: ReportedOutcome,
         *,
+        attempt: int,
         error_code: str | None,
         now: datetime,
     ) -> bool:
-        """Record the outcome of a claimed, unfinished message; ``False`` if there is none."""
+        """Record the outcome of claim number ``attempt`` of an unfinished message whose lease
+        has not expired; ``False`` otherwise (unknown, finished, expired or reclaimed)."""
         ...
 
 
@@ -120,6 +122,7 @@ class SqlAlchemyOutboxRepository:
         message_id: uuid.UUID,
         outcome: ReportedOutcome,
         *,
+        attempt: int,
         error_code: str | None,
         now: datetime,
     ) -> bool:
@@ -131,9 +134,10 @@ class SqlAlchemyOutboxRepository:
                         NotificationOutbox.id == message_id,
                         NotificationOutbox.processed_at.is_(None),
                         NotificationOutbox.locked_until.is_not(None),
-                        # A worker may finish after its 60-second lease has expired.  By then
-                        # another worker can have reclaimed the row, so the stale worker must
-                        # not overwrite that newer delivery's outcome.
+                        # Fencing: only the holder of the current lease may report. A worker that
+                        # finishes after its lease expired, or after another worker reclaimed
+                        # the row (which bumps ``attempts``), must not overwrite that outcome.
+                        NotificationOutbox.attempts == attempt,
                         NotificationOutbox.locked_until > now,
                     )
                     .with_for_update()

@@ -63,10 +63,19 @@ async def report(
     outcome: ReportedOutcome,
     now: datetime,
     error_code: str | None = None,
+    *,
+    attempt: int | None = None,
 ) -> bool:
+    """Report as the holder of the current lease, unless ``attempt`` names another claim."""
     async with factory() as session:
+        if attempt is None:
+            attempt = (
+                await session.execute(
+                    select(NotificationOutbox.attempts).where(NotificationOutbox.id == message_id)
+                )
+            ).scalar_one_or_none() or 1
         return await SqlAlchemyOutboxRepository(session).report(
-            message_id, outcome, error_code=error_code, now=now
+            message_id, outcome, attempt=attempt, error_code=error_code, now=now
         )
 
 
@@ -174,13 +183,25 @@ async def test_an_expired_worker_cannot_report_a_reclaimed_message(factory: Sess
     assert reclaimed.id == message_id
 
     # The first worker's late failure cannot release or finish the second worker's lease.
-    assert not await report(factory, message_id, "failed", T0 + LEASE)
+    assert reclaimed.attempts == 2
+    assert not await report(factory, message_id, "failed", T0 + LEASE, attempt=1)
     row = await stored(factory, message_id)
     assert row.locked_until == T0 + LEASE * 2
     assert (row.processed_at, row.outcome) == (None, None)
 
-    assert await report(factory, message_id, "delivered", T0 + LEASE + timedelta(seconds=1))
+    later = T0 + LEASE + timedelta(seconds=1)
+    assert await report(factory, message_id, "delivered", later, attempt=2)
     assert (await stored(factory, message_id)).outcome == "delivered"
+
+
+async def test_a_report_after_the_own_lease_expired_is_refused(factory: SessionFactory) -> None:
+    """Nobody reclaimed it yet, but the lease is gone: the row is anyone's to claim again."""
+    [message_id] = await add_messages(factory, 1)
+    [message] = await claim(factory, T0)
+    assert not await report(factory, message_id, "delivered", T0 + LEASE, attempt=message.attempts)
+    assert (await stored(factory, message_id)).outcome is None
+    [again] = await claim(factory, T0 + LEASE)
+    assert again.attempts == message.attempts + 1
 
 
 async def test_retry_backs_off_and_releases_the_lease(factory: SessionFactory) -> None:
@@ -263,7 +284,7 @@ async def test_claim_and_report_over_signed_http(
     assert claimed["lease_expires_at"] == (instant + LEASE).isoformat().replace("+00:00", "Z")
 
     path = f"/api/v1/internal/telegram/notifications/{message_id}/result"
-    body = json.dumps({"outcome": "delivered"}).encode()
+    body = json.dumps({"attempt": 1, "outcome": "delivered"}).encode()
     for nonce, status in (("nonce-result-0001", 204), ("nonce-result-0002", 404)):
         headers = signed_headers(
             method="POST", path=path, body=body, actor="", timestamp=int(now), nonce=nonce

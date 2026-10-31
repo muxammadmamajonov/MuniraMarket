@@ -32,7 +32,7 @@ class FakeOutboxRepository:
             )
         ]
         self.claims: list[tuple[int, datetime]] = []
-        self.reports: list[tuple[uuid.UUID, ReportedOutcome, str | None, datetime]] = []
+        self.reports: list[tuple[uuid.UUID, ReportedOutcome, int, str | None, datetime]] = []
 
     async def claim(self, *, limit: int, now: datetime) -> list[OutboxMessage]:
         self.claims.append((limit, now))
@@ -43,10 +43,11 @@ class FakeOutboxRepository:
         message_id: uuid.UUID,
         outcome: ReportedOutcome,
         *,
+        attempt: int,
         error_code: str | None,
         now: datetime,
     ) -> bool:
-        self.reports.append((message_id, outcome, error_code, now))
+        self.reports.append((message_id, outcome, attempt, error_code, now))
         return message_id == MESSAGE_ID
 
 
@@ -120,11 +121,11 @@ async def test_report(
     client: httpx.AsyncClient, outbox: FakeOutboxRepository, outcome: str
 ) -> None:
     path = result_path(MESSAGE_ID)
-    body = as_json({"outcome": outcome, "error_code": "bot_api_429"})
+    body = as_json({"attempt": 3, "outcome": outcome, "error_code": "bot_api_429"})
     response = await client.post(path, content=body, headers=service_headers("POST", path, body))
     assert response.status_code == 204
     assert outbox.reports == [
-        (MESSAGE_ID, outcome, "bot_api_429", datetime.fromtimestamp(NOW, tz=UTC))
+        (MESSAGE_ID, outcome, 3, "bot_api_429", datetime.fromtimestamp(NOW, tz=UTC))
     ]
 
 
@@ -133,7 +134,7 @@ async def test_report_unknown_message_is_404(
 ) -> None:
     other = uuid.uuid4()
     path = result_path(other)
-    body = as_json({"outcome": "delivered"})
+    body = as_json({"attempt": 1, "outcome": "delivered"})
     response = await client.post(path, content=body, headers=service_headers("POST", path, body))
     assert response.status_code == 404
     assert response.json()["error"]["code"] == "not_found"
@@ -183,7 +184,7 @@ async def test_requests_acting_for_a_user_are_refused(
     client: httpx.AsyncClient, outbox: FakeOutboxRepository
 ) -> None:
     path = result_path(MESSAGE_ID)
-    body = as_json({"outcome": "delivered"})
+    body = as_json({"attempt": 1, "outcome": "delivered"})
     for response in (
         await client.post(CLAIM, headers=service_headers("POST", CLAIM, actor="tg:123456789")),
         await client.post(
@@ -200,7 +201,7 @@ async def test_report_path_must_be_a_uuid(
     client: httpx.AsyncClient, outbox: FakeOutboxRepository
 ) -> None:
     path = "/api/v1/internal/telegram/notifications/nope/result"
-    body = as_json({"outcome": "delivered"})
+    body = as_json({"attempt": 1, "outcome": "delivered"})
     response = await client.post(path, content=body, headers=service_headers("POST", path, body))
     assert response.status_code == 422
     assert outbox.reports == []

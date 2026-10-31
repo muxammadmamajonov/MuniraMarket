@@ -252,9 +252,9 @@ describe('notification outbox calls', () => {
     const fetch = createFakeFetch(() => ({ status: 204, body: '' }));
     const client = createCoreApiClient({ fetch, config: config(), ...fixed });
     await expect(
-      client.reportNotification(ID, { outcome: 'retry', errorCode: 'bot_api_429' }),
+      client.reportNotification(ID, { attempt: 2, outcome: 'retry', errorCode: 'bot_api_429' }),
     ).resolves.toBeNull();
-    await client.reportNotification(ID, { outcome: 'delivered' });
+    await client.reportNotification(ID, { attempt: 1, outcome: 'delivered' });
 
     const [withCode, without] = fetch.calls;
     expect(withCode.url).toBe(
@@ -263,11 +263,12 @@ describe('notification outbox calls', () => {
     expect(withCode.init.method).toBe('POST');
     expect(withCode.init.headers['X-MM-Actor']).toBe('');
     expect(JSON.parse(new TextDecoder().decode(withCode.init.body))).toEqual({
+      attempt: 2,
       outcome: 'retry',
       error_code: 'bot_api_429',
     });
     expect(verifyWire(withCode)).toBe(true);
-    expect(new TextDecoder().decode(without.init.body)).toBe('{"outcome":"delivered"}');
+    expect(new TextDecoder().decode(without.init.body)).toBe('{"attempt":1,"outcome":"delivered"}');
     expect(verifyWire(without)).toBe(true);
   });
 
@@ -275,15 +276,23 @@ describe('notification outbox calls', () => {
     const fetch = createFakeFetch();
     const client = createCoreApiClient({ fetch, config: config(), ...fixed });
     for (const id of ['', 'x', `${ID}/../claim`, `${ID}?a=1`, `../${ID}`, 42, undefined]) {
-      await expect(client.reportNotification(id, { outcome: 'delivered' })).rejects.toThrow(
-        TypeError,
-      );
+      await expect(
+        client.reportNotification(id, { attempt: 1, outcome: 'delivered' }),
+      ).rejects.toThrow(TypeError);
     }
-    await expect(client.reportNotification(ID, { outcome: 'sent' })).rejects.toThrow(TypeError);
+    await expect(client.reportNotification(ID, { attempt: 1, outcome: 'sent' })).rejects.toThrow(
+      TypeError,
+    );
+    for (const attempt of [undefined, 0, -1, 1.5, '1', Number.MAX_SAFE_INTEGER + 1]) {
+      await expect(
+        // @ts-expect-error deliberately invalid attempts
+        client.reportNotification(ID, { attempt, outcome: 'delivered' }),
+      ).rejects.toThrow(TypeError);
+    }
     for (const errorCode of ['', 'Bad Code', 'UPPER', 'a'.repeat(65), 'with space', 5]) {
-      await expect(client.reportNotification(ID, { outcome: 'failed', errorCode })).rejects.toThrow(
-        TypeError,
-      );
+      await expect(
+        client.reportNotification(ID, { attempt: 1, outcome: 'failed', errorCode }),
+      ).rejects.toThrow(TypeError);
     }
     expect(fetch.calls).toHaveLength(0);
   });
@@ -298,7 +307,7 @@ describe('notification outbox calls', () => {
     const client = createCoreApiClient({ fetch, config: config(), ...fixed });
     for (const call of [
       () => client.claimNotifications({ limit: 1 }),
-      () => client.reportNotification(ID, { outcome: 'delivered' }),
+      () => client.reportNotification(ID, { attempt: 1, outcome: 'delivered' }),
     ]) {
       const error = await call().catch((e) => e);
       expect(error).toBeInstanceOf(CoreApiError);

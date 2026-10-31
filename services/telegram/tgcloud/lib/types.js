@@ -48,7 +48,7 @@
  * @property {(user: TelegramUser) => Promise<unknown>} syncTelegramUser
  * @property {(telegramUserId: number) => Promise<unknown>} getMe
  * @property {(options: { limit: number }) => Promise<unknown>} claimNotifications
- * @property {(id: string, result: { outcome: NotificationOutcome, errorCode?: string }) => Promise<null>} reportNotification
+ * @property {(id: string, result: { attempt: number, outcome: NotificationOutcome, errorCode?: string }) => Promise<null>} reportNotification
  */
 
 export {};

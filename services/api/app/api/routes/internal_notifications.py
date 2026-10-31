@@ -67,6 +67,8 @@ class ClaimResponse(BaseModel):
 class ResultRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
+    # The ``attempts`` value the message was claimed with: the lease's fencing token.
+    attempt: int = Field(ge=1)
     outcome: ReportedOutcome
     # Short machine code from the transport (e.g. ``bot_api_429``); never message text.
     error_code: str | None = Field(default=None, pattern=r"^[a-z0-9_.-]{1,64}$")
@@ -118,9 +120,16 @@ async def report_result(
 ) -> None:
     """``retry`` backs off exponentially and gives up (``failed``) after 8 attempts.
 
-    404 when the message is unknown, already finished, or was never claimed.
+    Send the ``attempts`` value from the claim as ``attempt``. 404 when the message is unknown,
+    already finished, its lease expired, or it was reclaimed since (a newer ``attempt``).
     """
     payload = await _parse(request, ResultRequest)
-    found = await outbox.report(message_id, payload.outcome, error_code=payload.error_code, now=now)
+    found = await outbox.report(
+        message_id,
+        payload.outcome,
+        attempt=payload.attempt,
+        error_code=payload.error_code,
+        now=now,
+    )
     if not found:
         raise HTTPException(status_code=404, detail="Message not found")

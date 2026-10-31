@@ -208,15 +208,20 @@ export function createCoreApiClient({
 
     /**
      * Reports what happened to one claimed message. Resolves with null on success (HTTP 204);
-     * rejects with `CoreApiError` (404 `NOT_FOUND` when unknown, finished, or not claimed).
+     * rejects with `CoreApiError` (404 `NOT_FOUND` when unknown, finished, never claimed, the lease
+     * expired, or another worker reclaimed it since).
      * @param {string} id outbox message UUID
-     * @param {{ outcome: import('../types.js').NotificationOutcome, errorCode?: string }} result
+     * @param {{ attempt: number, outcome: import('../types.js').NotificationOutcome, errorCode?: string }} result
+     *   `attempt` is the `attempts` value of the claimed item (the lease's fencing token).
      */
-    async reportNotification(id, { outcome, errorCode }) {
+    async reportNotification(id, { attempt, outcome, errorCode }) {
       assertUuid(id);
+      // The claim's `attempts`: the lease's fencing token. A report for an older claim (this
+      // worker's lease expired and another worker reclaimed the message) is refused with 404.
+      if (!Number.isSafeInteger(attempt) || attempt < 1) throw new TypeError('Invalid attempt');
       if (!NOTIFICATION_OUTCOMES.includes(outcome)) throw new TypeError('Invalid outcome');
-      /** @type {{ outcome: string, error_code?: string }} */
-      const json = { outcome };
+      /** @type {{ attempt: number, outcome: string, error_code?: string }} */
+      const json = { attempt, outcome };
       if (errorCode !== undefined) {
         if (typeof errorCode !== 'string' || !ERROR_CODE_RE.test(errorCode)) {
           throw new TypeError('Invalid error code');

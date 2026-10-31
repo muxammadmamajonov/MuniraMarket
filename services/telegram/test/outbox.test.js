@@ -22,7 +22,7 @@ const message = (n, extra = {}) => ({
   id: uuid(n),
   event_type: 'order.status_changed',
   payload: payload(),
-  attempts: 0,
+  attempts: 1,
   ...extra,
 });
 
@@ -135,10 +135,10 @@ describe('drainOrderNotifications', () => {
     expect(coreApi.claims).toEqual([{ limit: 25 }]);
     expect(order).toEqual(Array(4).fill(['start:555', 'end:555']).flat());
     expect(coreApi.reports).toEqual([
-      { id: uuid(1), outcome: 'delivered' },
-      { id: uuid(2), outcome: 'recipient_blocked' },
-      { id: uuid(3), outcome: 'retry', errorCode: 'bot_api_429' },
-      { id: uuid(4), outcome: 'failed', errorCode: 'bot_api_400' },
+      { id: uuid(1), attempt: 1, outcome: 'delivered' },
+      { id: uuid(2), attempt: 1, outcome: 'recipient_blocked' },
+      { id: uuid(3), attempt: 1, outcome: 'retry', errorCode: 'bot_api_429' },
+      { id: uuid(4), attempt: 1, outcome: 'failed', errorCode: 'bot_api_400' },
     ]);
     expect(summary).toEqual({
       claimed: 4,
@@ -194,8 +194,8 @@ describe('drainOrderNotifications', () => {
     const summary = await drainOrderNotifications({ coreApi, transport, now: () => T0 });
     expect(transport.delivered).toHaveLength(0);
     expect(coreApi.reports).toEqual([
-      { id: uuid(1), outcome: 'failed', errorCode: 'unknown_event' },
-      { id: uuid(2), outcome: 'failed', errorCode: 'unknown_event' },
+      { id: uuid(1), attempt: 1, outcome: 'failed', errorCode: 'unknown_event' },
+      { id: uuid(2), attempt: 1, outcome: 'failed', errorCode: 'unknown_event' },
     ]);
     expect(summary).toMatchObject({ claimed: 2, failed: 2, delivered: 0 });
   });
@@ -213,9 +213,9 @@ describe('drainOrderNotifications', () => {
     const transport = createTransport();
     const summary = await drainOrderNotifications({ coreApi, transport, now: () => T0 });
     expect(coreApi.reports).toEqual([
-      { id: uuid(1), outcome: 'failed', errorCode: 'invalid_payload' },
-      { id: uuid(2), outcome: 'failed', errorCode: 'invalid_payload' },
-      { id: uuid(3), outcome: 'delivered' },
+      { id: uuid(1), attempt: 1, outcome: 'failed', errorCode: 'invalid_payload' },
+      { id: uuid(2), attempt: 1, outcome: 'failed', errorCode: 'invalid_payload' },
+      { id: uuid(3), attempt: 1, outcome: 'delivered' },
     ]);
     expect(transport.delivered).toHaveLength(1);
     expect(summary).toMatchObject({ claimed: 3, delivered: 1, failed: 2 });
@@ -236,6 +236,26 @@ describe('drainOrderNotifications', () => {
     expect(summary).toMatchObject({ claimed: 3, delivered: 1, skipped: 2 });
   });
 
+  it('skips items without a usable attempt (the report would be refused) and reports the claim attempt', async () => {
+    const coreApi = createCoreApi({
+      batches: [
+        [
+          { ...message(1), attempts: undefined },
+          { ...message(2), attempts: 0 },
+          { ...message(3), attempts: '2' },
+          { ...message(4), attempts: 3 },
+        ],
+      ],
+    });
+    const summary = await drainOrderNotifications({
+      coreApi,
+      transport: createTransport(),
+      now: () => T0,
+    });
+    expect(coreApi.reports).toEqual([{ id: uuid(4), attempt: 3, outcome: 'delivered' }]);
+    expect(summary).toMatchObject({ claimed: 4, delivered: 1, skipped: 3 });
+  });
+
   it('treats a throwing or malformed transport result as retry/transport_error', async () => {
     const coreApi = createCoreApi({ batches: [[message(1), message(2), message(3)]] });
     const results = [
@@ -248,9 +268,9 @@ describe('drainOrderNotifications', () => {
     const transport = { deliver: async () => results.shift()() };
     const summary = await drainOrderNotifications({ coreApi, transport, now: () => T0 });
     expect(coreApi.reports).toEqual([
-      { id: uuid(1), outcome: 'retry', errorCode: 'transport_error' },
-      { id: uuid(2), outcome: 'retry', errorCode: 'transport_error' },
-      { id: uuid(3), outcome: 'retry' },
+      { id: uuid(1), attempt: 1, outcome: 'retry', errorCode: 'transport_error' },
+      { id: uuid(2), attempt: 1, outcome: 'retry', errorCode: 'transport_error' },
+      { id: uuid(3), attempt: 1, outcome: 'retry' },
     ]);
     expect(summary.retried).toBe(3);
   });
@@ -547,11 +567,11 @@ describe('transport + outbox together', () => {
       now: () => T0,
     });
     expect(coreApi.reports).toEqual([
-      { id: uuid(1), outcome: 'delivered' },
-      { id: uuid(2), outcome: 'recipient_blocked' },
-      { id: uuid(3), outcome: 'retry', errorCode: 'bot_api_429' },
-      { id: uuid(4), outcome: 'failed', errorCode: 'bot_api_400' },
-      { id: uuid(5), outcome: 'retry', errorCode: 'transport_error' },
+      { id: uuid(1), attempt: 1, outcome: 'delivered' },
+      { id: uuid(2), attempt: 1, outcome: 'recipient_blocked' },
+      { id: uuid(3), attempt: 1, outcome: 'retry', errorCode: 'bot_api_429' },
+      { id: uuid(4), attempt: 1, outcome: 'failed', errorCode: 'bot_api_400' },
+      { id: uuid(5), attempt: 1, outcome: 'retry', errorCode: 'transport_error' },
     ]);
     expect(summary).toMatchObject({ claimed: 5, delivered: 1, blocked: 1, retried: 2, failed: 1 });
   });

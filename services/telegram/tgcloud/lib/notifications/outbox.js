@@ -185,10 +185,11 @@ export async function drainOrderNotifications({
 
   /**
    * @param {string} id
+   * @param {number} attempt the claim's `attempts` (the lease's fencing token)
    * @param {import('../types.js').NotificationOutcome} outcome
    * @param {string} [errorCode]
    */
-  async function report(id, outcome, errorCode) {
+  async function report(id, attempt, outcome, errorCode) {
     if (outcome === 'delivered') summary.delivered += 1;
     else if (outcome === 'recipient_blocked') summary.blocked += 1;
     else if (outcome === 'retry') summary.retried += 1;
@@ -196,7 +197,7 @@ export async function drainOrderNotifications({
     try {
       await coreApi.reportNotification(
         id,
-        errorCode === undefined ? { outcome } : { outcome, errorCode },
+        errorCode === undefined ? { attempt, outcome } : { attempt, outcome, errorCode },
       );
     } catch {
       summary.reportFailed += 1;
@@ -228,24 +229,30 @@ export async function drainOrderNotifications({
         summary.skipped += 1;
         continue;
       }
+      const attempt = /** @type {Record<string, unknown>} */ (item).attempts;
+      if (typeof attempt !== 'number' || !Number.isSafeInteger(attempt) || attempt < 1) {
+        // Without the claim's attempt the report would be refused; leave it to the lease.
+        summary.skipped += 1;
+        continue;
+      }
       if (leaseRunningOut || leaseEnd - now() < LEASE_SAFETY_MARGIN_MS) {
         leaseRunningOut = true;
         summary.skipped += 1;
         continue;
       }
       if (/** @type {Record<string, unknown>} */ (item).event_type !== ORDER_STATUS_CHANGED) {
-        await report(id, 'failed', 'unknown_event');
+        await report(id, attempt, 'failed', 'unknown_event');
         continue;
       }
       const notification = parseOrderStatusPayload(
         /** @type {Record<string, unknown>} */ (item).payload,
       );
       if (notification === null) {
-        await report(id, 'failed', 'invalid_payload');
+        await report(id, attempt, 'failed', 'invalid_payload');
         continue;
       }
       const result = await deliverSafely(transport, notification);
-      await report(id, result.outcome, result.errorCode);
+      await report(id, attempt, result.outcome, result.errorCode);
     }
 
     if (leaseRunningOut || claimed.items.length < limit) break;
