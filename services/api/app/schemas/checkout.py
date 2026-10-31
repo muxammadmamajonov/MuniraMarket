@@ -6,6 +6,7 @@ silently charged. Free-text fields are trimmed, blank optional fields become ``n
 characters are rejected.
 """
 
+import datetime as dt
 import re
 import uuid
 from datetime import datetime
@@ -23,10 +24,11 @@ from app.repositories.orders import (
     OrderRecord,
     OrderSummaryRecord,
     QuoteRecord,
+    SlotSnapshotRecord,
 )
 from app.schemas.cart import CartLine
 from app.schemas.catalog import ProductSummary
-from app.schemas.delivery import DeliveryZonePublic
+from app.schemas.delivery import DeliverySlotOption, DeliveryZonePublic, hhmm
 
 _CONTROL = re.compile(r"[\x00-\x08\x0b-\x1f\x7f]")
 _CONTROL_OR_NEWLINE = re.compile(r"[\x00-\x1f\x7f]")
@@ -115,6 +117,8 @@ class CreateOrderRequest(BaseModel):
     comment: Comment = None
     # The ``total_uzs`` of the quote the customer confirmed.
     expected_total_uzs: int = Field(ge=0)
+    # One of the quote's ``delivery_slots``; required when the quote says ``slot_required``.
+    delivery_slot_id: uuid.UUID | None = None
 
 
 class CancelOrderRequest(BaseModel):
@@ -147,6 +151,10 @@ class CheckoutQuote(BaseModel):
     zone: DeliveryZonePublic
     issues: list[QuoteIssue]
     can_place_order: bool
+    # The zone delivers in booked slots: the order must send one ``delivery_slot_id``.
+    slot_required: bool
+    # Active slots of the next 14 days whose cutoff is ahead, by date and time (full ones too).
+    delivery_slots: list[DeliverySlotOption]
 
     @classmethod
     def from_record(cls, record: QuoteRecord, now: datetime) -> Self:
@@ -169,6 +177,8 @@ class CheckoutQuote(BaseModel):
             zone=DeliveryZonePublic.from_record(record.zone, now),
             issues=list(totals.issues),
             can_place_order=totals.can_place_order,
+            slot_required=record.slot_required,
+            delivery_slots=[DeliverySlotOption.from_record(slot) for slot in record.slots],
         )
 
 
@@ -214,6 +224,22 @@ class OrderAddress(BaseModel):
         )
 
 
+class OrderDeliverySlot(BaseModel):
+    """The booked delivery window (local Asia/Tashkent date, ``HH:MM`` times)."""
+
+    date: dt.date
+    starts_at: str
+    ends_at: str
+
+    @classmethod
+    def from_record(cls, record: SlotSnapshotRecord | None) -> Self | None:
+        if record is None:
+            return None
+        return cls(
+            date=record.slot_date, starts_at=hhmm(record.starts_at), ends_at=hhmm(record.ends_at)
+        )
+
+
 class OrderStatusChange(BaseModel):
     status: OrderStatus
     at: datetime
@@ -233,6 +259,8 @@ class OrderDetail(BaseModel):
     recipient_name: str
     recipient_phone: str
     address: OrderAddress
+    # ``null`` when the zone had no delivery slots.
+    delivery_slot: OrderDeliverySlot | None
     comment: str | None
     cancel_reason: str | None
     items: list[OrderLine]
@@ -255,6 +283,7 @@ class OrderDetail(BaseModel):
             recipient_name=record.recipient_name,
             recipient_phone=record.recipient_phone,
             address=OrderAddress.from_snapshot(record.address),
+            delivery_slot=OrderDeliverySlot.from_record(record.delivery_slot),
             comment=record.comment,
             cancel_reason=record.cancel_reason,
             items=[
@@ -361,6 +390,7 @@ __all__ = [
     "CheckoutQuoteRequest",
     "CreateOrderRequest",
     "DeliveryAddress",
+    "OrderDeliverySlot",
     "OrderDetail",
     "OrderPage",
     "OrderStatusUpdateRequest",

@@ -13,7 +13,7 @@ import { getDeliveryZones } from '@/lib/api/delivery';
 import { ApiRequestError } from '@/lib/api/errors';
 import { createOrder, quoteCheckout } from '@/lib/api/orders';
 import { useSession } from '@/lib/session';
-import { classifyCheckoutError, type CheckoutFailure } from './failures';
+import { classifyCheckoutError, type CheckoutFailure, type SlotFailureReason } from './failures';
 import {
   buildOrderRequest,
   clampChars,
@@ -27,6 +27,8 @@ import {
   type FormErrors,
 } from './form';
 import { useSubmissionController } from './idempotency';
+import { bookableSlot, todayInTashkent } from './slots';
+import { zoneForDistrict } from './zones';
 
 /** A quote older than this is re-fetched before the order is placed (prices and stock move). */
 export const QUOTE_MAX_AGE_MS = 60_000;
@@ -36,7 +38,8 @@ export type CheckoutLoad =
 
 export type QuoteState =
   | { kind: 'idle' }
-  | { kind: 'loading'; district: DistrictCode }
+  /** `previous` is the last quote that arrived, so the slot picker can stay put while re-quoting. */
+  | { kind: 'loading'; district: DistrictCode; previous: CheckoutQuote | null }
   | { kind: 'ready'; district: DistrictCode; quote: CheckoutQuote; fetchedAt: number }
   | { kind: 'failed'; district: DistrictCode; failure: CheckoutFailure };
 
@@ -46,6 +49,9 @@ export interface PriceChange {
   to: number;
 }
 
+/** A form field, or the delivery-slot group (which is not a form field of its own). */
+export type FocusTarget = FieldName | 'deliverySlot';
+
 export interface CheckoutFlowOptions {
   /** Called after the order exists, with the created order. */
   onPlaced: (order: OrderDetail) => void;
@@ -53,7 +59,7 @@ export interface CheckoutFlowOptions {
   onSuccess?: () => void;
   onError?: () => void;
   /** Moves focus to a form field (the view owns the DOM). */
-  focusField?: (field: FieldName) => void;
+  focusField?: (field: FocusTarget) => void;
 }
 
 function displayName(user: { first_name: string; last_name: string | null } | null): string {
@@ -78,9 +84,15 @@ export function useCheckoutFlow({ onPlaced, onSuccess, onError, focusField }: Ch
   const [quote, setQuote] = useState<QuoteState>({ kind: 'idle' });
   const [priceChange, setPriceChange] = useState<PriceChange | null>(null);
   const [failure, setFailure] = useState<CheckoutFailure | null>(null);
+  const [slotId, setSlotId] = useState<string | null>(null);
+  const [slotNotice, setSlotNotice] = useState<SlotFailureReason | null>(null);
+  // The day "Today" means for the windows on screen: Tashkent's date when the quote arrived
+  // (read in a callback, never while rendering).
+  const [today, setToday] = useState(() => todayInTashkent());
   const [submitting, setSubmitting] = useState(false);
   const [cooldown, setCooldown] = useState(0);
   const quoteSeq = useRef(0);
+  const lastQuote = useRef<CheckoutQuote | null>(null);
 
   // Prefill the recipient's name once, from the signed-in user (adjusting state while rendering is
   // the supported way to derive state from a value that arrives later).
@@ -122,11 +134,18 @@ export function useCheckoutFlow({ onPlaced, onSuccess, onError, focusField }: Ch
     async (district: DistrictCode): Promise<CheckoutQuote | null> => {
       quoteSeq.current += 1;
       const sequence = quoteSeq.current;
-      setQuote({ kind: 'loading', district });
+      setQuote({ kind: 'loading', district, previous: lastQuote.current });
       try {
         const result = await quoteCheckout(apiFetch, district);
         if (sequence === quoteSeq.current) {
+          lastQuote.current = result;
+          setToday(todayInTashkent());
           setQuote({ kind: 'ready', district, quote: result, fetchedAt: Date.now() });
+          // A choice the new quote no longer offers (another zone, a slot that filled up) is
+          // dropped rather than sent.
+          setSlotId((current) =>
+            bookableSlot(result.delivery_slots, current) === null ? null : current,
+          );
         }
         return result;
       } catch (error) {
@@ -155,8 +174,11 @@ export function useCheckoutFlow({ onPlaced, onSuccess, onError, focusField }: Ch
     (district: DistrictCode | '') => {
       setField('district', district);
       setPriceChange(null);
+      setSlotNotice(null);
       if (district === '') {
         quoteSeq.current += 1;
+        lastQuote.current = null;
+        setSlotId(null);
         setQuote({ kind: 'idle' });
       } else {
         void refreshQuote(district);
@@ -193,6 +215,43 @@ export function useCheckoutFlow({ onPlaced, onSuccess, onError, focusField }: Ch
 
   const readyQuote =
     quote.kind === 'ready' && quote.district === values.district ? quote.quote : null;
+
+  const selectSlot = useCallback((id: string) => {
+    setSlotId(id);
+    setSlotNotice(null);
+  }, []);
+  const clearSlot = useCallback(() => {
+    setSlotId(null);
+    setSlotNotice(null);
+  }, []);
+
+  // The picker follows the quote for the chosen district. While that is being re-fetched it keeps
+  // showing the previous quote's windows (dimmed) as long as they belong to the same zone, so
+  // the list does not vanish and come back under the customer's finger.
+  const districtZone = load.kind === 'ready' ? zoneForDistrict(load.zones, values.district) : null;
+  const slotSource: CheckoutQuote | null =
+    readyQuote ??
+    (quote.kind === 'loading' &&
+    quote.district === values.district &&
+    quote.previous !== null &&
+    districtZone !== null &&
+    quote.previous.zone.id === districtZone.id
+      ? quote.previous
+      : null);
+  const slotView =
+    slotSource === null || (slotSource.delivery_slots.length === 0 && !slotSource.slot_required)
+      ? null
+      : {
+          slots: slotSource.delivery_slots,
+          required: slotSource.slot_required,
+          stale: readyQuote === null,
+        };
+  const selectedSlot = slotView === null ? null : bookableSlot(slotView.slots, slotId);
+  /** The order cannot be placed yet: this zone needs a delivery window and none is chosen. */
+  const slotMissing =
+    readyQuote !== null &&
+    readyQuote.slot_required &&
+    bookableSlot(readyQuote.delivery_slots, slotId) === null;
 
   const focusFirstInvalid = useCallback(
     (errors: FormErrors) => {
@@ -231,6 +290,23 @@ export function useCheckoutFlow({ onPlaced, onSuccess, onError, focusField }: Ch
         onError?.();
         return;
       }
+      // The window must still be bookable in the quote we are about to order against. If the
+      // customer's choice vanished (or they never made one) say so by the picker instead of
+      // sending a request the server would refuse.
+      const slot = bookableSlot(fresh.delivery_slots, slotId);
+      if ((fresh.slot_required && slot === null) || (slotId !== null && slot === null)) {
+        const reason: SlotFailureReason =
+          slotId === null
+            ? 'required'
+            : fresh.delivery_slots.some((candidate) => candidate.id === slotId)
+              ? 'full'
+              : 'unavailable';
+        setSlotId(null);
+        setSlotNotice(reason);
+        onError?.();
+        focusField?.('deliverySlot');
+        return;
+      }
       if (seenTotal !== null && fresh.total_uzs !== seenTotal) {
         setPriceChange({ from: seenTotal, to: fresh.total_uzs });
         onError?.();
@@ -242,7 +318,7 @@ export function useCheckoutFlow({ onPlaced, onSuccess, onError, focusField }: Ch
       }
 
       // 2. Place the order. Same body -> same key; any change -> a new key.
-      const request = buildOrderRequest(values, fresh.total_uzs);
+      const request = buildOrderRequest(values, fresh.total_uzs, slot?.id ?? null);
       if (request === null) return;
       const key = controller.keyFor(requestFingerprint(request));
       setPriceChange(null);
@@ -255,6 +331,16 @@ export function useCheckoutFlow({ onPlaced, onSuccess, onError, focusField }: Ch
       } catch (error) {
         const classified = classifyCheckoutError(error);
         onError?.();
+        if (classified.kind === 'slot') {
+          // The server refused the window. Re-price (that refreshes the offered windows), forget
+          // the choice, and use a new key for whatever is sent next.
+          controller.reset();
+          setSlotId(null);
+          setSlotNotice(classified.reason);
+          void refreshQuote(values.district);
+          focusField?.('deliverySlot');
+          return;
+        }
         setFailure(classified);
         switch (classified.kind) {
           case 'price_changed':
@@ -298,12 +384,14 @@ export function useCheckoutFlow({ onPlaced, onSuccess, onError, focusField }: Ch
     values,
     quote,
     priceChange,
+    slotId,
     refreshQuote,
     apiFetch,
     retry,
     onPlaced,
     onSuccess,
     onError,
+    focusField,
     focusFirstInvalid,
   ]);
 
@@ -319,6 +407,16 @@ export function useCheckoutFlow({ onPlaced, onSuccess, onError, focusField }: Ch
     formValid,
     quote,
     readyQuote,
+    slots: {
+      view: slotView,
+      selectedId: selectedSlot?.id ?? null,
+      selected: selectedSlot,
+      today,
+      missing: slotMissing,
+      notice: slotNotice,
+      select: selectSlot,
+      clear: clearSlot,
+    },
     priceChange,
     failure,
     submitting,

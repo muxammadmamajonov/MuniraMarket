@@ -14,3 +14,4 @@ outside this repository.
 | [0007](0007-browser-sessions-csrf.md)          | Browser sessions, CSRF and rate limiting   | accepted           |
 | [0008](0008-order-notification-outbox.md)      | Order notifications via an outbox          | accepted           |
 | [0009](0009-checkout-orders.md)                | Checkout, zones, idempotent orders, stock  | accepted           |
+| [0010](0010-admin-content-ops.md)              | Back-office roles, audit, CSV, slots       | accepted           |

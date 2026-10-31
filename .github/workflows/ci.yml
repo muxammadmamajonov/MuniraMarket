@@ -127,6 +127,7 @@ jobs:
           fi
 
   e2e:
+    # Name kept as is (branch protection may require it); the job also runs the admin specs.
     name: Storefront E2E (Playwright)
     runs-on: ubuntu-latest
     timeout-minutes: 25
@@ -158,8 +159,10 @@ jobs:
       SERVICE_AUTH_KEYS: ci:ci-only-service-key-not-a-secret-000000
       TELEGRAM_BOT_ID: '0'
       SESSION_COOKIE_SECURE: 'false'
-      CSRF_TRUSTED_ORIGINS: http://localhost:3000
+      CSRF_TRUSTED_ORIGINS: http://localhost:3000,http://localhost:3001
       API_INTERNAL_URL: http://127.0.0.1:8000
+      # Fake Telegram id of the admin the specs sign in as (created below); not a real account.
+      E2E_ADMIN_TELEGRAM_ID: '990000001'
       NEXT_TELEMETRY_DISABLED: '1'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -185,10 +188,20 @@ jobs:
         run: |
           uv run alembic upgrade head
           make seed
+      # Development/test only (the tool refuses elsewhere). Creates the placeholder admin the admin
+      # specs sign in as through the Telegram Login Widget flow.
+      - name: Create the E2E admin user
+        working-directory: services/api
+        run: uv run python -m app.dev.set_role "$E2E_ADMIN_TELEGRAM_ID" admin --create
       - name: Start the Core API
         working-directory: services/api
+        # The Login Widget flag is set here, next to the token it requires: Settings refuses to
+        # load with the flag on and no token, which would break the migrate/seed/set_role steps
+        # above (they run before the token is handed to any process).
         env:
           TELEGRAM_BOT_TOKEN: ${{ env.E2E_TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_LOGIN_WIDGET_ENABLED: 'true'
+          TELEGRAM_BOT_USERNAME: muniramarket_e2e_bot
         run: |
           nohup uv run uvicorn app.main:create_app --factory --host 127.0.0.1 --port 8000 \
             > "$E2E_LOG_DIR/api.log" 2>&1 &
@@ -200,6 +213,7 @@ jobs:
           exit 1
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter @muniramarket/web build
+      - run: pnpm --filter @muniramarket/admin build
       - run: pnpm --filter @muniramarket/web exec playwright install --with-deps chromium
       - name: Start the web app
         run: |
@@ -210,9 +224,19 @@ jobs:
           done
           echo "Web app did not become ready" >&2
           exit 1
-      - name: Playwright smoke tests
+      - name: Start the admin app
+        run: |
+          nohup pnpm --filter @muniramarket/admin start > "$E2E_LOG_DIR/admin.log" 2>&1 &
+          for _ in $(seq 1 60); do
+            curl -fsS -o /dev/null http://localhost:3001/uz && exit 0
+            sleep 1
+          done
+          echo "Admin app did not become ready" >&2
+          exit 1
+      - name: Playwright E2E tests (storefront and admin)
         env:
           E2E_BASE_URL: http://localhost:3000
+          E2E_ADMIN_URL: http://localhost:3001
         run: pnpm --filter @muniramarket/web test:e2e
       - name: Upload Playwright report and server logs
         if: failure()

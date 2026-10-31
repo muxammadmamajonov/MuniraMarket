@@ -108,3 +108,20 @@ describe('isRetrySafe', () => {
     expect(isRetrySafe({ kind: 'key_conflict' })).toBe(false);
   });
 });
+
+describe('classifyCheckoutError: delivery slots', () => {
+  it.each([
+    ['slot_full', 'full'],
+    ['slot_unavailable', 'unavailable'],
+    ['slot_required', 'required'],
+  ] as const)('maps %s to a slot failure (%s)', (code, reason) => {
+    expect(classifyCheckoutError(error({ status: 409, code, message: 'x' }))).toEqual({
+      kind: 'slot',
+      reason,
+    });
+  });
+
+  it('never offers a blind retry of the same request for a slot failure', () => {
+    expect(isRetrySafe({ kind: 'slot', reason: 'full' })).toBe(false);
+  });
+});

@@ -1,3 +1,12 @@
+import { auditDict } from './sections/audit';
+import { categoriesDict } from './sections/categories';
+import { csvDict } from './sections/csv';
+import { dashboardDict } from './sections/dashboard';
+import { productsDict } from './sections/products';
+import { sharedDict } from './sections/shared';
+import { slotsDict } from './sections/slots';
+import { usersDict } from './sections/users';
+import { zonesDict } from './sections/zones';
 import type { Dictionary } from './types';
 
 export const ru: Dictionary = {
@@ -57,6 +66,7 @@ export const ru: Dictionary = {
     notFoundMessage: 'Такого заказа нет.',
     loading: 'Загрузка заказа…',
     createdAt: 'Создан',
+    deliverySlot: 'Окно доставки',
     payment: 'Способ оплаты',
     items: { title: 'Товары', sku: 'Артикул' },
     totals: { subtotal: 'Сумма товаров', delivery: 'Доставка', total: 'Итого' },
@@ -140,4 +150,17 @@ export const ru: Dictionary = {
     rateLimited: 'Слишком много запросов. Попробуйте чуть позже.',
     serviceUnavailable: 'Сервис временно недоступен. Попробуйте чуть позже.',
   },
+  nav: sharedDict.nav.ru,
+  common: sharedDict.common.ru,
+  permission: sharedDict.permission.ru,
+  validation: sharedDict.validation.ru,
+  apiErrors: sharedDict.apiErrors.ru,
+  dashboard: dashboardDict.ru,
+  products: productsDict.ru,
+  categories: categoriesDict.ru,
+  csv: csvDict.ru,
+  zones: zonesDict.ru,
+  slots: slotsDict.ru,
+  users: usersDict.ru,
+  audit: auditDict.ru,
 };

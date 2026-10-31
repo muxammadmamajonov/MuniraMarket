@@ -164,6 +164,30 @@ export const uz: Dictionary = {
       invalid: 'Maydonni tekshiring',
       formInvalid: 'Ba’zi maydonlarni to‘g‘rilang.',
     },
+    slots: {
+      title: 'Yetkazish vaqti',
+      hintRequired: 'Buyurtma berish uchun yetkazish vaqtini tanlang.',
+      hintOptional: 'Xohlasangiz, qulay yetkazish vaqtini tanlang.',
+      today: 'Bugun',
+      tomorrow: 'Ertaga',
+      weekdays: ['Yakshanba', 'Dushanba', 'Seshanba', 'Chorshanba', 'Payshanba', 'Juma', 'Shanba'],
+      remaining: {
+        one: '{count} ta joy qoldi',
+        few: '{count} ta joy qoldi',
+        many: '{count} ta joy qoldi',
+        other: '{count} ta joy qoldi',
+      },
+      full: 'To‘lgan',
+      noneAvailable:
+        'Hozircha bo‘sh vaqt qolmagan. Keyinroq qayta urinib ko‘ring yoki boshqa tuman tanlang.',
+      clear: 'Tanlovni bekor qilish',
+      summary: 'Yetkazish vaqti',
+      notice: {
+        full: 'Bu vaqt oralig‘i to‘lib qoldi. Boshqa vaqtni tanlang.',
+        unavailable: 'Bu vaqt endi mavjud emas. Boshqa vaqtni tanlang.',
+        required: 'Buyurtma berish uchun yetkazish vaqtini tanlang.',
+      },
+    },
     failures: {
       priceChangedTitle: 'Narx o‘zgardi',
       priceChanged: 'Jami summa {from} edi, endi {to}. Davom etish uchun yangi summani tasdiqlang.',
@@ -237,6 +261,7 @@ export const uz: Dictionary = {
       free: 'Bepul',
       total: 'Jami',
       deliveryHeading: 'Yetkazib berish manzili',
+      slot: 'Yetkazish vaqti',
       district: 'Tuman',
       street: 'Ko‘cha',
       house: 'Uy',

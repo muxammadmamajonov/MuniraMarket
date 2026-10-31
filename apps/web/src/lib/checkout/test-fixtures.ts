@@ -2,6 +2,7 @@ import type {
   Cart,
   CartLine,
   CheckoutQuote,
+  DeliverySlotOption,
   DeliveryZone,
   OrderDetail,
   OrderSummary,
@@ -111,8 +112,64 @@ export function quote(overrides: Partial<CheckoutQuote> = {}): CheckoutQuote {
     zone: zone(),
     issues: [],
     can_place_order: true,
+    slot_required: false,
+    delivery_slots: [],
     ...overrides,
   };
+}
+
+/** A bookable window (Tashkent, `HH:MM`). Ids are stable so tests can name the slot they pick. */
+export function slotOption(overrides: Partial<DeliverySlotOption> = {}): DeliverySlotOption {
+  return {
+    id: '5a000000-0000-4000-8000-000000000001',
+    date: '2026-10-31',
+    starts_at: '10:00',
+    ends_at: '12:00',
+    remaining: 8,
+    is_full: false,
+    ...overrides,
+  };
+}
+
+/**
+ * A quote for a zone with delivery slots: today (one low, one full), tomorrow, and a later day.
+ * Fee, minimum and totals follow {@link quote}'s defaults so a form filled for the slot-less zone
+ * can be reused.
+ */
+export function slotQuote(overrides: Partial<CheckoutQuote> = {}): CheckoutQuote {
+  return quote({
+    slot_required: true,
+    delivery_slots: [
+      slotOption({
+        id: '5a000000-0000-4000-8000-000000000001',
+        starts_at: '10:00',
+        ends_at: '12:00',
+        remaining: 2,
+      }),
+      slotOption({
+        id: '5a000000-0000-4000-8000-000000000002',
+        starts_at: '12:00',
+        ends_at: '14:00',
+        remaining: 0,
+        is_full: true,
+      }),
+      slotOption({
+        id: '5a000000-0000-4000-8000-000000000003',
+        date: '2026-11-01',
+        starts_at: '10:00',
+        ends_at: '12:00',
+        remaining: 10,
+      }),
+      slotOption({
+        id: '5a000000-0000-4000-8000-000000000004',
+        date: '2026-11-03',
+        starts_at: '16:00',
+        ends_at: '18:00',
+        remaining: 10,
+      }),
+    ],
+    ...overrides,
+  });
 }
 
 export function order(overrides: Partial<OrderDetail> = {}): OrderDetail {
@@ -140,6 +197,7 @@ export function order(overrides: Partial<OrderDetail> = {}): OrderDetail {
       floor: null,
       landmark: null,
     },
+    delivery_slot: null,
     comment: null,
     cancel_reason: null,
     items: [

@@ -82,6 +82,39 @@ describe('OrderDetailView: content', () => {
     expect(screen.queryByTestId('placed-banner')).toBeNull();
   });
 
+  it('shows the booked delivery window with its date, and leaves the row out without one', async () => {
+    routes[`GET /orders/${ID}`] = () =>
+      respond(
+        order({ delivery_slot: { date: '2026-11-03', starts_at: '16:00', ends_at: '18:00' } }),
+      );
+    const first = renderDetail(true);
+    const slot = await screen.findByTestId('order-slot');
+    expect(slot).toHaveTextContent('Yetkazish vaqti');
+    expect(slot).toHaveTextContent('03.11.2026, 16:00–18:00');
+    // It belongs to the delivery section, next to the address.
+    expect(screen.getByRole('region', { name: 'Yetkazib berish manzili' })).toContainElement(slot);
+    first.unmount();
+
+    routes[`GET /orders/${ID}`] = () => respond(order());
+    renderDetail();
+    await screen.findByTestId('order-number');
+    expect(screen.queryByTestId('order-slot')).toBeNull();
+    expect(screen.queryByText('Yetkazish vaqti')).toBeNull();
+  });
+
+  it('localizes the delivery window (ru) and drops seconds from the times', async () => {
+    routes[`GET /orders/${ID}`] = () =>
+      respond(
+        order({
+          delivery_slot: { date: '2026-11-03', starts_at: '09:00:00', ends_at: '11:30:00' },
+        }),
+      );
+    renderDetail(false, 'ru');
+    const slot = await screen.findByTestId('order-slot');
+    expect(slot).toHaveTextContent('Время доставки');
+    expect(slot).toHaveTextContent('03.11.2026, 09:00–11:30');
+  });
+
   it('uses the snapshot names in the current locale (ru)', async () => {
     renderDetail(false, 'ru');
     expect(await screen.findByText('Демо яблоко')).toBeInTheDocument();

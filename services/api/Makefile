@@ -30,9 +30,10 @@ migrate:
 seed:
 	uv run python -m app.dev.seed
 
-# Local development only: `make set-role TG=<telegram_user_id> ROLE=operator` (user must exist).
+# Local development only: `make set-role TG=<telegram_user_id> ROLE=operator` (user must exist;
+# add CREATE=1 to create a placeholder user first).
 set-role:
-	uv run python -m app.dev.set_role $(TG) $(ROLE)
+	uv run python -m app.dev.set_role $(TG) $(ROLE) $(if $(CREATE),--create,)
 
 # Build the wheel/sdist, then prove the built wheel installs and imports in a clean venv.
 build:

@@ -5,10 +5,11 @@ import { Button, EmptyState, ErrorState, Skeleton, formatUZS } from '@muniramark
 import Link from 'next/link';
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { useI18n } from '@/i18n/context';
-import { formatDateTime } from '@/i18n/date';
+import { formatDateTime, formatSlotDate } from '@/i18n/date';
 import { formatMessage, formatPlural } from '@/i18n/format';
 import { ApiRequestError } from '@/lib/api/errors';
 import { getOrder } from '@/lib/api/orders';
+import { slotWindow } from '@/lib/checkout/slots';
 import { useSession } from '@/lib/session';
 import { SignInPrompt } from '../sign-in-prompt';
 import { StatusBadge } from '../status-badge';
@@ -44,10 +45,13 @@ function Section({ id, title, children }: { id: string; title: string; children:
 }
 
 /** A label/value row whose value is the customer's own text: it wraps anywhere, never overflows. */
-function Fact({ label, value }: { label: string; value: string | null }) {
+function Fact({ label, value, testId }: { label: string; value: string | null; testId?: string }) {
   if (value === null || value === '') return null;
   return (
-    <div className="grid grid-cols-[minmax(5rem,auto)_minmax(0,1fr)] gap-x-3">
+    <div
+      className="grid grid-cols-[minmax(5rem,auto)_minmax(0,1fr)] gap-x-3"
+      {...(testId === undefined ? {} : { 'data-testid': testId })}
+    >
       <dt className="text-muted-foreground">{label}</dt>
       <dd data-user-text className="min-w-0">
         {value}
@@ -294,6 +298,13 @@ export function OrderDetailView({ id, placed }: OrderDetailViewProps) {
         <div className="flex min-w-0 flex-col gap-4">
           <Section id="order-delivery" title={d.deliveryHeading}>
             <dl className="flex flex-col gap-1.5">
+              {order.delivery_slot === null ? null : (
+                <Fact
+                  label={d.slot}
+                  value={`${formatSlotDate(order.delivery_slot.date)}, ${slotWindow(order.delivery_slot)}`}
+                  testId="order-slot"
+                />
+              )}
               <Fact label={d.district} value={districtName} />
               <Fact label={d.street} value={address.street} />
               <Fact label={d.house} value={address.house} />

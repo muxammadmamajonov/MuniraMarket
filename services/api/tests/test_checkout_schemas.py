@@ -1,5 +1,8 @@
 """Checkout request validation, the idempotency request hash and order response shaping."""
 
+import hashlib
+import uuid
+from datetime import date, time
 from typing import Any
 
 import pytest
@@ -7,6 +10,7 @@ from pydantic import ValidationError
 
 from app.api.routes.orders import request_hash
 from app.domain.order_status import OrderStatus
+from app.repositories.orders import SlotSnapshotRecord
 from app.schemas.checkout import (
     AdminOrderDetail,
     CancelOrderRequest,
@@ -273,3 +277,45 @@ def test_admin_detail_includes_the_audit_trail() -> None:
     ]
     assert detail.cancel_reason == "Demo sabab"
     assert not detail.can_cancel
+
+
+# --- delivery slots -------------------------------------------------------------------------------
+
+
+def test_the_slot_id_is_optional_and_must_be_a_uuid() -> None:
+    assert parse().delivery_slot_id is None
+    slot_id = uuid.uuid4()
+    assert parse(delivery_slot_id=str(slot_id)).delivery_slot_id == slot_id
+    for bad in ("", "slot-1", 7):
+        with pytest.raises(ValidationError):
+            parse(delivery_slot_id=bad)
+
+
+def test_request_hash_without_a_slot_is_unchanged() -> None:
+    """Bodies that never had a slot hash exactly as before the field existed, so a retry that
+    spans a deploy still replays instead of conflicting."""
+    request = parse()
+    legacy = request.model_dump_json(exclude={"delivery_slot_id"})
+    assert request_hash(request) == hashlib.sha256(legacy.encode()).hexdigest()
+    assert request_hash(parse(delivery_slot_id=str(uuid.uuid4()))) != request_hash(request)
+    first, second = uuid.uuid4(), uuid.uuid4()
+    assert request_hash(parse(delivery_slot_id=str(first))) != request_hash(
+        parse(delivery_slot_id=str(second))
+    )
+
+
+def test_order_detail_delivery_slot() -> None:
+    assert OrderDetail.from_record(make_order()).delivery_slot is None
+    record = make_order(
+        delivery_slot=SlotSnapshotRecord(
+            slot_date=date(2026, 11, 1), starts_at=time(10, 0), ends_at=time(13, 0)
+        )
+    )
+    detail = OrderDetail.from_record(record)
+    assert detail.model_dump(mode="json")["delivery_slot"] == {
+        "date": "2026-11-01",
+        "starts_at": "10:00",
+        "ends_at": "13:00",
+    }
+    admin = AdminOrderDetail.from_admin_record(record)
+    assert admin.delivery_slot == detail.delivery_slot

@@ -5,6 +5,21 @@ import type {
   ProductUnit,
   UserRole,
 } from '@muniramarket/contracts';
+import type { AuditDict } from './sections/audit';
+import type { CategoriesDict } from './sections/categories';
+import type { CsvDict } from './sections/csv';
+import type { DashboardDict } from './sections/dashboard';
+import type { ProductsDict } from './sections/products';
+import type {
+  ApiErrorsDict,
+  CommonDict,
+  NavDict,
+  PermissionDict,
+  ValidationDict,
+} from './sections/shared';
+import type { SlotsDict } from './sections/slots';
+import type { UsersDict } from './sections/users';
+import type { ZonesDict } from './sections/zones';
 
 /**
  * Shape every dictionary must satisfy. `uz.ts` and `ru.ts` are both typed as `Dictionary`, so a
@@ -56,6 +71,7 @@ export interface Dictionary {
     notFoundMessage: string;
     loading: string;
     createdAt: string;
+    deliverySlot: string;
     payment: string;
     items: { title: string; sku: string };
     totals: { subtotal: string; delivery: string; total: string };
@@ -99,4 +115,17 @@ export interface Dictionary {
     rateLimited: string;
     serviceUnavailable: string;
   };
+  nav: NavDict;
+  common: CommonDict;
+  permission: PermissionDict;
+  validation: ValidationDict;
+  apiErrors: ApiErrorsDict;
+  dashboard: DashboardDict;
+  products: ProductsDict;
+  categories: CategoriesDict;
+  csv: CsvDict;
+  zones: ZonesDict;
+  slots: SlotsDict;
+  users: UsersDict;
+  audit: AuditDict;
 }

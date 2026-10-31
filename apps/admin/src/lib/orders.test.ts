@@ -16,10 +16,12 @@ describe('orders list URL helpers', () => {
   });
 
   it('builds links without default values', () => {
-    expect(ordersHref('uz', { status: null, page: 1 })).toBe('/uz');
-    expect(ordersHref('ru', { status: 'NEW', page: 1 })).toBe('/ru?status=NEW');
-    expect(ordersHref('ru', { status: 'CANCELLED', page: 3 })).toBe('/ru?status=CANCELLED&page=3');
-    expect(ordersHref('ru', { status: null, page: 2 })).toBe('/ru?page=2');
+    expect(ordersHref('uz', { status: null, page: 1 })).toBe('/uz/orders');
+    expect(ordersHref('ru', { status: 'NEW', page: 1 })).toBe('/ru/orders?status=NEW');
+    expect(ordersHref('ru', { status: 'CANCELLED', page: 3 })).toBe(
+      '/ru/orders?status=CANCELLED&page=3',
+    );
+    expect(ordersHref('ru', { status: null, page: 2 })).toBe('/ru/orders?page=2');
     expect(orderHref('uz', 'abc')).toBe('/uz/orders/abc');
   });
 

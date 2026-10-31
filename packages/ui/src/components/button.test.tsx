@@ -24,6 +24,11 @@ describe('Button', () => {
     expect(screen.getByRole('button')).toHaveClass('border', 'bg-surface');
   });
 
+  it('applies the danger variant for destructive confirmations', () => {
+    render(<Button variant="danger">Delete</Button>);
+    expect(screen.getByRole('button')).toHaveClass('bg-red-700', 'text-white');
+  });
+
   it('keeps a touch target of at least 44px for every size', () => {
     render(<Button size="lg">Big</Button>);
     expect(screen.getByRole('button')).toHaveClass('min-h-12');

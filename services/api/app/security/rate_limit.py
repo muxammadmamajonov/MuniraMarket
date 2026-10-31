@@ -44,6 +44,9 @@ ORDER_CANCEL: Final = RateLimitRule("order_cancel", 20, 60)  # per user
 ADMIN_IP: Final = RateLimitRule("admin_ip", 600, 60)  # per IP
 ADMIN_READ: Final = RateLimitRule("admin_read", 300, 60)  # per user
 ADMIN_WRITE: Final = RateLimitRule("admin_write", 120, 60)  # per user
+# Catalog CSV (admin only); on top of admin_ip and admin_write.
+ADMIN_CSV_IMPORT: Final = RateLimitRule("admin_csv_import", 10, 60)  # per user
+ADMIN_CSV_EXPORT: Final = RateLimitRule("admin_csv_export", 20, 60)  # per user
 
 
 @dataclass(frozen=True, slots=True)

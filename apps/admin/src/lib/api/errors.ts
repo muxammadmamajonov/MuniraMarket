@@ -1,4 +1,9 @@
-import { API_V1_PREFIX, isApiErrorEnvelope, type ApiErrorCode } from '@muniramarket/contracts';
+import {
+  API_V1_PREFIX,
+  isApiErrorEnvelope,
+  type ApiErrorCode,
+  type ApiErrorDetail,
+} from '@muniramarket/contracts';
 import type { OrderStatus } from '@muniramarket/contracts';
 
 /** Client-side error codes for failures that never produced an API envelope. */
@@ -17,6 +22,10 @@ export class ApiRequestError extends Error {
   readonly currentStatus: OrderStatus | null;
   /** Seconds from `Retry-After`, if present. */
   readonly retryAfter: number | null;
+  /** Field-level problems of a 422 (`loc` + `msg`, never submitted values). Empty otherwise. */
+  readonly details: readonly ApiErrorDetail[];
+  /** The district code on `district_taken`. */
+  readonly district: string | null;
 
   constructor(init: {
     status: number;
@@ -24,6 +33,8 @@ export class ApiRequestError extends Error {
     message: string;
     currentStatus?: OrderStatus | null | undefined;
     retryAfter?: number | null | undefined;
+    details?: readonly ApiErrorDetail[] | null | undefined;
+    district?: string | null | undefined;
   }) {
     super(init.message);
     this.name = 'ApiRequestError';
@@ -31,6 +42,8 @@ export class ApiRequestError extends Error {
     this.code = init.code;
     this.currentStatus = init.currentStatus ?? null;
     this.retryAfter = init.retryAfter ?? null;
+    this.details = init.details ?? [];
+    this.district = init.district ?? null;
   }
 
   /** True when the request never got an HTTP response (offline, DNS, refused, aborted). */
@@ -63,6 +76,8 @@ export class ApiRequestError extends Error {
         message: body.error.message,
         currentStatus: body.error.current_status,
         retryAfter,
+        details: Array.isArray(body.error.details) ? body.error.details : null,
+        district: typeof body.error.district === 'string' ? body.error.district : null,
       });
     }
     return new ApiRequestError({

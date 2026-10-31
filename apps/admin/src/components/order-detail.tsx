@@ -12,7 +12,7 @@ import { useI18n } from '@/i18n/context';
 import { formatMessage } from '@/i18n/format';
 import { readErrorMessage } from '@/lib/api/error-messages';
 import { ApiRequestError, readJson } from '@/lib/api/errors';
-import { formatDateTime, telHref } from '@/lib/format';
+import { formatDateTime, formatSlotWindow, telHref } from '@/lib/format';
 import { ordersHref } from '@/lib/orders';
 import { useSession } from '@/lib/session';
 import { CancelDialog } from './cancel-dialog';
@@ -161,6 +161,20 @@ function OrderBody({ order }: { order: AdminOrderDetail }) {
                 ),
               ],
               [dict.order.payment, dict.payment[order.payment_method]],
+              ...(order.delivery_slot === null || order.delivery_slot === undefined
+                ? []
+                : ([
+                    [
+                      dict.order.deliverySlot,
+                      <span key="slot" data-testid="order-delivery-slot" className="tabular">
+                        {formatSlotWindow(
+                          order.delivery_slot.date,
+                          order.delivery_slot.starts_at,
+                          order.delivery_slot.ends_at,
+                        )}
+                      </span>,
+                    ],
+                  ] satisfies Array<[string, ReactNode]>)),
               [dict.order.createdAt, formatDateTime(order.created_at)],
             ]}
           />

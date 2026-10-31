@@ -17,7 +17,16 @@ export function generateStaticParams() {
 export const viewport: Viewport = {
   width: 'device-width',
   initialScale: 1,
+  // Paint under the notch / home indicator; the shell pads its content back with `env(safe-area-*)`.
+  viewportFit: 'cover',
+  // The on-screen keyboard shrinks the layout viewport (Android Chrome), as it already does on iOS.
+  interactiveWidget: 'resizes-content',
   colorScheme: 'light dark',
+  // The status bar takes the colour of the top bar (`bg-surface`), per colour scheme.
+  themeColor: [
+    { media: '(prefers-color-scheme: light)', color: '#ffffff' },
+    { media: '(prefers-color-scheme: dark)', color: '#18181b' },
+  ],
 };
 
 export async function generateMetadata({ params }: LayoutProps<'/[locale]'>): Promise<Metadata> {

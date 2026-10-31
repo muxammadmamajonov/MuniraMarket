@@ -302,6 +302,8 @@ async def test_happy_path(shop: Shop) -> None:
     assert order["address"]["street"] == "Demo ko'cha"
     assert order["address"]["floor"] is None
     assert order["can_cancel"] is True
+    # The zone has no delivery slots: none is required and none is booked.
+    assert order["delivery_slot"] is None
     assert [change["status"] for change in order["history"]] == ["NEW"]
     lines = {line["sku"]: line for line in order["items"]}
     assert lines["DEMO-0100"] == {

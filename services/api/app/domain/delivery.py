@@ -6,7 +6,7 @@ and only active zones deliver. Money is integer UZS. Working hours are local ``A
 
 from collections.abc import Sequence
 from dataclasses import dataclass
-from datetime import UTC, datetime, time, timedelta, timezone
+from datetime import UTC, date, datetime, time, timedelta, timezone
 from typing import Literal, Protocol, get_args
 
 # Asia/Tashkent is UTC+05:00 all year (no daylight saving since 1992). A fixed offset avoids a
@@ -115,3 +115,22 @@ def is_open_at(rules: ZoneRules, moment: datetime) -> bool:
 
 def utc_now_from(timestamp: float) -> datetime:
     return datetime.fromtimestamp(timestamp, tz=UTC)
+
+
+def tashkent_date(moment: datetime) -> date:
+    """The local (Asia/Tashkent) calendar date of a timezone-aware instant."""
+    if moment.tzinfo is None:
+        raise ValueError("moment must be timezone-aware")
+    return moment.astimezone(TASHKENT_TZ).date()
+
+
+def tashkent_instant(day: date, at: time) -> datetime:
+    """The instant of local (Asia/Tashkent) wall-clock time ``at`` on ``day``."""
+    return datetime.combine(day, at, tzinfo=TASHKENT_TZ)
+
+
+def slot_cutoff_is_valid(slot_date: date, starts_at: time, cutoff_at: datetime) -> bool:
+    """A slot's order cutoff may not be later than the moment the slot starts."""
+    if cutoff_at.tzinfo is None:
+        raise ValueError("cutoff_at must be timezone-aware")
+    return cutoff_at <= tashkent_instant(slot_date, starts_at)

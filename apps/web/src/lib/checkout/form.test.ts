@@ -221,3 +221,26 @@ describe('textOfLength', () => {
     expect(charCount(WORST.recipientName)).toBeLessThanOrEqual(100);
   });
 });
+
+describe('buildOrderRequest: delivery slot', () => {
+  it('leaves delivery_slot_id out when no slot is chosen', () => {
+    const request = buildOrderRequest(valid(), 75000);
+    expect(request).not.toBeNull();
+    expect(request).not.toHaveProperty('delivery_slot_id');
+    expect(buildOrderRequest(valid(), 75000, null)).toEqual(request);
+  });
+
+  it('sends the chosen slot, and a different slot is a different fingerprint', () => {
+    const a = buildOrderRequest(valid(), 75000, 'slot-a');
+    const b = buildOrderRequest(valid(), 75000, 'slot-b');
+    const none = buildOrderRequest(valid(), 75000);
+    if (a === null || b === null || none === null) throw new Error('form should be valid');
+    expect(a.delivery_slot_id).toBe('slot-a');
+    expect(requestFingerprint(a)).not.toBe(requestFingerprint(b));
+    expect(requestFingerprint(a)).not.toBe(requestFingerprint(none));
+    // Same input, same fingerprint: that is what lets a retry reuse its key.
+    expect(requestFingerprint(a)).toBe(
+      requestFingerprint(buildOrderRequest(valid(), 75000, 'slot-a') ?? a),
+    );
+  });
+});

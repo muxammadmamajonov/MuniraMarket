@@ -7,6 +7,7 @@ import {
   type PaymentMethod,
 } from '@muniramarket/contracts';
 import { formatUZS } from '@muniramarket/ui';
+import type { ReactNode } from 'react';
 import { useI18n } from '@/i18n/context';
 import { formatMessage } from '@/i18n/format';
 import {
@@ -31,6 +32,8 @@ export interface CheckoutFormProps {
   onChange: <K extends FieldName>(field: K, value: CheckoutFormValues[K]) => void;
   onDistrict: (district: DistrictCode | '') => void;
   onBlur: (field: FieldName) => void;
+  /** The delivery-time picker; rendered under the address, where the district is chosen. */
+  slotPicker?: ReactNode;
 }
 
 /** Delivery address, recipient, payment method and comment. All text is the customer's own. */
@@ -43,6 +46,7 @@ export function CheckoutFormFields({
   onChange,
   onDistrict,
   onBlur,
+  slotPicker = null,
 }: CheckoutFormProps) {
   const { dict, locale } = useI18n();
   const t = dict.checkout;
@@ -217,6 +221,8 @@ export function CheckoutFormFields({
           limit: LIMITS.landmark.max,
         })}
       </section>
+
+      {slotPicker}
 
       <section aria-labelledby="checkout-recipient" className={`${CARD} flex flex-col gap-4`}>
         <h2 id="checkout-recipient" className="text-lg font-bold">

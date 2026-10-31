@@ -1,13 +1,13 @@
 """Alembic migrations against a real PostgreSQL (skipped without TEST_DATABASE_URL)."""
 
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime, time
 
 import pytest
 from alembic.autogenerate import compare_metadata
 from alembic.migration import MigrationContext
 from sqlalchemy import Connection, text
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import DBAPIError, IntegrityError
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 
 import app.models  # noqa: F401  (registers every model on Base.metadata)
@@ -373,7 +373,7 @@ async def test_an_already_migrated_schema_on_the_search_path_is_never_touched() 
 
         await upgrade(my_engine)
         assert await _scalar(my_engine, tables_in, schema=mine) == 2
-        assert await _scalar(my_engine, "SELECT version_num FROM alembic_version") == "0003"
+        assert await _scalar(my_engine, "SELECT version_num FROM alembic_version") == "0004"
 
         await truncate_app_tables(my_engine)
         assert await _scalar(my_engine, count_other) == 1
@@ -399,3 +399,162 @@ def test_helpers_refuse_a_non_test_schema() -> None:
 
     with pytest.raises(RuntimeError, match="not a test schema"):
         owned_test_schema(_Conn())  # type: ignore[arg-type]
+
+
+# --- 0004: admin content operations ---------------------------------------------------------------
+
+ADMIN_TABLES = {"delivery_slots", "audit_log"}
+SLOT_ORDER_COLUMNS = {
+    "delivery_slot_id",
+    "delivery_slot_date",
+    "delivery_slot_starts_at",
+    "delivery_slot_ends_at",
+}
+_FUNCTION_SQL = (
+    "SELECT count(*) FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace "
+    "WHERE n.nspname = current_schema() AND p.proname = 'audit_log_reject_change'"
+)
+_AUDIT_TRIGGERS_SQL = (
+    "SELECT t.tgname::text, t.tgenabled::text FROM pg_trigger t "
+    "JOIN pg_class c ON c.oid = t.tgrelid JOIN pg_namespace n ON n.oid = c.relnamespace "
+    "WHERE n.nspname = current_schema() AND NOT t.tgisinternal "
+    "AND t.tgname IN ('audit_log_append_only', 'audit_log_no_truncate') ORDER BY t.tgname"
+)
+
+
+async def _audit_triggers(engine: AsyncEngine) -> list[tuple[str, str]]:
+    """``(name, tgenabled)`` of the audit_log triggers; ``O`` means enabled."""
+    async with engine.connect() as conn:
+        return [(row[0], row[1]) for row in await conn.execute(text(_AUDIT_TRIGGERS_SQL))]
+
+
+async def test_admin_revision_downgrades_to_0003_and_back(empty_engine: AsyncEngine) -> None:
+    await upgrade(empty_engine)
+    after_upgrade = await _tables(empty_engine)
+    assert after_upgrade >= ADMIN_TABLES
+    assert await _columns(empty_engine, "orders") >= SLOT_ORDER_COLUMNS
+    assert {"sort_order", "archived_at"} <= await _columns(empty_engine, "products")
+    assert await _scalar(empty_engine, _FUNCTION_SQL) == 1
+    assert await _audit_triggers(empty_engine) == [
+        ("audit_log_append_only", "O"),
+        ("audit_log_no_truncate", "O"),
+    ]
+
+    await downgrade(empty_engine, "0003")
+    assert not (await _tables(empty_engine) & ADMIN_TABLES)
+    assert not (SLOT_ORDER_COLUMNS & await _columns(empty_engine, "orders"))
+    assert not ({"sort_order", "archived_at"} & await _columns(empty_engine, "products"))
+    assert "ck_products_archived_is_inactive" not in await _constraints(empty_engine, "products")
+    assert await _scalar(empty_engine, _FUNCTION_SQL) == 0
+    assert await _audit_triggers(empty_engine) == []
+    assert await _scalar(empty_engine, "SELECT version_num FROM alembic_version") == "0003"
+
+    await upgrade(empty_engine)
+    assert await _tables(empty_engine) == after_upgrade
+    assert await _model_differences(empty_engine) == []
+
+
+async def test_audit_log_is_append_only(empty_engine: AsyncEngine) -> None:
+    await upgrade(empty_engine)
+    async with empty_engine.connect() as conn:
+        audit_id = (
+            await conn.execute(
+                text(
+                    "INSERT INTO audit_log (actor_role, action, entity_type, entity_id, details) "
+                    "VALUES ('admin', 'zone.create', 'zone', 'z-1', '{}'::jsonb) RETURNING id"
+                )
+            )
+        ).scalar_one()
+        for statement in (
+            "UPDATE audit_log SET action = 'zone.delete' WHERE id = :id",
+            "DELETE FROM audit_log WHERE id = :id",
+            "TRUNCATE audit_log",
+            "TRUNCATE audit_log CASCADE",
+        ):
+            with pytest.raises(DBAPIError, match="audit_log is append-only"):
+                async with conn.begin_nested():
+                    await conn.execute(text(statement), {"id": audit_id})
+        assert (
+            await conn.execute(
+                text("SELECT action FROM audit_log WHERE id = :id"), {"id": audit_id}
+            )
+        ).scalar_one() == "zone.create"
+        await conn.commit()
+
+    # The test harness empties the tables between tests: it may truncate the log, and leaves the
+    # trigger enabled again afterwards.
+    await truncate_app_tables(empty_engine)
+    assert await _scalar(empty_engine, "SELECT count(*) FROM audit_log") == 0
+    assert ("audit_log_no_truncate", "O") in await _audit_triggers(empty_engine)
+
+
+async def test_admin_check_constraints(empty_engine: AsyncEngine) -> None:
+    await upgrade(empty_engine)
+    async with empty_engine.connect() as conn:
+        zone_id = (
+            await conn.execute(
+                text(
+                    "INSERT INTO delivery_zones (slug, name_uz, name_ru, delivery_fee_uzs, "
+                    "opens_at, closes_at) VALUES ('demo-z', 'D', 'Д', 0, '09:00', '21:00') "
+                    "RETURNING id"
+                )
+            )
+        ).scalar_one()
+        slot_sql = text(
+            "INSERT INTO delivery_slots (zone_id, slot_date, starts_at, ends_at, capacity, "
+            "reserved_count, cutoff_at) VALUES (:zone, :day, :starts, '13:00', :capacity, "
+            ":reserved, '2026-11-02T03:00:00Z') RETURNING id"
+        )
+
+        def slot(starts: str, capacity: int, reserved: int) -> dict[str, object]:
+            return {
+                "zone": zone_id,
+                "day": date(2026, 11, 2),
+                "starts": time.fromisoformat(starts),
+                "capacity": capacity,
+                "reserved": reserved,
+            }
+
+        slot_id = (await conn.execute(slot_sql, slot("10:00", 2, 2))).scalar_one()  # full is fine
+        with pytest.raises(IntegrityError, match="ck_delivery_slots_reserved_within_capacity"):
+            async with conn.begin_nested():
+                await conn.execute(slot_sql, slot("11:00", 2, 3))
+        with pytest.raises(IntegrityError, match="ck_delivery_slots_reserved_within_capacity"):
+            async with conn.begin_nested():
+                await conn.execute(
+                    text(
+                        "UPDATE delivery_slots SET reserved_count = reserved_count + 1 "
+                        "WHERE id = :id"
+                    ),
+                    {"id": slot_id},
+                )
+        with pytest.raises(IntegrityError, match="ck_delivery_slots_reserved_non_negative"):
+            async with conn.begin_nested():
+                await conn.execute(slot_sql, slot("11:00", 2, -1))
+        with pytest.raises(IntegrityError, match="uq_delivery_slots_zone_id_slot_date_starts_at"):
+            async with conn.begin_nested():
+                await conn.execute(slot_sql, slot("10:00", 5, 0))
+
+        category_id = (
+            await conn.execute(
+                text(
+                    "INSERT INTO categories (slug, name_uz, name_ru) "
+                    "VALUES ('c', 'C', 'C') RETURNING id"
+                )
+            )
+        ).scalar_one()
+        product_sql = text(
+            "INSERT INTO products (category_id, sku, slug, name_uz, name_ru, unit, price_uzs, "
+            "is_active, archived_at) VALUES (:cat, :sku, :sku, 'P', 'P', 'piece', 1000, "
+            ":active, :archived)"
+        )
+        archived = datetime(2026, 10, 31, tzinfo=UTC)
+        await conn.execute(
+            product_sql, {"cat": category_id, "sku": "ok", "active": False, "archived": archived}
+        )
+        with pytest.raises(IntegrityError, match="ck_products_archived_is_inactive"):
+            async with conn.begin_nested():
+                await conn.execute(
+                    product_sql,
+                    {"cat": category_id, "sku": "bad", "active": True, "archived": archived},
+                )

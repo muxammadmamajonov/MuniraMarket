@@ -26,3 +26,28 @@ export function telHref(phone: string): string | null {
   const dialable = phone.trim().replace(/(?!^\+)[^\d]/g, '');
   return /\d/.test(dialable) ? `tel:${dialable}` : null;
 }
+
+const NBSP = ' ';
+
+/** `1284` -> `1 284` (NBSP groups, so a count never wraps in the middle). Non-integers are returned as `String`. */
+export function formatCount(value: number): string {
+  if (!Number.isSafeInteger(value)) return String(value);
+  const grouped = String(Math.abs(value)).replace(/\B(?=(\d{3})+$)/g, NBSP);
+  return value < 0 ? `-${grouped}` : grouped;
+}
+
+/** `2026-10-31` -> `31.10.2026`. Anything else is returned as is. */
+export function formatDate(isoDate: string): string {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(isoDate);
+  return match === null ? isoDate : `${match[3]}.${match[2]}.${match[1]}`;
+}
+
+/** `14:00:00` or `14:00` -> `14:00`. */
+export function formatTime(value: string): string {
+  return value.slice(0, 5);
+}
+
+/** A booked/offered delivery window: `31.10.2026, 14:00–16:00`. */
+export function formatSlotWindow(date: string, startsAt: string, endsAt: string): string {
+  return `${formatDate(date)}, ${formatTime(startsAt)}–${formatTime(endsAt)}`;
+}
