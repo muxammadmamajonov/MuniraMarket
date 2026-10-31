@@ -20,9 +20,11 @@ GRANT USAGE ON SCHEMA public TO mm_app;
 -- owner installs it once; the migration's CREATE EXTENSION IF NOT EXISTS is then a no-op.
 CREATE EXTENSION IF NOT EXISTS pg_trgm;
 
--- Tables the migrator creates later are usable by the runtime role (DML only). audit_log is
--- narrowed again by 10-runtime-grants.sql after every migration.
+-- Tables the migrator creates later start with SELECT and INSERT only (so a new append-only
+-- table is never briefly mutable); 10-runtime-grants.sql, run after every migration, adds
+-- UPDATE/DELETE to every table except audit_log. Until then a new table is read/insert only:
+-- the application fails closed rather than gaining rights early.
 ALTER DEFAULT PRIVILEGES FOR ROLE mm_migrator IN SCHEMA public
-  GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO mm_app;
+  GRANT SELECT, INSERT ON TABLES TO mm_app;
 ALTER DEFAULT PRIVILEGES FOR ROLE mm_migrator IN SCHEMA public
   GRANT USAGE, SELECT ON SEQUENCES TO mm_app;

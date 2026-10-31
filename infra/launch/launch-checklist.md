@@ -22,12 +22,14 @@ operator's records and the deploy environment, never into this repository.
 - [ ] `workers.dev` and preview URLs are off for the three deployed Workers (they are in config).
 - [ ] WAF managed rules on; a rate-limiting rule for `/api/v1/auth/*` on the storefront and
       admin hostnames as a second layer above the API's own limits.
+- [ ] A rate-limiting rule on the API hostname (`/api/v1/health*` and `/api/v1/internal/*`):
+      every request there wakes a container, and health readiness touches the database and Redis.
 - [ ] Optional: Cloudflare Access in front of the admin hostname (staff identity before the app's
       own Telegram sign-in).
 
 ## 2. Workers secrets and variables
 
-- [ ] Gateway secrets set for production: `DATABASE_URL` (mm_app, `?ssl=require`), `REDIS_URL`
+- [ ] Gateway secrets set for production: `DATABASE_URL` (mm_app, `?ssl=verify-full`), `REDIS_URL`
       (`rediss://`), `SERVICE_AUTH_KEYS`, `TELEGRAM_BOT_TOKEN` (infra/cloudflare/README.md).
 - [ ] Web and admin Workers have no secrets.
 - [ ] `node infra/cloudflare/scripts/validate-deploy-env.mts --mode production` passes;

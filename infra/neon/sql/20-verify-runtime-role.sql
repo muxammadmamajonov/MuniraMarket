@@ -32,10 +32,31 @@ BEGIN
     IF t.owner = 'mm_app' THEN
       problems := problems || format('%s is owned by mm_app', t.rel);
     END IF;
-    IF has_table_privilege('mm_app', t.rel, 'TRUNCATE') THEN
-      problems := problems || format('mm_app may TRUNCATE %s', t.rel);
+    IF has_table_privilege('mm_app', t.rel, 'TRUNCATE')
+       OR has_table_privilege('mm_app', t.rel, 'TRIGGER')
+       OR has_table_privilege('mm_app', t.rel, 'REFERENCES') THEN
+      problems := problems || format('mm_app may TRUNCATE, add triggers to or reference %s', t.rel);
     END IF;
   END LOOP;
+
+  -- No column-level grant re-opens UPDATE on the audit log.
+  IF EXISTS (
+    SELECT FROM information_schema.column_privileges
+    WHERE grantee = 'mm_app' AND table_name = 'audit_log' AND privilege_type IN ('UPDATE')
+  ) THEN
+    problems := problems || 'mm_app has a column-level UPDATE grant on audit_log';
+  END IF;
+
+  -- Default privileges for future tables stay at SELECT, INSERT.
+  IF EXISTS (
+    SELECT FROM pg_default_acl d
+    CROSS JOIN LATERAL aclexplode(d.defaclacl) a
+    WHERE d.defaclobjtype = 'r'
+      AND a.grantee = 'mm_app'::regrole
+      AND a.privilege_type NOT IN ('SELECT', 'INSERT')
+  ) THEN
+    problems := problems || 'default privileges give mm_app more than SELECT, INSERT on new tables';
+  END IF;
 
   -- No DDL: the runtime role cannot create objects in the schema.
   IF has_schema_privilege('mm_app', 'public', 'CREATE') THEN

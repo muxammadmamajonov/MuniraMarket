@@ -21,12 +21,12 @@ if docker run --rm -e APP_ENV=production \
   "$image" >"$log" 2>&1; then
   echo "container started with an insecure DATABASE_URL" >&2; exit 1
 fi
-grep -q "DATABASE_URL must set ssl=require" "$log" || { cat "$log" >&2; exit 1; }
+grep -q "DATABASE_URL must set ssl=verify-full" "$log" || { cat "$log" >&2; exit 1; }
 if grep -q "ci-db-pw" "$log"; then echo "startup error leaked the DB password" >&2; exit 1; fi
 
 echo "2. a valid production config serves liveness, reports readiness honestly, logs JSON"
 cid="$(docker run -d -p "127.0.0.1:${port}:8000" -e APP_ENV=production \
-  -e "DATABASE_URL=postgresql+asyncpg://app:ci-db-pw@db.example.test/app?ssl=require" \
+  -e "DATABASE_URL=postgresql+asyncpg://app:ci-db-pw@db.example.test/app?ssl=verify-full" \
   "${common[@]}" "$image")"
 trap 'docker rm -f "$cid" >/dev/null 2>&1 || true' EXIT
 for _ in $(seq 1 30); do

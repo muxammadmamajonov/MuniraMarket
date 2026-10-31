@@ -376,16 +376,16 @@ def test_bot_username_format(username: str) -> None:
 
 # --- transport security, logging and pool limits (cloud launch readiness) -------------------
 
-_TLS_DB = "postgresql+asyncpg://app:pw@ep-x.example.test/app?ssl=require"
+_TLS_DB = "postgresql+asyncpg://app:pw@ep-x.example.test/app?ssl=verify-full"
 
 
 @pytest.mark.parametrize("app_env", ["staging", "production"])
 def test_deployed_database_url_requires_tls(app_env: str) -> None:
-    with pytest.raises(ValidationError, match="ssl=require"):
-        make_settings(app_env=app_env, database_url="postgresql+asyncpg://app:pw@db/app")
-    for mode in ("require", "verify-ca", "verify-full"):
-        url = f"postgresql+asyncpg://app:pw@db/app?ssl={mode}"
-        assert make_settings(app_env=app_env, database_url=url).app_env == app_env
+    for weak in ("", "?ssl=disable", "?ssl=prefer", "?ssl=require", "?ssl=verify-ca"):
+        with pytest.raises(ValidationError, match="ssl=verify-full"):
+            make_settings(app_env=app_env, database_url=f"postgresql+asyncpg://app:pw@db/app{weak}")
+    url = "postgresql+asyncpg://app:pw@db/app?ssl=verify-full"
+    assert make_settings(app_env=app_env, database_url=url).app_env == app_env
 
 
 @pytest.mark.parametrize("app_env", ["development", "test", "staging", "production"])

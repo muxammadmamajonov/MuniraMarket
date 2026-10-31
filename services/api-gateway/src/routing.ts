@@ -67,7 +67,8 @@ export function isAllowed(entrance: Entrance, method: string, pathname: string):
   const route = segments.join('/');
   const upper = method.toUpperCase();
 
-  if (HEALTH_ROUTES.has(route)) return upper === 'GET' || upper === 'HEAD';
+  // GET only: the API's health routes do not answer HEAD.
+  if (HEALTH_ROUTES.has(route)) return upper === 'GET';
 
   switch (entrance) {
     case 'public':

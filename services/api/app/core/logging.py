@@ -32,17 +32,23 @@ _REDACTIONS: Final[tuple[tuple[re.Pattern[str], str], ...]] = (
     (re.compile(r"(?i)\b([a-z][a-z0-9+.-]*://)[^/\s@]*@"), r"\1" + _REDACTED + "@"),
     # Telegram bot tokens: <bot id>:<35+ url-safe characters>.
     (re.compile(r"\b\d{6,12}:[A-Za-z0-9_-]{30,}\b"), _REDACTED),
-    # Bearer / session / CSRF-looking assignments: `token=...`, `hash: ...`, `cookie=...`.
+    # Authorization values with their scheme: "Bearer abc", "Basic abc".
+    (re.compile(r"(?i)\b(bearer|basic)\s+[A-Za-z0-9._~+/=-]+"), r"\1 " + _REDACTED),
+    # Secret-looking assignments, also inside longer snake/kebab keys (access_token=, bot-token:,
+    # client_secret=, "hash": "..."): the key is kept, the value masked.
     (
         re.compile(
-            r"(?i)\b(authorization|bearer|cookie|set-cookie|token|csrf[_-]?token|hash|signature|"
-            r"init_?data|password|secret|__host-mm_session|mm_session)(\"?\s*[:=]\s*\"?)[^\s\"',;&]+"
+            r"(?i)([A-Za-z0-9_-]*(?:authorization|cookie|token|csrf|hash|signature|init_?data|"
+            r"password|passwd|secret|api_?key|mm_session)[A-Za-z0-9_-]*)"
+            r"(\"?\s*[:=]\s*\"?)(?!\[redacted\])[^\s\"',;&]+"
         ),
         r"\1\2" + _REDACTED,
     ),
-    # Uzbek mobile numbers (+998 and nine digits, with optional separators), then any other
-    # run of 9+ digits that looks like a phone number.
+    # Uzbek phone numbers: +998 / 998 and nine digits, or the nine-digit local form
+    # (90 123 45 67, 901234567), with optional separators.
     (re.compile(r"\+?998[\s()-]*\d{2}[\s()-]*\d{3}[\s()-]*\d{2}[\s()-]*\d{2}"), _REDACTED),
+    (re.compile(r"(?<![\w-])\(?\d{2}\)?[\s-]?\d{3}[\s-]?\d{2}[\s-]?\d{2}(?![\w-])"), _REDACTED),
+    # Any other international number written with a leading +.
     (re.compile(r"(?<![\w-])\+\d[\d\s()-]{7,}\d"), _REDACTED),
 )
 

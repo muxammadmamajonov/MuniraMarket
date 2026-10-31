@@ -88,4 +88,11 @@ must_fail "CREATE TABLE" "CREATE TABLE intruder (id int)"
 must_fail "ALTER TABLE" "ALTER TABLE products ADD COLUMN intruder int"
 must_fail "DROP TRIGGER" "DROP TRIGGER IF EXISTS audit_log_no_truncate ON audit_log"
 must_fail "read alembic_version" "SELECT * FROM alembic_version"
+
+# A table created by a later migration is read/insert only until the grants are re-applied.
+psql "$migrator_url" -q -v ON_ERROR_STOP=1 -c "CREATE TABLE future_table (id int)"
+must_fail "UPDATE a new table before the grants run" "UPDATE future_table SET id = 1"
+psql "$migrator_url" -q -v ON_ERROR_STOP=1 -f "$here/sql/10-runtime-grants.sql"
+as_app "UPDATE future_table SET id = 1" >/dev/null
+echo "ok: grants re-applied after a migration open DML on the new table"
 echo "role model verified"

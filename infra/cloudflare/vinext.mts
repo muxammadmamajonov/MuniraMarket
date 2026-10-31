@@ -4,6 +4,7 @@
  * `next build` and the unit tests never see it.
  */
 
+import { realpathSync } from 'node:fs';
 import type { Plugin } from 'vite';
 import type { DeploymentTarget } from './environments.mts';
 
@@ -13,15 +14,17 @@ import type { DeploymentTarget } from './environments.mts';
  * build, whatever specifier imported it.
  */
 export function coreApiBindingPlugin(appDir: string): Plugin {
-  const original = `${appDir}/src/lib/api/upstream-fetch.ts`;
-  const replacement = `${appDir}/worker/upstream-fetch.ts`;
+  // Compare real paths: Vite resolves through symlinks, a checkout path may contain one.
+  const original = realpathSync(`${appDir}/src/lib/api/upstream-fetch.ts`);
+  const replacement = realpathSync(`${appDir}/worker/upstream-fetch.ts`);
   return {
     name: 'muniramarket:core-api-binding',
     enforce: 'pre',
     async resolveId(source, importer, options) {
       if (!source.includes('upstream-fetch') || importer === replacement) return null;
       const resolved = await this.resolve(source, importer, { ...options, skipSelf: true });
-      return resolved?.id === original ? replacement : null;
+      const id = resolved?.id.split('?')[0];
+      return id !== undefined && realpathSync(id) === original ? replacement : null;
     },
   };
 }

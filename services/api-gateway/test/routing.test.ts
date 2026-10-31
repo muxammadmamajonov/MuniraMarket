@@ -33,7 +33,8 @@ describe('isAllowed', () => {
   it('lets every entrance reach the health checks with GET only', () => {
     for (const entrance of ['public', 'storefront', 'admin'] as const) {
       expect(isAllowed(entrance, 'GET', '/api/v1/health')).toBe(true);
-      expect(isAllowed(entrance, 'HEAD', '/api/v1/health/ready')).toBe(true);
+      expect(isAllowed(entrance, 'GET', '/api/v1/health/ready')).toBe(true);
+      expect(isAllowed(entrance, 'HEAD', '/api/v1/health')).toBe(false);
       expect(isAllowed(entrance, 'POST', '/api/v1/health')).toBe(false);
     }
   });

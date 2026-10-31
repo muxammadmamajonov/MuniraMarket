@@ -26,7 +26,10 @@ _ASYNCPG_SCHEME = "postgresql+asyncpg"
 _DEFAULT_PORTS = {"http": 80, "https": 443}
 # asyncpg's own ``ssl`` connect argument (SQLAlchemy passes URL query keys through verbatim).
 # ``sslmode`` is libpq's spelling: asyncpg would reject it as an unknown keyword at connect time.
-_TLS_SSL_MODES: Final = frozenset({"require", "verify-ca", "verify-full"})
+# Deployed environments need ``verify-full``: ``require`` encrypts but does not authenticate the
+# server (asyncpg uses CERT_NONE without a root certificate). The image points PGSSLROOTCERT at
+# the system CA bundle, so verify-full checks the chain and the hostname.
+DEPLOYED_SSL_MODE: Final = "verify-full"
 # A release label from CI (git SHA or tag); goes into every log line.
 _RELEASE_RE = re.compile(r"^[A-Za-z0-9._-]{1,64}$")
 
@@ -323,14 +326,12 @@ class Settings(BaseSettings):
         url = make_url(self.database_url.get_secret_value())
         if "sslmode" in url.query:
             raise ValueError(
-                "DATABASE_URL must use asyncpg's ssl= parameter (e.g. ?ssl=require), not sslmode="
+                "DATABASE_URL must use asyncpg's ssl= parameter (?ssl=verify-full), not sslmode="
             )
         if self.app_env not in DEPLOYED_ENVS:
             return
-        if url.query.get("ssl") not in _TLS_SSL_MODES:
-            raise ValueError(
-                "DATABASE_URL must set ssl=require (or verify-ca / verify-full) outside development"
-            )
+        if url.query.get("ssl") != DEPLOYED_SSL_MODE:
+            raise ValueError("DATABASE_URL must set ssl=verify-full outside development")
         if not self.redis_url.get_secret_value().startswith("rediss://"):
             raise ValueError("REDIS_URL must use rediss:// (TLS) outside development")
         if not self.csrf_trusted_origins:

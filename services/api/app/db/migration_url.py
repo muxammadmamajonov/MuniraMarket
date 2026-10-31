@@ -13,9 +13,7 @@ from collections.abc import Mapping
 from sqlalchemy.engine import make_url
 from sqlalchemy.exc import ArgumentError
 
-from app.core.config import DEPLOYED_ENVS, get_settings
-
-_TLS_SSL_MODES = frozenset({"require", "verify-ca", "verify-full"})
+from app.core.config import DEPLOYED_ENVS, DEPLOYED_SSL_MODE, get_settings
 
 
 def migration_database_url(environ: Mapping[str, str] = os.environ) -> str:
@@ -33,6 +31,6 @@ def migration_database_url(environ: Mapping[str, str] = os.environ) -> str:
     app_env = environ.get("APP_ENV", "").strip()
     if not app_env:
         raise ValueError("APP_ENV is required for migrations")
-    if app_env in DEPLOYED_ENVS and url.query.get("ssl") not in _TLS_SSL_MODES:
-        raise ValueError("MIGRATION_DATABASE_URL must set ssl=require outside development")
+    if app_env in DEPLOYED_ENVS and url.query.get("ssl") != DEPLOYED_SSL_MODE:
+        raise ValueError("MIGRATION_DATABASE_URL must set ssl=verify-full outside development")
     return raw

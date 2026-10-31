@@ -46,11 +46,15 @@ read `alembic_version`.
 
 ## Connection strings
 
-- Runtime (`DATABASE_URL`, gateway Worker secret): `postgresql+asyncpg://mm_app:<password>@<direct
-endpoint host>/<db>?ssl=require`. Use the **direct** (non-pooled) endpoint: the API keeps its own
-  small pool and uses prepared statements, which a transaction-mode pooler does not suit. The API
-  refuses to start in staging/production without `ssl=require` (or `verify-ca`/`verify-full`) and
-  refuses libpq's `sslmode=` everywhere (asyncpg would reject it at connect time).
+- Runtime (`DATABASE_URL`, gateway Worker secret):
+  `postgresql+asyncpg://mm_app:<password>@<direct endpoint host>/<db>?ssl=verify-full`. Use the
+  **direct** (non-pooled) endpoint: the API keeps its own small pool and uses prepared
+  statements, which a transaction-mode pooler does not suit.
+- TLS: the API refuses to start in staging/production without `ssl=verify-full`. `require`
+  encrypts but does not authenticate the server (asyncpg skips verification without a root
+  certificate); the image sets `PGSSLROOTCERT` to the system CA bundle, which trusts Neon's
+  public certificates, so `verify-full` checks the chain and the hostname. libpq's `sslmode=` is
+  refused everywhere (asyncpg would reject it at connect time).
 - Migrations (`MIGRATION_DATABASE_URL`, GitHub Environment secret): same host, `mm_migrator`.
 - Workers never connect directly. If one ever needs the database, put **Hyperdrive** in front of
   it with a dedicated read-only role.

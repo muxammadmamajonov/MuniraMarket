@@ -74,8 +74,9 @@ bad value). See `.env.example` for the full list. Highlights:
 - `FORWARDED_ALLOW_IPS` (comma-separated IPs/CIDRs, validated) is required in staging/production
   and may not be `*` there. See "Client IP behind the proxy".
 - **Fail closed outside development** (staging/production refuse to start otherwise):
-  `DATABASE_URL` must carry `?ssl=require` (or `verify-ca`/`verify-full`; asyncpg's `ssl=`, never
-  libpq's `sslmode=`, which is refused everywhere), `REDIS_URL` must be `rediss://`,
+  `DATABASE_URL` must carry `?ssl=verify-full` (asyncpg's `ssl=`, never libpq's `sslmode=`, which
+  is refused everywhere; `require` encrypts without authenticating the server, and the image sets
+  `PGSSLROOTCERT` to the system CA bundle so `verify-full` checks the certificate and hostname), `REDIS_URL` must be `rediss://`,
   `CSRF_TRUSTED_ORIGINS` must be set and `LOG_FORMAT` must be `json`.
 - Pool limits per process: `DB_POOL_SIZE` (1-50, default 5), `DB_MAX_OVERFLOW` (0-50, default 5),
   `DB_POOL_TIMEOUT_SECONDS`, `DB_CONNECT_TIMEOUT_SECONDS`. Every connection sets

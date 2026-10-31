@@ -19,7 +19,7 @@ def connect_args(settings: Settings) -> dict[str, Any]:
 
     ``application_name`` makes the API's connections recognisable in ``pg_stat_activity`` (and
     Neon's monitoring), separate from the one-off migration job. TLS itself is configured in
-    ``DATABASE_URL`` (``?ssl=require``), which settings enforce outside development.
+    ``DATABASE_URL`` (``?ssl=verify-full`` outside development, enforced by settings).
     """
     server_settings = {"application_name": APPLICATION_NAME}
     if settings.db_statement_timeout_ms:

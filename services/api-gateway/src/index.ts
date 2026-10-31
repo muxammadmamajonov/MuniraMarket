@@ -60,6 +60,8 @@ function log(level: 'info' | 'error', message: string, fields: Record<string, un
 
 export class CoreApiContainer extends DurableObject<Env> {
   private starting: Promise<void> | undefined;
+  /** The running process answered the health check and has not exited since. */
+  private ready = false;
 
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
@@ -78,52 +80,83 @@ export class CoreApiContainer extends DurableObject<Env> {
     const container = this.ctx.container;
     if (!container) return errorResponse(503, 'service_unavailable', 'Service unavailable');
 
-    // Concurrent requests share one start and readiness check; a failure can be retried.
-    this.starting ??= this.startAndWaitForPort(container).finally(() => {
-      this.starting = undefined;
-    });
-    try {
-      await this.starting;
-    } catch (error) {
-      log('error', 'container did not become ready', {
-        error: error instanceof Error ? error.message : String(error),
+    if (!(this.ready && container.running)) {
+      // Concurrent requests share one start and readiness check; a failure can be retried.
+      this.starting ??= this.startAndWaitForPort(container).finally(() => {
+        this.starting = undefined;
       });
-      return errorResponse(503, 'service_unavailable', 'Service unavailable');
+      try {
+        await this.starting;
+      } catch (error) {
+        log('error', 'container did not become ready', {
+          error: error instanceof Error ? error.message : String(error),
+        });
+        return errorResponse(503, 'service_unavailable', 'Service unavailable');
+      }
     }
 
     const url = new URL(request.url);
     url.protocol = 'http:';
     url.host = 'container';
-    return container.getTcpPort(CONTAINER_PORT).fetch(new Request(url, request));
+    try {
+      return await container.getTcpPort(CONTAINER_PORT).fetch(new Request(url, request));
+    } catch (error) {
+      // The process went away (rollout, host move, crash): the next request starts it again.
+      this.ready = false;
+      throw error;
+    }
   }
 
-  private async startAndWaitForPort(container: Container): Promise<void> {
-    const image = container.images['api'];
-    if (image === undefined) throw new Error('Container image "api" is not configured');
-    if (!container.running) {
+  private startProcess(container: Container, image: string): void {
+    try {
       container.start({
         image,
         // Needs egress to Neon (PostgreSQL over TLS) and the managed Redis.
         enableInternet: true,
         env: containerEnv(this.env),
       });
+    } catch (error) {
+      // start() refuses while an instance is already starting; the health loop keeps waiting.
+      log('info', 'container start skipped', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return;
     }
-    await container.setInactivityTimeout(this.inactivityMs());
+    // Forget readiness as soon as the process exits, whatever the reason.
+    container
+      .monitor()
+      .catch(() => undefined)
+      .finally(() => {
+        this.ready = false;
+      });
+  }
+
+  private async startAndWaitForPort(container: Container): Promise<void> {
+    const image = container.images['api'];
+    if (image === undefined) throw new Error('Container image "api" is not configured');
+    this.ready = false;
 
     const port = container.getTcpPort(CONTAINER_PORT);
     let lastError: unknown;
-    for (let attempt = 0; attempt < 150; attempt++) {
+    // About 30 s: a cold start of the image, or a restart after a rollout stopped the process.
+    for (let attempt = 0; attempt < 60; attempt++) {
+      // (Re)start inside the loop: the process may exit while we wait (SIGTERM during a rollout).
+      if (!container.running) this.startProcess(container, image);
       try {
         const response = await port.fetch(`http://container${HEALTH_PATH}`, {
-          signal: AbortSignal.timeout(1000),
+          signal: AbortSignal.timeout(2000),
         });
         await response.body?.cancel();
-        if (response.ok) return;
+        if (response.ok) {
+          this.ready = true;
+          await container.setInactivityTimeout(this.inactivityMs());
+          return;
+        }
         lastError = new Error(`health returned ${response.status}`);
       } catch (error) {
         lastError = error;
       }
-      await scheduler.wait(200);
+      await scheduler.wait(300);
     }
     throw new Error('Core API container did not become ready', { cause: lastError });
   }

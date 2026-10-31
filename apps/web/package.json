@@ -13,8 +13,8 @@
     "build": "next build",
     "typecheck:worker": "cf workers types --mode staging && tsc --noEmit -p tsconfig.worker.json",
     "dev:worker": "vite dev --port 3100",
-    "build:worker": "vite build --mode staging",
-    "build:worker:production": "vite build --mode production",
+    "build:worker": "vite build --mode staging && node ../../infra/cloudflare/scripts/assert-core-api-binding.mts",
+    "build:worker:production": "vite build --mode production && node ../../infra/cloudflare/scripts/assert-core-api-binding.mts",
     "preview:worker": "vite build --mode development && vite preview --port 3100"
   },
   "dependencies": {

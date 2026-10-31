@@ -24,8 +24,12 @@ LABEL org.opencontainers.image.title="muniramarket-core-api" \
       org.opencontainers.image.revision="${APP_RELEASE}"
 # Stamped on every log line (APP_RELEASE setting); empty for local builds.
 ENV APP_RELEASE="${APP_RELEASE}"
+# PGSSLROOTCERT: asyncpg only verifies the database server's certificate when it has a root
+# certificate file; point it at the system CA bundle so ssl=verify-full (required outside
+# development) authenticates Neon's publicly trusted certificate and hostname.
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
+    PGSSLROOTCERT=/etc/ssl/certs/ca-certificates.crt \
     PATH="/opt/venv/bin:$PATH"
 RUN groupadd --system --gid 10001 app \
     && useradd --system --uid 10001 --gid app --no-create-home --shell /usr/sbin/nologin app

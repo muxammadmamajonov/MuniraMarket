@@ -53,7 +53,7 @@ Telegram Serverless ─https─> muniramarket-api-gateway (Worker, public: healt
   not `neon_superuser`: `mm_migrator` owns the schema and is used only by the one-off migration
   job (`MIGRATION_DATABASE_URL`); `mm_app` is the runtime role with DML only and
   `SELECT, INSERT` on `audit_log` (completing the deployment item of ADR 0010). TLS is mandatory
-  (`ssl=require`; the API refuses to start otherwise), pools are bounded per process and capped
+  (`ssl=verify-full`, certificate and hostname checked against the system CA bundle; the API refuses to start otherwise), pools are bounded per process and capped
   per role. Workers do not talk to the database today; if one ever must, it goes through
   **Hyperdrive**, never a direct connection.
 - **Managed Redis over TLS** (`rediss://`) for sessions, rate limits and replay nonces, one

@@ -45,7 +45,7 @@ def make_settings(**overrides: Any) -> Settings:
         # Deployed environments require TLS to PostgreSQL and Redis and trusted origins; tests
         # that exercise those rules override these again.
         values.update(
-            database_url="postgresql+asyncpg://fake:fake-password@127.0.0.1:1/fake?ssl=require",
+            database_url="postgresql+asyncpg://fake:fake-password@127.0.0.1:1/fake?ssl=verify-full",
             redis_url="rediss://localhost:6379/0",
             csrf_trusted_origins="https://shop.example.test,https://admin.example.test",
             telegram_environment="production",

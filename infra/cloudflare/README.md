@@ -57,7 +57,7 @@ node infra/cloudflare/scripts/validate-deploy-env.mts --mode staging
 
 | Secret                                          | Stored as                                                                                               | Rotation                                                     |
 | ----------------------------------------------- | ------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------ |
-| `DATABASE_URL` (`mm_app`, `?ssl=require`)       | Worker secret on `muniramarket-api-gateway[-staging]`                                                   | new password in Neon (`ALTER ROLE`), update secret, redeploy |
+| `DATABASE_URL` (`mm_app`, `?ssl=verify-full`)   | Worker secret on `muniramarket-api-gateway[-staging]`                                                   | new password in Neon (`ALTER ROLE`), update secret, redeploy |
 | `REDIS_URL` (`rediss://`)                       | Worker secret on the gateway                                                                            | provider ACL password, update secret                         |
 | `SERVICE_AUTH_KEYS`                             | Worker secret on the gateway **and** Telegram Serverless config                                         | two keys at once (ADR 0003), then drop old                   |
 | `TELEGRAM_BOT_TOKEN`                            | Worker secret on the gateway; Telegram Serverless platform                                              | BotFather `/revoke`, update both                             |

@@ -30,6 +30,13 @@ from tests.conftest import make_settings
         ('payload {"hash": "0123abcd"}', "0123abcd"),
         ("init_data=query_id%3DAAE...&hash=ffee", "query_id"),
         ("Authorization: Bearer-tokenvalue123", "tokenvalue123"),
+        ("upstream said Authorization: Bearer abc123def456", "abc123def456"),
+        ("refresh failed access_token=eyJhbGciOi.payload.sig", "eyJhbGciOi"),
+        ("bot-token: 123:abcdefabcdef", "abcdefabcdef"),
+        ('{"client_secret": "s3cr3t-value"}', "s3cr3t-value"),
+        ("recipient 90 123 45 67 unreachable", "123 45 67"),
+        ("recipient 901234567 unreachable", "901234567"),
+        ("recipient (90) 123-45-67 unreachable", "123-45-67"),
     ],
 )
 def test_redact_masks_secrets_and_phone_numbers(text: str, secret: str) -> None:
@@ -38,8 +45,17 @@ def test_redact_masks_secrets_and_phone_numbers(text: str, secret: str) -> None:
     assert "[redacted]" in masked
 
 
-def test_redact_keeps_ordinary_messages() -> None:
-    text = "Order created: 0b8f6a52-7c1e-4e0e-9d0e-5c8d2f1b7a10 (status=NEW, 3 items)"
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Order created: 0b8f6a52-7c1e-4e0e-9d0e-5c8d2f1b7a10 (status=NEW, 3 items)",
+        "GET /api/v1/orders/{order_id} 200",
+        "Rejected Telegram init data: hash mismatch",
+        "Order 1042 total 125000 UZS, 12 lines",
+        "core-api starting",
+    ],
+)
+def test_redact_keeps_ordinary_messages(text: str) -> None:
     assert redact(text) == text
 
 
@@ -191,7 +207,7 @@ def test_zero_disables_server_timeouts() -> None:
 
 # --- migration job URL --------------------------------------------------------------------
 
-_MIGRATION_URL = "postgresql+asyncpg://migrator:pw@ep-x.example.test/app?ssl=require"
+_MIGRATION_URL = "postgresql+asyncpg://migrator:pw@ep-x.example.test/app?ssl=verify-full"
 
 
 def test_migration_url_is_used_when_set() -> None:
@@ -211,7 +227,7 @@ def test_migration_url_is_used_when_set() -> None:
                 "APP_ENV": "staging",
                 "MIGRATION_DATABASE_URL": "postgresql+asyncpg://m:pw@h/app",
             },
-            "ssl=require",
+            "ssl=verify-full",
         ),
         (
             {

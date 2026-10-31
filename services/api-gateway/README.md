@@ -14,11 +14,15 @@ The only way into the FastAPI container on Cloudflare Containers. Design:
 refused), the allow-lists, and which headers reach the container. The gateway always writes
 `X-Forwarded-For` itself (public: `CF-Connecting-IP`; bindings: the single IP the app forwarded)
 and sets `X-Request-ID` (public callers cannot choose it). Request bodies are streamed unchanged,
-so ADR 0003 signatures still verify.
+so ADR 0003 signatures still verify. The path and query are re-serialised by the WHATWG URL
+parser, so a signed URL must already be in canonical form (the internal routes take no query
+string; keep it that way or sign the normalised URL).
 
 `CoreApiContainer` is a Durable Object that starts the image (`images.api`) with the gateway's
 secrets and plain variables as the container environment, waits for `/api/v1/health`, and
-forwards. Requests are spread over `CONTAINER_INSTANCES` named instances; idle instances sleep
+forwards; while the process stays up, requests skip the probe, and an exit (rollout, host move,
+crash) is noticed through `monitor()` or a failed forward and restarts it on the next request.
+Requests are spread over `CONTAINER_INSTANCES` named instances; idle instances sleep
 after `CONTAINER_SLEEP_AFTER_MINUTES`. Rollouts and host moves send `SIGTERM`; the API drains
 in-flight requests (up to 25 s) and exits.
 
