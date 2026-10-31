@@ -257,6 +257,15 @@ from the next opening. Rules: `app/domain/delivery.py`, design: `architecture/00
 | `GET /orders/{id}`               | `OrderDetail`; `404 order_not_found` also for other users' orders.     |
 | `POST /orders/{id}/cancel`       | `{reason}` (3-300); only `NEW`/`CONFIRMED`; returns tracked stock.     |
 
+- **Delivery slots** (ADR 0010): the quote also returns `slot_required` and `delivery_slots`
+  (`id`, `date`, `starts_at`/`ends_at` `HH:MM` Asia/Tashkent, `remaining`, `is_full`; active, cutoff
+  in the future, next 14 days, at most 60). A zone with at least one bookable slot requires
+  `delivery_slot_id` on `POST /orders` (`409 slot_required`); a zone without slots works as before.
+  The order books one place with a single conditional `UPDATE` (`reserved_count < capacity`,
+  active, same zone, cutoff ahead) after the product locks; otherwise `409 slot_full` or
+  `slot_unavailable`. A `CHECK (reserved_count <= capacity)` is the backstop. Cancelling (customer
+  or operator) gives the place back in the same transaction. Orders keep `delivery_slot`
+  (date and times) as a snapshot.
 - **Quote** never fails because of the cart: `issues` (`cart_empty`, `cart_has_issues`,
   `below_min_order`) and `can_place_order` say what blocks an order. `409 district_not_served`
   when no active zone covers the district.
@@ -287,28 +296,63 @@ from the next opening. Rules: `app/domain/delivery.py`, design: `architecture/00
 
 ## Back office (`operator` / `admin` role)
 
-| Endpoint                            | Notes                                                       |
-| ----------------------------------- | ----------------------------------------------------------- |
-| `GET /admin/orders?status=&page=`   | All orders, optionally one status, newest first.            |
-| `GET /admin/orders/{id}`            | `AdminOrderDetail`: history with actor role and reason, and |
-|                                     | `allowed_transitions`.                                      |
-| `PATCH /admin/orders/{id}/status`   | `{status, reason?, expected_status?}` (CSRF).               |
+Design: `architecture/0010-admin-content-ops.md`. Shared dependencies: `app/api/admin_deps.py`.
 
-The role is re-read from the database on every request; any other role gets `403 forbidden` before
-an order is read. Transitions follow `app/domain/order_status.py` (one step forward, or `CANCELLED`
-with a reason from any non-final status). `expected_status` turns a lost update into
-`409 order_status_conflict`; a disallowed step is `409 invalid_status_transition`. Limits:
-`admin_ip` 600/min per IP, reads 300/min and writes 120/min per user. The admin web app signs in
-on its own origin, so add that origin to `CSRF_TRUSTED_ORIGINS`.
+- **Who**: `operator` works orders and reads the dashboard; `admin` also gets catalog, CSV, zones,
+  slots, users and the audit log. The role is re-read from the database on every request and is
+  checked **before** any entity is read, so a wrong role gets `403 forbidden` for existing and
+  unknown ids alike. Back-office routes accept only Telegram **Login Widget** sessions (the admin
+  app's sign-in): a Mini App (`initData`) session is a storefront session and gets `403` here even
+  for staff. The storefront proxy answers `404` for `/api/v1/admin/**`; the admin proxy forwards
+  only `admin/**` and the Login Widget/session routes.
+- **Limits**: `admin_ip` 600/min per IP, reads 300/min and writes 120/min per user, CSV import
+  10/min and export 20/min per user. Every write needs the CSRF token. Every response is
+  `no-store`. The admin app signs in on its own origin: add it to `CSRF_TRUSTED_ORIGINS`.
 
-Back-office routes accept only sessions created by the Telegram **Login Widget** (the admin app's
-sign-in). A Mini App (`initData`) session is a storefront session: it gets `403 forbidden` here even
-for an operator, so a staff member's shopping session (or a replayed `initData`) is never a
-back-office credential. The storefront proxy answers `404` for `/api/v1/admin/**`, and the admin
-proxy forwards only `admin/**` and the Login Widget/session routes.
+| Endpoint                                                  | Role     | Notes                                                                       |
+| --------------------------------------------------------- | -------- | --------------------------------------------------------------------------- |
+| `GET /admin/dashboard`                                    | staff    | today (Asia/Tashkent): orders, `NEW` orders, GMV, average order, cancelled  |
+| `GET /admin/orders?status=&page=`, `GET /admin/orders/{id}` | staff  | `AdminOrderDetail`: history with actor role and reason, allowed transitions |
+| `PATCH /admin/orders/{id}/status`                         | staff    | `{status, reason?, expected_status?}`                                       |
+| `GET/POST /admin/categories`, `PATCH/DELETE …/{id}`       | admin    | flat list with counts; `category_cycle`, `category_not_empty`, `slug_taken` |
+| `GET/POST /admin/products`, `GET/PATCH/DELETE …/{id}`     | admin    | `DELETE` archives (soft); `POST …/{id}/restore`; `sku_taken`, `slug_taken`  |
+| `GET /admin/catalog/csv/template`, `…/csv/export`         | admin    | `text/csv`, UTF-8 BOM, formula-escaped cells                                |
+| `POST /admin/catalog/csv/import?dry_run=`                 | admin    | raw `text/csv` ≤ 1 MiB, ≤ 2000 rows, all-or-nothing                         |
+| `GET/POST /admin/delivery/zones`, `PATCH/DELETE …/{id}`   | admin    | districts replaced as a set; `district_taken`, `zone_in_use`               |
+| `GET/POST /admin/delivery/slots`, `PATCH/DELETE …/{id}`   | admin    | `capacity_below_reserved`, `slot_in_use`, `slot_exists`                     |
+| `GET /admin/users?q=&role=&blocked=`, `PATCH …/{id}`      | admin    | `{role?, is_blocked?}`; `last_admin`, `cannot_block_self`; never the phone  |
+| `GET /admin/audit?entity_type=&entity_id=&action=`        | admin    | newest first                                                                |
+
+Order status transitions follow `app/domain/order_status.py` (one step forward, or `CANCELLED` with
+a reason from any non-final status); `expected_status` turns a lost update into
+`409 order_status_conflict`.
+
+- **Products are never deleted.** Archiving sets `archived_at` and makes the product inactive (a
+  `CHECK` enforces it), so it disappears from the storefront and carts (`product_inactive`) while
+  order lines keep their snapshot and product reference. An archived product must be restored
+  (it comes back inactive) before it can be edited.
+- **Image URLs** are `https` links on a public host name (no IP literals, internal suffixes,
+  credentials or non-default ports) or `null` (placeholder). The server never fetches them
+  (`app/domain/image_url.py`); real uploads come with deployment.
+- **CSV** (`app/domain/catalog_csv.py`): columns `sku,slug,category_slug,name_uz,name_ru,
+  description_uz,description_ru,unit,price_uzs,old_price_uzs,stock_quantity,is_active,sort_order,
+  image_url`, upsert by SKU. UTF-8 only (BOM optional), strict quoting, exact column set. Every row
+  is validated (`duplicate_sku`, `invalid_money`, `invalid_stock`, `category_not_found`,
+  `invalid_text` for control characters/U+FFFD/mojibake, `formula_not_allowed`, ...), errors are
+  returned per row and column (at most 200), and **if any row is wrong nothing is written**.
+  `dry_run=true` never writes. Applying re-validates under product row locks in one transaction and
+  audits every changed product. Export prefixes text cells starting with `=`, `+`, `-`, `@`, `'`,
+  tab or CR with `'`; import reverses exactly that and rejects unescaped formula-like text.
+- **Last admin**: role/block changes lock every active admin row (`FOR UPDATE`, id order) and
+  refuse to leave no active admin (`409 last_admin`); blocking yourself is `409
+  cannot_block_self`. A blocked user's next request is `403 account_blocked`.
+- **Audit log** (`app/audit.py`): one append-only row (a trigger rejects `UPDATE`/`DELETE`) per
+  catalog, CSV, zone, slot, role/block and order-status change, written in the same transaction.
+  `details` keeps only allow-listed fields as `{"from", "to"}` scalars; phone numbers, addresses,
+  names, cancel reasons (only `has_reason`), `initData`, cookies and tokens are never recorded.
 
 Locally, give a signed-in user a staff role with
-`make set-role TG=<telegram_user_id> ROLE=operator` (development/test only).
+`make set-role TG=<telegram_user_id> ROLE=operator|admin` (development/test only).
 
 ## Notification outbox (internal, signed)
 
@@ -343,7 +387,10 @@ nothing. The data includes products with an old price, untracked stock, an out-o
 inactive product, an inactive category, and an active category under an inactive one (hidden).
 The zones cover Tashkent's districts (each in at most one zone): one with a free-delivery
 threshold, one with a higher minimum, one never free, and an inactive zone whose districts are not
-served.
+served. Delivery slots are seeded only for `demo-chekka` (chilonzor, olmazor, uchtepa, yashnobod):
+two windows a day for the next 7 Tashkent days, so checkout there requires a slot while the other
+zones keep working without one. Re-running on a later day adds the new days and never touches
+`reserved_count`.
 
 ## Integration tests
 
