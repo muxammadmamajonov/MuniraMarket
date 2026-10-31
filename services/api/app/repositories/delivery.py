@@ -3,13 +3,18 @@
 import uuid
 from collections import defaultdict
 from dataclasses import dataclass
-from typing import Protocol
+from datetime import date, datetime, time, timedelta
+from typing import Final, Protocol
 
-from sqlalchemy import select
+from sqlalchemy import exists, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.domain.delivery import ZoneRules, match_zone
-from app.models.delivery import DeliveryZone, DeliveryZoneDistrict
+from app.domain.delivery import ZoneRules, match_zone, tashkent_date
+from app.models.delivery import DeliverySlot, DeliveryZone, DeliveryZoneDistrict
+
+# What the checkout quote offers: bookable slots of the next 14 local days, at most 60.
+SLOT_OFFER_DAYS: Final = 14
+SLOT_OFFER_LIMIT: Final = 60
 
 
 @dataclass(frozen=True, slots=True)
@@ -22,6 +27,22 @@ class ZoneRecord:
     name_ru: str
     rules: ZoneRules
     sort_order: int
+
+
+@dataclass(frozen=True, slots=True)
+class SlotOptionRecord:
+    """A delivery slot as offered at checkout (active, cutoff still ahead)."""
+
+    id: uuid.UUID
+    slot_date: date
+    starts_at: time
+    ends_at: time
+    capacity: int
+    reserved_count: int
+
+    @property
+    def remaining(self) -> int:
+        return max(0, self.capacity - self.reserved_count)
 
 
 class DeliveryZoneRepository(Protocol):
@@ -60,6 +81,60 @@ class SqlAlchemyDeliveryZoneRepository:
 
     async def find_for_district(self, district: str) -> ZoneRecord | None:
         return match_zone(district, await self.list_active())
+
+    async def has_bookable_slot(self, zone_id: uuid.UUID, now: datetime) -> bool:
+        """Whether the zone has any active slot whose cutoff is still ahead (then one is
+        required at checkout). Full slots count: the zone runs on slots, they are just taken."""
+        return bool(
+            (
+                await self._session.execute(
+                    select(
+                        exists().where(
+                            DeliverySlot.zone_id == zone_id,
+                            DeliverySlot.is_active.is_(True),
+                            DeliverySlot.cutoff_at > now,
+                        )
+                    )
+                )
+            ).scalar_one()
+        )
+
+    async def offered_slots(self, zone_id: uuid.UUID, now: datetime) -> list[SlotOptionRecord]:
+        """Active slots with the cutoff ahead on the next ``SLOT_OFFER_DAYS`` local days,
+        by date and start time (full ones included, so the customer sees them as taken)."""
+        today = tashkent_date(now)
+        rows = (
+            await self._session.execute(
+                select(
+                    DeliverySlot.id,
+                    DeliverySlot.slot_date,
+                    DeliverySlot.starts_at,
+                    DeliverySlot.ends_at,
+                    DeliverySlot.capacity,
+                    DeliverySlot.reserved_count,
+                )
+                .where(
+                    DeliverySlot.zone_id == zone_id,
+                    DeliverySlot.is_active.is_(True),
+                    DeliverySlot.cutoff_at > now,
+                    DeliverySlot.slot_date >= today,
+                    DeliverySlot.slot_date < today + timedelta(days=SLOT_OFFER_DAYS),
+                )
+                .order_by(DeliverySlot.slot_date, DeliverySlot.starts_at, DeliverySlot.id)
+                .limit(SLOT_OFFER_LIMIT)
+            )
+        ).all()
+        return [
+            SlotOptionRecord(
+                id=row.id,
+                slot_date=row.slot_date,
+                starts_at=row.starts_at,
+                ends_at=row.ends_at,
+                capacity=row.capacity,
+                reserved_count=row.reserved_count,
+            )
+            for row in rows
+        ]
 
 
 def to_zone_record(zone: DeliveryZone, districts: frozenset[str]) -> ZoneRecord:

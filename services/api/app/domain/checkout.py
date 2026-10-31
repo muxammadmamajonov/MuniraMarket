@@ -147,3 +147,15 @@ class InvalidStatusTransitionError(CheckoutError):
     def __init__(self, current_status: str) -> None:
         super().__init__(f"transition not allowed from {current_status}")
         self.current_status = current_status
+
+
+class SlotRequiredError(CheckoutError):
+    """The zone has bookable delivery slots, so the order must name one."""
+
+
+class SlotUnavailableError(CheckoutError):
+    """Unknown slot, inactive, of another zone, or its cutoff has passed."""
+
+
+class SlotFullError(CheckoutError):
+    """Every place in the slot is taken."""

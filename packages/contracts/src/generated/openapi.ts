@@ -4,6 +4,259 @@
  */
 
 export interface paths {
+  '/api/v1/admin/audit': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * List Audit Entries
+     * @description Audit entries, newest first, optionally filtered.
+     */
+    get: operations['list_audit_entries_api_v1_admin_audit_get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/admin/catalog/csv/export': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Csv Export
+     * @description Every non-archived product, by SKU. Cells a spreadsheet would run as a formula are
+     *     prefixed with ``'`` (import removes it again).
+     */
+    get: operations['csv_export_api_v1_admin_catalog_csv_export_get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/admin/catalog/csv/import': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Csv Import
+     * @description Create or update products by SKU from a CSV file, all or nothing.
+     *
+     *     File-level problems are ``422`` (``csv_invalid_encoding``, ``csv_invalid_header``,
+     *     ``csv_malformed``, ``csv_too_many_rows``); a body over 1 MiB is ``413``. Row problems are
+     *     returned in ``errors`` (at most 200) with ``applied: false``.
+     */
+    post: operations['csv_import_api_v1_admin_catalog_csv_import_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/admin/catalog/csv/template': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Csv Template
+     * @description An empty import file: just the header row.
+     */
+    get: operations['csv_template_api_v1_admin_catalog_csv_template_get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/admin/categories': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * List Categories
+     * @description Every category (inactive ones included) as a flat list with product and child counts.
+     */
+    get: operations['list_categories_api_v1_admin_categories_get'];
+    put?: never;
+    /**
+     * Create Category
+     * @description Create a category. ``409 slug_taken``; ``422 category_not_found`` for an unknown parent.
+     */
+    post: operations['create_category_api_v1_admin_categories_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/admin/categories/{category_id}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post?: never;
+    /**
+     * Delete Category
+     * @description Delete an empty category. ``409 category_not_empty`` while it has subcategories or any
+     *     products (archived ones included).
+     */
+    delete: operations['delete_category_api_v1_admin_categories__category_id__delete'];
+    options?: never;
+    head?: never;
+    /**
+     * Update Category
+     * @description Change the fields sent. ``parent_id: null`` moves it to the top level; a parent that is the
+     *     category itself or one of its descendants is ``409 category_cycle``.
+     */
+    patch: operations['update_category_api_v1_admin_categories__category_id__patch'];
+    trace?: never;
+  };
+  '/api/v1/admin/dashboard': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Dashboard
+     * @description Orders and revenue of the current Asia/Tashkent day, and the orders waiting now.
+     */
+    get: operations['dashboard_api_v1_admin_dashboard_get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/admin/delivery/slots': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * List Slots
+     * @description Slots by date and start time, optionally of one zone and a date range (at most 1000).
+     */
+    get: operations['list_slots_api_v1_admin_delivery_slots_get'];
+    put?: never;
+    /**
+     * Create Slot
+     * @description ``cutoff_at`` may not be after the slot starts (Asia/Tashkent); ``409 slot_exists`` when
+     *     the zone already has a slot starting at that date and time.
+     */
+    post: operations['create_slot_api_v1_admin_delivery_slots_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/admin/delivery/slots/{slot_id}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post?: never;
+    /**
+     * Delete Slot
+     * @description Only a slot with nothing booked and no order referring to it (``409 slot_in_use``).
+     */
+    delete: operations['delete_slot_api_v1_admin_delivery_slots__slot_id__delete'];
+    options?: never;
+    head?: never;
+    /**
+     * Update Slot
+     * @description Change only the fields sent. ``409 capacity_below_reserved`` below the booked places;
+     *     ``409 slot_in_use`` when moving (date/times) a slot with booked places.
+     */
+    patch: operations['update_slot_api_v1_admin_delivery_slots__slot_id__patch'];
+    trace?: never;
+  };
+  '/api/v1/admin/delivery/zones': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * List Zones
+     * @description Every zone (inactive ones too), in display order, with its districts.
+     */
+    get: operations['list_zones_api_v1_admin_delivery_zones_get'];
+    put?: never;
+    /**
+     * Create Zone
+     * @description ``409 district_taken`` (with ``district``) when a district already belongs to a zone.
+     */
+    post: operations['create_zone_api_v1_admin_delivery_zones_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/admin/delivery/zones/{zone_id}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post?: never;
+    /**
+     * Delete Zone
+     * @description Only a zone no order and no slot refers to (``409 zone_in_use``); else deactivate it.
+     */
+    delete: operations['delete_zone_api_v1_admin_delivery_zones__zone_id__delete'];
+    options?: never;
+    head?: never;
+    /**
+     * Update Zone
+     * @description Change only the fields sent; ``districts`` replaces the zone's whole district set.
+     */
+    patch: operations['update_zone_api_v1_admin_delivery_zones__zone_id__patch'];
+    trace?: never;
+  };
   '/api/v1/admin/orders': {
     parameters: {
       query?: never;
@@ -62,6 +315,121 @@ export interface paths {
      *     overwriting a colleague's change.
      */
     patch: operations['change_status_api_v1_admin_orders__order_id__status_patch'];
+    trace?: never;
+  };
+  '/api/v1/admin/products': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * List Products
+     * @description Products by ``sort_order, name_uz, id``. ``q`` matches name (uz/ru), SKU or slug.
+     */
+    get: operations['list_products_api_v1_admin_products_get'];
+    put?: never;
+    /**
+     * Create Product
+     * @description Create a product. ``409 sku_taken`` / ``slug_taken``; ``422 category_not_found``.
+     */
+    post: operations['create_product_api_v1_admin_products_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/admin/products/{product_id}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Get Product
+     * @description One product, archived or not.
+     */
+    get: operations['get_product_api_v1_admin_products__product_id__get'];
+    put?: never;
+    post?: never;
+    /**
+     * Archive Product
+     * @description Archive (soft-delete): hidden everywhere and inactive; orders keep their line snapshots.
+     *     Archiving an archived product changes nothing.
+     */
+    delete: operations['archive_product_api_v1_admin_products__product_id__delete'];
+    options?: never;
+    head?: never;
+    /**
+     * Update Product
+     * @description Change the fields sent. ``409 product_archived`` for an archived product (restore it
+     *     first); ``old_price_uzs`` must stay above ``price_uzs`` after the change (422).
+     */
+    patch: operations['update_product_api_v1_admin_products__product_id__patch'];
+    trace?: never;
+  };
+  '/api/v1/admin/products/{product_id}/restore': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Restore Product
+     * @description Un-archive. The product stays inactive until it is activated with ``PATCH``.
+     */
+    post: operations['restore_product_api_v1_admin_products__product_id__restore_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/admin/users': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * List Users
+     * @description Users, newest first, optionally filtered by search text, role and blocked state.
+     */
+    get: operations['list_users_api_v1_admin_users_get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/admin/users/{user_id}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    /**
+     * Update User
+     * @description Change a user's ``role`` and/or ``is_blocked``. Removing the last active admin is
+     *     ``409 last_admin``; blocking yourself is ``409 cannot_block_self``.
+     */
+    patch: operations['update_user_api_v1_admin_users__user_id__patch'];
     trace?: never;
   };
   '/api/v1/auth/config': {
@@ -263,6 +631,7 @@ export interface paths {
      *
      *     Never fails because of the cart's contents: problems are reported in ``issues`` and
      *     ``can_place_order``. ``409 district_not_served`` when no active zone covers the district.
+     *     ``slot_required`` and ``delivery_slots`` say whether (and which) delivery slot to book.
      */
     post: operations['quote_api_v1_checkout_quote_post'];
     delete?: never;
@@ -429,6 +798,8 @@ export interface paths {
      *
      *     The same ``Idempotency-Key`` with the same body returns the original order (``200`` and
      *     ``Idempotent-Replayed: true``); with a different body it is ``409 idempotency_key_conflict``.
+     *     When the zone has delivery slots, ``delivery_slot_id`` is required (``409 slot_required``) and
+     *     booked atomically (``409 slot_full`` / ``slot_unavailable``).
      */
     post: operations['create_order_api_v1_orders_post'];
     delete?: never;
@@ -528,6 +899,50 @@ export interface components {
       /** Quantity */
       quantity: number;
     };
+    /** AdminCategory */
+    AdminCategory: {
+      /** Child Count */
+      child_count: number;
+      /**
+       * Created At
+       * Format: date-time
+       */
+      created_at: string;
+      /**
+       * Id
+       * Format: uuid
+       */
+      id: string;
+      /** Image Url */
+      image_url: string | null;
+      /** Is Active */
+      is_active: boolean;
+      /** Name Ru */
+      name_ru: string;
+      /** Name Uz */
+      name_uz: string;
+      /** Parent Id */
+      parent_id: string | null;
+      /** Product Count */
+      product_count: number;
+      /** Slug */
+      slug: string;
+      /** Sort Order */
+      sort_order: number;
+      /**
+       * Updated At
+       * Format: date-time
+       */
+      updated_at: string;
+    };
+    /**
+     * AdminCategoryList
+     * @description Every category (inactive ones included), flat, by ``sort_order, name_uz, id``.
+     */
+    AdminCategoryList: {
+      /** Items */
+      items: components['schemas']['AdminCategory'][];
+    };
     /** AdminOrderDetail */
     AdminOrderDetail: {
       address: components['schemas']['OrderAddress'];
@@ -546,6 +961,7 @@ export interface components {
       created_at: string;
       /** Delivery Fee Uzs */
       delivery_fee_uzs: number;
+      delivery_slot: components['schemas']['OrderDeliverySlot'] | null;
       /** History */
       history: components['schemas']['OrderStatusChange'][];
       /** History Detail */
@@ -577,6 +993,69 @@ export interface components {
        */
       updated_at: string;
     };
+    /** AdminProduct */
+    AdminProduct: {
+      /** Archived At */
+      archived_at: string | null;
+      /**
+       * Category Id
+       * Format: uuid
+       */
+      category_id: string;
+      /**
+       * Created At
+       * Format: date-time
+       */
+      created_at: string;
+      /** Description Ru */
+      description_ru: string | null;
+      /** Description Uz */
+      description_uz: string | null;
+      /**
+       * Id
+       * Format: uuid
+       */
+      id: string;
+      /** Image Url */
+      image_url: string | null;
+      /** Is Active */
+      is_active: boolean;
+      /** Name Ru */
+      name_ru: string;
+      /** Name Uz */
+      name_uz: string;
+      /** Old Price Uzs */
+      old_price_uzs: number | null;
+      /** Price Uzs */
+      price_uzs: number;
+      /** Sku */
+      sku: string;
+      /** Slug */
+      slug: string;
+      /** Sort Order */
+      sort_order: number;
+      /** Stock Quantity */
+      stock_quantity: number | null;
+      unit: components['schemas']['Unit'];
+      /**
+       * Updated At
+       * Format: date-time
+       */
+      updated_at: string;
+    };
+    /** AdminProductPage */
+    AdminProductPage: {
+      /** Items */
+      items: components['schemas']['AdminProduct'][];
+      /** Page */
+      page: number;
+      /** Page Size */
+      page_size: number;
+      /** Total */
+      total: number;
+      /** Total Pages */
+      total_pages: number;
+    };
     /** AdminStatusChange */
     AdminStatusChange: {
       actor_role: components['schemas']['UserRole'];
@@ -589,6 +1068,44 @@ export interface components {
       /** Reason */
       reason: string | null;
       status: components['schemas']['OrderStatus'];
+    };
+    /** AdminUser */
+    AdminUser: {
+      /**
+       * Created At
+       * Format: date-time
+       */
+      created_at: string;
+      /** First Name */
+      first_name: string;
+      /**
+       * Id
+       * Format: uuid
+       */
+      id: string;
+      /** Is Blocked */
+      is_blocked: boolean;
+      language: components['schemas']['Language'];
+      /** Last Name */
+      last_name: string | null;
+      role: components['schemas']['UserRole'];
+      /** Telegram User Id */
+      telegram_user_id: number;
+      /** Username */
+      username: string | null;
+    };
+    /** AdminUserPage */
+    AdminUserPage: {
+      /** Items */
+      items: components['schemas']['AdminUser'][];
+      /** Page */
+      page: number;
+      /** Page Size */
+      page_size: number;
+      /** Total */
+      total: number;
+      /** Total Pages */
+      total_pages: number;
     };
     /** ApiErrorBody */
     ApiErrorBody: {
@@ -631,16 +1148,85 @@ export interface components {
         | 'order_not_cancellable'
         | 'invalid_status_transition'
         | 'order_status_conflict'
-        | 'too_many_open_orders';
+        | 'too_many_open_orders'
+        | 'slug_taken'
+        | 'sku_taken'
+        | 'category_cycle'
+        | 'category_not_empty'
+        | 'product_archived'
+        | 'csv_invalid_encoding'
+        | 'csv_invalid_header'
+        | 'csv_malformed'
+        | 'csv_too_many_rows'
+        | 'user_not_found'
+        | 'last_admin'
+        | 'cannot_block_self'
+        | 'slot_required'
+        | 'slot_unavailable'
+        | 'slot_full'
+        | 'zone_not_found'
+        | 'zone_in_use'
+        | 'district_taken'
+        | 'slot_not_found'
+        | 'slot_exists'
+        | 'slot_in_use'
+        | 'capacity_below_reserved';
       current_status?: components['schemas']['OrderStatus'] | null;
       /** Details */
       details?: components['schemas']['ErrorDetail'][] | null;
+      /** District */
+      district?: string | null;
       /** Message */
       message: string;
       /** Product Id */
       product_id?: string | null;
       /** Total Uzs */
       total_uzs?: number | null;
+    };
+    /** AuditEntry */
+    AuditEntry: {
+      /**
+       * Action
+       * @example product.update
+       */
+      action: string;
+      actor_role: components['schemas']['UserRole'];
+      /** Actor User Id */
+      actor_user_id: string | null;
+      /**
+       * Created At
+       * Format: date-time
+       */
+      created_at: string;
+      /** Details */
+      details: {
+        [key: string]: unknown;
+      };
+      /** Entity Id */
+      entity_id: string;
+      /**
+       * Entity Type
+       * @example product
+       */
+      entity_type: string;
+      /**
+       * Id
+       * Format: uuid
+       */
+      id: string;
+    };
+    /** AuditPage */
+    AuditPage: {
+      /** Items */
+      items: components['schemas']['AuditEntry'][];
+      /** Page */
+      page: number;
+      /** Page Size */
+      page_size: number;
+      /** Total */
+      total: number;
+      /** Total Pages */
+      total_pages: number;
     };
     /** AuthConfigResponse */
     AuthConfigResponse: {
@@ -673,6 +1259,32 @@ export interface components {
       product: components['schemas']['ProductSummary'];
       /** Quantity */
       quantity: number;
+    };
+    /** CategoryCreateRequest */
+    CategoryCreateRequest: {
+      /**
+       * Image Url
+       * @description https URL of an already-hosted image, or null (never fetched)
+       */
+      image_url?: string | null;
+      /**
+       * Is Active
+       * @default true
+       */
+      is_active: boolean;
+      /** Name Ru */
+      name_ru: string;
+      /** Name Uz */
+      name_uz: string;
+      /** Parent Id */
+      parent_id?: string | null;
+      /** Slug */
+      slug: string;
+      /**
+       * Sort Order
+       * @default 0
+       */
+      sort_order: number;
     };
     /** CategoryNode */
     CategoryNode: {
@@ -713,12 +1325,34 @@ export interface components {
       /** Items */
       items: components['schemas']['CategoryNode'][];
     };
+    /** CategoryUpdateRequest */
+    CategoryUpdateRequest: {
+      /**
+       * Image Url
+       * @description https URL of an already-hosted image, or null (never fetched)
+       */
+      image_url?: string | null;
+      /** Is Active */
+      is_active?: boolean | null;
+      /** Name Ru */
+      name_ru?: string | null;
+      /** Name Uz */
+      name_uz?: string | null;
+      /** Parent Id */
+      parent_id?: string | null;
+      /** Slug */
+      slug?: string | null;
+      /** Sort Order */
+      sort_order?: number | null;
+    };
     /** CheckoutQuote */
     CheckoutQuote: {
       /** Can Place Order */
       can_place_order: boolean;
       /** Delivery Fee Uzs */
       delivery_fee_uzs: number;
+      /** Delivery Slots */
+      delivery_slots: components['schemas']['DeliverySlotOption'][];
       /** Free Delivery Remaining Uzs */
       free_delivery_remaining_uzs: number | null;
       /** Issues */
@@ -727,6 +1361,8 @@ export interface components {
       item_count: number;
       /** Items */
       items: components['schemas']['CartLine'][];
+      /** Slot Required */
+      slot_required: boolean;
       /** Subtotal Uzs */
       subtotal_uzs: number;
       /** Total Uzs */
@@ -768,6 +1404,8 @@ export interface components {
       address: components['schemas']['DeliveryAddress'];
       /** Comment */
       comment?: string | null;
+      /** Delivery Slot Id */
+      delivery_slot_id?: string | null;
       /** Expected Total Uzs */
       expected_total_uzs: number;
       payment_method: components['schemas']['PaymentMethod'];
@@ -778,6 +1416,99 @@ export interface components {
        * @description Uzbekistan number: +998 and 9 digits; spaces, dashes and () are ignored
        */
       recipient_phone: string;
+    };
+    /**
+     * CsvImportResult
+     * @description ``applied`` is true only when the file had no errors and ``dry_run`` was false.
+     */
+    CsvImportResult: {
+      /** Applied */
+      applied: boolean;
+      /** Creates */
+      creates: number;
+      /** Dry Run */
+      dry_run: boolean;
+      /** Errors */
+      errors: components['schemas']['CsvRowErrorOut'][];
+      /** Errors Truncated */
+      errors_truncated: boolean;
+      /** Total Rows */
+      total_rows: number;
+      /** Unchanged */
+      unchanged: number;
+      /** Updates */
+      updates: number;
+    };
+    /** CsvRowErrorOut */
+    CsvRowErrorOut: {
+      /**
+       * Code
+       * @enum {string}
+       */
+      code:
+        | 'required'
+        | 'invalid_sku'
+        | 'duplicate_sku'
+        | 'invalid_slug'
+        | 'slug_taken'
+        | 'category_not_found'
+        | 'invalid_money'
+        | 'invalid_old_price'
+        | 'invalid_stock'
+        | 'invalid_unit'
+        | 'invalid_bool'
+        | 'invalid_sort_order'
+        | 'invalid_text'
+        | 'formula_not_allowed'
+        | 'invalid_image_url'
+        | 'product_archived';
+      /** Column */
+      column:
+        | (
+            | 'sku'
+            | 'slug'
+            | 'category_slug'
+            | 'name_uz'
+            | 'name_ru'
+            | 'description_uz'
+            | 'description_ru'
+            | 'unit'
+            | 'price_uzs'
+            | 'old_price_uzs'
+            | 'stock_quantity'
+            | 'is_active'
+            | 'sort_order'
+            | 'image_url'
+          )
+        | null;
+      /** Message */
+      message: string;
+      /** Row */
+      row: number;
+    };
+    /** Dashboard */
+    Dashboard: {
+      /** Average Order Value Uzs */
+      average_order_value_uzs: number;
+      /** Cancelled Today */
+      cancelled_today: number;
+      /**
+       * Date
+       * Format: date
+       */
+      date: string;
+      /** Gmv Today Uzs */
+      gmv_today_uzs: number;
+      /** New Orders */
+      new_orders: number;
+      /** Orders Today */
+      orders_today: number;
+      /**
+       * Timezone
+       * @default Asia/Tashkent
+       * @constant
+       */
+      timezone: 'Asia/Tashkent';
     };
     /** DeliveryAddress */
     DeliveryAddress: {
@@ -810,6 +1541,127 @@ export interface components {
       landmark?: string | null;
       /** Street */
       street: string;
+    };
+    /** DeliverySlotAdmin */
+    DeliverySlotAdmin: {
+      /** Capacity */
+      capacity: number;
+      /**
+       * Created At
+       * Format: date-time
+       */
+      created_at: string;
+      /**
+       * Cutoff At
+       * Format: date-time
+       */
+      cutoff_at: string;
+      /** Ends At */
+      ends_at: string;
+      /**
+       * Id
+       * Format: uuid
+       */
+      id: string;
+      /** Is Active */
+      is_active: boolean;
+      /** Remaining */
+      remaining: number;
+      /** Reserved Count */
+      reserved_count: number;
+      /**
+       * Slot Date
+       * Format: date
+       */
+      slot_date: string;
+      /** Starts At */
+      starts_at: string;
+      /**
+       * Updated At
+       * Format: date-time
+       */
+      updated_at: string;
+      /**
+       * Zone Id
+       * Format: uuid
+       */
+      zone_id: string;
+    };
+    /** DeliverySlotAdminList */
+    DeliverySlotAdminList: {
+      /** Items */
+      items: components['schemas']['DeliverySlotAdmin'][];
+      /** Truncated */
+      truncated: boolean;
+    };
+    /**
+     * DeliverySlotOption
+     * @description A bookable delivery window offered at checkout (local Asia/Tashkent date and times).
+     */
+    DeliverySlotOption: {
+      /**
+       * Date
+       * Format: date
+       */
+      date: string;
+      /** Ends At */
+      ends_at: string;
+      /**
+       * Id
+       * Format: uuid
+       */
+      id: string;
+      /** Is Full */
+      is_full: boolean;
+      /** Remaining */
+      remaining: number;
+      /** Starts At */
+      starts_at: string;
+    };
+    /** DeliveryZoneAdmin */
+    DeliveryZoneAdmin: {
+      /** Closes At */
+      closes_at: string;
+      /**
+       * Created At
+       * Format: date-time
+       */
+      created_at: string;
+      /** Delivery Fee Uzs */
+      delivery_fee_uzs: number;
+      /** Districts */
+      districts: components['schemas']['District'][];
+      /** Free Delivery Threshold Uzs */
+      free_delivery_threshold_uzs: number | null;
+      /**
+       * Id
+       * Format: uuid
+       */
+      id: string;
+      /** Is Active */
+      is_active: boolean;
+      /** Min Order Uzs */
+      min_order_uzs: number;
+      /** Name Ru */
+      name_ru: string;
+      /** Name Uz */
+      name_uz: string;
+      /** Opens At */
+      opens_at: string;
+      /** Slug */
+      slug: string;
+      /** Sort Order */
+      sort_order: number;
+      /**
+       * Updated At
+       * Format: date-time
+       */
+      updated_at: string;
+    };
+    /** DeliveryZoneAdminList */
+    DeliveryZoneAdminList: {
+      /** Items */
+      items: components['schemas']['DeliveryZoneAdmin'][];
     };
     /** DeliveryZoneList */
     DeliveryZoneList: {
@@ -987,6 +1839,21 @@ export interface components {
       /** Street */
       street: string;
     };
+    /**
+     * OrderDeliverySlot
+     * @description The booked delivery window (local Asia/Tashkent date, ``HH:MM`` times).
+     */
+    OrderDeliverySlot: {
+      /**
+       * Date
+       * Format: date
+       */
+      date: string;
+      /** Ends At */
+      ends_at: string;
+      /** Starts At */
+      starts_at: string;
+    };
     /** OrderDetail */
     OrderDetail: {
       address: components['schemas']['OrderAddress'];
@@ -1003,6 +1870,7 @@ export interface components {
       created_at: string;
       /** Delivery Fee Uzs */
       delivery_fee_uzs: number;
+      delivery_slot: components['schemas']['OrderDeliverySlot'] | null;
       /** History */
       history: components['schemas']['OrderStatusChange'][];
       /**
@@ -1132,6 +2000,51 @@ export interface components {
      * @enum {string}
      */
     PaymentMethod: 'cash_on_delivery' | 'card_on_delivery';
+    /** ProductCreateRequest */
+    ProductCreateRequest: {
+      /**
+       * Category Id
+       * Format: uuid
+       */
+      category_id: string;
+      /** Description Ru */
+      description_ru?: string | null;
+      /** Description Uz */
+      description_uz?: string | null;
+      /**
+       * Image Url
+       * @description https URL of an already-hosted image, or null (never fetched)
+       */
+      image_url?: string | null;
+      /**
+       * Is Active
+       * @default true
+       */
+      is_active: boolean;
+      /** Name Ru */
+      name_ru: string;
+      /** Name Uz */
+      name_uz: string;
+      /**
+       * Old Price Uzs
+       * @description null, or above price_uzs
+       */
+      old_price_uzs?: number | null;
+      /** Price Uzs */
+      price_uzs: number;
+      /** Sku */
+      sku: string;
+      /** Slug */
+      slug: string;
+      /**
+       * Sort Order
+       * @default 0
+       */
+      sort_order: number;
+      /** Stock Quantity */
+      stock_quantity?: number | null;
+      unit: components['schemas']['Unit'];
+    };
     /** ProductDetail */
     ProductDetail: {
       /** Brand */
@@ -1189,6 +2102,11 @@ export interface components {
      * @enum {string}
      */
     ProductSort: 'newest' | 'price_asc' | 'price_desc' | 'name';
+    /**
+     * ProductStatusFilter
+     * @enum {string}
+     */
+    ProductStatusFilter: 'active' | 'inactive' | 'archived' | 'all';
     /** ProductSummary */
     ProductSummary: {
       /**
@@ -1222,6 +2140,42 @@ export interface components {
       unit: components['schemas']['Unit'];
     };
     /**
+     * ProductUpdateRequest
+     * @description ``is_active`` cannot be set on an archived product: restore it first.
+     */
+    ProductUpdateRequest: {
+      /** Category Id */
+      category_id?: string | null;
+      /** Description Ru */
+      description_ru?: string | null;
+      /** Description Uz */
+      description_uz?: string | null;
+      /**
+       * Image Url
+       * @description https URL of an already-hosted image, or null (never fetched)
+       */
+      image_url?: string | null;
+      /** Is Active */
+      is_active?: boolean | null;
+      /** Name Ru */
+      name_ru?: string | null;
+      /** Name Uz */
+      name_uz?: string | null;
+      /** Old Price Uzs */
+      old_price_uzs?: number | null;
+      /** Price Uzs */
+      price_uzs?: number | null;
+      /** Sku */
+      sku?: string | null;
+      /** Slug */
+      slug?: string | null;
+      /** Sort Order */
+      sort_order?: number | null;
+      /** Stock Quantity */
+      stock_quantity?: number | null;
+      unit?: components['schemas']['Unit'] | null;
+    };
+    /**
      * ReadinessResponse
      * @description Readiness probe body. Status "unavailable" is returned with HTTP 503.
      */
@@ -1248,6 +2202,60 @@ export interface components {
     SetCartItemQuantityRequest: {
       /** Quantity */
       quantity: number;
+    };
+    /** SlotCreateRequest */
+    SlotCreateRequest: {
+      /** Capacity */
+      capacity: number;
+      /**
+       * Cutoff At
+       * Format: date-time
+       */
+      cutoff_at: string;
+      /**
+       * Ends At
+       * @example 09:00
+       */
+      ends_at: string;
+      /**
+       * Is Active
+       * @default true
+       */
+      is_active: boolean;
+      /**
+       * Slot Date
+       * Format: date
+       */
+      slot_date: string;
+      /**
+       * Starts At
+       * @example 09:00
+       */
+      starts_at: string;
+      /**
+       * Zone Id
+       * Format: uuid
+       */
+      zone_id: string;
+    };
+    /**
+     * SlotUpdateRequest
+     * @description Only the fields sent are changed. Date and times can change only while nothing is booked;
+     *     capacity cannot drop below what is already booked.
+     */
+    SlotUpdateRequest: {
+      /** Capacity */
+      capacity?: number | null;
+      /** Cutoff At */
+      cutoff_at?: string | null;
+      /** Ends At */
+      ends_at?: string | null;
+      /** Is Active */
+      is_active?: boolean | null;
+      /** Slot Date */
+      slot_date?: string | null;
+      /** Starts At */
+      starts_at?: string | null;
     };
     /**
      * Unit
@@ -1284,6 +2292,15 @@ export interface components {
      * @enum {string}
      */
     UserRole: 'customer' | 'operator' | 'admin';
+    /**
+     * UserUpdateRequest
+     * @description Send ``role``, ``is_blocked`` or both; neither may be ``null``.
+     */
+    UserUpdateRequest: {
+      /** Is Blocked */
+      is_blocked?: boolean | null;
+      role?: components['schemas']['UserRole'] | null;
+    };
     /** ValidationError */
     ValidationError: {
       /** Context */
@@ -1297,6 +2314,102 @@ export interface components {
       /** Error Type */
       type: string;
     };
+    /** ZoneCreateRequest */
+    ZoneCreateRequest: {
+      /**
+       * Closes At
+       * @example 09:00
+       */
+      closes_at: string;
+      /** Delivery Fee Uzs */
+      delivery_fee_uzs: number;
+      /** Districts */
+      districts: (
+        | 'bektemir'
+        | 'chilonzor'
+        | 'mirobod'
+        | 'mirzo_ulugbek'
+        | 'olmazor'
+        | 'sergeli'
+        | 'shayxontohur'
+        | 'uchtepa'
+        | 'yakkasaroy'
+        | 'yangihayot'
+        | 'yashnobod'
+        | 'yunusobod'
+      )[];
+      /** Free Delivery Threshold Uzs */
+      free_delivery_threshold_uzs?: number | null;
+      /**
+       * Is Active
+       * @default true
+       */
+      is_active: boolean;
+      /**
+       * Min Order Uzs
+       * @default 0
+       */
+      min_order_uzs: number;
+      /** Name Ru */
+      name_ru: string;
+      /** Name Uz */
+      name_uz: string;
+      /**
+       * Opens At
+       * @example 09:00
+       */
+      opens_at: string;
+      /** Slug */
+      slug: string;
+      /**
+       * Sort Order
+       * @default 0
+       */
+      sort_order: number;
+    };
+    /**
+     * ZoneUpdateRequest
+     * @description Only the fields sent are changed; ``districts`` replaces the whole set.
+     */
+    ZoneUpdateRequest: {
+      /** Closes At */
+      closes_at?: string | null;
+      /** Delivery Fee Uzs */
+      delivery_fee_uzs?: number | null;
+      /** Districts */
+      districts?:
+        | (
+            | 'bektemir'
+            | 'chilonzor'
+            | 'mirobod'
+            | 'mirzo_ulugbek'
+            | 'olmazor'
+            | 'sergeli'
+            | 'shayxontohur'
+            | 'uchtepa'
+            | 'yakkasaroy'
+            | 'yangihayot'
+            | 'yashnobod'
+            | 'yunusobod'
+          )[]
+        | null;
+      /** Free Delivery Threshold Uzs */
+      free_delivery_threshold_uzs?: number | null;
+      /** Is Active */
+      is_active?: boolean | null;
+      /** Min Order Uzs */
+      min_order_uzs?: number | null;
+      /** Name Ru */
+      name_ru?: string | null;
+      /** Name Uz */
+      name_uz?: string | null;
+      /** Opens At */
+      opens_at?: string | null;
+      /** Slug */
+      slug?: string | null;
+      /** Sort Order */
+      sort_order?: number | null;
+    };
   };
   responses: never;
   parameters: never;
@@ -1306,6 +2419,1288 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+  list_audit_entries_api_v1_admin_audit_get: {
+    parameters: {
+      query?: {
+        entity_type?: string | null;
+        entity_id?: string | null;
+        action?: string | null;
+        actor_user_id?: string | null;
+        page?: number;
+        page_size?: number;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['AuditPage'];
+        };
+      };
+      /** @description Unauthorized */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Forbidden */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Unprocessable Content */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Too Many Requests */
+      429: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Service Unavailable */
+      503: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+    };
+  };
+  csv_export_api_v1_admin_catalog_csv_export_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description UTF-8 CSV with BOM and CRLF line endings */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'text/csv': string;
+        };
+      };
+      /** @description Unauthorized */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Forbidden */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Too Many Requests */
+      429: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Service Unavailable */
+      503: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+    };
+  };
+  csv_import_api_v1_admin_catalog_csv_import_post: {
+    parameters: {
+      query?: {
+        /** @description Validate only; never writes */
+        dry_run?: boolean;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** @description The CSV file itself (UTF-8, at most 1 MiB and 2000 product rows) */
+    requestBody: {
+      content: {
+        'text/csv': string;
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['CsvImportResult'];
+        };
+      };
+      /** @description Unauthorized */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Forbidden */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Conflict */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Content Too Large */
+      413: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Unsupported Media Type */
+      415: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Unprocessable Content */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Too Many Requests */
+      429: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Service Unavailable */
+      503: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+    };
+  };
+  csv_template_api_v1_admin_catalog_csv_template_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description UTF-8 CSV with BOM and CRLF line endings */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'text/csv': string;
+        };
+      };
+      /** @description Unauthorized */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Forbidden */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Too Many Requests */
+      429: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Service Unavailable */
+      503: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+    };
+  };
+  list_categories_api_v1_admin_categories_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['AdminCategoryList'];
+        };
+      };
+      /** @description Unauthorized */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Forbidden */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Too Many Requests */
+      429: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Service Unavailable */
+      503: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+    };
+  };
+  create_category_api_v1_admin_categories_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['CategoryCreateRequest'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['AdminCategory'];
+        };
+      };
+      /** @description Unauthorized */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Forbidden */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Conflict */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Unprocessable Content */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Too Many Requests */
+      429: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Service Unavailable */
+      503: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+    };
+  };
+  delete_category_api_v1_admin_categories__category_id__delete: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        category_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Unauthorized */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Forbidden */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Not Found */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Conflict */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Unprocessable Content */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Too Many Requests */
+      429: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Service Unavailable */
+      503: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+    };
+  };
+  update_category_api_v1_admin_categories__category_id__patch: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        category_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['CategoryUpdateRequest'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['AdminCategory'];
+        };
+      };
+      /** @description Unauthorized */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Forbidden */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Not Found */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Conflict */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Unprocessable Content */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Too Many Requests */
+      429: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Service Unavailable */
+      503: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+    };
+  };
+  dashboard_api_v1_admin_dashboard_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Dashboard'];
+        };
+      };
+      /** @description Unauthorized */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Forbidden */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Too Many Requests */
+      429: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Service Unavailable */
+      503: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+    };
+  };
+  list_slots_api_v1_admin_delivery_slots_get: {
+    parameters: {
+      query?: {
+        zone_id?: string | null;
+        /** @description Local date, inclusive */
+        date_from?: string | null;
+        /** @description Local date, inclusive */
+        date_to?: string | null;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['DeliverySlotAdminList'];
+        };
+      };
+      /** @description Unauthorized */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Forbidden */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Unprocessable Content */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Too Many Requests */
+      429: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Service Unavailable */
+      503: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+    };
+  };
+  create_slot_api_v1_admin_delivery_slots_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['SlotCreateRequest'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['DeliverySlotAdmin'];
+        };
+      };
+      /** @description Unauthorized */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Forbidden */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Not Found */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Conflict */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Unprocessable Content */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Too Many Requests */
+      429: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Service Unavailable */
+      503: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+    };
+  };
+  delete_slot_api_v1_admin_delivery_slots__slot_id__delete: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        slot_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Unauthorized */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Forbidden */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Not Found */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Conflict */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Unprocessable Content */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Too Many Requests */
+      429: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Service Unavailable */
+      503: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+    };
+  };
+  update_slot_api_v1_admin_delivery_slots__slot_id__patch: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        slot_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['SlotUpdateRequest'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['DeliverySlotAdmin'];
+        };
+      };
+      /** @description Unauthorized */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Forbidden */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Not Found */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Conflict */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Unprocessable Content */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Too Many Requests */
+      429: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Service Unavailable */
+      503: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+    };
+  };
+  list_zones_api_v1_admin_delivery_zones_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['DeliveryZoneAdminList'];
+        };
+      };
+      /** @description Unauthorized */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Forbidden */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Too Many Requests */
+      429: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Service Unavailable */
+      503: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+    };
+  };
+  create_zone_api_v1_admin_delivery_zones_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['ZoneCreateRequest'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['DeliveryZoneAdmin'];
+        };
+      };
+      /** @description Unauthorized */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Forbidden */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Conflict */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Unprocessable Content */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Too Many Requests */
+      429: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Service Unavailable */
+      503: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+    };
+  };
+  delete_zone_api_v1_admin_delivery_zones__zone_id__delete: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        zone_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Unauthorized */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Forbidden */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Not Found */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Conflict */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Unprocessable Content */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Too Many Requests */
+      429: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Service Unavailable */
+      503: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+    };
+  };
+  update_zone_api_v1_admin_delivery_zones__zone_id__patch: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        zone_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['ZoneUpdateRequest'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['DeliveryZoneAdmin'];
+        };
+      };
+      /** @description Unauthorized */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Forbidden */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Not Found */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Conflict */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Unprocessable Content */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Too Many Requests */
+      429: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Service Unavailable */
+      503: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+    };
+  };
   list_orders_api_v1_admin_orders_get: {
     parameters: {
       query?: {
@@ -1473,6 +3868,634 @@ export interface operations {
         };
         content: {
           'application/json': components['schemas']['AdminOrderDetail'];
+        };
+      };
+      /** @description Unauthorized */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Forbidden */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Not Found */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Conflict */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Unprocessable Content */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Too Many Requests */
+      429: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Service Unavailable */
+      503: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+    };
+  };
+  list_products_api_v1_admin_products_get: {
+    parameters: {
+      query?: {
+        q?: string | null;
+        category_id?: string | null;
+        /** @description Default: everything except archived products */
+        status?: components['schemas']['ProductStatusFilter'] | null;
+        page?: number;
+        page_size?: number;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['AdminProductPage'];
+        };
+      };
+      /** @description Unauthorized */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Forbidden */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Unprocessable Content */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Too Many Requests */
+      429: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Service Unavailable */
+      503: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+    };
+  };
+  create_product_api_v1_admin_products_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['ProductCreateRequest'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['AdminProduct'];
+        };
+      };
+      /** @description Unauthorized */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Forbidden */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Conflict */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Unprocessable Content */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Too Many Requests */
+      429: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Service Unavailable */
+      503: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+    };
+  };
+  get_product_api_v1_admin_products__product_id__get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        product_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['AdminProduct'];
+        };
+      };
+      /** @description Unauthorized */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Forbidden */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Not Found */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Unprocessable Content */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Too Many Requests */
+      429: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Service Unavailable */
+      503: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+    };
+  };
+  archive_product_api_v1_admin_products__product_id__delete: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        product_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['AdminProduct'];
+        };
+      };
+      /** @description Unauthorized */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Forbidden */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Not Found */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Unprocessable Content */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Too Many Requests */
+      429: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Service Unavailable */
+      503: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+    };
+  };
+  update_product_api_v1_admin_products__product_id__patch: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        product_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['ProductUpdateRequest'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['AdminProduct'];
+        };
+      };
+      /** @description Unauthorized */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Forbidden */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Not Found */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Conflict */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Unprocessable Content */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Too Many Requests */
+      429: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Service Unavailable */
+      503: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+    };
+  };
+  restore_product_api_v1_admin_products__product_id__restore_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        product_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['AdminProduct'];
+        };
+      };
+      /** @description Unauthorized */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Forbidden */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Not Found */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Unprocessable Content */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Too Many Requests */
+      429: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Service Unavailable */
+      503: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+    };
+  };
+  list_users_api_v1_admin_users_get: {
+    parameters: {
+      query?: {
+        /** @description Name or username (substring), or a Telegram id */
+        q?: string | null;
+        role?: components['schemas']['UserRole'] | null;
+        blocked?: boolean | null;
+        page?: number;
+        page_size?: number;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['AdminUserPage'];
+        };
+      };
+      /** @description Unauthorized */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Forbidden */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Unprocessable Content */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Too Many Requests */
+      429: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Service Unavailable */
+      503: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+    };
+  };
+  update_user_api_v1_admin_users__user_id__patch: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        user_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['UserUpdateRequest'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['AdminUser'];
         };
       };
       /** @description Unauthorized */

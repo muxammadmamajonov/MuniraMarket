@@ -8,7 +8,7 @@ CSRF wiring is additionally checked end to end with a real (in-memory) session.
 import dataclasses
 import uuid
 from collections.abc import Callable
-from datetime import UTC, datetime, time
+from datetime import UTC, date, datetime, time
 from typing import Any
 
 import httpx
@@ -35,10 +35,13 @@ from app.domain.checkout import (
     OrderProductUnavailableError,
     OrderStatusConflictError,
     PriceChangedError,
+    SlotFullError,
+    SlotRequiredError,
+    SlotUnavailableError,
 )
 from app.domain.order_status import OrderStatus
 from app.models.enums import UserRole
-from app.repositories.delivery import ZoneRecord
+from app.repositories.delivery import SlotOptionRecord, ZoneRecord
 from app.repositories.orders import (
     Actor,
     CreatedOrder,
@@ -47,8 +50,10 @@ from app.repositories.orders import (
     OrderRecord,
     OrderSummaryRecord,
     QuoteRecord,
+    SlotSnapshotRecord,
 )
 from app.repositories.users import UserRecord
+from app.schemas.checkout import CreateOrderRequest
 from tests.auth_helpers import TRUSTED_ORIGIN, build_app, cookie_header, http_client, login
 from tests.catalog_factories import make_line, make_product, make_user
 from tests.conftest import FakeClock, FakeUserRepository
@@ -87,8 +92,8 @@ class FakeOrderRepository:
         if self.error is not None:
             raise self.error
 
-    async def quote(self, user_id: uuid.UUID, district: str) -> QuoteRecord:
-        self._record("quote", user_id=user_id, district=district)
+    async def quote(self, user_id: uuid.UUID, district: str, *, now: datetime) -> QuoteRecord:
+        self._record("quote", user_id=user_id, district=district, now=now)
         return self.quote_record
 
     async def create_order(
@@ -232,7 +237,7 @@ def error_of(response: httpx.Response, status: int, code: str) -> dict[str, Any]
 
 
 async def test_quote(
-    client: httpx.AsyncClient, orders: FakeOrderRepository, user: UserRecord
+    client: httpx.AsyncClient, orders: FakeOrderRepository, user: UserRecord, clock: FakeClock
 ) -> None:
     response = await client.post(QUOTE, json={"district": "chilonzor"})
     assert response.status_code == 200, response.text
@@ -251,7 +256,57 @@ async def test_quote(
     ]
     assert body["zone"]["opens_at"] == "09:00"
     assert set(body["items"][0]) == {"product", "quantity", "line_total_uzs", "issue"}
-    assert orders.calls == [("quote", {"user_id": user.id, "district": "chilonzor"})]
+    # A zone without delivery slots.
+    assert (body["slot_required"], body["delivery_slots"]) == (False, [])
+    assert orders.calls == [
+        (
+            "quote",
+            {
+                "user_id": user.id,
+                "district": "chilonzor",
+                "now": datetime.fromtimestamp(clock.now, tz=UTC),
+            },
+        )
+    ]
+
+
+async def test_quote_lists_delivery_slots(
+    client: httpx.AsyncClient, orders: FakeOrderRepository
+) -> None:
+    open_slot = SlotOptionRecord(
+        id=uuid.uuid4(),
+        slot_date=date(2026, 11, 1),
+        starts_at=time(10, 0),
+        ends_at=time(13, 0),
+        capacity=5,
+        reserved_count=2,
+    )
+    full_slot = dataclasses.replace(
+        open_slot, id=uuid.uuid4(), starts_at=time(15, 0), ends_at=time(18, 30), reserved_count=5
+    )
+    orders.quote_record = dataclasses.replace(
+        orders.quote_record, slot_required=True, slots=(open_slot, full_slot)
+    )
+    body = (await client.post(QUOTE, json={"district": "chilonzor"})).json()
+    assert body["slot_required"] is True
+    assert body["delivery_slots"] == [
+        {
+            "id": str(open_slot.id),
+            "date": "2026-11-01",
+            "starts_at": "10:00",
+            "ends_at": "13:00",
+            "remaining": 3,
+            "is_full": False,
+        },
+        {
+            "id": str(full_slot.id),
+            "date": "2026-11-01",
+            "starts_at": "15:00",
+            "ends_at": "18:30",
+            "remaining": 0,
+            "is_full": True,
+        },
+    ]
 
 
 async def test_quote_reports_problems_instead_of_failing(
@@ -331,6 +386,42 @@ async def test_create_order(
         "floor": None,
         "landmark": None,
     }
+    assert new_order.delivery_slot_id is None
+    assert body["delivery_slot"] is None
+
+
+async def test_create_order_with_a_delivery_slot(
+    client: httpx.AsyncClient, orders: FakeOrderRepository
+) -> None:
+    slot_id = uuid.uuid4()
+    orders.order = make_order(
+        id=ORDER_ID,
+        delivery_slot=SlotSnapshotRecord(
+            slot_date=date(2026, 11, 2), starts_at=time(9, 30), ends_at=time(12, 0)
+        ),
+    )
+    response = await create(client, order_body(delivery_slot_id=str(slot_id)))
+    assert response.status_code == 201, response.text
+    assert response.json()["delivery_slot"] == {
+        "date": "2026-11-02",
+        "starts_at": "09:30",
+        "ends_at": "12:00",
+    }
+    [(_, call)] = orders.calls
+    assert call["new_order"].delivery_slot_id == slot_id
+    # The same order without a slot is a different request (an idempotency conflict, not a
+    # replay), while the hash of a body that never had a slot is unchanged.
+    assert call["request_hash"] != order_routes.request_hash(
+        CreateOrderRequest.model_validate(order_body())
+    )
+
+
+async def test_create_order_validates_the_slot_id(
+    client: httpx.AsyncClient, orders: FakeOrderRepository
+) -> None:
+    for slot in ("not-a-uuid", 42):
+        error_of(await create(client, order_body(delivery_slot_id=slot)), 422, "validation_error")
+    assert orders.calls == []
 
 
 async def test_replay_is_200_with_the_replay_header(
@@ -431,6 +522,9 @@ CREATE_ERRORS: list[tuple[CheckoutError, int, dict[str, Any]]] = [
         {"code": "insufficient_stock", "product_id": str(PRODUCT_ID), "available_quantity": 0},
     ),
     (PriceChangedError(80_000), 409, {"code": "price_changed", "total_uzs": 80_000}),
+    (SlotRequiredError(), 409, {"code": "slot_required"}),
+    (SlotUnavailableError(), 409, {"code": "slot_unavailable"}),
+    (SlotFullError(), 409, {"code": "slot_full"}),
 ]
 
 

@@ -83,6 +83,9 @@ ALLOWED_EXTRA: Final = frozenset(
         "district_count",
     }
 )
+# Allow-listed ``extra`` flags whose name contains a denied word ("reason"): only a bool is kept,
+# so the flag can say *that* there was a reason without the text ever passing.
+_FLAG_EXTRA: Final = frozenset({"has_reason"})
 
 # Defence in depth: even an allow-listed name is refused if it looks personal or secret.
 _DENY = re.compile(
@@ -148,7 +151,10 @@ def safe_details(
     if safe_changes:
         details["changes"] = safe_changes
     for key, value in (extra or {}).items():
-        if key in ALLOWED_EXTRA and not _DENY.search(key):
+        if key in _FLAG_EXTRA:
+            if isinstance(value, bool):
+                details[key] = value
+        elif key in ALLOWED_EXTRA and not _DENY.search(key):
             details[key] = _scalar(value)
     return details
 

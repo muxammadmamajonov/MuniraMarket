@@ -147,6 +147,49 @@ export type AdminOrderDetail = Schemas['AdminOrderDetail'];
 /** `PATCH /api/v1/admin/orders/{id}/status` body. */
 export type OrderStatusUpdateRequest = Schemas['OrderStatusUpdateRequest'];
 
+/** Booked delivery window on an order (`OrderDetail.delivery_slot`), times `HH:MM` Tashkent. */
+export type OrderDeliverySlot = Schemas['OrderDeliverySlot'];
+
+/** A bookable window offered by `POST /checkout/quote` (`delivery_slots`). */
+export type DeliverySlotOption = Schemas['DeliverySlotOption'];
+
+/** `GET /api/v1/admin/dashboard` (operator and admin): today's numbers, computed server-side. */
+export type Dashboard = Schemas['Dashboard'];
+
+// Admin only from here on.
+
+export type AdminCategory = Schemas['AdminCategory'];
+export type AdminCategoryList = Schemas['AdminCategoryList'];
+export type CategoryCreateRequest = Schemas['CategoryCreateRequest'];
+export type CategoryUpdateRequest = Schemas['CategoryUpdateRequest'];
+
+export type AdminProduct = Schemas['AdminProduct'];
+export type AdminProductPage = Schemas['AdminProductPage'];
+export type ProductCreateRequest = Schemas['ProductCreateRequest'];
+export type ProductUpdateRequest = Schemas['ProductUpdateRequest'];
+export type ProductStatusFilter = Schemas['ProductStatusFilter'];
+
+/** `POST /api/v1/admin/catalog/csv/import?dry_run=` response; nothing is written when `errors`. */
+export type CsvImportResult = Schemas['CsvImportResult'];
+export type CsvRowError = Schemas['CsvRowErrorOut'];
+
+export type DeliveryZoneAdmin = Schemas['DeliveryZoneAdmin'];
+export type DeliveryZoneAdminList = Schemas['DeliveryZoneAdminList'];
+export type ZoneCreateRequest = Schemas['ZoneCreateRequest'];
+export type ZoneUpdateRequest = Schemas['ZoneUpdateRequest'];
+
+export type DeliverySlotAdmin = Schemas['DeliverySlotAdmin'];
+export type DeliverySlotAdminList = Schemas['DeliverySlotAdminList'];
+export type SlotCreateRequest = Schemas['SlotCreateRequest'];
+export type SlotUpdateRequest = Schemas['SlotUpdateRequest'];
+
+export type AdminUser = Schemas['AdminUser'];
+export type AdminUserPage = Schemas['AdminUserPage'];
+export type UserUpdateRequest = Schemas['UserUpdateRequest'];
+
+export type AuditEntry = Schemas['AuditEntry'];
+export type AuditPage = Schemas['AuditPage'];
+
 /** Header that marks a replayed `POST /orders` (same `Idempotency-Key`, same body). */
 export const IDEMPOTENT_REPLAYED_HEADER = 'Idempotent-Replayed';
 
@@ -203,6 +246,29 @@ export const API_ERROR_CODES = [
   'invalid_status_transition',
   'order_status_conflict',
   'too_many_open_orders',
+  // Back office (phase 4).
+  'slug_taken',
+  'sku_taken',
+  'category_cycle',
+  'category_not_empty',
+  'product_archived',
+  'csv_invalid_encoding',
+  'csv_invalid_header',
+  'csv_malformed',
+  'csv_too_many_rows',
+  'user_not_found',
+  'last_admin',
+  'cannot_block_self',
+  'slot_required',
+  'slot_unavailable',
+  'slot_full',
+  'zone_not_found',
+  'zone_in_use',
+  'district_taken',
+  'slot_not_found',
+  'slot_exists',
+  'slot_in_use',
+  'capacity_below_reserved',
 ] as const satisfies readonly ApiErrorCode[];
 
 /** Compile error here means the API added an error code that `API_ERROR_CODES` does not list. */

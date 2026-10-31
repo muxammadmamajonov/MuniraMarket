@@ -73,6 +73,30 @@ ErrorCode = Literal[
     "invalid_status_transition",
     "order_status_conflict",
     "too_many_open_orders",
+    # admin: catalog, CSV, users
+    "slug_taken",
+    "sku_taken",
+    "category_cycle",
+    "category_not_empty",
+    "product_archived",
+    "csv_invalid_encoding",
+    "csv_invalid_header",
+    "csv_malformed",
+    "csv_too_many_rows",
+    "user_not_found",
+    "last_admin",
+    "cannot_block_self",
+    # delivery slots at checkout; admin: delivery zones and slots
+    "slot_required",
+    "slot_unavailable",
+    "slot_full",
+    "zone_not_found",
+    "zone_in_use",
+    "district_taken",
+    "slot_not_found",
+    "slot_exists",
+    "slot_in_use",
+    "capacity_below_reserved",
 ]
 
 
@@ -93,6 +117,8 @@ class ApiErrorBody(BaseModel):
     total_uzs: int | None = None
     # ``order_not_cancellable`` / ``invalid_status_transition`` / ``order_status_conflict``.
     current_status: OrderStatus | None = None
+    # ``district_taken``: the district code that already belongs to another zone.
+    district: str | None = None
 
 
 class ErrorEnvelope(BaseModel):

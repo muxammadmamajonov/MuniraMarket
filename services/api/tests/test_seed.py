@@ -1,17 +1,34 @@
-"""The dev seed: environment guard and the shape of its (synthetic) data. No database needed."""
+"""The dev seed: environment guard and the shape of its (synthetic) data, plus (against a real
+database, ``integration``) that the delivery slots are idempotent and only where intended."""
 
 import re
+from datetime import UTC, date, datetime, time, timedelta
 
 import pytest
+from sqlalchemy import func, select, update
 
 from app.dev.seed import (
     DEMO_CATEGORIES,
     DEMO_PRODUCTS,
     DEMO_ZONES,
+    SLOT_CUTOFF_BEFORE_START,
+    SLOT_DAYS,
+    SLOT_WINDOWS,
+    SLOT_ZONE_SLUG,
     SeedRefusedError,
+    demo_slot_days,
     ensure_safe_environment,
+    seed,
 )
-from app.domain.delivery import is_district_code
+from app.domain.delivery import is_district_code, tashkent_instant
+from app.models.delivery import DeliverySlot, DeliveryZone
+from app.repositories.delivery import SqlAlchemyDeliveryZoneRepository
+from tests.db_data import SessionFactory
+
+pytest_plugins = ["tests.db_fixtures"]  # the session_factory fixture (integration test only)
+
+# The district the storefront E2E checkout (apps/web/e2e/checkout.spec.ts) orders to.
+E2E_DISTRICT = "yunusobod"
 
 
 @pytest.mark.parametrize("app_env", ["development", "test"])
@@ -86,3 +103,92 @@ def test_delivery_zones_cover_the_edge_cases() -> None:
     assert any(zone.is_active for zone in DEMO_ZONES)
     assert any(zone.free_delivery_threshold_uzs is None for zone in DEMO_ZONES if zone.is_active)
     assert any(zone.free_delivery_threshold_uzs is not None for zone in DEMO_ZONES)
+
+
+# --- delivery slots -------------------------------------------------------------------------------
+
+
+def test_slots_belong_to_one_active_zone_the_e2e_checkout_does_not_use() -> None:
+    """A zone with slots requires one at checkout; the E2E checkout (which sends no slot) must
+    keep working, so its zone has none."""
+    [zone] = [zone for zone in DEMO_ZONES if zone.slug == SLOT_ZONE_SLUG]
+    assert zone.is_active
+    assert E2E_DISTRICT not in zone.districts
+    assert any(E2E_DISTRICT in other.districts and other.is_active for other in DEMO_ZONES)
+
+
+def test_slot_windows_fit_the_zone_hours() -> None:
+    [zone] = [zone for zone in DEMO_ZONES if zone.slug == SLOT_ZONE_SLUG]
+    assert SLOT_WINDOWS
+    for starts_at, ends_at in SLOT_WINDOWS:
+        assert zone.opens_at <= starts_at < ends_at <= zone.closes_at
+    assert SLOT_CUTOFF_BEFORE_START.total_seconds() > 0
+    assert demo_slot_days(date(2026, 12, 30)) == [
+        date(2026, 12, 30) + timedelta(days=offset) for offset in range(SLOT_DAYS)
+    ]
+
+
+@pytest.mark.integration
+@pytest.mark.asyncio(loop_scope="module")
+async def test_seed_slots_are_idempotent(session_factory: SessionFactory) -> None:
+    today = date(2026, 11, 1)
+    first = await seed(session_factory, today=today)
+    assert first.slots_written == SLOT_DAYS * len(SLOT_WINDOWS)
+    again = await seed(session_factory, today=today)
+    assert (
+        again.categories_written,
+        again.products_written,
+        again.zones_written,
+        again.slots_written,
+    ) == (0, 0, 0, 0)
+
+    async with session_factory() as session:
+        slots = list(
+            (
+                await session.execute(
+                    select(DeliverySlot).order_by(DeliverySlot.slot_date, DeliverySlot.starts_at)
+                )
+            ).scalars()
+        )
+        zone_id = (
+            await session.execute(
+                select(DeliveryZone.id).where(DeliveryZone.slug == SLOT_ZONE_SLUG)
+            )
+        ).scalar_one()
+    assert {slot.zone_id for slot in slots} == {zone_id}
+    assert [slot.slot_date for slot in slots[:: len(SLOT_WINDOWS)]] == demo_slot_days(today)
+    for slot in slots:
+        assert slot.cutoff_at == tashkent_instant(slot.slot_date, slot.starts_at) - (
+            SLOT_CUTOFF_BEFORE_START
+        )
+        assert slot.reserved_count == 0
+
+    # Bookings are never touched by a re-run; a later day only adds its new days.
+    async with session_factory() as session:
+        await session.execute(
+            update(DeliverySlot).where(DeliverySlot.id == slots[0].id).values(reserved_count=3)
+        )
+        await session.commit()
+    later = await seed(session_factory, today=today + timedelta(days=1))
+    assert later.slots_written == len(SLOT_WINDOWS)
+    async with session_factory() as session:
+        assert (
+            await session.execute(
+                select(DeliverySlot.reserved_count).where(DeliverySlot.id == slots[0].id)
+            )
+        ).scalar_one() == 3
+        assert (
+            await session.execute(select(func.count()).select_from(DeliverySlot))
+        ).scalar_one() == (SLOT_DAYS + 1) * len(SLOT_WINDOWS)
+
+        # Checkout: slots are required in the slot zone only, not where the E2E orders.
+        zones = SqlAlchemyDeliveryZoneRepository(session)
+        now = datetime.combine(today, time(5, 0), tzinfo=UTC)  # 10:00 in Tashkent
+        slotted = await zones.find_for_district("chilonzor")
+        e2e = await zones.find_for_district(E2E_DISTRICT)
+        assert slotted is not None
+        assert e2e is not None
+        assert slotted.slug == SLOT_ZONE_SLUG
+        assert await zones.has_bookable_slot(slotted.zone_id, now)
+        assert not await zones.has_bookable_slot(e2e.zone_id, now)
+        assert len(await zones.offered_slots(slotted.zone_id, now)) > 0

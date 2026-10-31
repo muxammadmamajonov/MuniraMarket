@@ -3,11 +3,11 @@
 import dataclasses
 import uuid
 from collections.abc import AsyncIterator, Sequence
-from datetime import datetime, time
+from datetime import date, datetime, time, timedelta
 from typing import Any
 
 from fastapi import FastAPI, Request
-from sqlalchemy import update
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.api import admin_deps as admin_routes
@@ -16,9 +16,11 @@ from app.api.deps import get_session
 from app.api.routes import cart as cart_routes
 from app.api.routes import orders as order_routes
 from app.core.clock import Clock, system_clock
+from app.domain.delivery import tashkent_instant
 from app.main import create_app
+from app.models.audit import AuditLog
 from app.models.catalog import Category, Product
-from app.models.delivery import DeliveryZone, DeliveryZoneDistrict
+from app.models.delivery import DeliverySlot, DeliveryZone, DeliveryZoneDistrict
 from app.models.enums import Unit, UserRole
 from app.models.user import User
 from app.repositories.users import SqlAlchemyUserRepository, TelegramProfile, UserRecord
@@ -207,3 +209,57 @@ def build_app(
     for limit in RATE_LIMITS:
         app.dependency_overrides[limit] = allow
     return app
+
+
+# --- delivery slots / audit (phase 4) -------------------------------------------------------------
+
+
+async def add_slot(
+    factory: SessionFactory,
+    zone: DeliveryZone,
+    slot_date: date,
+    *,
+    starts_at: time = time(10, 0),
+    ends_at: time = time(13, 0),
+    capacity: int = 10,
+    reserved_count: int = 0,
+    cutoff_at: datetime | None = None,
+    is_active: bool = True,
+) -> DeliverySlot:
+    """A slot of ``zone``; the cutoff defaults to two hours before the local (UTC+5) start."""
+    slot = DeliverySlot(
+        zone_id=zone.id,
+        slot_date=slot_date,
+        starts_at=starts_at,
+        ends_at=ends_at,
+        capacity=capacity,
+        reserved_count=reserved_count,
+        cutoff_at=cutoff_at or tashkent_instant(slot_date, starts_at) - timedelta(hours=2),
+        is_active=is_active,
+    )
+    async with factory() as session:
+        session.add(slot)
+        await session.commit()
+    return slot
+
+
+async def slot_state(factory: SessionFactory, slot_id: uuid.UUID) -> tuple[int, int]:
+    """``(reserved_count, capacity)`` of a slot as committed."""
+    async with factory() as session:
+        row = (
+            await session.execute(
+                select(DeliverySlot.reserved_count, DeliverySlot.capacity).where(
+                    DeliverySlot.id == slot_id
+                )
+            )
+        ).one()
+        return row.reserved_count, row.capacity
+
+
+async def audit_rows(factory: SessionFactory, *where: Any) -> list[AuditLog]:
+    """Audit rows (optionally filtered), oldest first."""
+    async with factory() as session:
+        rows = await session.execute(
+            select(AuditLog).where(*where).order_by(AuditLog.created_at, AuditLog.id)
+        )
+        return list(rows.scalars())

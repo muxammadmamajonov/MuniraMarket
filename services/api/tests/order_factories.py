@@ -126,6 +126,8 @@ def make_order(status: OrderStatus = OrderStatus.NEW, **overrides: Any) -> Order
             ),
         ),
         "history": tuple(history),
+        # No delivery slot (a zone without slots); pass a ``SlotSnapshotRecord`` to set one.
+        "delivery_slot": None,
     }
     values.update(overrides)
     return OrderRecord(**values)
