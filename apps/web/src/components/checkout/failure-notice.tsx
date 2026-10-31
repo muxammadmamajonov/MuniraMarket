@@ -8,6 +8,7 @@ import { formatMessage } from '@/i18n/format';
 import { isRetrySafe, type CheckoutFailure } from '@/lib/checkout/failures';
 import type { PriceChange } from '@/lib/checkout/use-checkout';
 import { ERROR_TEXT, LINK_BUTTON_SECONDARY } from '../ui-classes';
+import { RetryButton } from './retry-button';
 
 export interface FailureNoticeProps {
   failure: CheckoutFailure | null;
@@ -70,7 +71,9 @@ export const FailureNotice = forwardRef<HTMLDivElement, FailureNoticeProps>(func
         message = failure.unmapped > 0 ? f.unmapped : dict.checkout.errors.formInvalid;
         break;
       case 'rate_limited':
-        message = formatMessage(f.rateLimited, { seconds: Math.max(cooldown, 0) });
+        // The wait the server asked for, said once (a live region that counted down would be
+        // read out every second); the button beside it shows the time left.
+        message = formatMessage(f.rateLimited, { seconds: failure.seconds });
         break;
       case 'session':
         message = f.session;
@@ -91,7 +94,7 @@ export const FailureNotice = forwardRef<HTMLDivElement, FailureNoticeProps>(func
   }
 
   const canRetry = failure !== null && isRetrySafe(failure);
-  const waiting = failure?.kind === 'rate_limited' && cooldown > 0;
+  const wait = failure?.kind === 'rate_limited' ? cooldown : 0;
 
   return (
     <div ref={ref} tabIndex={-1} className="flex flex-col gap-3 outline-none" aria-live="polite">
@@ -126,11 +129,7 @@ export const FailureNotice = forwardRef<HTMLDivElement, FailureNoticeProps>(func
           className="mm-enter flex flex-col items-start gap-3"
         >
           <p className={ERROR_TEXT}>{message}</p>
-          {canRetry ? (
-            <Button variant="secondary" disabled={busy || waiting} onClick={onRetry}>
-              {f.retry}
-            </Button>
-          ) : null}
+          {canRetry ? <RetryButton cooldown={wait} busy={busy} onClick={onRetry} /> : null}
           {toOrders ? (
             <Link href={`/${locale}/orders`} className={LINK_BUTTON_SECONDARY}>
               {f.goToOrders}

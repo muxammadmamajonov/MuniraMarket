@@ -7712,7 +7712,7 @@
     },
     "/api/v1/health/ready": {
       "get": {
-        "description": "Readiness: the database answers ``SELECT 1``. Failures are logged, never returned.",
+        "description": "Readiness: the database answers ``SELECT 1`` and, when sessions and rate limits use\nRedis, Redis answers ``PING``. Failures are logged by class only, never returned.",
         "operationId": "ready_api_v1_health_ready_get",
         "responses": {
           "200": {
@@ -7733,7 +7733,7 @@
                 }
               }
             },
-            "description": "Database unavailable"
+            "description": "Database or Redis unavailable"
           }
         },
         "summary": "Ready",

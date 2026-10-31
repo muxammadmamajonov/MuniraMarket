@@ -6,6 +6,20 @@ import {
   type OrderStatus,
 } from '@muniramarket/contracts';
 
+/**
+ * Seconds to wait from a `Retry-After` header: a number of seconds, or an HTTP date (what some
+ * proxies send). `null` when it is missing, malformed or already in the past.
+ */
+export function parseRetryAfter(header: string | null, now: number = Date.now()): number | null {
+  if (header === null || header.trim() === '') return null;
+  const seconds = Number(header);
+  if (Number.isFinite(seconds)) return seconds > 0 ? seconds : null;
+  const date = Date.parse(header);
+  if (Number.isNaN(date)) return null;
+  const delta = (date - now) / 1000;
+  return delta > 0 ? delta : null;
+}
+
 /** Client-side error codes for failures that never produced an API envelope. */
 export type LocalErrorCode = 'network_error' | 'invalid_response' | 'unknown_error';
 
@@ -68,8 +82,7 @@ export class ApiRequestError extends Error {
 
   /** Builds an error from a non-2xx response, reading the envelope if there is one. */
   static async fromResponse(response: Response): Promise<ApiRequestError> {
-    const retryHeader = Number(response.headers.get('retry-after'));
-    const retryAfter = Number.isFinite(retryHeader) && retryHeader > 0 ? retryHeader : null;
+    const retryAfter = parseRetryAfter(response.headers.get('retry-after'));
     let body: unknown = null;
     try {
       body = await response.json();

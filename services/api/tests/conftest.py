@@ -41,6 +41,15 @@ def make_settings(**overrides: Any) -> Settings:
         # Required in staging/production; harmless elsewhere. A private (RFC 1918) address.
         "forwarded_allow_ips": "10.20.0.2",
     }
+    if overrides.get("app_env") in ("staging", "production"):
+        # Deployed environments require TLS to PostgreSQL and Redis and trusted origins; tests
+        # that exercise those rules override these again.
+        values.update(
+            database_url="postgresql+asyncpg://fake:fake-password@127.0.0.1:1/fake?ssl=verify-full",
+            redis_url="rediss://localhost:6379/0",
+            csrf_trusted_origins="https://shop.example.test,https://admin.example.test",
+            telegram_environment="production",
+        )
     values.update(overrides)
     # model_validate bypasses the process environment and any local .env file.
     return Settings.model_validate(values)

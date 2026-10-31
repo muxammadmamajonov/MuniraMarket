@@ -1,0 +1,10 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "lib": ["ES2024"],
+    "types": ["node"],
+    "allowImportingTsExtensions": true
+  },
+  "include": ["worker/**/*.ts", "cloudflare.config.ts", ".cloudflare/types/**/*.d.ts"]
+}

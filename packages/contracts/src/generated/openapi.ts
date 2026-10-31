@@ -691,7 +691,8 @@ export interface paths {
     };
     /**
      * Ready
-     * @description Readiness: the database answers ``SELECT 1``. Failures are logged, never returned.
+     * @description Readiness: the database answers ``SELECT 1`` and, when sessions and rate limits use
+     *     Redis, Redis answers ``PING``. Failures are logged by class only, never returned.
      */
     get: operations['ready_api_v1_health_ready_get'];
     put?: never;
@@ -5343,7 +5344,7 @@ export interface operations {
           'application/json': components['schemas']['ReadinessResponse'];
         };
       };
-      /** @description Database unavailable */
+      /** @description Database or Redis unavailable */
       503: {
         headers: {
           [name: string]: unknown;

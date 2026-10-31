@@ -18,10 +18,15 @@ import { formatMessage } from '@/i18n/format';
 import { getCart, removeCartItem, updateCartItem } from '@/lib/api/cart';
 import { ApiRequestError } from '@/lib/api/errors';
 import { localizedName, maxQuantityFor } from '@/lib/catalog';
+import { retryAfterSeconds } from '@/lib/checkout/failures';
 import { useSession } from '@/lib/session';
 import { useMainButton } from '@/lib/telegram';
+import { useCooldown } from '@/lib/use-cooldown';
 import { SignInPrompt } from './sign-in-prompt';
 import { LINK_BUTTON_PRIMARY } from './ui-classes';
+
+/** A note under the lines: a message, or "wait a moment" (shown only for as long as the wait lasts). */
+type Notice = { kind: 'text'; text: string } | { kind: 'rate_limited' };
 
 type Load = { kind: 'loading' } | { kind: 'ready'; cart: Cart } | { kind: 'failed' };
 
@@ -36,7 +41,18 @@ export function CartView() {
   const router = useRouter();
   const [load, setLoad] = useState<Load>({ kind: 'loading' });
   const [busyProduct, setBusyProduct] = useState<string | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
+  const [notice, setNotice] = useState<Notice | null>(null);
+  // A 429 on a quantity change or a removal: every line is locked until `Retry-After` has passed.
+  const { seconds: waitSeconds, start: startCooldown } = useCooldown();
+  const waiting = waitSeconds > 0;
+  const noticeText =
+    notice === null
+      ? null
+      : notice.kind === 'text'
+        ? notice.text
+        : waiting
+          ? dict.cart.updateRateLimited
+          : null;
 
   const fetchCart = useCallback(async () => {
     setLoad({ kind: 'loading' });
@@ -62,20 +78,24 @@ export function CartView() {
       try {
         setLoad({ kind: 'ready', cart: await action() });
       } catch (error) {
-        if (error instanceof ApiRequestError && error.code === 'insufficient_stock') {
-          setNotice(
-            formatMessage(dict.cart.updateInsufficientStock, {
+        if (error instanceof ApiRequestError && error.code === 'rate_limited') {
+          startCooldown(retryAfterSeconds(error.retryAfter));
+          setNotice({ kind: 'rate_limited' });
+        } else if (error instanceof ApiRequestError && error.code === 'insufficient_stock') {
+          setNotice({
+            kind: 'text',
+            text: formatMessage(dict.cart.updateInsufficientStock, {
               available: error.availableQuantity ?? 0,
             }),
-          );
+          });
         } else {
-          setNotice(dict.cart.updateFailed);
+          setNotice({ kind: 'text', text: dict.cart.updateFailed });
         }
       } finally {
         setBusyProduct(null);
       }
     },
-    [dict],
+    [dict, startCooldown],
   );
 
   // Telegram: the native MainButton opens the checkout. Only offered for a cart that can be
@@ -132,7 +152,7 @@ export function CartView() {
           <CartLineItem
             key={line.product.id}
             line={line}
-            busy={busyProduct === line.product.id}
+            busy={busyProduct === line.product.id || waiting}
             onQuantity={(quantity) =>
               mutate(line.product.id, () => updateCartItem(apiFetch, line.product.id, { quantity }))
             }
@@ -144,9 +164,9 @@ export function CartView() {
       </ul>
 
       <div aria-live="polite">
-        {notice !== null ? (
+        {noticeText !== null ? (
           <p role="alert" className="text-sm font-medium text-red-600 dark:text-red-400">
-            {notice}
+            {noticeText}
           </p>
         ) : null}
         {cart.has_issues ? (

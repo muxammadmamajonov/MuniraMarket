@@ -2,7 +2,15 @@ import { describe, expect, it, vi } from 'vitest';
 import { apiError, order, orderSummary, quote, respond } from '@/lib/checkout/test-fixtures';
 import { ApiRequestError } from './errors';
 import { getDeliveryZones } from './delivery';
-import { cancelOrder, createOrder, getOrder, listOrders, quoteCheckout } from './orders';
+import {
+  ORDER_TIMEOUT_MS,
+  QUOTE_TIMEOUT_MS,
+  cancelOrder,
+  createOrder,
+  getOrder,
+  listOrders,
+  quoteCheckout,
+} from './orders';
 
 function fetcher(response: Response | (() => Response)) {
   return vi.fn<(path: string, init?: RequestInit) => Promise<Response>>(async () =>
@@ -96,6 +104,48 @@ describe('quoteCheckout', () => {
     expect(path).toBe('/checkout/quote');
     expect(init?.method).toBe('POST');
     expect(JSON.parse(String(init?.body))).toEqual({ district: 'mirobod' });
+  });
+});
+
+describe('timeouts: a stalled connection must not leave "sending" stuck forever', () => {
+  /** An `apiFetch` that never answers and rejects the way `fetch` does when its signal fires. */
+  function stalledFetch() {
+    return vi.fn<(path: string, init?: RequestInit) => Promise<Response>>(
+      (_path, init) =>
+        new Promise<Response>((_resolve, reject) => {
+          init?.signal?.addEventListener('abort', () => reject(init.signal?.reason));
+        }),
+    );
+  }
+
+  it('gives createOrder 30 s and quoteCheckout 20 s, via an abort signal', async () => {
+    const timeout = vi.spyOn(AbortSignal, 'timeout');
+    const apiFetch = fetcher(respond(order(), 201));
+    await createOrder(apiFetch, REQUEST, 'test-idempotency-key-0001');
+    await quoteCheckout(fetcher(respond(quote())), 'mirobod');
+    expect(timeout.mock.calls).toEqual([[ORDER_TIMEOUT_MS], [QUOTE_TIMEOUT_MS]]);
+    expect(ORDER_TIMEOUT_MS).toBe(30_000);
+    expect(QUOTE_TIMEOUT_MS).toBe(20_000);
+    expect(apiFetch.mock.calls[0]?.[1]?.signal).toBeInstanceOf(AbortSignal);
+    timeout.mockRestore();
+  });
+
+  it('rejects createOrder when the signal fires, and keeps the same key for the retry', async () => {
+    const controller = new AbortController();
+    const timeout = vi.spyOn(AbortSignal, 'timeout').mockReturnValue(controller.signal);
+    const apiFetch = stalledFetch();
+    const pending = createOrder(apiFetch, REQUEST, 'test-idempotency-key-0001');
+    controller.abort(new DOMException('The operation timed out.', 'TimeoutError'));
+    await expect(pending).rejects.toMatchObject({ name: 'TimeoutError' });
+    timeout.mockRestore();
+
+    // The retry is the same request: same body, same key.
+    const retry = fetcher(respond(order(), 200, { 'Idempotent-Replayed': 'true' }));
+    await createOrder(retry, REQUEST, 'test-idempotency-key-0001');
+    const first = apiFetch.mock.calls[0]?.[1];
+    const second = retry.mock.calls[0]?.[1];
+    expect(second?.body).toBe(first?.body);
+    expect(second?.headers).toEqual(first?.headers);
   });
 });
 

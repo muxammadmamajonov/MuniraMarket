@@ -1,4 +1,7 @@
-"""Async Alembic environment. The URL comes from application settings, never from alembic.ini."""
+"""Async Alembic environment. The URL comes from the environment, never from alembic.ini.
+
+``MIGRATION_DATABASE_URL`` (the migration role) when set, else the application's DATABASE_URL.
+"""
 
 import asyncio
 from logging.config import fileConfig
@@ -9,8 +12,8 @@ from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import async_engine_from_config
 
 import app.models  # noqa: F401  (registers every model on Base.metadata)
-from app.core.config import get_settings
 from app.db.base import Base
+from app.db.migration_url import migration_database_url
 
 config = context.config
 if config.config_file_name is not None:
@@ -20,7 +23,7 @@ target_metadata = Base.metadata
 
 
 def _database_url() -> str:
-    return get_settings().database_url.get_secret_value()
+    return migration_database_url()
 
 
 def run_migrations_offline() -> None:

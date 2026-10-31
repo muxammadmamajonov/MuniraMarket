@@ -10,6 +10,8 @@ from fastapi import FastAPI
 from app.api.auth_deps import CsrfProtectedUserDep
 from app.core.config import AppEnv
 from app.security.csrf import CsrfError, check_origin, check_token
+from app.security.rate_limit import InMemoryRateLimiter
+from app.security.session import InMemorySessionStore
 from tests.auth_helpers import (
     INIT_DATA_PATH,
     TRUSTED_ORIGIN,
@@ -178,7 +180,16 @@ def _staging_settings() -> dict[str, Any]:
 async def test_staging_rejects_requests_without_origin_or_referer(
     clock: FakeClock, users: FakeUserRepository
 ) -> None:
-    app = _with_write_route(build_app(clock, users, **_staging_settings()))
+    # In-memory stores: staging requires a TLS Redis URL, and this test is about CSRF only.
+    app = _with_write_route(
+        build_app(
+            clock,
+            users,
+            session_store=InMemorySessionStore(clock),
+            rate_limiter=InMemoryRateLimiter(clock),
+            **_staging_settings(),
+        )
+    )
     async with http_client(app) as http:
         body = {"init_data": init_data(clock)}
         bare = await http.post(INIT_DATA_PATH, json=body)

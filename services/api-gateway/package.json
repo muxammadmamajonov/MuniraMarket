@@ -1,0 +1,25 @@
+{
+  "name": "@muniramarket/api-gateway",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "types": "cf workers types",
+    "typecheck": "cf workers types && tsc --noEmit -p tsconfig.json",
+    "lint": "eslint .",
+    "test": "vitest run",
+    "build:staging": "cf build --mode staging",
+    "build:production": "cf build --mode production",
+    "dev": "cf dev"
+  },
+  "devDependencies": {
+    "@cloudflare/vite-plugin": "2.0.0-beta.v.8",
+    "@eslint/js": "10.0.1",
+    "@types/node": "26.6.6",
+    "cf": "1.0.0-beta.26",
+    "eslint": "10.13.0",
+    "typescript": "6.0.3",
+    "typescript-eslint": "8.72.1",
+    "vite": "8.3.5",
+    "vitest": "5.0.5"
+  }
+}

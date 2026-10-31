@@ -48,3 +48,10 @@ playwright-report/
 
 # Assistant tooling state (agent worktrees)
 .claude/
+
+# Generated Cloudflare binding types and local build output (cf / vinext)
+.cloudflare/
+.vinext/
+.wrangler/
+.dev.vars*
+!.dev.vars.example
