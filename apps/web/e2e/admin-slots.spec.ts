@@ -157,7 +157,9 @@ test('admin creates a delivery slot and a customer books exactly that window at 
 
     const group = storefront.getByRole('radiogroup', { name: 'Yetkazish vaqti' });
     await expect(group).toBeVisible();
-    // The new window sits under its own day heading; it is offered, not full, and not yet chosen.
+    // The new window is on its own day: open that day's chip, then it is offered, not full and
+    // not yet chosen.
+    await storefront.locator(`[data-testid="delivery-day-tab"][data-date="${slotDate}"]`).click();
     const tile = storefront
       .locator(`[data-day="${slotDate}"]`)
       .getByTestId('delivery-slot-option')

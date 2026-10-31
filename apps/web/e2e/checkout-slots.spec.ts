@@ -161,7 +161,8 @@ test('book a delivery window: picker, MainButton gate, keyboard, order page show
   if ((await otherChip.getAttribute('data-date')) !== day) {
     await otherChip.click();
     await expect(page.getByTestId('checkout-slot-summary')).toContainText(window);
-    await expect(page.getByRole('radio', { checked: true })).toHaveCount(0);
+    // Only the shown day's windows are in the tree; the payment radios are elsewhere on the form.
+    await expect(page.getByRole('tabpanel').getByRole('radio', { checked: true })).toHaveCount(0);
     await page.locator(`[data-testid="delivery-day-tab"][data-date="${day ?? ''}"]`).click();
     await expect(chosenRadio).toBeChecked();
   }
