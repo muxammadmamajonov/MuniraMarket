@@ -25,7 +25,7 @@ import { defineConfig, devices } from '@playwright/test';
  * and the API's HMAC check all run for real.
  *
  * Every spec signs in once or twice and the Core API allows 10 logins per minute per IP
- * (`AUTH_LOGIN` in `services/api/app/security/rate_limit.py`); a full run uses 8 of them, so wait
+ * (`AUTH_LOGIN` in `services/api/app/security/rate_limit.py`); a full run uses 9 of them, so wait
  * about a minute before starting a second full run against the same API.
  *
  * Browsers are installed explicitly: `pnpm --filter @muniramarket/web exec playwright install chromium`

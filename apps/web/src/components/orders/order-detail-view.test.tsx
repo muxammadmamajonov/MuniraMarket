@@ -20,11 +20,11 @@ vi.mock('@/lib/session', () => ({ useSession: () => session }));
 const NB = ' ';
 const ID = order().id;
 
-function renderDetail(placed = false, locale: 'uz' | 'ru' = 'uz') {
+function renderDetail(placed = false, locale: 'uz' | 'ru' = 'uz', found = false) {
   return render(
     <LocaleProvider locale={locale}>
       <TelegramProvider>
-        <OrderDetailView id={ID} placed={placed} />
+        <OrderDetailView id={ID} placed={placed} found={found} />
       </TelegramProvider>
     </LocaleProvider>,
   );
@@ -132,6 +132,20 @@ describe('OrderDetailView: content', () => {
     );
     expect(screen.getByTestId('order-number')).toHaveTextContent('MM-000123');
     expect(screen.getByText('Yangi', { selector: '[data-status]' })).toBeInTheDocument();
+  });
+
+  it('says "we found your order" when a retry was answered with the existing order (?placed=found)', async () => {
+    renderDetail(true, 'uz', true);
+    const banner = await screen.findByTestId('placed-banner');
+    expect(banner).toHaveAttribute('data-found', 'true');
+    expect(banner).toHaveTextContent('Buyurtmangizni topdik');
+    expect(banner).toHaveTextContent('ikkinchi marta yaratmadik');
+    expect(banner).not.toHaveTextContent('Buyurtmangiz qabul qilindi!');
+  });
+
+  it('says it in Russian too', async () => {
+    renderDetail(true, 'ru', true);
+    expect(await screen.findByTestId('placed-banner')).toHaveTextContent('Мы нашли ваш заказ');
   });
 
   it('says "Bepul" for a free delivery', async () => {

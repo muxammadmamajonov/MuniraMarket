@@ -6,12 +6,13 @@ import type {
   DeliveryZone,
   DistrictCode,
   OrderDetail,
+  OrderSummary,
 } from '@muniramarket/contracts';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { getCart } from '@/lib/api/cart';
 import { getDeliveryZones } from '@/lib/api/delivery';
 import { ApiRequestError } from '@/lib/api/errors';
-import { createOrder, quoteCheckout } from '@/lib/api/orders';
+import { createOrder, listOrders, quoteCheckout } from '@/lib/api/orders';
 import { useSession } from '@/lib/session';
 import { useCooldown } from '@/lib/use-cooldown';
 import { classifyCheckoutError, type CheckoutFailure, type SlotFailureReason } from './failures';
@@ -28,14 +29,29 @@ import {
   type FormErrors,
 } from './form';
 import { useSubmissionController } from './idempotency';
+import { clearPendingAttempt, findOrderForAttempt, readPendingAttempt } from './pending-attempt';
 import { bookableSlot, todayInTashkent } from './slots';
 import { zoneForDistrict } from './zones';
 
 /** A quote older than this is re-fetched before the order is placed (prices and stock move). */
 export const QUOTE_MAX_AGE_MS = 60_000;
 
+/** How many of the newest orders are searched for the one a pending attempt created. */
+const RECOVERY_PAGE_SIZE = 5;
+
 export type CheckoutLoad =
-  { kind: 'loading' } | { kind: 'ready'; cart: Cart; zones: DeliveryZone[] } | { kind: 'failed' };
+  | { kind: 'loading' }
+  | {
+      kind: 'ready';
+      cart: Cart;
+      zones: DeliveryZone[];
+      /**
+       * The order an earlier, unconfirmed attempt in this tab created (found after a reload: the
+       * cart came back empty because the order took its items).
+       */
+      recovered: OrderSummary | null;
+    }
+  | { kind: 'failed' };
 
 export type QuoteState =
   | { kind: 'idle' }
@@ -57,8 +73,11 @@ export interface PriceChange {
 export type FocusTarget = FieldName | 'deliverySlot' | 'quote';
 
 export interface CheckoutFlowOptions {
-  /** Called after the order exists, with the created order. */
-  onPlaced: (order: OrderDetail) => void;
+  /**
+   * Called after the order exists, with the order. `replayed`: the API recognised the key and
+   * returned an order that an earlier attempt had already created.
+   */
+  onPlaced: (order: OrderDetail, replayed: boolean) => void;
   /** Haptic hooks, injected so the flow itself stays free of Telegram specifics. */
   onSuccess?: () => void;
   onError?: () => void;
@@ -106,18 +125,38 @@ export function useCheckoutFlow({ onPlaced, onSuccess, onError, focusField }: Ch
     if (name !== '') setValues((current) => ({ ...current, recipientName: name }));
   }
 
+  const owner = user?.id ?? '';
+
+  /**
+   * After a reload, an empty cart plus a pending attempt means the attempt most likely went
+   * through (placing an order empties the cart). Look for that order among the newest ones.
+   */
+  const recoverOrder = useCallback(async (): Promise<OrderSummary | null> => {
+    const pending = readPendingAttempt();
+    if (pending === null || pending.owner !== owner) return null;
+    try {
+      const page = await listOrders(apiFetch, { pageSize: RECOVERY_PAGE_SIZE });
+      // With an empty cart the attempt can no longer be retried either way.
+      clearPendingAttempt();
+      return findOrderForAttempt(pending, page.items);
+    } catch {
+      return null; // kept: the next load asks again
+    }
+  }, [apiFetch, owner]);
+
   const loadData = useCallback(async () => {
     setLoad({ kind: 'loading' });
     try {
       const [cart, zones] = await Promise.all([getCart(apiFetch), getDeliveryZones(apiFetch)]);
-      setLoad({ kind: 'ready', cart, zones: zones.items });
+      const recovered = cart.items.length === 0 ? await recoverOrder() : null;
+      setLoad({ kind: 'ready', cart, zones: zones.items, recovered });
       // A "session ended" notice from before the re-login no longer applies.
       setFailure((current) => (current?.kind === 'session' ? null : current));
     } catch (error) {
       if (error instanceof ApiRequestError && error.code === 'session_required') retry();
       setLoad({ kind: 'failed' });
     }
-  }, [apiFetch, retry]);
+  }, [apiFetch, retry, recoverOrder]);
 
   useEffect(() => {
     if (status !== 'authenticated') return;
@@ -331,14 +370,17 @@ export function useCheckoutFlow({ onPlaced, onSuccess, onError, focusField }: Ch
       // 2. Place the order. Same body -> same key; any change -> a new key.
       const request = buildOrderRequest(values, fresh.total_uzs, slot?.id ?? null);
       if (request === null) return;
-      const key = controller.keyFor(requestFingerprint(request));
+      const key = controller.keyFor(requestFingerprint(request), {
+        owner,
+        totalUzs: request.expected_total_uzs,
+      });
       setPriceChange(null);
       try {
         const result = await createOrder(apiFetch, request, key);
         placed = true;
         controller.reset();
         onSuccess?.();
-        onPlaced(result.order);
+        onPlaced(result.order, result.replayed);
       } catch (error) {
         const classified = classifyCheckoutError(error);
         onError?.();
@@ -401,6 +443,7 @@ export function useCheckoutFlow({ onPlaced, onSuccess, onError, focusField }: Ch
     refreshQuote,
     apiFetch,
     retry,
+    owner,
     onPlaced,
     onSuccess,
     onError,

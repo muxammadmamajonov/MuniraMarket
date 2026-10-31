@@ -101,6 +101,11 @@ export const uz: Dictionary = {
     emptyTitle: 'Savatingiz bo‘sh',
     emptyHint: 'Buyurtma berish uchun avval katalogdan mahsulot tanlang.',
     toCatalog: 'Katalogga o‘tish',
+    recovered: {
+      title: 'Buyurtmangizni topdik',
+      hint: 'Oldingi urinish yetib borgan ekan: № {number} buyurtma rasmiylashtirildi, shuning uchun savat bo‘sh.',
+      action: 'Buyurtmani ochish',
+    },
     backToCart: 'Savatga qaytish',
     optional: 'ixtiyoriy',
     sections: {
@@ -257,6 +262,9 @@ export const uz: Dictionary = {
       loadingLabel: 'Buyurtma yuklanmoqda…',
       placedTitle: 'Buyurtmangiz qabul qilindi!',
       placedHint: 'Holatini shu sahifada kuzatib borishingiz mumkin.',
+      foundTitle: 'Buyurtmangizni topdik',
+      foundHint:
+        'U oldingi urinishda rasmiylashtirilgan edi, ikkinchi marta yaratmadik. Holatini shu sahifada kuzatib borishingiz mumkin.',
       notFoundTitle: 'Buyurtma topilmadi',
       notFoundMessage: 'Bunday buyurtma yo‘q yoki u sizga tegishli emas.',
       timeline: 'Buyurtma holati',

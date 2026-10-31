@@ -130,10 +130,12 @@ export interface OrderDetailViewProps {
   id: string;
   /** `?placed=1`: the customer was just sent here after placing the order. */
   placed: boolean;
+  /** `?placed=found`: the order already existed; a retry found it instead of placing another. */
+  found?: boolean;
 }
 
 /** One order: status and timeline, lines, totals, address, recipient, payment and cancellation. */
-export function OrderDetailView({ id, placed }: OrderDetailViewProps) {
+export function OrderDetailView({ id, placed, found = false }: OrderDetailViewProps) {
   const { dict, locale } = useI18n();
   const { status, apiFetch, retry } = useSession();
   const [load, setLoad] = useState<Load>({ kind: 'loading' });
@@ -208,10 +210,11 @@ export function OrderDetailView({ id, placed }: OrderDetailViewProps) {
         <div
           role="status"
           data-testid="placed-banner"
+          data-found={found ? 'true' : undefined}
           className="mm-enter flex flex-col gap-1 rounded-xl border border-green-700 bg-green-50 p-4 text-green-950 dark:border-green-400 dark:bg-green-950 dark:text-green-100"
         >
-          <p className="font-bold">{d.placedTitle}</p>
-          <p className="text-sm">{d.placedHint}</p>
+          <p className="font-bold">{found ? d.foundTitle : d.placedTitle}</p>
+          <p className="text-sm">{found ? d.foundHint : d.placedHint}</p>
         </div>
       ) : null}
       {cancelledNotice ? (
