@@ -1,0 +1,36 @@
+import { defineConfig } from '@neon/config/v1';
+
+export default defineConfig({
+  // Declare your Neon services here
+  preview: {
+    realtime: true,
+  },
+  auth: true,
+  functions: {
+    // Health check + sealed Realtime live queries (services/neon-functions). Realtime's secret
+    // is not injected into Functions: deploy with `neon deploy --env .env.local`.
+    catalog: {
+      name: 'MuniraMarket catalog live queries',
+      source: './services/neon-functions/src/index.ts',
+      env: { NEON_REALTIME_SECRET: process.env.NEON_REALTIME_SECRET! },
+    },
+  },
+  buckets: {
+    // "private" is the default; use "public_read" for anonymous reads
+    assets: { access: 'private' },
+  },
+  // Branch policy: per-branch tuning
+  branch: (branch) => {
+    if (branch.isDefault) {
+      // Default branch: no overrides, uses project defaults
+      return {};
+    }
+    if (!branch.exists) {
+      // New non-default branches: auto-expire
+      // Run `neon checkout <name>` to create a new branch with these settings
+      return { ttl: '7d' };
+    }
+    // Existing branch: no changes
+    return {};
+  },
+});

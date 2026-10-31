@@ -15,12 +15,14 @@ from app.api.routes import (
     health,
     internal_notifications,
     internal_telegram,
+    neon_auth,
     orders,
 )
 
 api_router = APIRouter(prefix="/api/v1")
 api_router.include_router(health.router)
 api_router.include_router(auth.router)
+api_router.include_router(neon_auth.router)
 api_router.include_router(internal_telegram.router)
 api_router.include_router(internal_notifications.router)
 api_router.include_router(catalog.router)

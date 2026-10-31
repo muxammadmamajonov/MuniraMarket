@@ -7,6 +7,7 @@ requires-python = ">=3.13"
 dependencies = [
     "alembic>=1.20,<1.21",
     "asyncpg>=0.32,<0.33",
+    "boto3>=1.43,<1.44",
     "cryptography>=50,<51",
     "fastapi==0.162.0",
     "pydantic>=2.14,<2.15",
@@ -25,6 +26,7 @@ packages = ["app"]
 
 [dependency-groups]
 dev = [
+    "boto3-stubs[s3]>=1.43,<1.44",
     "httpx>=0.28,<0.29",
     "mypy>=2.4,<2.5",
     "pytest>=9,<10",

@@ -475,6 +475,23 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/v1/auth/neon/me': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Neon Me */
+    get: operations['neon_me_api_v1_auth_neon_me_get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/v1/auth/session': {
     parameters: {
       query?: never;
@@ -1806,6 +1823,18 @@ export interface components {
       photo_url?: string | null;
       /** Username */
       username?: string | null;
+    };
+    /**
+     * NeonIdentityResponse
+     * @description Who a verified Neon Auth JWT belongs to (``GET /auth/neon/me``).
+     */
+    NeonIdentityResponse: {
+      /** Email */
+      email: string | null;
+      /** Name */
+      name: string | null;
+      /** User Id */
+      user_id: string;
     };
     /** OrderAddress */
     OrderAddress: {
@@ -4614,6 +4643,44 @@ export interface operations {
       };
       /** @description Too Many Requests */
       429: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Service Unavailable */
+      503: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+    };
+  };
+  neon_me_api_v1_auth_neon_me_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['NeonIdentityResponse'];
+        };
+      };
+      /** @description Unauthorized */
+      401: {
         headers: {
           [name: string]: unknown;
         };

@@ -45,3 +45,11 @@ class LoginWidgetRequest(BaseModel):
     def signed_fields(self) -> dict[str, str]:
         """The fields as Telegram signed them (absent optional fields are omitted)."""
         return {key: str(value) for key, value in self.model_dump().items() if value is not None}
+
+
+class NeonIdentityResponse(BaseModel):
+    """Who a verified Neon Auth JWT belongs to (``GET /auth/neon/me``)."""
+
+    user_id: str
+    email: str | None
+    name: str | None
