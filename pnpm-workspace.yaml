@@ -2,8 +2,13 @@ packages:
   - apps/*
   - packages/*
   - services/telegram
+  - services/api-gateway
+  - infra/cloudflare
 
 # Dependency build scripts are denied unless listed here explicitly.
 allowBuilds:
   # Optional native resolver used by eslint-config-next; prebuilt bindings work without its script.
   unrs-resolver: false
+  # Cloudflare's Workers runtime (used by `cf dev` / vinext dev). Its postinstall only verifies the
+  # platform binary shipped as an optional dependency; it is not needed to install it.
+  workerd: false

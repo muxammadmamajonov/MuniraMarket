@@ -14,5 +14,9 @@ export default defineConfig([
     'playwright-report/**',
     'test-results/**',
     'next-env.d.ts',
+    // Cloudflare Workers (vinext) build output and generated binding types.
+    'dist/**',
+    '.cloudflare/**',
+    '.vinext/**',
   ]),
 ]);

@@ -10,6 +10,7 @@ import { headers as requestHeaders } from 'next/headers';
 import { getClientIpHeader, internalApiUrl } from '@/lib/config';
 import { clientIpFrom } from './client-ip';
 import { ApiRequestError, readJson } from './errors';
+import { upstreamFetch } from './upstream-fetch';
 
 /**
  * Server-side catalog fetchers for Server Components. They call the Core API directly through
@@ -35,7 +36,7 @@ async function getJson<T>(
 ): Promise<T> {
   let response: Response;
   try {
-    response = await fetch(internalApiUrl(path), {
+    response = await upstreamFetch(internalApiUrl(path), {
       ...init,
       headers: { accept: 'application/json', ...extraHeaders },
       signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),

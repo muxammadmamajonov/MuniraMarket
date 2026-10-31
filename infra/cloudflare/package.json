@@ -1,0 +1,16 @@
+{
+  "name": "@muniramarket/cloudflare-shared",
+  "private": true,
+  "type": "module",
+  "description": "Shared Cloudflare Workers configuration helpers (environments, vinext build glue). Imported by relative path from the apps' cloudflare.config.ts / vite.config.ts.",
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "@types/node": "26.6.6",
+    "typescript": "6.0.3",
+    "vite": "8.3.5",
+    "vitest": "5.0.5"
+  }
+}

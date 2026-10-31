@@ -1,6 +1,7 @@
 import { API_V1_PREFIX } from '@muniramarket/contracts';
 import { getApiInternalUrl, getClientIpHeader } from '@/lib/config';
 import { clientIpFrom } from './client-ip';
+import { upstreamFetch } from './upstream-fetch';
 
 /** Largest request body the proxy forwards. The API's own limit is at least as strict. */
 export const MAX_BODY_BYTES = 64 * 1024;
@@ -205,9 +206,12 @@ export function createApiProxy(deps: ProxyDeps) {
   };
 }
 
-/** The proxy wired to the real `fetch` and `API_INTERNAL_URL`. */
+/**
+ * The proxy wired to `API_INTERNAL_URL` through `upstreamFetch` (global `fetch` under Next.js,
+ * the `CORE_API` service binding on Cloudflare Workers).
+ */
 export const apiProxy = createApiProxy({
-  fetch: (...args) => fetch(...args),
+  fetch: (...args) => upstreamFetch(...args),
   apiBaseUrl: getApiInternalUrl,
   clientIpHeader: getClientIpHeader,
 });
