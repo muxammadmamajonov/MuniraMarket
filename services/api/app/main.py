@@ -18,6 +18,7 @@ from app.core.logging import configure_logging
 from app.core.request_context import RequestContextMiddleware
 from app.db.session import create_engine, create_session_factory
 from app.security.cookies import SessionCookieMiddleware
+from app.security.neon_auth import NeonAuthVerifier
 from app.security.rate_limit import InMemoryRateLimiter, RateLimiter, RedisRateLimiter
 from app.security.service_auth import (
     InMemoryNonceStore,
@@ -31,6 +32,7 @@ from app.security.session import (
     SessionManager,
     SessionStore,
 )
+from app.storage.images import create_image_storage
 from app.telegram.identity import (
     TELEGRAM_PUBLIC_KEYS,
     Ed25519InitDataVerifier,
@@ -164,6 +166,12 @@ def create_app(
     )
     app.state.rate_limiter = rate_limiter
     app.state.login_widget_verifier = build_login_widget_verifier(settings, clock)
+    app.state.image_storage = create_image_storage(settings)
+    app.state.neon_auth_verifier = (
+        NeonAuthVerifier(base_url=settings.neon_auth_base_url, jwks_url=settings.neon_auth_jwks_url)
+        if settings.neon_auth_base_url and settings.neon_auth_jwks_url
+        else None
+    )
     # Readiness also checks Redis when a Redis-backed store is in use (sessions, rate limits
     # and replay protection fail closed without it).
     app.state.redis_ping = None if redis_client is None else redis_client.ping

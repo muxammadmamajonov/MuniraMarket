@@ -3,6 +3,7 @@ packages:
   - packages/*
   - services/telegram
   - services/api-gateway
+  - services/neon-functions
   - infra/cloudflare
 
 # Dependency build scripts are denied unless listed here explicitly.

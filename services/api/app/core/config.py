@@ -148,6 +148,50 @@ class Settings(BaseSettings):
     db_statement_timeout_ms: int = 15_000
     db_idle_in_transaction_timeout_ms: int = 30_000
 
+    # S3-compatible object storage for product images (Neon Object Storage ``buckets.assets``,
+    # or R2). All unset => image storage is disabled and fails closed.
+    object_storage_bucket: str | None = None
+    object_storage_endpoint_url: str | None = None
+    object_storage_region: str = "auto"
+    object_storage_access_key_id: SecretStr | None = None
+    object_storage_secret_access_key: SecretStr | None = None
+
+    # Neon Auth (Managed Better Auth). When set, the API accepts a Neon Auth JWT as a bearer
+    # token on /api/v1/auth/neon/me, verified against this JWKS (EdDSA). Unset => disabled.
+    neon_auth_base_url: str | None = None
+    neon_auth_jwks_url: str | None = None
+
+    @model_validator(mode="after")
+    def _check_object_storage(self) -> Self:
+        parts = (
+            self.object_storage_bucket,
+            self.object_storage_endpoint_url,
+            self.object_storage_access_key_id,
+            self.object_storage_secret_access_key,
+        )
+        if any(part is not None for part in parts) and not all(part is not None for part in parts):
+            raise ValueError(
+                "OBJECT_STORAGE_BUCKET, _ENDPOINT_URL, _ACCESS_KEY_ID and _SECRET_ACCESS_KEY "
+                "must be set together"
+            )
+        if self.object_storage_endpoint_url is not None and not (
+            self.object_storage_endpoint_url.startswith("https://")
+        ):
+            raise ValueError("OBJECT_STORAGE_ENDPOINT_URL must be https://")
+        return self
+
+    @model_validator(mode="after")
+    def _check_neon_auth(self) -> Self:
+        for name, value in (
+            ("NEON_AUTH_BASE_URL", self.neon_auth_base_url),
+            ("NEON_AUTH_JWKS_URL", self.neon_auth_jwks_url),
+        ):
+            if value is not None and not value.startswith("https://"):
+                raise ValueError(f"{name} must be https://")
+        if (self.neon_auth_base_url is None) != (self.neon_auth_jwks_url is None):
+            raise ValueError("NEON_AUTH_BASE_URL and NEON_AUTH_JWKS_URL must be set together")
+        return self
+
     @field_validator(
         "cors_allowed_origins", "csrf_trusted_origins", "forwarded_allow_ips", mode="before"
     )

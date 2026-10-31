@@ -1,0 +1,19 @@
+{
+  "name": "@muniramarket/neon-functions",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "smoke": "node --env-file=../../.env.local scripts/smoke.mjs"
+  },
+  "dependencies": {
+    "@neon/functions": "0.11.0",
+    "@neon/realtime": "0.1.2",
+    "pg": "8.23.1"
+  },
+  "devDependencies": {
+    "@types/node": "26.6.6",
+    "@types/pg": "8.23.1",
+    "typescript": "6.0.3"
+  }
+}
