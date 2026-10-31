@@ -9,12 +9,19 @@ import { formatMessage } from '@/i18n/format';
 import { addCartItem } from '@/lib/api/cart';
 import { ApiRequestError } from '@/lib/api/errors';
 import { MAX_LINE_QUANTITY, maxQuantityFor } from '@/lib/catalog';
+import { retryAfterSeconds } from '@/lib/checkout/failures';
 import { useSession } from '@/lib/session';
 import { useHaptics, useMainButton } from '@/lib/telegram';
+import { useCooldown } from '@/lib/use-cooldown';
 import { SignInPrompt } from './sign-in-prompt';
 
 type Phase =
-  { kind: 'idle' } | { kind: 'pending' } | { kind: 'added' } | { kind: 'error'; message: string };
+  | { kind: 'idle' }
+  | { kind: 'pending' }
+  | { kind: 'added' }
+  /** The API asked us to wait (429); shown, and the button disabled, until the wait is over. */
+  | { kind: 'rate_limited' }
+  | { kind: 'error'; message: string };
 
 export interface AddToCartProps {
   product: Pick<ProductSummary, 'id' | 'price_uzs' | 'in_stock' | 'stock_quantity'>;
@@ -31,11 +38,13 @@ export function AddToCart({ product }: AddToCartProps) {
   const max = maxQuantityFor(product);
   const [requested, setRequested] = useState(1);
   const [phase, setPhase] = useState<Phase>({ kind: 'idle' });
+  const { seconds: waitSeconds, start: startCooldown } = useCooldown();
 
   const quantity = Math.min(requested, max);
   const authenticated = session.status === 'authenticated';
   const pending = phase.kind === 'pending';
-  const canAdd = product.in_stock && authenticated && !pending;
+  const waiting = waitSeconds > 0;
+  const canAdd = product.in_stock && authenticated && !pending && !waiting;
   const { apiFetch, retry } = session;
 
   const add = useCallback(async () => {
@@ -46,9 +55,14 @@ export function AddToCart({ product }: AddToCartProps) {
       haptics.notify('success');
     } catch (error) {
       haptics.notify('error');
+      if (error instanceof ApiRequestError && error.code === 'rate_limited') {
+        startCooldown(retryAfterSeconds(error.retryAfter));
+        setPhase({ kind: 'rate_limited' });
+        return;
+      }
       setPhase({ kind: 'error', message: addErrorMessage(error, dict, retry) });
     }
-  }, [apiFetch, retry, product.id, quantity, haptics, dict]);
+  }, [apiFetch, retry, product.id, quantity, haptics, dict, startCooldown]);
 
   const priceText = formatUZS(product.price_uzs, locale);
   useMainButton(
@@ -59,7 +73,7 @@ export function AddToCart({ product }: AddToCartProps) {
             if (canAdd) void add();
           },
           loading: pending,
-          disabled: pending,
+          disabled: pending || waiting,
         }
       : null,
   );
@@ -101,6 +115,15 @@ export function AddToCart({ product }: AddToCartProps) {
             <Link href={`/${locale}/cart`} className="underline underline-offset-2">
               {dict.product.viewCart}
             </Link>
+          </p>
+        ) : null}
+        {phase.kind === 'rate_limited' && waiting ? (
+          <p
+            role="alert"
+            data-testid="rate-limited"
+            className="text-sm font-medium text-red-600 dark:text-red-400"
+          >
+            {dict.product.errors.rateLimited}
           </p>
         ) : null}
         {phase.kind === 'error' ? (

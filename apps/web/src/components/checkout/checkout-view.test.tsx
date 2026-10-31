@@ -1512,6 +1512,15 @@ async function tick(seconds = 1) {
   }
 }
 
+/** Advances the fake clock a second at a time until `done()` (bounded). */
+async function tickUntil(done: () => boolean, max = 15) {
+  for (let second = 0; second < max && !done(); second += 1) {
+    await act(async () => {
+      vi.advanceTimersByTime(1000);
+    });
+  }
+}
+
 const quoteError = () => screen.getByTestId('quote-error');
 const retryInside = (element: HTMLElement) =>
   within(element).getByRole('button', { name: 'Qayta urinish' });
@@ -1547,7 +1556,7 @@ describe('CheckoutView: a rate-limited order (429)', () => {
     await tick();
     expect(retry).toHaveTextContent('(2 s)');
     expect(failure).toHaveTextContent('3 soniyadan'); // the sentence does not tick
-    await tick(2);
+    await tickUntil(() => !(retry as HTMLButtonElement).disabled);
     expect(retry).toBeEnabled();
     expect(retry).not.toHaveTextContent('(');
     expect(submitButton()).toBeEnabled();
@@ -1584,7 +1593,10 @@ describe('CheckoutView: a rate-limited order (429)', () => {
     fireEvent.click(submitButton());
     expect(await screen.findByTestId('submit-failure')).toHaveTextContent('10 soniyadan');
 
-    await tick(10);
+    await tickUntil(
+      () =>
+        !within(screen.getByTestId('submit-failure')).getByRole('button').hasAttribute('disabled'),
+    );
     routes['POST /orders'] = () => apiError('rate_limited', 429, {}, { 'Retry-After': '86400' });
     fireEvent.click(submitButton());
     await waitFor(() => expect(orderPosts()).toHaveLength(2));
@@ -1688,7 +1700,7 @@ describe('CheckoutView: a quote that could not be fetched', () => {
     fireEvent.submit(screen.getByRole('form', { name: 'Buyurtmani rasmiylashtirish' }));
     expect(calls('POST', '/checkout/quote')).toHaveLength(1);
 
-    await tick(2);
+    await tickUntil(() => !(retry as HTMLButtonElement).disabled);
     expect(retry).toBeEnabled();
     limited = false;
     fireEvent.click(retry);

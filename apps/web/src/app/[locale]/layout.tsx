@@ -66,8 +66,10 @@ export default async function RootLayout({ children, params }: LayoutProps<'/[lo
             <SessionProvider>
               <TelegramChrome />
               <div className="flex min-h-dvh flex-col pb-[env(safe-area-inset-bottom)]">
-                <OfflineBanner />
+                {/* Below the header: the header pads itself by the top safe-area inset, so a banner
+                    above it would sit under the notch / status bar in fullscreen and installed modes. */}
                 <SiteHeader locale={locale} dict={dict} />
+                <OfflineBanner />
                 {children}
               </div>
             </SessionProvider>

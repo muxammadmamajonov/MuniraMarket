@@ -1,5 +1,5 @@
 import type { Cart, CartLine, ProductSummary } from '@muniramarket/contracts';
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { LocaleProvider } from '@/i18n/context';
 import { TelegramProvider } from '@/lib/telegram';
@@ -274,6 +274,44 @@ describe('CartView', () => {
     expect(await screen.findByText('Omborda yetarli emas. Mavjud: 2.')).toBeInTheDocument();
     // The previous cart stays on screen.
     expect(screen.getByText('Demo olma')).toBeInTheDocument();
+  });
+
+  describe('when the API says to slow down (429)', () => {
+    beforeEach(() => vi.useFakeTimers({ shouldAdvanceTime: true }));
+    afterEach(() => vi.useRealTimers());
+
+    it('locks the lines for Retry-After, says why, then unlocks and clears the note', async () => {
+      session.apiFetch.mockResolvedValueOnce(respond(cart()));
+      renderCart();
+      await screen.findByText('Demo olma');
+
+      session.apiFetch.mockResolvedValueOnce(
+        Response.json(
+          { error: { code: 'rate_limited', message: 'x' } },
+          { status: 429, headers: { 'Retry-After': '2' } },
+        ),
+      );
+      fireEvent.click(screen.getByRole('button', { name: 'Ko‘paytirish' }));
+      expect(await screen.findByRole('alert')).toHaveTextContent(
+        'Juda ko‘p urinish. Birozdan keyin qayta urinib ko‘ring.',
+      );
+      const more = screen.getByRole('button', { name: 'Ko‘paytirish' });
+      const less = screen.getByRole('button', { name: 'Kamaytirish' });
+      expect(more).toBeDisabled();
+      expect(less).toBeDisabled();
+      expect(screen.getByRole('button', { name: 'O‘chirish: Demo olma' })).toBeDisabled();
+      expect(session.apiFetch).toHaveBeenCalledTimes(2);
+      // The cart on screen is the one from before.
+      expect(screen.getByText('Demo olma')).toBeInTheDocument();
+
+      for (let second = 0; second < 15 && (more as HTMLButtonElement).disabled; second += 1) {
+        await act(async () => {
+          vi.advanceTimersByTime(1000);
+        });
+      }
+      expect(more).toBeEnabled();
+      expect(screen.queryByText(/Juda ko‘p urinish/)).toBeNull();
+    });
   });
 
   it('shows the sign-in prompt instead of the cart when anonymous', () => {
