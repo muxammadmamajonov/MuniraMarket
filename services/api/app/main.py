@@ -123,6 +123,7 @@ def create_app(
         lifespan=lifespan,
     )
     app.state.settings = settings
+    app.state.clock = clock
     app.state.session_factory = create_session_factory(engine)
     app.state.identity_verifier = build_identity_verifier(settings, clock)
     app.state.service_authenticator = ServiceAuthenticator(
@@ -159,10 +160,17 @@ def create_app(
         },
     )
     # Outermost of our middleware: delivers queued session cookies on every response (errors and
-    # unhandled exceptions included) and marks auth and cart responses no-store.
+    # unhandled exceptions included) and marks session-bound responses no-store.
     app.add_middleware(
         SessionCookieMiddleware,
-        no_store_paths=(f"{API_PREFIX}/auth", f"{API_PREFIX}/cart"),
+        no_store_paths=(
+            f"{API_PREFIX}/auth",
+            f"{API_PREFIX}/cart",
+            f"{API_PREFIX}/checkout",
+            f"{API_PREFIX}/orders",
+            f"{API_PREFIX}/admin",
+            f"{API_PREFIX}/internal",
+        ),
     )
 
     register_exception_handlers(app)

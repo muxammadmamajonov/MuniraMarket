@@ -1,4 +1,15 @@
-import type { ProductSort, ProductUnit } from '@muniramarket/contracts';
+import type { OrderStatus, PaymentMethod, ProductSort, ProductUnit } from '@muniramarket/contracts';
+
+/**
+ * Noun forms by CLDR plural category. Russian needs `one` / `few` / `many`; Uzbek uses the same
+ * text for every category. `{count}` is filled by `formatPlural`.
+ */
+export interface PluralForms {
+  one: string;
+  few: string;
+  many: string;
+  other: string;
+}
 
 /**
  * Shape every dictionary must satisfy. `uz.ts` and `ru.ts` are both typed as `Dictionary`, so a
@@ -15,6 +26,8 @@ export interface Dictionary {
   nav: {
     home: string;
     cart: string;
+    /** "My orders". */
+    orders: string;
     search: string;
     mainNavigation: string;
   };
@@ -95,12 +108,198 @@ export interface Dictionary {
     /** `{available}` */
     issueInsufficientStock: string;
     issuesNote: string;
-    checkoutSoon: string;
+    /** Checkout button; the Telegram MainButton appends the total. */
+    checkout: string;
     loadFailed: string;
     updateFailed: string;
     /** `{available}` */
     updateInsufficientStock: string;
     retry: string;
+  };
+  checkout: {
+    title: string;
+    loading: string;
+    loadFailed: string;
+    retry: string;
+    emptyTitle: string;
+    emptyHint: string;
+    toCatalog: string;
+    backToCart: string;
+    optional: string;
+    sections: {
+      delivery: string;
+      recipient: string;
+      payment: string;
+      comment: string;
+      summary: string;
+    };
+    labels: {
+      district: string;
+      street: string;
+      house: string;
+      apartment: string;
+      entrance: string;
+      floor: string;
+      landmark: string;
+      recipientName: string;
+      recipientPhone: string;
+      comment: string;
+    };
+    districtPlaceholder: string;
+    /** Option group label. `{zone}`, `{fee}` */
+    zoneGroup: string;
+    noZones: string;
+    /** `{time}` */
+    zoneHours: string;
+    /** `{min}` */
+    zoneMinOrder: string;
+    /** `{threshold}` */
+    zoneFreeFrom: string;
+    /** Shown when the zone is closed right now. `{time}` */
+    closedNow: string;
+    paymentHint: string;
+    commentPlaceholder: string;
+    /** `{count}`, `{max}` */
+    charCounter: string;
+    summary: {
+      items: PluralForms;
+      subtotal: string;
+      delivery: string;
+      free: string;
+      pickDistrict: string;
+      total: string;
+      calculating: string;
+      /** `{amount}` */
+      freeRemaining: string;
+      freeReached: string;
+      /** `{min}` */
+      belowMin: string;
+      cartIssues: string;
+      quoteFailed: string;
+      districtNotServed: string;
+      /** `{hint}` shown when the submit button is disabled because of the form. */
+      fixFields: string;
+    };
+    submit: string;
+    placing: string;
+    confirmNewTotal: string;
+    errors: {
+      required: string;
+      /** `{min}` */
+      tooShort: string;
+      /** `{max}` */
+      tooLong: string;
+      phone: string;
+      singleLine: string;
+      invalid: string;
+      /** Summary shown above the form after a failed submit. */
+      formInvalid: string;
+    };
+    failures: {
+      priceChangedTitle: string;
+      /** `{from}`, `{to}` */
+      priceChanged: string;
+      priceWas: string;
+      priceNow: string;
+      /** `{available}` */
+      insufficientStock: string;
+      insufficientStockUnknown: string;
+      productInactive: string;
+      cartEmpty: string;
+      belowMin: string;
+      districtNotServed: string;
+      /** `{seconds}` */
+      rateLimited: string;
+      session: string;
+      blocked: string;
+      network: string;
+      server: string;
+      keyConflict: string;
+      tooManyOpenOrders: string;
+      goToOrders: string;
+      unmapped: string;
+      retry: string;
+      goToCart: string;
+    };
+  };
+  orders: {
+    title: string;
+    loading: string;
+    loadFailed: string;
+    retry: string;
+    emptyTitle: string;
+    emptyHint: string;
+    toCatalog: string;
+    /** `{page}` */
+    pageEmpty: string;
+    firstPage: string;
+    /** `{number}` */
+    orderNumber: string;
+    items: PluralForms;
+    status: Record<OrderStatus, string>;
+    payment: Record<PaymentMethod, string>;
+    detail: {
+      back: string;
+      /** `{number}` */
+      loadingLabel: string;
+      placedTitle: string;
+      placedHint: string;
+      notFoundTitle: string;
+      notFoundMessage: string;
+      timeline: string;
+      /** Marks the latest entry of the timeline. */
+      current: string;
+      itemsHeading: string;
+      /** `{quantity}`, `{price}`, `{unit}` */
+      lineBreakdown: string;
+      subtotal: string;
+      deliveryFee: string;
+      free: string;
+      total: string;
+      deliveryHeading: string;
+      district: string;
+      street: string;
+      house: string;
+      apartment: string;
+      entrance: string;
+      floor: string;
+      landmark: string;
+      recipientHeading: string;
+      name: string;
+      phone: string;
+      paymentHeading: string;
+      commentHeading: string;
+      cancelReasonHeading: string;
+      cancelledNotice: string;
+      productRemoved: string;
+    };
+    cancel: {
+      button: string;
+      title: string;
+      description: string;
+      reasonLabel: string;
+      quickLabel: string;
+      quickReasons: {
+        changedMind: string;
+        wrongOrder: string;
+        wrongAddress: string;
+        foundElsewhere: string;
+      };
+      /** `{count}`, `{max}` */
+      counter: string;
+      confirm: string;
+      cancelling: string;
+      keep: string;
+      close: string;
+      /** `{min}` */
+      tooShort: string;
+      notCancellable: string;
+      /** `{status}` */
+      notCancellableNow: string;
+      network: string;
+      generic: string;
+      done: string;
+    };
   };
   auth: {
     checking: string;

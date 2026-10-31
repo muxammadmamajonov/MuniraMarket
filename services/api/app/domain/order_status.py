@@ -34,6 +34,16 @@ ALLOWED_TRANSITIONS: dict[OrderStatus, frozenset[OrderStatus]] = {
 }
 
 
+# A customer may cancel only before the order is being picked; later, only an operator can.
+CUSTOMER_CANCELLABLE_STATUSES: frozenset[OrderStatus] = frozenset(
+    {OrderStatus.NEW, OrderStatus.CONFIRMED}
+)
+
+
+def customer_can_cancel(current: OrderStatus) -> bool:
+    return current in CUSTOMER_CANCELLABLE_STATUSES
+
+
 class InvalidOrderTransitionError(ValueError):
     """Raised when a status change is not permitted."""
 

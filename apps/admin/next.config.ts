@@ -2,6 +2,12 @@ import type { NextConfig } from 'next';
 
 // Unlike the public web app, the admin is never embedded (not even by Telegram Web), so framing
 // is denied outright.
+//
+// The full Content-Security-Policy of HTML pages needs a per-request nonce, so `src/proxy.ts`
+// builds it (`src/lib/csp.ts`) and it replaces the static policy below on pages. The static
+// `frame-ancestors` policy stays as a floor for every response the proxy does not handle (the API
+// proxy, Next assets, robots.txt). Pages get `Cache-Control: private, no-store` from the proxy; API
+// responses are `no-store` through `src/lib/api/api-proxy.ts`.
 const securityHeaders = [
   { key: 'X-Content-Type-Options', value: 'nosniff' },
   { key: 'Referrer-Policy', value: 'no-referrer' },

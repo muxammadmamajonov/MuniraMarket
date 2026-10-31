@@ -34,6 +34,16 @@ CART_WRITE: Final = RateLimitRule("cart_write", 60, 60)  # per user
 # cut off cheaply (ADR 0007).
 CART_IP: Final = RateLimitRule("cart_ip", 300, 60)  # per IP, every /cart route
 CATALOG_IP: Final = RateLimitRule("catalog_ip", 300, 60)  # per IP, public catalog reads
+# Checkout and orders (phase 3). The IP ceiling covers every /checkout and /orders route.
+ORDERS_IP: Final = RateLimitRule("orders_ip", 300, 60)  # per IP
+CHECKOUT_QUOTE: Final = RateLimitRule("checkout_quote", 60, 60)  # per user
+ORDER_CREATE: Final = RateLimitRule("order_create", 10, 60)  # per user
+ORDER_READ: Final = RateLimitRule("order_read", 120, 60)  # per user
+ORDER_CANCEL: Final = RateLimitRule("order_cancel", 20, 60)  # per user
+# Operator/admin back office.
+ADMIN_IP: Final = RateLimitRule("admin_ip", 600, 60)  # per IP
+ADMIN_READ: Final = RateLimitRule("admin_read", 300, 60)  # per user
+ADMIN_WRITE: Final = RateLimitRule("admin_write", 120, 60)  # per user
 
 
 @dataclass(frozen=True, slots=True)

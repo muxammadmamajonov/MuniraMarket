@@ -17,7 +17,12 @@ import { signRequest } from './signer.js';
 export const DEFAULT_TIMEOUT_MS = 8000;
 const SESSION_PATH = '/api/v1/internal/telegram/session';
 const ME_PATH = '/api/v1/internal/telegram/me';
+const NOTIFICATIONS_PATH = '/api/v1/internal/telegram/notifications';
 const MAX_TELEGRAM_ID = 2 ** 52;
+const MAX_CLAIM_LIMIT = 50;
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const NOTIFICATION_OUTCOMES = Object.freeze(['delivered', 'recipient_blocked', 'retry', 'failed']);
+const ERROR_CODE_RE = /^[a-z0-9_.-]{1,64}$/;
 
 /**
  * Subset of the SDK `fetch` that we rely on.
@@ -50,6 +55,15 @@ function assertTelegramUserId(id) {
   if (!Number.isSafeInteger(id) || id <= 0 || id > MAX_TELEGRAM_ID) {
     throw new TypeError('Invalid Telegram user id');
   }
+}
+
+/**
+ * @param {unknown} id
+ * @returns {string}
+ */
+function assertUuid(id) {
+  if (typeof id !== 'string' || !UUID_RE.test(id)) throw new TypeError('Invalid message id');
+  return id;
 }
 
 /**
@@ -176,6 +190,46 @@ export function createCoreApiClient({
      */
     getMe(telegramUserId) {
       return request('GET', ME_PATH, { actorTelegramUserId: telegramUserId });
+    },
+
+    /**
+     * Leases up to `limit` due notification outbox messages (ADR 0008). A service call: signed
+     * with an EMPTY actor, because draining acts for the service, never for a user. The Core API
+     * answers `{ items, lease_expires_at }`; the result is returned unvalidated (the drain adapter
+     * validates it).
+     * @param {{ limit: number }} options integer 1..50
+     */
+    async claimNotifications({ limit }) {
+      if (!Number.isInteger(limit) || limit < 1 || limit > MAX_CLAIM_LIMIT) {
+        throw new TypeError('Invalid claim limit');
+      }
+      return request('POST', `${NOTIFICATIONS_PATH}/claim`, { json: { limit } });
+    },
+
+    /**
+     * Reports what happened to one claimed message. Resolves with null on success (HTTP 204);
+     * rejects with `CoreApiError` (404 `NOT_FOUND` when unknown, finished, never claimed, the lease
+     * expired, or another worker reclaimed it since).
+     * @param {string} id outbox message UUID
+     * @param {{ attempt: number, outcome: import('../types.js').NotificationOutcome, errorCode?: string }} result
+     *   `attempt` is the `attempts` value of the claimed item (the lease's fencing token).
+     */
+    async reportNotification(id, { attempt, outcome, errorCode }) {
+      assertUuid(id);
+      // The claim's `attempts`: the lease's fencing token. A report for an older claim (this
+      // worker's lease expired and another worker reclaimed the message) is refused with 404.
+      if (!Number.isSafeInteger(attempt) || attempt < 1) throw new TypeError('Invalid attempt');
+      if (!NOTIFICATION_OUTCOMES.includes(outcome)) throw new TypeError('Invalid outcome');
+      /** @type {{ attempt: number, outcome: string, error_code?: string }} */
+      const json = { attempt, outcome };
+      if (errorCode !== undefined) {
+        if (typeof errorCode !== 'string' || !ERROR_CODE_RE.test(errorCode)) {
+          throw new TypeError('Invalid error code');
+        }
+        json.error_code = errorCode;
+      }
+      await request('POST', `${NOTIFICATIONS_PATH}/${id}/result`, { json });
+      return null;
     },
   };
 }

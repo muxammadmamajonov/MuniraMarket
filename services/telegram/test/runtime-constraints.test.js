@@ -122,6 +122,7 @@ describe('tgcloud/ runtime constraints', () => {
       'handlers/message.js',
       'lib/miniapp/profile.js',
       'lib/notifications/orderStatus.js',
+      'lib/notifications/transport.js',
       'schema.js',
     ]);
   });

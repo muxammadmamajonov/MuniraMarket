@@ -3,17 +3,18 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { LocaleProvider } from '@/i18n/context';
 import { TelegramProvider } from '@/lib/telegram';
 import { installWebApp, makeWebApp, uninstallWebApp } from '@/lib/telegram/test-helpers';
-import { TelegramChrome, isHomePath } from './telegram-chrome';
+import { TelegramChrome, isCheckoutPath, isHomePath } from './telegram-chrome';
 
 const nav = vi.hoisted(() => ({
   pathname: '/uz/cart',
   back: vi.fn(),
   push: vi.fn(),
+  replace: vi.fn(),
 }));
 
 vi.mock('next/navigation', () => ({
   usePathname: () => nav.pathname,
-  useRouter: () => ({ back: nav.back, push: nav.push }),
+  useRouter: () => ({ back: nav.back, push: nav.push, replace: nav.replace }),
 }));
 
 function renderChrome() {
@@ -30,6 +31,7 @@ beforeEach(() => {
   nav.pathname = '/uz/cart';
   nav.back.mockReset();
   nav.push.mockReset();
+  nav.replace.mockReset();
 });
 
 afterEach(() => {
@@ -47,7 +49,28 @@ describe('isHomePath', () => {
   });
 });
 
+describe('isCheckoutPath', () => {
+  it('is true only for the checkout page', () => {
+    expect(isCheckoutPath('/uz/checkout')).toBe(true);
+    expect(isCheckoutPath('/ru/checkout')).toBe(true);
+    expect(isCheckoutPath('/uz/cart')).toBe(false);
+    expect(isCheckoutPath('/uz/checkout/x')).toBe(false);
+    expect(isCheckoutPath('/checkout')).toBe(false);
+  });
+});
+
 describe('TelegramChrome', () => {
+  it('sends the BackButton of the checkout page to the cart, whatever the history holds', () => {
+    nav.pathname = '/uz/checkout';
+    const webApp = makeWebApp();
+    installWebApp(webApp);
+    vi.spyOn(window.history, 'length', 'get').mockReturnValue(5);
+    renderChrome();
+    vi.mocked(webApp.BackButton.onClick).mock.calls[0]?.[0]();
+    expect(nav.replace).toHaveBeenCalledWith('/uz/cart');
+    expect(nav.back).not.toHaveBeenCalled();
+  });
+
   it('shows the BackButton on pages other than home and goes back in history', () => {
     const webApp = makeWebApp();
     installWebApp(webApp);

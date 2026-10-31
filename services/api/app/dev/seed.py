@@ -8,6 +8,10 @@ touched, so a second run changes nothing.
 The data deliberately includes the edge cases the catalog and cart must handle: products with an
 old price, untracked stock, an out-of-stock product, an inactive product, an inactive category,
 and an active category nested under an inactive one (which must stay hidden).
+
+Delivery zones (``Demo``/``Демо`` names, round fees, Asia/Tashkent hours) cover Tashkent's
+districts: a zone with a free-delivery threshold, one with a higher minimum order, one where
+delivery is never free, and an inactive zone whose districts are therefore not served.
 """
 
 import asyncio
@@ -16,6 +20,7 @@ import sys
 import uuid
 from collections.abc import Iterable
 from dataclasses import dataclass
+from datetime import time
 
 from sqlalchemy import ColumnElement, or_, select
 from sqlalchemy.dialects.postgresql import insert
@@ -23,7 +28,9 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core.config import get_settings
 from app.db.session import create_engine, create_session_factory
+from app.domain.delivery import DistrictCode
 from app.models.catalog import Category, Product
+from app.models.delivery import DeliveryZone, DeliveryZoneDistrict
 from app.models.enums import Unit
 
 logger = logging.getLogger("app.dev.seed")
@@ -243,6 +250,87 @@ DEMO_PRODUCTS: tuple[SeedProduct, ...] = (
     ),
 )
 
+
+@dataclass(frozen=True, slots=True)
+class SeedZone:
+    slug: str
+    name_uz: str
+    name_ru: str
+    delivery_fee_uzs: int
+    free_delivery_threshold_uzs: int | None
+    min_order_uzs: int
+    opens_at: time
+    closes_at: time
+    sort_order: int
+    districts: tuple[DistrictCode, ...]
+    is_active: bool = True
+
+
+# Every district appears in exactly one zone (``delivery_zone_districts`` enforces it).
+DEMO_ZONES: tuple[SeedZone, ...] = (
+    SeedZone(
+        "demo-markaziy",
+        "Demo markaziy zona",
+        "Демо центральная зона",
+        delivery_fee_uzs=15_000,
+        free_delivery_threshold_uzs=300_000,
+        min_order_uzs=50_000,
+        opens_at=time(9, 0),
+        closes_at=time(21, 0),
+        sort_order=10,
+        districts=("mirobod", "yakkasaroy", "shayxontohur", "yunusobod", "mirzo_ulugbek"),
+    ),
+    SeedZone(
+        "demo-chekka",
+        "Demo chekka zona",
+        "Демо окраинная зона",
+        delivery_fee_uzs=25_000,
+        free_delivery_threshold_uzs=500_000,
+        min_order_uzs=100_000,
+        opens_at=time(9, 0),
+        closes_at=time(20, 0),
+        sort_order=20,
+        districts=("chilonzor", "olmazor", "uchtepa", "yashnobod"),
+    ),
+    SeedZone(
+        "demo-janubiy",
+        "Demo janubiy zona",
+        "Демо южная зона",
+        delivery_fee_uzs=30_000,
+        free_delivery_threshold_uzs=None,
+        min_order_uzs=150_000,
+        opens_at=time(10, 0),
+        closes_at=time(19, 0),
+        sort_order=30,
+        districts=("sergeli",),
+    ),
+    SeedZone(
+        "demo-yopiq",
+        "Demo yopiq zona",
+        "Демо закрытая зона",
+        delivery_fee_uzs=40_000,
+        free_delivery_threshold_uzs=None,
+        min_order_uzs=200_000,
+        opens_at=time(10, 0),
+        closes_at=time(18, 0),
+        sort_order=40,
+        districts=("bektemir", "yangihayot"),
+        is_active=False,
+    ),
+)
+
+ZONE_COLUMNS = (
+    "name_uz",
+    "name_ru",
+    "delivery_fee_uzs",
+    "free_delivery_threshold_uzs",
+    "min_order_uzs",
+    "opens_at",
+    "closes_at",
+    "sort_order",
+    "is_active",
+)
+
 CATEGORY_COLUMNS = ("parent_id", "name_uz", "name_ru", "image_url", "sort_order", "is_active")
 PRODUCT_COLUMNS = (
     "category_id",
@@ -265,10 +353,13 @@ PRODUCT_COLUMNS = (
 class SeedResult:
     categories_written: int
     products_written: int
+    zones_written: int = 0
 
 
 def _differs(
-    model: type[Category] | type[Product], excluded: object, columns: Iterable[str]
+    model: type[Category] | type[Product] | type[DeliveryZone] | type[DeliveryZoneDistrict],
+    excluded: object,
+    columns: Iterable[str],
 ) -> ColumnElement[bool]:
     """True when any listed column of the stored row differs from the incoming one."""
     return or_(
@@ -332,13 +423,45 @@ async def _seed_products(session: AsyncSession, category_ids: dict[str, uuid.UUI
     return written
 
 
+async def _seed_zones(session: AsyncSession) -> int:
+    """Upsert zones by slug and districts by district; returns zone rows written."""
+    written = 0
+    for zone in DEMO_ZONES:
+        values = {column: getattr(zone, column) for column in ZONE_COLUMNS}
+        statement = insert(DeliveryZone).values(slug=zone.slug, **values)
+        statement = statement.on_conflict_do_update(
+            index_elements=[DeliveryZone.slug],
+            set_={column: getattr(statement.excluded, column) for column in ZONE_COLUMNS},
+            where=_differs(DeliveryZone, statement.excluded, ZONE_COLUMNS),
+        )
+        written += (await session.execute(statement)).rowcount  # type: ignore[attr-defined]
+        zone_id = (
+            await session.execute(select(DeliveryZone.id).where(DeliveryZone.slug == zone.slug))
+        ).scalar_one()
+        for district in zone.districts:
+            link = insert(DeliveryZoneDistrict).values(district=district, zone_id=zone_id)
+            await session.execute(
+                link.on_conflict_do_update(
+                    index_elements=[DeliveryZoneDistrict.district],
+                    set_={"zone_id": link.excluded.zone_id},
+                    where=_differs(DeliveryZoneDistrict, link.excluded, ("zone_id",)),
+                )
+            )
+    return written
+
+
 async def seed(session_factory: async_sessionmaker[AsyncSession]) -> SeedResult:
-    """Upsert the demo catalog in one transaction."""
+    """Upsert the demo catalog and delivery zones in one transaction."""
     async with session_factory() as session:
         category_ids, categories_written = await _seed_categories(session)
         products_written = await _seed_products(session, category_ids)
+        zones_written = await _seed_zones(session)
         await session.commit()
-    return SeedResult(categories_written=categories_written, products_written=products_written)
+    return SeedResult(
+        categories_written=categories_written,
+        products_written=products_written,
+        zones_written=zones_written,
+    )
 
 
 async def main() -> int:
@@ -356,11 +479,14 @@ async def main() -> int:
     finally:
         await engine.dispose()
     logger.info(
-        "demo catalog seeded: %d categories and %d products written (%d/%d unchanged)",
+        "demo data seeded: %d categories, %d products and %d delivery zones written "
+        "(%d/%d/%d unchanged)",
         result.categories_written,
         result.products_written,
+        result.zones_written,
         len(DEMO_CATEGORIES) - result.categories_written,
         len(DEMO_PRODUCTS) - result.products_written,
+        len(DEMO_ZONES) - result.zones_written,
     )
     return 0
 

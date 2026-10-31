@@ -1,7 +1,10 @@
 import { SUPPORTED_LOCALES, isLocale } from '@muniramarket/contracts';
 import type { Metadata, Viewport } from 'next';
 import { notFound } from 'next/navigation';
+import { connection } from 'next/server';
 import { getDictionary } from '@/i18n';
+import { LocaleProvider } from '@/i18n/context';
+import { SessionProvider } from '@/lib/session';
 import '../globals.css';
 
 // Only the supported locales exist; anything else is a 404 without rendering.
@@ -14,6 +17,7 @@ export function generateStaticParams() {
 export const viewport: Viewport = {
   width: 'device-width',
   initialScale: 1,
+  colorScheme: 'light dark',
 };
 
 export async function generateMetadata({ params }: LayoutProps<'/[locale]'>): Promise<Metadata> {
@@ -29,12 +33,21 @@ export async function generateMetadata({ params }: LayoutProps<'/[locale]'>): Pr
 }
 
 export default async function RootLayout({ children, params }: LayoutProps<'/[locale]'>) {
+  // The Content-Security-Policy nonce (src/proxy.ts) exists only on a live request, and Next can
+  // apply it only while rendering that request. Opting the whole tree into dynamic rendering
+  // means no page is prerendered at build time without a nonce.
+  await connection();
+
   const { locale } = await params;
   if (!isLocale(locale)) notFound();
 
   return (
     <html lang={locale}>
-      <body>{children}</body>
+      <body>
+        <LocaleProvider locale={locale}>
+          <SessionProvider>{children}</SessionProvider>
+        </LocaleProvider>
+      </body>
     </html>
   );
 }

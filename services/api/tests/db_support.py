@@ -88,7 +88,19 @@ async def drop_schema(url: str, schema: str) -> None:
         await admin.dispose()
 
 
-APP_TABLES = ("order_items", "orders", "cart_items", "carts", "products", "categories", "users")
+APP_TABLES = (
+    "notification_outbox",
+    "order_status_history",
+    "order_items",
+    "orders",
+    "cart_items",
+    "carts",
+    "products",
+    "categories",
+    "delivery_zone_districts",
+    "delivery_zones",
+    "users",
+)
 
 
 async def engine_schema(engine: AsyncEngine) -> str:

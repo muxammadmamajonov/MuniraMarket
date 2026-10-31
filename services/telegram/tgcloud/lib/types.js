@@ -13,6 +13,11 @@
  */
 
 /**
+ * Outcome of one notification delivery attempt, as reported to the Core API outbox.
+ * @typedef {'delivered' | 'recipient_blocked' | 'retry' | 'failed'} NotificationOutcome
+ */
+
+/**
  * Telegram user as delivered in `message.from` or `ctx.initData.user`.
  * @typedef {object} TelegramUser
  * @property {number} id
@@ -42,6 +47,8 @@
  * @property {(method: string, path: string, options?: {actorTelegramUserId?: number, json?: unknown}) => Promise<unknown>} request
  * @property {(user: TelegramUser) => Promise<unknown>} syncTelegramUser
  * @property {(telegramUserId: number) => Promise<unknown>} getMe
+ * @property {(options: { limit: number }) => Promise<unknown>} claimNotifications
+ * @property {(id: string, result: { attempt: number, outcome: NotificationOutcome, errorCode?: string }) => Promise<null>} reportNotification
  */
 
 export {};

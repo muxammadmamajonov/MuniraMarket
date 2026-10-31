@@ -1,6 +1,16 @@
 @import 'tailwindcss';
 @import '@muniramarket/ui/styles/tokens.css';
 
+/*
+ * Motion tokens. The built-in easings are too weak for UI: `ease-out-strong` for things that
+ * appear or respond (press feedback, banners, the backdrop), `ease-drawer` (iOS-like) for sheets
+ * sliding in from the bottom. Only transform and opacity are ever animated.
+ */
+@theme {
+  --ease-out-strong: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
+}
+
 @layer base {
   html {
     -webkit-text-size-adjust: 100%;
@@ -27,6 +37,18 @@
     -webkit-user-select: none;
   }
 
+  /* Money and other figures must line up and never jitter when they update. */
+  [data-money] {
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+
+  /* Text a customer typed (names, streets, landmarks, comments) has no break opportunities when
+     it is one long token; let it wrap anywhere instead of pushing the layout wider. */
+  [data-user-text] {
+    overflow-wrap: anywhere;
+  }
+
   @media (prefers-reduced-motion: reduce) {
     *,
     ::before,
@@ -37,4 +59,24 @@
       transition-duration: 0.01ms !important;
     }
   }
+}
+
+/*
+ * One-shot entrance for notices and banners: a short fade with a few pixels of rise. It is a
+ * keyframe animation on purpose (it plays once and is never retargeted). Under reduced motion the
+ * rule above collapses it to an instant change.
+ */
+@keyframes mm-enter {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.mm-enter {
+  animation: mm-enter 180ms var(--ease-out-strong) both;
 }

@@ -80,10 +80,13 @@ async def test_database_constraints(session_factory: async_sessionmaker[AsyncSes
                 subtotal_uzs=1,
                 delivery_fee_uzs=0,
                 total_uzs=1,
+                item_count=1,
                 payment_method=PaymentMethod.CASH_ON_DELIVERY,
                 recipient_name="x",
-                recipient_phone="+998000000000",
+                recipient_phone="+998001234567",
                 address_snapshot={"street": "x"},
+                idempotency_key="test-key-0000000001",
+                idempotency_request_hash="0" * 64,
             )
         )
         with pytest.raises(IntegrityError, match="cancelled_requires_reason"):
