@@ -128,6 +128,16 @@ export interface Dictionary {
     emptyTitle: string;
     emptyHint: string;
     toCatalog: string;
+    /**
+     * Shown instead of the empty cart when an attempt that did not get its answer (a timeout, then
+     * a reload) turns out to have placed the order.
+     */
+    recovered: {
+      title: string;
+      /** `{number}` */
+      hint: string;
+      action: string;
+    };
     backToCart: string;
     optional: string;
     sections: {
@@ -285,6 +295,9 @@ export interface Dictionary {
       loadingLabel: string;
       placedTitle: string;
       placedHint: string;
+      /** `?placed=found`: the retry was answered with the order an earlier attempt created. */
+      foundTitle: string;
+      foundHint: string;
       notFoundTitle: string;
       notFoundMessage: string;
       timeline: string;

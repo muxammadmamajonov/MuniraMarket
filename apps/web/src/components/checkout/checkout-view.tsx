@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useRef } from 'react';
 import { useI18n } from '@/i18n/context';
+import { formatMessage } from '@/i18n/format';
 import { dayLabel, slotWindow } from '@/lib/checkout/slots';
 import { useCheckoutFlow, type FocusTarget } from '@/lib/checkout/use-checkout';
 import { zoneForDistrict } from '@/lib/checkout/zones';
@@ -64,8 +65,10 @@ export function CheckoutView() {
   }, []);
 
   const onPlaced = useCallback(
-    (order: { id: string }) => {
-      router.replace(`/${locale}/orders/${encodeURIComponent(order.id)}?placed=1`);
+    (order: { id: string }, replayed: boolean) => {
+      // A replayed answer is an order an earlier attempt created: say "we found it", not "placed".
+      const placed = replayed ? 'found' : '1';
+      router.replace(`/${locale}/orders/${encodeURIComponent(order.id)}?placed=${placed}`);
     },
     [router, locale],
   );
@@ -130,6 +133,25 @@ export function CheckoutView() {
         title={dict.checkout.loadFailed}
         retryLabel={dict.checkout.retry}
         onRetry={() => void flow.reload()}
+      />
+    );
+  }
+  if (load.cart.items.length === 0 && load.recovered !== null) {
+    const { recovered } = load;
+    return (
+      <EmptyState
+        role="status"
+        data-testid="recovered-order"
+        title={dict.checkout.recovered.title}
+        description={formatMessage(dict.checkout.recovered.hint, { number: recovered.number })}
+        action={
+          <Link
+            href={`/${locale}/orders/${encodeURIComponent(recovered.id)}?placed=found`}
+            className={LINK_BUTTON_PRIMARY}
+          >
+            {dict.checkout.recovered.action}
+          </Link>
+        }
       />
     );
   }

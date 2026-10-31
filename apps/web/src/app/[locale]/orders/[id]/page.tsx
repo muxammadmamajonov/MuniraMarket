@@ -12,12 +12,15 @@ export default async function OrderPage({
 }: PageProps<'/[locale]/orders/[id]'>) {
   const { locale, id } = await params;
   if (!isLocale(locale) || !UUID.test(id)) notFound();
-  const placed = firstParam((await searchParams)['placed']) === '1';
+  // `?placed=1` after a new order, `?placed=found` when a retry was answered with an order an
+  // earlier attempt had already created.
+  const placedParam = firstParam((await searchParams)['placed']);
+  const placed = placedParam === '1' || placedParam === 'found';
 
   return (
     <main className="flex-1">
       <PageContainer className="flex flex-col gap-4 py-6">
-        <OrderDetailView id={id} placed={placed} />
+        <OrderDetailView id={id} placed={placed} found={placedParam === 'found'} />
       </PageContainer>
     </main>
   );

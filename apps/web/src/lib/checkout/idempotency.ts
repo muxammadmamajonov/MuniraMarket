@@ -1,4 +1,11 @@
 import { useState } from 'react';
+import {
+  clearPendingAttempt,
+  hashBody,
+  readPendingAttempt,
+  savePendingAttempt,
+  type PendingAttempt,
+} from './pending-attempt';
 
 /**
  * Idempotency and double-submit protection for `POST /orders`.
@@ -12,7 +19,9 @@ import { useState } from 'react';
  * - any change to the body (a different address, or a new `expected_total_uzs` after the customer
  *   confirmed a price change) must use a new key.
  *
- * `fingerprint` is the serialized request body; equal fingerprints share a key.
+ * `fingerprint` is the serialized request body; equal fingerprints share a key. The key is also
+ * kept in `sessionStorage` (`pending-attempt.ts`), so a retry after a reload or a navigation still
+ * finds it.
  */
 
 const KEY_PATTERN = /^[A-Za-z0-9_-]{16,128}$/;
@@ -32,6 +41,38 @@ export function isValidIdempotencyKey(key: string): boolean {
   return KEY_PATTERN.test(key);
 }
 
+/** Who is placing the order and what it costs: stored with the key, never the body itself. */
+export interface AttemptContext {
+  owner: string;
+  totalUzs: number;
+}
+
+/** Where pending attempts outlive the page. `sessionStorage` in the app; a stub in tests. */
+export interface AttemptStore {
+  read: (now: number) => PendingAttempt | null;
+  save: (attempt: PendingAttempt) => void;
+  clear: () => void;
+}
+
+export const sessionAttemptStore: AttemptStore = {
+  read: readPendingAttempt,
+  save: savePendingAttempt,
+  clear: clearPendingAttempt,
+};
+
+/** An in-memory store: nothing survives the controller. */
+export const NO_ATTEMPT_STORE: AttemptStore = {
+  read: () => null,
+  save: () => undefined,
+  clear: () => undefined,
+};
+
+export interface SubmissionControllerOptions {
+  generate?: () => string;
+  store?: AttemptStore;
+  now?: () => number;
+}
+
 export interface SubmissionController {
   /**
    * Takes the submission lock. Returns `false` when an attempt is already in flight. Synchronous
@@ -41,18 +82,26 @@ export interface SubmissionController {
   tryLock: () => boolean;
   /** Releases the lock after a failed attempt so the customer can retry. */
   unlock: () => void;
-  /** The key for a request with this fingerprint: unchanged while the fingerprint is unchanged. */
-  keyFor: (fingerprint: string) => string;
-  /** Forgets the current key (after `idempotency_key_conflict`, or once an order exists). */
+  /**
+   * The key for a request with this fingerprint: unchanged while the fingerprint (and the owner)
+   * is unchanged, including across reloads within the stored attempt's lifetime.
+   */
+  keyFor: (fingerprint: string, context: AttemptContext) => string;
+  /**
+   * Forgets the current key, here and in storage (after `idempotency_key_conflict`, or once an
+   * order exists).
+   */
   reset: () => void;
   readonly locked: boolean;
 }
 
-export function createSubmissionController(
-  generate: () => string = generateIdempotencyKey,
-): SubmissionController {
+export function createSubmissionController({
+  generate = generateIdempotencyKey,
+  store = sessionAttemptStore,
+  now = Date.now,
+}: SubmissionControllerOptions = {}): SubmissionController {
   let locked = false;
-  let current: { fingerprint: string; key: string } | null = null;
+  let current: { owner: string; bodyHash: string; key: string } | null = null;
 
   return {
     tryLock() {
@@ -63,12 +112,22 @@ export function createSubmissionController(
     unlock() {
       locked = false;
     },
-    keyFor(fingerprint) {
-      if (current?.fingerprint !== fingerprint) current = { fingerprint, key: generate() };
+    keyFor(fingerprint, { owner, totalUzs }) {
+      const bodyHash = hashBody(fingerprint);
+      if (current?.owner === owner && current.bodyHash === bodyHash) return current.key;
+      // Not this page's attempt: maybe one from before a reload.
+      const stored = store.read(now());
+      if (stored?.owner === owner && stored.bodyHash === bodyHash) {
+        current = { owner, bodyHash, key: stored.key };
+        return stored.key;
+      }
+      current = { owner, bodyHash, key: generate() };
+      store.save({ key: current.key, bodyHash, owner, totalUzs, createdAt: now() });
       return current.key;
     },
     reset() {
       current = null;
+      store.clear();
     },
     get locked() {
       return locked;
@@ -76,7 +135,7 @@ export function createSubmissionController(
   };
 }
 
-/** One controller per mounted checkout form; it lives as long as the form does. */
+/** One controller per mounted checkout form; its key is also kept in this tab's storage. */
 export function useSubmissionController(): SubmissionController {
   const [controller] = useState(() => createSubmissionController());
   return controller;

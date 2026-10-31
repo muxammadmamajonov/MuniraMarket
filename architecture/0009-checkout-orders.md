@@ -26,6 +26,16 @@ total and pressing "order".
   the same validated body returns the original order (`200`, `Idempotent-Replayed: true`); the
   same key with another body is `409 idempotency_key_conflict`. The key check runs under the
   cart lock, and a unique constraint backs it for the race.
+- **Client keys outlive a reload.** The storefront keeps the unconfirmed attempt in
+  `sessionStorage` (`apps/web/src/lib/checkout/pending-attempt.ts`): the key, a hash of the
+  serialized body (never the body: it holds name, phone and address), the user id, the total and
+  the start time. A retry with an unchanged body reuses the key even after a reload or a
+  navigation; a changed body gets a new key that replaces it. It is dropped once an order exists,
+  after `idempotency_key_conflict`, and after 24 hours. A replayed answer is shown as "we found
+  your order" (`?placed=found`), and a checkout that loads with an empty cart while an attempt is
+  pending looks among the newest orders for one with that total created since the attempt started
+  (10 minutes of clock skew allowed) and links to it. Storage failures are swallowed: keys then
+  live for the page only, as before.
 - **Stock under locks.** In one transaction: lock the user's cart row, then the products in id
   order (`FOR UPDATE`), re-check, decrement tracked stock (a `CHECK` keeps it non-negative),
   snapshot name/SKU/unit/price into `order_items`, empty the cart, write the status history and

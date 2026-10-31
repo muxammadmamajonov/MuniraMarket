@@ -26,9 +26,11 @@ import { CheckoutView } from './checkout-view';
 const nav = vi.hoisted(() => ({ replace: vi.fn() }));
 vi.mock('next/navigation', () => ({ useRouter: () => ({ replace: nav.replace }) }));
 
+const USER_ID = vi.hoisted(() => '7c1e4b2a-9d3f-4e5a-8b6c-1d2e3f4a5b6c');
 const session = vi.hoisted(() => ({
   status: 'authenticated' as 'loading' | 'authenticated' | 'anonymous' | 'error',
-  user: { first_name: 'Ali', last_name: 'Valiyev' } as {
+  user: { id: USER_ID, first_name: 'Ali', last_name: 'Valiyev' } as {
+    id: string;
     first_name: string;
     last_name: string | null;
   } | null,
@@ -163,7 +165,8 @@ const submitButton = () => within(screen.getByTestId('submit-bar')).getByRole('b
 beforeEach(() => {
   nav.replace.mockReset();
   session.status = 'authenticated';
-  session.user = { first_name: 'Ali', last_name: 'Valiyev' };
+  session.user = { id: USER_ID, first_name: 'Ali', last_name: 'Valiyev' };
+  window.sessionStorage.clear();
   session.apiFetch.mockReset();
   session.retry.mockReset();
   routes = defaultRoutes();
@@ -559,6 +562,8 @@ describe('CheckoutView: placing the order (browser)', () => {
     routes['POST /orders'] = () => respond(order(), 200, { 'Idempotent-Replayed': 'true' });
     fireEvent.click(within(failure).getByRole('button', { name: 'Qayta urinish' }));
     await waitFor(() => expect(nav.replace).toHaveBeenCalledOnce());
+    // The API answered with the order the first attempt had created: "we found your order".
+    expect(nav.replace).toHaveBeenCalledWith(`/uz/orders/${order().id}?placed=found`);
     expect(orderPosts()).toHaveLength(2);
     expect(keyOf(1)).toBe(keyOf(0));
     expect(bodyOf(1)).toEqual(bodyOf(0));
@@ -773,6 +778,162 @@ describe('CheckoutView: placing the order (browser)', () => {
   });
 });
 
+describe('CheckoutView: an attempt that outlives a reload (sessionStorage)', () => {
+  const ATTEMPT = 'mm.checkoutAttempt';
+  const emptyCart = () => cart({ items: [], item_count: 0, subtotal_uzs: 0, total_uzs: 0 });
+  const ordersPage = (items: unknown[]) =>
+    respond({ items, page: 1, page_size: 5, total: items.length, total_pages: 1 });
+  const summaryOf = (overrides: Record<string, unknown> = {}) => ({
+    id: order().id,
+    number: order().number,
+    status: 'NEW',
+    created_at: new Date().toISOString(),
+    item_count: 4,
+    total_uzs: 75000,
+    ...overrides,
+  });
+
+  /** Places an attempt that times out, then "reloads" the page. */
+  async function timeOutThenReload() {
+    routes['POST /orders'] = () => {
+      throw ApiRequestError.network();
+    };
+    const first = renderCheckout();
+    await loaded();
+    await fillValid();
+    fireEvent.click(submitButton());
+    await screen.findByTestId('submit-failure');
+    first.unmount();
+  }
+
+  it('retries the same body after a reload with the SAME key', async () => {
+    await timeOutThenReload();
+    const stored = window.sessionStorage.getItem(ATTEMPT) ?? '';
+    expect(JSON.parse(stored)).toMatchObject({ key: keyOf(0), owner: USER_ID, totalUzs: 75000 });
+    // The stored attempt carries no personal data: only a hash of the body.
+    expect(stored).not.toContain('998001234567');
+    expect(stored).not.toContain('Demo');
+
+    routes['POST /orders'] = () => respond(order(), 200, { 'Idempotent-Replayed': 'true' });
+    renderCheckout();
+    await loaded();
+    await fillValid();
+    fireEvent.click(submitButton());
+    await waitFor(() => expect(nav.replace).toHaveBeenCalledOnce());
+    expect(orderPosts()).toHaveLength(2);
+    expect(keyOf(1)).toBe(keyOf(0));
+    expect(bodyOf(1)).toEqual(bodyOf(0));
+    expect(nav.replace).toHaveBeenCalledWith(`/uz/orders/${order().id}?placed=found`);
+    // An order exists now: nothing is left to retry.
+    expect(window.sessionStorage.getItem(ATTEMPT)).toBeNull();
+  });
+
+  it('uses a new key after a reload when the body changed, and stores that one instead', async () => {
+    await timeOutThenReload();
+    routes['POST /orders'] = () => respond(order(), 201);
+    renderCheckout();
+    await loaded();
+    await fillValid();
+    type('Uy', '14');
+    fireEvent.click(submitButton());
+    await waitFor(() => expect(nav.replace).toHaveBeenCalledOnce());
+    expect(keyOf(1)).not.toBe(keyOf(0));
+    expect(nav.replace).toHaveBeenCalledWith(`/uz/orders/${order().id}?placed=1`);
+    expect(window.sessionStorage.getItem(ATTEMPT)).toBeNull();
+  });
+
+  it('starts over with a fresh key after idempotency_key_conflict', async () => {
+    await timeOutThenReload();
+    routes['POST /orders'] = () => apiError('idempotency_key_conflict', 409);
+    renderCheckout();
+    await loaded();
+    await fillValid();
+    fireEvent.click(submitButton());
+    await screen.findByTestId('submit-failure');
+    expect(keyOf(1)).toBe(keyOf(0));
+    expect(window.sessionStorage.getItem(ATTEMPT)).toBeNull();
+
+    routes['POST /orders'] = () => respond(order(), 201);
+    await waitFor(() => expect(submitButton()).toBeEnabled());
+    fireEvent.click(submitButton());
+    await waitFor(() => expect(orderPosts()).toHaveLength(3));
+    expect(keyOf(2)).not.toBe(keyOf(0));
+  });
+
+  it("does not reuse another account's attempt in the same tab", async () => {
+    await timeOutThenReload();
+    session.user = {
+      id: 'b0b0b0b0-0000-4000-8000-000000000000',
+      first_name: 'Ali',
+      last_name: 'Valiyev',
+    };
+    routes['POST /orders'] = () => respond(order(), 201);
+    renderCheckout();
+    await loaded();
+    await fillValid();
+    fireEvent.click(submitButton());
+    await waitFor(() => expect(orderPosts()).toHaveLength(2));
+    expect(keyOf(1)).not.toBe(keyOf(0));
+  });
+
+  it('says "we found your order" when the cart comes back empty after the reload', async () => {
+    await timeOutThenReload();
+    // The first request had reached the server: the order took the cart's items.
+    routes['GET /cart'] = () => respond(emptyCart());
+    routes['GET /orders?page_size=5'] = () =>
+      ordersPage([summaryOf(), summaryOf({ id: 'older', total_uzs: 12000 })]);
+    renderCheckout();
+
+    const recovered = await screen.findByTestId('recovered-order');
+    expect(recovered).toHaveAttribute('role', 'status');
+    expect(recovered).toHaveTextContent('Buyurtmangizni topdik');
+    expect(recovered).toHaveTextContent('№ MM-000123 buyurtma rasmiylashtirildi');
+    expect(within(recovered).getByRole('link', { name: 'Buyurtmani ochish' })).toHaveAttribute(
+      'href',
+      `/uz/orders/${order().id}?placed=found`,
+    );
+    expect(screen.queryByText('Savatingiz bo‘sh')).toBeNull();
+    expect(window.sessionStorage.getItem(ATTEMPT)).toBeNull();
+  });
+
+  it('speaks Russian', async () => {
+    await timeOutThenReload();
+    routes['GET /cart'] = () => respond(emptyCart());
+    routes['GET /orders?page_size=5'] = () => ordersPage([summaryOf()]);
+    renderCheckout('ru');
+    const recovered = await screen.findByTestId('recovered-order');
+    expect(recovered).toHaveTextContent('Мы нашли ваш заказ');
+    expect(recovered).toHaveTextContent('заказ № MM-000123 оформлен');
+    expect(within(recovered).getByRole('link', { name: 'Открыть заказ' })).toBeInTheDocument();
+  });
+
+  it('shows the plain empty cart when no matching order exists, and forgets the attempt', async () => {
+    await timeOutThenReload();
+    routes['GET /cart'] = () => respond(emptyCart());
+    routes['GET /orders?page_size=5'] = () => ordersPage([summaryOf({ total_uzs: 12000 })]);
+    renderCheckout();
+    expect(await screen.findByText('Savatingiz bo‘sh')).toBeInTheDocument();
+    expect(screen.queryByTestId('recovered-order')).toBeNull();
+    expect(window.sessionStorage.getItem(ATTEMPT)).toBeNull();
+  });
+
+  it('keeps the attempt when the order list cannot be loaded (the next visit asks again)', async () => {
+    await timeOutThenReload();
+    routes['GET /cart'] = () => respond(emptyCart());
+    routes['GET /orders?page_size=5'] = () => apiError('internal_error', 500);
+    renderCheckout();
+    expect(await screen.findByText('Savatingiz bo‘sh')).toBeInTheDocument();
+    expect(window.sessionStorage.getItem(ATTEMPT)).not.toBeNull();
+  });
+
+  it('does not look for an order without a pending attempt', async () => {
+    routes['GET /cart'] = () => respond(emptyCart());
+    renderCheckout();
+    expect(await screen.findByText('Savatingiz bo‘sh')).toBeInTheDocument();
+    expect(calls('GET', '/orders?page_size=5')).toHaveLength(0);
+  });
+});
+
 describe('CheckoutView: submit control', () => {
   it('renders a sticky bottom bar in a browser, padded by the safe-area inset, with the total', async () => {
     renderCheckout();
@@ -981,6 +1142,7 @@ describe('CheckoutView: worst-case data (break-ui)', () => {
 
   it('survives a 100-character Cyrillic recipient name from the session', async () => {
     session.user = {
+      id: USER_ID,
       first_name: WORST.recipientName.split(' ')[0] ?? '',
       last_name: WORST.recipientName.split(' ').slice(1).join(' '),
     };
