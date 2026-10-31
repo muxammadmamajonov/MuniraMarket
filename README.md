@@ -66,8 +66,27 @@ pnpm format:check && pnpm lint && pnpm typecheck && pnpm test && pnpm build
 cd services/api && make lint typecheck test build
 ```
 
-The same checks, plus a secret scan, a contracts drift check and the Playwright storefront E2E,
-run on every pull request.
+The same checks, plus a secret scan, a contracts drift check and the Playwright E2E (storefront
+and admin), run on every pull request.
+
+### E2E (Playwright)
+
+The specs in `apps/web/e2e/` drive the built storefront and admin apps against a seeded Core API;
+CI wires all of it up in the `e2e` job of `.github/workflows/ci.yml`. To run them locally:
+
+1. Start the Core API against a throw-away database with `APP_ENV=development`, a throw-away
+   `TELEGRAM_BOT_TOKEN`, `TELEGRAM_LOGIN_WIDGET_ENABLED=true`, a `TELEGRAM_BOT_USERNAME` and
+   `CSRF_TRUSTED_ORIGINS=http://localhost:3000,http://localhost:3001`; run `make migrate seed`.
+2. Create the E2E admin: `cd services/api && uv run python -m app.dev.set_role 990000001 admin --create`.
+3. Build and start both apps: `pnpm --filter @muniramarket/web build`, then `... start` (web on
+   port 3000), and the same for `@muniramarket/admin` (port 3001).
+4. Run `pnpm --filter @muniramarket/web exec playwright install chromium`, then with
+   `E2E_TELEGRAM_BOT_TOKEN` (the same throw-away token), `E2E_ADMIN_TELEGRAM_ID=990000001` and
+   optionally `E2E_BASE_URL` / `E2E_ADMIN_URL`: `pnpm --filter @muniramarket/web test:e2e`.
+
+The admin specs sign in through the Telegram Login Widget redirect with fields signed by the
+throw-away token; no production code has a test bypass. See the comment in
+`apps/web/playwright.config.ts` for details.
 
 `packages/contracts` is generated from the Core API's OpenAPI document. After changing an API
 schema or route, run `pnpm contracts:generate` and commit `packages/contracts/openapi.json` and
