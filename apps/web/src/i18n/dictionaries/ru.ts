@@ -170,6 +170,10 @@ export const ru: Dictionary = {
       today: 'Сегодня',
       tomorrow: 'Завтра',
       weekdays: ['Воскресенье', 'Понедельник', 'Вторник', 'Среда', 'Четверг', 'Пятница', 'Суббота'],
+      daysLabel: 'День доставки',
+      dayFree: 'Свободно: {count}',
+      dayChosen: 'здесь выбранное время',
+      chosenElsewhere: 'Выбранное время: {when}',
       remaining: {
         one: 'Осталось {count} место',
         few: 'Осталось {count} места',

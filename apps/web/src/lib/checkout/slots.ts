@@ -140,3 +140,47 @@ export function dayLabel(
   const short = shortDate(date);
   return { name, date: short, text: `${name}, ${short}` };
 }
+
+/** How much of a day can still be booked: windows with free places, and whether none are left. */
+export function dayAvailability(day: SlotDay): { free: number; full: boolean } {
+  const free = day.slots.filter((slot) => !isSlotFull(slot)).length;
+  return { free, full: free === 0 };
+}
+
+/**
+ * The day the picker opens on: the day of the chosen window (even if it has just filled up, so the
+ * customer stays where they were), otherwise the first day with a window that can be booked,
+ * otherwise the first day. `null` when there are no days at all.
+ */
+export function defaultDay(days: readonly SlotDay[], selectedId: string | null): string | null {
+  if (days.length === 0) return null;
+  if (selectedId !== null) {
+    const holder = days.find((day) => day.slots.some((slot) => slot.id === selectedId));
+    if (holder !== undefined) return holder.date;
+  }
+  const bookable = days.find((day) => !dayAvailability(day).full);
+  return (bookable ?? days[0])?.date ?? null;
+}
+
+/**
+ * Where a scroller starting at `viewStart` (size `viewSize`) must scroll so that the item at
+ * `itemStart` (size `itemSize`) is fully visible with `padding` to spare on the side it came in
+ * from. It does not move at all when the item is already comfortably in view, and never goes past
+ * the content (`contentSize`) or before 0.
+ */
+export function revealOffset(args: {
+  viewStart: number;
+  viewSize: number;
+  contentSize: number;
+  itemStart: number;
+  itemSize: number;
+  padding: number;
+}): number {
+  const { viewStart, viewSize, contentSize, itemStart, itemSize, padding } = args;
+  let next = viewStart;
+  if (itemStart - padding < viewStart) next = itemStart - padding;
+  else if (itemStart + itemSize + padding > viewStart + viewSize) {
+    next = itemStart + itemSize + padding - viewSize;
+  }
+  return Math.max(0, Math.min(next, Math.max(0, contentSize - viewSize)));
+}

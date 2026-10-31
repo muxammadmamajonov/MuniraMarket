@@ -171,6 +171,10 @@ export const uz: Dictionary = {
       today: 'Bugun',
       tomorrow: 'Ertaga',
       weekdays: ['Yakshanba', 'Dushanba', 'Seshanba', 'Chorshanba', 'Payshanba', 'Juma', 'Shanba'],
+      daysLabel: 'Yetkazish kuni',
+      dayFree: '{count} ta bo‘sh',
+      dayChosen: 'tanlangan vaqt shu kunda',
+      chosenElsewhere: 'Tanlangan vaqt: {when}',
       remaining: {
         one: '{count} ta joy qoldi',
         few: '{count} ta joy qoldi',

@@ -206,6 +206,14 @@ export interface Dictionary {
       tomorrow: string;
       /** Full weekday names, Sunday first (index = `Date#getUTCDay`). */
       weekdays: readonly [string, string, string, string, string, string, string];
+      /** Accessible name of the row of day chips. */
+      daysLabel: string;
+      /** Compact hint under a day chip: how many windows can still be booked. `{count}` */
+      dayFree: string;
+      /** Screen-reader note on the day chip that holds the chosen window. */
+      dayChosen: string;
+      /** Describes the windows of the shown day when the chosen window is on another day. `{when}` */
+      chosenElsewhere: string;
       /** Low availability on an option. `{count}` */
       remaining: PluralForms;
       /** Marks a window with no places left; it stays visible but cannot be chosen. */

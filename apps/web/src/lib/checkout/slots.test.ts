@@ -4,11 +4,14 @@ import {
   addDays,
   bookableSlot,
   clockTime,
+  dayAvailability,
   dayKind,
   dayLabel,
+  defaultDay,
   groupSlotsByDay,
   hasBookableSlot,
   isSlotFull,
+  revealOffset,
   shortDate,
   slotWindow,
   todayInTashkent,
@@ -105,5 +108,74 @@ describe('availability', () => {
     expect(hasBookableSlot(slots)).toBe(true);
     expect(hasBookableSlot([slotOption({ is_full: true })])).toBe(false);
     expect(hasBookableSlot([])).toBe(false);
+  });
+});
+
+describe('dayAvailability and defaultDay', () => {
+  const free = (id: string, date: string) => slotOption({ id, date });
+  const full = (id: string, date: string) => slotOption({ id, date, is_full: true, remaining: 0 });
+  const days = groupSlotsByDay([
+    full('a', '2026-10-31'),
+    full('b', '2026-10-31'),
+    free('c', '2026-11-01'),
+    full('d', '2026-11-01'),
+    free('e', '2026-11-02'),
+    free('f', '2026-11-02'),
+  ]);
+
+  it('counts windows that can still be booked, and flags a day with none', () => {
+    expect(days.map(dayAvailability)).toEqual([
+      { free: 0, full: true },
+      { free: 1, full: false },
+      { free: 2, full: false },
+    ]);
+  });
+
+  it('treats a window with no places as full even when the server did not flag it', () => {
+    const [day] = groupSlotsByDay([slotOption({ is_full: false, remaining: 0 })]);
+    expect(day === undefined ? null : dayAvailability(day)).toEqual({ free: 0, full: true });
+  });
+
+  it('opens on the day of the chosen window', () => {
+    expect(defaultDay(days, 'e')).toBe('2026-11-02');
+    // A window that has just filled up: stay where the customer was.
+    expect(defaultDay(days, 'a')).toBe('2026-10-31');
+  });
+
+  it('otherwise opens on the first day that can be booked, skipping full days', () => {
+    expect(defaultDay(days, null)).toBe('2026-11-01');
+    expect(defaultDay(days, 'gone')).toBe('2026-11-01');
+  });
+
+  it('opens on the first day when everything is full, and on nothing without days', () => {
+    const allFull = groupSlotsByDay([full('x', '2026-11-05'), full('y', '2026-11-06')]);
+    expect(defaultDay(allFull, null)).toBe('2026-11-05');
+    expect(defaultDay([], null)).toBeNull();
+  });
+});
+
+describe('revealOffset', () => {
+  const base = { viewSize: 300, contentSize: 1000, padding: 16 };
+
+  it('does not move when the item is already comfortably in view', () => {
+    expect(revealOffset({ ...base, viewStart: 100, itemStart: 150, itemSize: 80 })).toBe(100);
+  });
+
+  it('scrolls back so an item hidden on the start side shows with its padding', () => {
+    expect(revealOffset({ ...base, viewStart: 400, itemStart: 300, itemSize: 80 })).toBe(284);
+  });
+
+  it('scrolls forward so an item cut off at the end shows with its padding', () => {
+    expect(revealOffset({ ...base, viewStart: 0, itemStart: 260, itemSize: 80 })).toBe(56);
+  });
+
+  it('never scrolls before 0 or past the content', () => {
+    expect(revealOffset({ ...base, viewStart: 50, itemStart: 4, itemSize: 80 })).toBe(0);
+    expect(revealOffset({ ...base, viewStart: 600, itemStart: 940, itemSize: 80 })).toBe(700);
+  });
+
+  it('does not move when the content fits the view', () => {
+    const fits = { viewStart: 0, viewSize: 300, contentSize: 280, itemSize: 80, padding: 16 };
+    expect(revealOffset({ ...fits, itemStart: 200 })).toBe(0);
   });
 });
