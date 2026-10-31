@@ -14,12 +14,14 @@ apps/
   web/          Next.js — public website + Telegram Mini App UI
   admin/        Next.js — admin panel
 services/
-  api/          FastAPI Core API (PostgreSQL, Redis)
+  api/          FastAPI Core API (PostgreSQL, Redis); runs on Cloudflare Containers
+  api-gateway/  Cloudflare Worker in front of the Core API container
   telegram/     Telegram Serverless project (handlers, Mini App endpoints)
 packages/
   ui/           shared UI components, design tokens, UZS formatter
   contracts/    shared API types
-infra/          local development services (Docker Compose)
+infra/          local services (Docker Compose) and the secret-free cloud blueprint:
+                Cloudflare, Neon, Redis, R2 runbooks and launch checklists
 architecture/   decision records
 ```
 
@@ -56,6 +58,16 @@ pnpm --filter @muniramarket/web dev         # http://localhost:3000
 pnpm --filter @muniramarket/admin dev       # http://localhost:3001
 ```
 
+Cloudflare Workers builds of the same apps (vinext; `next dev` above stays the everyday loop):
+
+```bash
+pnpm --filter @muniramarket/web preview:worker      # workerd on http://localhost:3100
+pnpm --filter @muniramarket/admin preview:worker    # workerd on http://localhost:3101
+```
+
+Deployment (Cloudflare Workers + Containers, Neon, managed Redis, R2) is described in
+[infra/README.md](infra/README.md) and [ADR 0011](architecture/0011-cloudflare-neon-deployment.md).
+
 The Telegram Serverless project is deployed with the `tgcloud` CLI by an operator who holds the
 bot's credentials; see [services/telegram/README.md](services/telegram/README.md).
 
@@ -66,8 +78,9 @@ pnpm format:check && pnpm lint && pnpm typecheck && pnpm test && pnpm build
 cd services/api && make lint typecheck test build
 ```
 
-The same checks, plus a secret scan, a contracts drift check and the Playwright E2E (storefront
-and admin), run on every pull request.
+The same checks, plus a secret scan, a contracts drift check, the Playwright E2E (storefront
+and admin), the Cloudflare Workers builds with a Workers-runtime security-header check, the
+container startup checks and the Neon role-model check, run on every pull request.
 
 ### E2E (Playwright)
 
