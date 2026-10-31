@@ -2,6 +2,7 @@
 
 import json
 import logging
+import time
 from typing import Any
 
 import httpx
@@ -10,7 +11,13 @@ from fastapi import FastAPI
 from pydantic import ValidationError
 
 from app.api.deps import get_session
-from app.core.logging import JsonFormatter, redact, reset_request_id, set_request_id
+from app.core.logging import (
+    MAX_LOG_TEXT,
+    JsonFormatter,
+    redact,
+    reset_request_id,
+    set_request_id,
+)
 from app.db.migration_url import migration_database_url
 from app.db.session import connect_args
 from tests.conftest import make_settings
@@ -57,6 +64,21 @@ def test_redact_masks_secrets_and_phone_numbers(text: str, secret: str) -> None:
 )
 def test_redact_keeps_ordinary_messages(text: str) -> None:
     assert redact(text) == text
+
+
+@pytest.mark.parametrize(
+    "text",
+    ["a" * 50_000, "1" * 50_000, "+1 " * 20_000, "token" * 10_000, "-_" * 25_000, "a=" * 25_000],
+)
+def test_redact_is_bounded_on_adversarial_input(text: str) -> None:
+    started = time.perf_counter()
+    masked = redact(text)
+    assert time.perf_counter() - started < 0.5
+    assert len(masked) <= MAX_LOG_TEXT + 64
+
+
+def test_long_key_names_are_still_redacted() -> None:
+    assert "s3cr3t" not in redact("x_oauth_refresh_access_token=s3cr3t-value")
 
 
 def _record(msg: str, *args: object, exc: BaseException | None = None) -> logging.LogRecord:

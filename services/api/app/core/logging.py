@@ -38,8 +38,10 @@ _REDACTIONS: Final[tuple[tuple[re.Pattern[str], str], ...]] = (
     # client_secret=, "hash": "..."): the key is kept, the value masked.
     (
         re.compile(
-            r"(?i)([A-Za-z0-9_-]*(?:authorization|cookie|token|csrf|hash|signature|init_?data|"
-            r"password|passwd|secret|api_?key|mm_session)[A-Za-z0-9_-]*)"
+            # Anchored at the start of a key and bounded on both sides of the keyword, so a long
+            # run of key characters cannot make the engine backtrack quadratically.
+            r"(?i)(?<![A-Za-z0-9_-])([A-Za-z0-9_-]{0,40}?(?:authorization|cookie|token|csrf|hash|"
+            r"signature|init_?data|password|passwd|secret|api_?key|mm_session)[A-Za-z0-9_-]{0,40})"
             r"(\"?\s*[:=]\s*\"?)(?!\[redacted\])[^\s\"',;&]+"
         ),
         r"\1\2" + _REDACTED,
@@ -53,8 +55,15 @@ _REDACTIONS: Final[tuple[tuple[re.Pattern[str], str], ...]] = (
 )
 
 
+# Log lines longer than this are cut before redaction: bounds the regex work per line and keeps a
+# runaway message (a dumped payload) out of the logs.
+MAX_LOG_TEXT: Final = 8000
+
+
 def redact(text: str) -> str:
-    """Mask credentials, tokens and phone numbers in ``text``."""
+    """Mask credentials, tokens and phone numbers in ``text`` (cut to ``MAX_LOG_TEXT``)."""
+    if len(text) > MAX_LOG_TEXT:
+        text = f"{text[:MAX_LOG_TEXT]}...[truncated {len(text) - MAX_LOG_TEXT} chars]"
     for pattern, replacement in _REDACTIONS:
         text = pattern.sub(replacement, text)
     return text
@@ -117,7 +126,8 @@ class JsonFormatter(logging.Formatter):
             entry["exc_type"] = exc_type.__name__
             # The exception message can carry data (a URL, a row); keep it, redacted.
             entry["exc_msg"] = redact(str(exc))[:500]
-            entry["traceback"] = redact("".join(traceback.format_tb(tb)))
+            # Keep the innermost frames (the end) when a traceback is longer than the cap.
+            entry["traceback"] = redact("".join(traceback.format_tb(tb))[-MAX_LOG_TEXT:])
         return json.dumps(entry, ensure_ascii=False, default=str)
 
 
