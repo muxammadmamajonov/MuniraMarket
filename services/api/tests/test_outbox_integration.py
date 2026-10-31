@@ -165,6 +165,24 @@ async def test_only_claimed_unfinished_rows_can_be_reported(factory: SessionFact
     assert (row.processed_at, row.outcome) == (None, None)
 
 
+async def test_an_expired_worker_cannot_report_a_reclaimed_message(factory: SessionFactory) -> None:
+    """A late result must not overwrite the worker that owns the current lease."""
+    [message_id] = await add_messages(factory, 1)
+    await claim(factory, T0)
+    # A second worker reclaims the message once the original lease expires.
+    [reclaimed] = await claim(factory, T0 + LEASE)
+    assert reclaimed.id == message_id
+
+    # The first worker's late failure cannot release or finish the second worker's lease.
+    assert not await report(factory, message_id, "failed", T0 + LEASE)
+    row = await stored(factory, message_id)
+    assert row.locked_until == T0 + LEASE * 2
+    assert (row.processed_at, row.outcome) == (None, None)
+
+    assert await report(factory, message_id, "delivered", T0 + LEASE + timedelta(seconds=1))
+    assert (await stored(factory, message_id)).outcome == "delivered"
+
+
 async def test_retry_backs_off_and_releases_the_lease(factory: SessionFactory) -> None:
     [message_id] = await add_messages(factory, 1)
     await claim(factory, T0)

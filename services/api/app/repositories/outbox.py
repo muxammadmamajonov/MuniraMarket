@@ -131,6 +131,10 @@ class SqlAlchemyOutboxRepository:
                         NotificationOutbox.id == message_id,
                         NotificationOutbox.processed_at.is_(None),
                         NotificationOutbox.locked_until.is_not(None),
+                        # A worker may finish after its 60-second lease has expired.  By then
+                        # another worker can have reclaimed the row, so the stale worker must
+                        # not overwrite that newer delivery's outcome.
+                        NotificationOutbox.locked_until > now,
                     )
                     .with_for_update()
                 )
