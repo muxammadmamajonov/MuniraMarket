@@ -167,11 +167,14 @@ function optional(raw: string): string | undefined {
 /**
  * The `POST /orders` body, or `null` while the form is invalid. Text is trimmed and blank optional
  * fields are left out, as the server would normalize them; the key order is fixed so that the same
- * form always serializes to the same string (the idempotency fingerprint).
+ * form always serializes to the same string (the idempotency fingerprint). `deliverySlotId` is part
+ * of the body only when a slot was chosen, so choosing another slot yields another fingerprint and
+ * therefore another idempotency key.
  */
 export function buildOrderRequest(
   values: CheckoutFormValues,
   expectedTotalUzs: number,
+  deliverySlotId: string | null = null,
 ): CreateOrderRequest | null {
   if (Object.keys(validateForm(values)).length > 0) return null;
   const phone = normalizePhone(values.recipientPhone);
@@ -196,6 +199,7 @@ export function buildOrderRequest(
     recipient_phone: phone,
     payment_method: values.paymentMethod,
     ...(comment === undefined ? {} : { comment }),
+    ...(deliverySlotId === null ? {} : { delivery_slot_id: deliverySlotId }),
     expected_total_uzs: expectedTotalUzs,
   };
 }

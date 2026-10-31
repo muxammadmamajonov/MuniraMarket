@@ -14,6 +14,8 @@ export interface OrderSummaryProps {
   quote: QuoteState;
   /** The quote for the district currently selected, or `null`. */
   readyQuote: CheckoutQuote | null;
+  /** The chosen delivery window, already worded ("Today, 31.10 · 10:00–12:00"), or `null`. */
+  slotText?: string | null;
 }
 
 function Row({
@@ -45,7 +47,7 @@ function Row({
  * Lines, subtotal, delivery fee and total. Every amount is the server's (the quote once a
  * district is chosen, the cart before); nothing is added up here. A fee of 0 reads "Free".
  */
-export function OrderSummary({ cart, quote, readyQuote }: OrderSummaryProps) {
+export function OrderSummary({ cart, quote, readyQuote, slotText = null }: OrderSummaryProps) {
   const { dict, locale } = useI18n();
   const t = dict.checkout.summary;
   const lines: CartLine[] = readyQuote?.items ?? cart.items;
@@ -114,6 +116,12 @@ export function OrderSummary({ cart, quote, readyQuote }: OrderSummaryProps) {
       </ul>
 
       <div className="flex flex-col gap-1.5 border-t border-border pt-3">
+        {slotText === null ? null : (
+          <p className="flex flex-col pb-1" data-testid="checkout-slot-summary">
+            <span className="text-sm text-muted-foreground">{dict.checkout.slots.summary}</span>
+            <span className="font-medium [overflow-wrap:anywhere]">{slotText}</span>
+          </p>
+        )}
         <p className="text-sm text-muted-foreground">
           {formatPlural(dict.checkout.summary.items, itemCount, locale)}
         </p>

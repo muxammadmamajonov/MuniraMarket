@@ -195,6 +195,33 @@ export interface Dictionary {
       /** Summary shown above the form after a failed submit. */
       formInvalid: string;
     };
+    /** Delivery time windows offered for zones that use them. */
+    slots: {
+      /** Section heading and the accessible name of the radio group. */
+      title: string;
+      /** Shown while a window is required. Also the reason the submit control is disabled. */
+      hintRequired: string;
+      hintOptional: string;
+      today: string;
+      tomorrow: string;
+      /** Full weekday names, Sunday first (index = `Date#getUTCDay`). */
+      weekdays: readonly [string, string, string, string, string, string, string];
+      /** Low availability on an option. `{count}` */
+      remaining: PluralForms;
+      /** Marks a window with no places left; it stays visible but cannot be chosen. */
+      full: string;
+      /** Every window is full (or there are none). */
+      noneAvailable: string;
+      /** Clears an optional choice. */
+      clear: string;
+      /** Label of the chosen window in the order summary. */
+      summary: string;
+      notice: {
+        full: string;
+        unavailable: string;
+        required: string;
+      };
+    };
     failures: {
       priceChangedTitle: string;
       /** `{from}`, `{to}` */
@@ -257,6 +284,8 @@ export interface Dictionary {
       free: string;
       total: string;
       deliveryHeading: string;
+      /** The booked delivery window of the order. */
+      slot: string;
       district: string;
       street: string;
       house: string;

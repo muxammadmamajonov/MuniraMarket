@@ -6,18 +6,22 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useRef } from 'react';
 import { useI18n } from '@/i18n/context';
-import { useCheckoutFlow } from '@/lib/checkout/use-checkout';
+import { dayLabel, slotWindow } from '@/lib/checkout/slots';
+import { useCheckoutFlow, type FocusTarget } from '@/lib/checkout/use-checkout';
 import { zoneForDistrict } from '@/lib/checkout/zones';
 import { useHaptics, useMainButton, useTelegram } from '@/lib/telegram';
 import { SignInPrompt } from '../sign-in-prompt';
 import { LINK_BUTTON_PRIMARY } from '../ui-classes';
 import { CheckoutFormFields } from './checkout-form';
+import { DeliverySlotPicker } from './delivery-slot-picker';
 import { FailureNotice } from './failure-notice';
 import { OrderSummary } from './order-summary';
 import { SubmitBar } from './submit-bar';
 
 /** Room under the form for the browser's sticky submit bar (button row + safe-area inset). */
 const BAR_CLEARANCE = 'pb-[calc(6.5rem+env(safe-area-inset-bottom,0px))]';
+/** Same, when the bar also carries a reason line (up to two lines at 320px, plus the gap). */
+const BAR_CLEARANCE_WITH_REASON = 'pb-[calc(9.5rem+env(safe-area-inset-bottom,0px))]';
 
 function CheckoutSkeleton({ label }: { label: string }) {
   return (
@@ -43,10 +47,14 @@ export function CheckoutView() {
   const noticeRef = useRef<HTMLDivElement>(null);
   const inTelegram = telegram.kind === 'telegram';
 
-  const focusField = useCallback((field: string) => {
+  const focusField = useCallback((field: FocusTarget) => {
     // Deferred: while an order is being sent the fields are disabled and cannot take focus yet.
     setTimeout(() => {
-      const element = formRef.current?.querySelector<HTMLElement>(`[name="${field}"]`);
+      // Form fields by name; the delivery-slot radio group by its `data-field` (it is the first
+      // match, ahead of its own radios).
+      const element = formRef.current?.querySelector<HTMLElement>(
+        `[name="${field}"], [data-field="${field}"]`,
+      );
       if (element === null || element === undefined) return;
       element.focus({ preventScroll: true });
       // Not in every test DOM; the browser always has it.
@@ -87,10 +95,14 @@ export function CheckoutView() {
   const blocked = readyQuote !== null && !readyQuote.can_place_order && priceChange === null;
   // Telegram: the MainButton cannot be tapped to reveal errors, so it stays disabled until the
   // form is valid and the server says the order can be placed.
+  const slotMissing = flow.slots.missing;
   const mainButtonDisabled =
-    submitting || cooldown > 0 || !flow.formValid || readyQuote === null || blocked;
+    submitting || cooldown > 0 || !flow.formValid || readyQuote === null || blocked || slotMissing;
   // Browser: the button stays tappable so that tapping it reveals what is missing.
-  const barDisabled = submitting || cooldown > 0 || blocked;
+  // A missing delivery time is the one thing a tap cannot reveal better than the picker already
+  // does, so the button is disabled and says why.
+  const barDisabled = submitting || cooldown > 0 || blocked || slotMissing;
+  const slotReason = slotMissing ? dict.checkout.slots.hintRequired : null;
 
   useMainButton(
     ready && inTelegram
@@ -144,6 +156,11 @@ export function CheckoutView() {
   }
 
   const selectedZone = readyQuote?.zone ?? zoneForDistrict(load.zones, values.district);
+  const { view: slotView, selected: selectedSlot, today } = flow.slots;
+  const slotText =
+    selectedSlot === null
+      ? null
+      : `${dayLabel(selectedSlot.date, today, dict.checkout.slots).text} · ${slotWindow(selectedSlot)}`;
 
   return (
     <form
@@ -154,7 +171,7 @@ export function CheckoutView() {
         void flow.submit();
       }}
       aria-label={dict.checkout.title}
-      className={`grid min-w-0 gap-6 md:grid-cols-[minmax(0,1fr)_22rem] md:items-start ${inTelegram ? '' : BAR_CLEARANCE}`}
+      className={`grid min-w-0 gap-6 md:grid-cols-[minmax(0,1fr)_22rem] md:items-start ${inTelegram ? '' : slotReason === null ? BAR_CLEARANCE : BAR_CLEARANCE_WITH_REASON}`}
     >
       <CheckoutFormFields
         values={values}
@@ -165,6 +182,21 @@ export function CheckoutView() {
         onChange={flow.setField}
         onDistrict={(district: DistrictCode | '') => flow.setDistrict(district)}
         onBlur={flow.touch}
+        slotPicker={
+          slotView === null ? null : (
+            <DeliverySlotPicker
+              slots={slotView.slots}
+              selectedId={flow.slots.selectedId}
+              required={slotView.required}
+              disabled={submitting}
+              stale={slotView.stale}
+              notice={flow.slots.notice}
+              onSelect={flow.slots.select}
+              onClear={flow.slots.clear}
+              today={today}
+            />
+          )
+        }
       />
 
       <div className="flex min-w-0 flex-col gap-4 md:sticky md:top-4">
@@ -177,16 +209,27 @@ export function CheckoutView() {
           onRetry={() => void flow.submit()}
           onConfirmPrice={() => void flow.submit()}
         />
-        <OrderSummary cart={load.cart} quote={quote} readyQuote={readyQuote} />
+        <OrderSummary cart={load.cart} quote={quote} readyQuote={readyQuote} slotText={slotText} />
         {inTelegram && !flow.formValid ? (
           <p className="text-sm text-muted-foreground" data-testid="fix-fields">
             {dict.checkout.summary.fixFields}
           </p>
         ) : null}
+        {inTelegram && slotReason !== null ? (
+          <p className="text-sm font-medium" data-testid="slot-reason">
+            {slotReason}
+          </p>
+        ) : null}
       </div>
 
       {inTelegram ? null : (
-        <SubmitBar total={totalText} label={action} busy={submitting} disabled={barDisabled} />
+        <SubmitBar
+          total={totalText}
+          label={action}
+          busy={submitting}
+          disabled={barDisabled}
+          reason={slotReason}
+        />
       )}
     </form>
   );

@@ -13,6 +13,8 @@ import {
   product,
   quote,
   respond,
+  slotOption,
+  slotQuote,
   zone,
 } from '@/lib/checkout/test-fixtures';
 import { isValidIdempotencyKey } from '@/lib/checkout/idempotency';
@@ -987,5 +989,500 @@ describe('CheckoutView: worst-case data (break-ui)', () => {
     const value = (screen.getByLabelText('Ism') as HTMLInputElement).value;
     expect(Array.from(value).length).toBeLessThanOrEqual(100);
     expect(value.startsWith('Александра')).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------------------------
+// Delivery slots. The zone with slots is `demo-chekka` (district chilonzor, plus olmazor here so a
+// district change inside one zone can be tested); the zone without slots is yunusobod's.
+// ---------------------------------------------------------------------------------------------
+
+const SLOT = {
+  todayLow: '5a000000-0000-4000-8000-000000000001',
+  todayFull: '5a000000-0000-4000-8000-000000000002',
+  tomorrow: '5a000000-0000-4000-8000-000000000003',
+  later: '5a000000-0000-4000-8000-000000000004',
+} as const;
+
+/** A quote for the slot zone: clears the 100 000 minimum, so only the slot can block the order. */
+function chekkaQuote(overrides: Parameters<typeof slotQuote>[0] = {}) {
+  return slotQuote({
+    zone: farZone(),
+    subtotal_uzs: 120000,
+    delivery_fee_uzs: 0,
+    total_uzs: 120000,
+    free_delivery_remaining_uzs: null,
+    ...overrides,
+  });
+}
+
+function chekkaZone() {
+  return zone({
+    ...farZone(),
+    districts: [
+      { code: 'chilonzor', name_uz: 'Chilonzor', name_ru: 'Чиланзар' },
+      { code: 'olmazor', name_uz: 'Olmazor', name_ru: 'Олмазор' },
+    ],
+  });
+}
+
+const slotGroup = () => screen.getByRole('radiogroup', { name: 'Yetkazish vaqti' });
+const slotTile = (id: string) =>
+  screen
+    .getAllByTestId('delivery-slot-option')
+    .find((element) => element.getAttribute('data-slot-id') === id) as HTMLElement;
+const pickSlot = (id: string) => fireEvent.click(slotTile(id));
+const checkedSlots = () =>
+  screen.queryAllByRole('radio', { name: /\d\d:\d\d–\d\d:\d\d/ }).filter((radio) => {
+    return (radio as HTMLInputElement).checked;
+  });
+
+/** District picked, then everything else a valid order needs, except the delivery window. */
+async function fillValidForSlotZone(district: DistrictCode = 'chilonzor') {
+  await pickDistrict(district);
+  type('Ko‘cha', 'Demo ko‘cha');
+  type('Uy', '12');
+  type('Telefon raqami', '+998 00 123-45-67');
+  fireEvent.click(screen.getByRole('radio', { name: 'Yetkazilganda naqd pul' }));
+}
+
+describe('CheckoutView: delivery slots', () => {
+  beforeEach(() => {
+    // 10:00 in Tashkent on 31 October 2026. Only `Date` is faked, so waitFor keeps working.
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-10-31T05:00:00Z'));
+    routes['GET /delivery/zones'] = () =>
+      respond({ items: [zone(), chekkaZone()], timezone: 'Asia/Tashkent' });
+    routes['POST /checkout/quote'] = (init) => {
+      const { district } = JSON.parse(String(init.body)) as { district: DistrictCode };
+      return respond(district === 'yunusobod' ? quote() : chekkaQuote());
+    };
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('shows no picker for a zone without slots, and sends no slot', async () => {
+    renderCheckout();
+    await loaded();
+    await fillValid();
+    expect(screen.queryByTestId('delivery-slots')).toBeNull();
+    expect(screen.queryByRole('radiogroup', { name: 'Yetkazish vaqti' })).toBeNull();
+    expect(screen.queryByTestId('submit-reason')).toBeNull();
+    fireEvent.click(submitButton());
+    await waitFor(() => expect(orderPosts()).toHaveLength(1));
+    expect(bodyOf(0)).not.toHaveProperty('delivery_slot_id');
+  });
+
+  it('shows the picker once the district is chosen, grouped by day with full windows disabled', async () => {
+    renderCheckout();
+    await loaded();
+    expect(screen.queryByTestId('delivery-slots')).toBeNull();
+    await pickDistrict('chilonzor');
+
+    expect(slotGroup()).toBeInTheDocument();
+    const days = [...document.querySelectorAll('[data-day]')];
+    expect(days.map((day) => day.getAttribute('data-day'))).toEqual([
+      '2026-10-31',
+      '2026-11-01',
+      '2026-11-03',
+    ]);
+    expect(days[0]).toHaveTextContent('Bugun');
+    expect(days[1]).toHaveTextContent('Ertaga');
+    expect(days[2]).toHaveTextContent('Seshanba');
+    expect(
+      screen.getByRole('radio', { name: 'Bugun, 31.10, 10:00–12:00' }),
+    ).toHaveAccessibleDescription('2 ta joy qoldi');
+    const full = screen.getByRole('radio', { name: 'Bugun, 31.10, 12:00–14:00' });
+    expect(full).toBeDisabled();
+    expect(full).toHaveAccessibleDescription('To‘lgan');
+    // Nothing is preselected: the customer chooses.
+    expect(checkedSlots()).toHaveLength(0);
+  });
+
+  it('blocks submitting until a window is chosen, and says why next to the button', async () => {
+    renderCheckout();
+    await loaded();
+    await fillValidForSlotZone();
+
+    expect(submitButton()).toBeDisabled();
+    const reason = screen.getByTestId('submit-reason');
+    expect(reason).toHaveTextContent('Buyurtma berish uchun yetkazish vaqtini tanlang.');
+    expect(submitButton()).toHaveAccessibleDescription(reason.textContent ?? '');
+    fireEvent.submit(screen.getByRole('form', { name: 'Buyurtmani rasmiylashtirish' }));
+    expect(orderPosts()).toHaveLength(0);
+
+    pickSlot(SLOT.tomorrow);
+    expect(submitButton()).toBeEnabled();
+    expect(screen.queryByTestId('submit-reason')).toBeNull();
+  });
+
+  it('refuses to pick a full window', async () => {
+    renderCheckout();
+    await loaded();
+    await fillValidForSlotZone();
+    pickSlot(SLOT.todayFull);
+    expect(checkedSlots()).toHaveLength(0);
+    expect(submitButton()).toBeDisabled();
+  });
+
+  it('sends the chosen window as delivery_slot_id, and shows it in the summary', async () => {
+    renderCheckout();
+    await loaded();
+    await fillValidForSlotZone();
+    pickSlot(SLOT.tomorrow);
+    expect(screen.getByTestId('checkout-slot-summary')).toHaveTextContent(
+      'Yetkazish vaqtiErtaga, 01.11 · 10:00–12:00',
+    );
+    expect(screen.getByRole('radio', { name: 'Ertaga, 01.11, 10:00–12:00' })).toBeChecked();
+
+    fireEvent.click(submitButton());
+    await waitFor(() => expect(nav.replace).toHaveBeenCalledOnce());
+    expect(orderPosts()).toHaveLength(1);
+    expect(bodyOf(0)).toEqual({
+      address: { district: 'chilonzor', street: 'Demo ko‘cha', house: '12' },
+      recipient_name: 'Ali Valiyev',
+      recipient_phone: '+998001234567',
+      payment_method: 'cash_on_delivery',
+      delivery_slot_id: SLOT.tomorrow,
+      expected_total_uzs: 120000,
+    });
+  });
+
+  it('keeps the idempotency key for the same window and changes it when the window changes', async () => {
+    routes['POST /orders'] = () => apiError('internal_error', 500);
+    renderCheckout();
+    await loaded();
+    await fillValidForSlotZone();
+    pickSlot(SLOT.tomorrow);
+
+    fireEvent.click(submitButton());
+    await waitFor(() => expect(orderPosts()).toHaveLength(1));
+    await screen.findByTestId('submit-failure');
+    await waitFor(() => expect(submitButton()).toBeEnabled());
+
+    // Same body again: a retry, so the same key.
+    fireEvent.click(submitButton());
+    await waitFor(() => expect(orderPosts()).toHaveLength(2));
+    expect(keyOf(1)).toBe(keyOf(0));
+    expect(bodyOf(1).delivery_slot_id).toBe(SLOT.tomorrow);
+
+    // Another window is another order body: the server would answer 409 idempotency_key_conflict
+    // for the old key, so it must be a new one.
+    await waitFor(() => expect(submitButton()).toBeEnabled());
+    pickSlot(SLOT.later);
+    fireEvent.click(submitButton());
+    await waitFor(() => expect(orderPosts()).toHaveLength(3));
+    expect(bodyOf(2).delivery_slot_id).toBe(SLOT.later);
+    expect(keyOf(2)).not.toBe(keyOf(0));
+    expect(isValidIdempotencyKey(keyOf(2) ?? '')).toBe(true);
+  });
+
+  it.each([
+    ['slot_full', 'full', 'Bu vaqt oralig‘i to‘lib qoldi. Boshqa vaqtni tanlang.'],
+    ['slot_unavailable', 'unavailable', 'Bu vaqt endi mavjud emas. Boshqa vaqtni tanlang.'],
+    ['slot_required', 'required', 'Buyurtma berish uchun yetkazish vaqtini tanlang.'],
+  ])(
+    'on 409 %s: re-quotes, clears the choice, explains it by the picker and needs a new key',
+    async (code, reason, message) => {
+      let refused = true;
+      routes['POST /orders'] = () => {
+        if (refused) {
+          refused = false;
+          return apiError(code, 409);
+        }
+        return respond(order(), 201);
+      };
+      renderCheckout();
+      await loaded();
+      await fillValidForSlotZone();
+      pickSlot(SLOT.tomorrow);
+      const quotesBefore = calls('POST', '/checkout/quote').length;
+
+      fireEvent.click(submitButton());
+      const notice = await screen.findByTestId('slot-notice');
+      expect(notice).toHaveAttribute('data-reason', reason);
+      expect(notice).toHaveTextContent(message);
+      // Next to the picker, not in the general failure area.
+      expect(screen.getByTestId('delivery-slots')).toContainElement(notice);
+      expect(screen.queryByTestId('submit-failure')).toBeNull();
+      // Re-quoted, selection cleared, order blocked again.
+      await waitFor(() =>
+        expect(calls('POST', '/checkout/quote').length).toBeGreaterThan(quotesBefore),
+      );
+      await waitFor(() => expect(checkedSlots()).toHaveLength(0));
+      expect(submitButton()).toBeDisabled();
+      // The picker takes focus so a keyboard or screen-reader user lands on the problem.
+      await waitFor(() => expect(slotGroup()).toHaveFocus());
+      expect(orderPosts()).toHaveLength(1);
+
+      // Choosing the very same window again must not reuse the refused request's key.
+      pickSlot(SLOT.tomorrow);
+      expect(screen.queryByTestId('slot-notice')).toBeNull();
+      fireEvent.click(submitButton());
+      await waitFor(() => expect(nav.replace).toHaveBeenCalledOnce());
+      expect(orderPosts()).toHaveLength(2);
+      expect(bodyOf(1)).toEqual(bodyOf(0));
+      expect(keyOf(1)).not.toBe(keyOf(0));
+    },
+  );
+
+  it('offers the refreshed windows after slot_full (the full one is now disabled)', async () => {
+    let refused = false;
+    routes['POST /orders'] = () => {
+      refused = true;
+      return apiError('slot_full', 409);
+    };
+    routes['POST /checkout/quote'] = () =>
+      respond(
+        chekkaQuote(
+          refused
+            ? {
+                delivery_slots: [
+                  slotOption({
+                    id: SLOT.tomorrow,
+                    date: '2026-11-01',
+                    is_full: true,
+                    remaining: 0,
+                  }),
+                  slotOption({
+                    id: SLOT.later,
+                    date: '2026-11-03',
+                    starts_at: '16:00',
+                    ends_at: '18:00',
+                  }),
+                ],
+              }
+            : {},
+        ),
+      );
+    renderCheckout();
+    await loaded();
+    await fillValidForSlotZone();
+    pickSlot(SLOT.tomorrow);
+    fireEvent.click(submitButton());
+    await screen.findByTestId('slot-notice');
+    await waitFor(() =>
+      expect(screen.getByRole('radio', { name: 'Ertaga, 01.11, 10:00–12:00' })).toBeDisabled(),
+    );
+    expect(checkedSlots()).toHaveLength(0);
+    expect(screen.queryByRole('radio', { name: 'Bugun, 31.10, 10:00–12:00' })).toBeNull();
+  });
+
+  it('does not ask the server when the chosen window vanished from a stale quote', async () => {
+    renderCheckout();
+    await loaded();
+    await fillValidForSlotZone();
+    pickSlot(SLOT.tomorrow);
+    // The window disappears server-side, and the quote on screen is now older than a minute.
+    routes['POST /checkout/quote'] = () =>
+      respond(
+        chekkaQuote({ delivery_slots: [slotOption({ id: SLOT.later, date: '2026-11-03' })] }),
+      );
+    vi.setSystemTime(new Date('2026-10-31T05:02:00Z'));
+
+    fireEvent.click(submitButton());
+    const notice = await screen.findByTestId('slot-notice');
+    expect(notice).toHaveAttribute('data-reason', 'unavailable');
+    expect(orderPosts()).toHaveLength(0);
+    expect(checkedSlots()).toHaveLength(0);
+    expect(submitButton()).toBeDisabled();
+  });
+
+  it('says the window filled up when a stale quote shows the chosen window as full', async () => {
+    renderCheckout();
+    await loaded();
+    await fillValidForSlotZone();
+    pickSlot(SLOT.tomorrow);
+    routes['POST /checkout/quote'] = () =>
+      respond(
+        chekkaQuote({
+          delivery_slots: [
+            slotOption({ id: SLOT.tomorrow, date: '2026-11-01', is_full: true, remaining: 0 }),
+          ],
+        }),
+      );
+    vi.setSystemTime(new Date('2026-10-31T05:02:00Z'));
+    fireEvent.click(submitButton());
+    expect(await screen.findByTestId('slot-notice')).toHaveAttribute('data-reason', 'full');
+    expect(orderPosts()).toHaveLength(0);
+  });
+
+  it('keeps the choice and the picker while the same zone is re-quoted for another district', async () => {
+    renderCheckout();
+    await loaded();
+    await fillValidForSlotZone('chilonzor');
+    pickSlot(SLOT.tomorrow);
+
+    let release: (response: Response) => void = () => undefined;
+    routes['POST /checkout/quote'] = () => new Promise<Response>((resolve) => (release = resolve));
+    fireEvent.change(screen.getByLabelText('Tuman'), { target: { value: 'olmazor' } });
+
+    // While the new quote is on its way the windows stay (dimmed and inert), so the list does not
+    // vanish under the customer's finger.
+    await waitFor(() =>
+      expect(screen.getByTestId('delivery-slots')).toHaveAttribute('aria-busy', 'true'),
+    );
+    expect(screen.getByRole('radio', { name: 'Ertaga, 01.11, 10:00–12:00' })).toBeChecked();
+    for (const radio of screen.getAllByRole('radio', { name: /\d\d:\d\d–\d\d:\d\d/ })) {
+      expect(radio).toBeDisabled();
+    }
+    await act(async () => {
+      release(respond(chekkaQuote()));
+    });
+    await waitFor(() =>
+      expect(screen.getByTestId('delivery-slots')).toHaveAttribute('aria-busy', 'false'),
+    );
+    expect(screen.getByRole('radio', { name: 'Ertaga, 01.11, 10:00–12:00' })).toBeChecked();
+    expect(submitButton()).toBeEnabled();
+    expect(calls('POST', '/checkout/quote').at(-1)?.[1]?.body).toBe(
+      JSON.stringify({ district: 'olmazor' }),
+    );
+  });
+
+  it('clears a choice the new quote no longer offers', async () => {
+    renderCheckout();
+    await loaded();
+    await fillValidForSlotZone('chilonzor');
+    pickSlot(SLOT.tomorrow);
+
+    routes['POST /checkout/quote'] = () =>
+      respond(
+        chekkaQuote({
+          delivery_slots: [slotOption({ id: SLOT.later, date: '2026-11-03', starts_at: '16:00' })],
+        }),
+      );
+    fireEvent.change(screen.getByLabelText('Tuman'), { target: { value: 'olmazor' } });
+    await waitFor(() => expect(screen.getAllByTestId('delivery-slot-option')).toHaveLength(1));
+    expect(checkedSlots()).toHaveLength(0);
+    expect(screen.queryByTestId('checkout-slot-summary')).toBeNull();
+    expect(submitButton()).toBeDisabled();
+  });
+
+  it('drops the picker and the choice when the district has no slots, and sends none', async () => {
+    renderCheckout();
+    await loaded();
+    await fillValidForSlotZone('chilonzor');
+    pickSlot(SLOT.tomorrow);
+
+    fireEvent.change(screen.getByLabelText('Tuman'), { target: { value: 'yunusobod' } });
+    await waitFor(() => expect(screen.queryByTestId('delivery-slots')).toBeNull());
+    expect(submitButton()).toBeEnabled();
+    fireEvent.click(submitButton());
+    await waitFor(() => expect(orderPosts()).toHaveLength(1));
+    expect(bodyOf(0)).not.toHaveProperty('delivery_slot_id');
+    expect(bodyOf(0).address.district).toBe('yunusobod');
+  });
+
+  it('does not bring back a choice from another zone when the customer returns', async () => {
+    renderCheckout();
+    await loaded();
+    await fillValidForSlotZone('chilonzor');
+    pickSlot(SLOT.tomorrow);
+    await pickDistrict('yunusobod');
+    fireEvent.change(screen.getByLabelText('Tuman'), { target: { value: 'chilonzor' } });
+    await waitFor(() => expect(screen.getByTestId('delivery-slots')).toBeInTheDocument());
+    await waitFor(() =>
+      expect(screen.getByTestId('delivery-slots')).toHaveAttribute('aria-busy', 'false'),
+    );
+    expect(checkedSlots()).toHaveLength(0);
+    expect(submitButton()).toBeDisabled();
+  });
+
+  it('allows ordering without a window when the zone makes it optional', async () => {
+    routes['POST /checkout/quote'] = () => respond(chekkaQuote({ slot_required: false }));
+    renderCheckout();
+    await loaded();
+    await fillValidForSlotZone();
+    expect(slotGroup()).not.toHaveAttribute('aria-required');
+    expect(submitButton()).toBeEnabled();
+
+    pickSlot(SLOT.tomorrow);
+    fireEvent.click(screen.getByTestId('slot-clear'));
+    expect(checkedSlots()).toHaveLength(0);
+    fireEvent.click(submitButton());
+    await waitFor(() => expect(orderPosts()).toHaveLength(1));
+    expect(bodyOf(0)).not.toHaveProperty('delivery_slot_id');
+  });
+
+  it('keeps the order blocked and explains it when every window is full', async () => {
+    routes['POST /checkout/quote'] = () =>
+      respond(
+        chekkaQuote({
+          delivery_slots: [slotOption({ id: SLOT.tomorrow, is_full: true, remaining: 0 })],
+        }),
+      );
+    renderCheckout();
+    await loaded();
+    await fillValidForSlotZone();
+    expect(screen.getByTestId('slots-none')).toBeInTheDocument();
+    expect(submitButton()).toBeDisabled();
+  });
+
+  it('works in Russian', async () => {
+    renderCheckout('ru');
+    await screen.findByLabelText('Район');
+    fireEvent.change(screen.getByLabelText('Район'), { target: { value: 'chilonzor' } });
+    await screen.findByRole('radiogroup', { name: 'Время доставки' });
+    expect(screen.getByRole('radio', { name: 'Завтра, 01.11, 10:00–12:00' })).toBeInTheDocument();
+    expect(screen.getByTestId('submit-reason')).toHaveTextContent(
+      'Выберите время доставки, чтобы оформить заказ.',
+    );
+  });
+});
+
+describe('CheckoutView in the Telegram Mini App: delivery slots', () => {
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-10-31T05:00:00Z'));
+    routes['GET /delivery/zones'] = () =>
+      respond({ items: [zone(), chekkaZone()], timezone: 'Asia/Tashkent' });
+    routes['POST /checkout/quote'] = (init) => {
+      const { district } = JSON.parse(String(init.body)) as { district: DistrictCode };
+      return respond(district === 'yunusobod' ? quote() : chekkaQuote());
+    };
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('keeps the MainButton disabled, with an inline reason, until a window is chosen', async () => {
+    const { webApp, state } = trackedWebApp();
+    renderCheckout();
+    await loaded();
+    await fillValidForSlotZone();
+
+    await waitFor(() => expect(screen.getByTestId('slot-reason')).toBeInTheDocument());
+    expect(screen.getByTestId('slot-reason')).toHaveTextContent(
+      'Buyurtma berish uchun yetkazish vaqtini tanlang.',
+    );
+    expect(screen.queryByTestId('submit-bar')).toBeNull();
+    expect(state.disabled).toBe(true);
+    act(() => pressMainButton(webApp));
+    expect(orderPosts()).toHaveLength(0);
+
+    pickSlot(SLOT.later);
+    await waitFor(() => expect(state.disabled).toBe(false));
+    expect(screen.queryByTestId('slot-reason')).toBeNull();
+    expect(state.text).toBe(`Buyurtma berish — 120${NB}000${NB}so‘m`);
+
+    act(() => pressMainButton(webApp));
+    await waitFor(() => expect(nav.replace).toHaveBeenCalled());
+    expect(bodyOf(0).delivery_slot_id).toBe(SLOT.later);
+  });
+
+  it('disables the MainButton again after the server refuses the window', async () => {
+    const { webApp, state } = trackedWebApp();
+    routes['POST /orders'] = () => apiError('slot_full', 409);
+    renderCheckout();
+    await loaded();
+    await fillValidForSlotZone();
+    pickSlot(SLOT.tomorrow);
+    await waitFor(() => expect(state.disabled).toBe(false));
+    act(() => pressMainButton(webApp));
+
+    await screen.findByTestId('slot-notice');
+    await waitFor(() => expect(state.disabled).toBe(true));
+    expect(webApp.HapticFeedback?.notificationOccurred).toHaveBeenCalledWith('error');
   });
 });

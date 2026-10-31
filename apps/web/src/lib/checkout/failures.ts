@@ -24,7 +24,14 @@ export type CheckoutFailure =
   | { kind: 'network' }
   | { kind: 'server' }
   /** The key was already used for a different body; a new key is needed. */
-  | { kind: 'key_conflict' };
+  | { kind: 'key_conflict' }
+  /**
+   * The delivery slot could not be booked: it filled up, no longer exists, or none was sent for a
+   * zone that needs one. Handled next to the slot picker, not in the general notice.
+   */
+  | { kind: 'slot'; reason: SlotFailureReason };
+
+export type SlotFailureReason = 'full' | 'unavailable' | 'required';
 
 /** Used when `Retry-After` is missing. */
 export const DEFAULT_RETRY_SECONDS = 10;
@@ -68,6 +75,12 @@ export function classifyCheckoutError(error: unknown): CheckoutFailure {
       return { kind: 'blocked' };
     case 'idempotency_key_conflict':
       return { kind: 'key_conflict' };
+    case 'slot_full':
+      return { kind: 'slot', reason: 'full' };
+    case 'slot_unavailable':
+      return { kind: 'slot', reason: 'unavailable' };
+    case 'slot_required':
+      return { kind: 'slot', reason: 'required' };
     case 'network_error':
       return { kind: 'network' };
     default:

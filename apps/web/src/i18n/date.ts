@@ -24,3 +24,12 @@ export function formatDateTime(iso: string): string {
   const part = Object.fromEntries(formatter.formatToParts(date).map((p) => [p.type, p.value]));
   return `${part['day']}.${part['month']}.${part['year']} ${part['hour']}:${part['minute']}`;
 }
+
+/**
+ * A booked delivery date, `2026-11-03` -> `03.11.2026`. Unlike the checkout picker (which says
+ * "today" / "tomorrow") an order keeps its date, so the label stays true next week.
+ */
+export function formatSlotDate(date: string): string {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(date);
+  return match === null ? date : `${match[3]}.${match[2]}.${match[1]}`;
+}
