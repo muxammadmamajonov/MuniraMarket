@@ -1553,7 +1553,13 @@ describe('CheckoutView: a rate-limited order (429)', () => {
     // out every second).
     expect(retry).toHaveAccessibleName('Qayta urinish');
 
-    await tick();
+    // Advance in small steps: the next one-second timer exists only after React re-rendered, so
+    // one 1000 ms jump can land before it is armed.
+    for (let step = 0; step < 30 && !retry.textContent?.includes('(2 s)'); step += 1) {
+      await act(async () => {
+        vi.advanceTimersByTime(100);
+      });
+    }
     expect(retry).toHaveTextContent('(2 s)');
     expect(failure).toHaveTextContent('3 soniyadan'); // the sentence does not tick
     await tickUntil(() => !(retry as HTMLButtonElement).disabled);

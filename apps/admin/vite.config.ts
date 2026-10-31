@@ -14,6 +14,9 @@ export default defineConfig({
     coreApiBindingPlugin(fileURLToPath(new URL('.', import.meta.url)).replace(/\/$/, '')),
     vinext(),
     cloudflare({
+      // Own inspector port per app, so the storefront and admin previews can run side by side
+      // (CI starts both; the default 9229 would collide).
+      inspectorPort: 9231,
       viteEnvironment: {
         name: 'rsc',
         childEnvironments: ['ssr'],
