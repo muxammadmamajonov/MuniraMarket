@@ -73,6 +73,35 @@ bad value). See `.env.example` for the full list. Highlights:
 - `SESSION_ROTATION_GRACE_SECONDS` must be 0..300 (default 60).
 - `FORWARDED_ALLOW_IPS` (comma-separated IPs/CIDRs, validated) is required in staging/production
   and may not be `*` there. See "Client IP behind the proxy".
+- **Fail closed outside development** (staging/production refuse to start otherwise):
+  `DATABASE_URL` must carry `?ssl=require` (or `verify-ca`/`verify-full`; asyncpg's `ssl=`, never
+  libpq's `sslmode=`, which is refused everywhere), `REDIS_URL` must be `rediss://`,
+  `CSRF_TRUSTED_ORIGINS` must be set and `LOG_FORMAT` must be `json`.
+- Pool limits per process: `DB_POOL_SIZE` (1-50, default 5), `DB_MAX_OVERFLOW` (0-50, default 5),
+  `DB_POOL_TIMEOUT_SECONDS`, `DB_CONNECT_TIMEOUT_SECONDS`. Every connection sets
+  `application_name=muniramarket-core-api`, `statement_timeout` (`DB_STATEMENT_TIMEOUT_MS`,
+  15 s) and `idle_in_transaction_session_timeout` (`DB_IDLE_IN_TRANSACTION_TIMEOUT_MS`, 30 s).
+- `MIGRATION_DATABASE_URL` is read by Alembic only (the one-off migration job with the migration
+  role); the API never gets it. Unset, Alembic falls back to `DATABASE_URL`.
+
+## Observability and operations
+
+- **Logs** are one JSON object per line on stdout (`ts`, `level`, `logger`, `msg`, `request_id`,
+  `env`, `release`, plus `exc_type`/`traceback` for errors). Messages and tracebacks pass through
+  a redactor (`app/core/logging.py`) that masks URL credentials, bot tokens, cookie/token/hash
+  assignments and phone numbers; call sites log ids and codes only. `LOG_FORMAT=text` is for a
+  local terminal.
+- **Request id**: a well-formed `X-Request-ID` (8-128 of `[A-Za-z0-9._-]`, sent by the Cloudflare
+  gateway) is kept, otherwise one is generated; it is on every log line of the request and in the
+  `X-Request-ID` response header. One `app.access` line per request records method, route
+  template (`/api/v1/orders/{order_id}`), status and duration; never the client IP, query string,
+  headers or body. Liveness probes are not access-logged unless they fail.
+- **Health**: `GET /api/v1/health` (liveness, no dependencies) and `GET /api/v1/health/ready`
+  (`SELECT 1` and, when Redis-backed stores are used, `PING`; `503` on failure, logged by
+  exception class only).
+- **Shutdown**: the image runs uvicorn with `--timeout-graceful-shutdown 25`. On `SIGTERM` (sent by
+  Cloudflare Containers before a rollout or host stop, up to 15 minutes before `SIGKILL`) it stops
+  accepting connections, finishes in-flight requests, then closes the pool and Redis.
 
 ## Telegram identity (Mini App)
 

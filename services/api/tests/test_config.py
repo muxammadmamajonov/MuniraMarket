@@ -372,3 +372,79 @@ def test_login_widget_requires_token_and_username() -> None:
 def test_bot_username_format(username: str) -> None:
     with pytest.raises(ValidationError, match="TELEGRAM_BOT_USERNAME"):
         make_settings(telegram_bot_username=username)
+
+
+# --- transport security, logging and pool limits (cloud launch readiness) -------------------
+
+_TLS_DB = "postgresql+asyncpg://app:pw@ep-x.example.test/app?ssl=require"
+
+
+@pytest.mark.parametrize("app_env", ["staging", "production"])
+def test_deployed_database_url_requires_tls(app_env: str) -> None:
+    with pytest.raises(ValidationError, match="ssl=require"):
+        make_settings(app_env=app_env, database_url="postgresql+asyncpg://app:pw@db/app")
+    for mode in ("require", "verify-ca", "verify-full"):
+        url = f"postgresql+asyncpg://app:pw@db/app?ssl={mode}"
+        assert make_settings(app_env=app_env, database_url=url).app_env == app_env
+
+
+@pytest.mark.parametrize("app_env", ["development", "test", "staging", "production"])
+def test_libpq_sslmode_is_rejected_everywhere(app_env: str) -> None:
+    with pytest.raises(ValidationError, match="ssl="):
+        make_settings(
+            app_env=app_env, database_url="postgresql+asyncpg://app:pw@db/app?sslmode=require"
+        )
+
+
+@pytest.mark.parametrize("app_env", ["staging", "production"])
+def test_deployed_redis_requires_tls(app_env: str) -> None:
+    with pytest.raises(ValidationError, match="rediss://"):
+        make_settings(app_env=app_env, redis_url="redis://cache.example.test:6379/0")
+
+
+@pytest.mark.parametrize("app_env", ["staging", "production"])
+def test_deployed_requires_trusted_origins(app_env: str) -> None:
+    with pytest.raises(ValidationError, match="CSRF_TRUSTED_ORIGINS"):
+        make_settings(app_env=app_env, csrf_trusted_origins="")
+
+
+@pytest.mark.parametrize("app_env", ["staging", "production"])
+def test_deployed_requires_json_logs(app_env: str) -> None:
+    with pytest.raises(ValidationError, match="LOG_FORMAT"):
+        make_settings(app_env=app_env, log_format="text")
+    assert make_settings(app_env="development", log_format="text").log_format == "text"
+
+
+def test_plain_urls_still_work_locally() -> None:
+    settings = make_settings(app_env="development", redis_url="redis://localhost:6379/0")
+    assert settings.redis_url.get_secret_value().startswith("redis://")
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("db_pool_size", 0),
+        ("db_pool_size", 51),
+        ("db_max_overflow", -1),
+        ("db_max_overflow", 51),
+        ("db_pool_timeout_seconds", 0),
+        ("db_connect_timeout_seconds", 61),
+        ("db_statement_timeout_ms", -1),
+        ("db_idle_in_transaction_timeout_ms", 600_001),
+        ("log_level", "TRACE"),
+        ("log_format", "xml"),
+        ("app_release", "sha 1"),
+        ("app_release", "x" * 65),
+    ],
+)
+def test_pool_logging_and_release_bounds(field: str, value: object) -> None:
+    with pytest.raises(ValidationError):
+        make_settings(**{field: value})
+
+
+def test_pool_and_release_defaults() -> None:
+    settings = make_settings(app_release="")
+    assert settings.app_release is None
+    assert (settings.db_pool_size, settings.db_max_overflow) == (5, 5)
+    assert settings.log_format == "json"
+    assert make_settings(app_release="sha-0123abc").app_release == "sha-0123abc"

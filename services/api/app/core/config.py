@@ -3,7 +3,7 @@
 import ipaddress
 import re
 from functools import lru_cache
-from typing import Annotated, Literal, Self
+from typing import Annotated, Final, Literal, Self
 from urllib.parse import urlsplit
 
 from pydantic import SecretStr, field_validator, model_validator
@@ -11,8 +11,12 @@ from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 from sqlalchemy.engine import make_url
 from sqlalchemy.exc import ArgumentError
 
+from app.core.logging import LogFormat
+
 AppEnv = Literal["development", "test", "staging", "production"]
 TelegramEnvironment = Literal["production", "test"]
+LogLevel = Literal["DEBUG", "INFO", "WARNING", "ERROR"]
+DEPLOYED_ENVS: Final = ("staging", "production")
 
 _KEY_ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,32}$")
 # Telegram bot usernames: 5-32 characters, letters, digits and underscores.
@@ -20,6 +24,11 @@ _BOT_USERNAME_RE = re.compile(r"^[A-Za-z0-9_]{5,32}$")
 MIN_SERVICE_SECRET_BYTES = 32
 _ASYNCPG_SCHEME = "postgresql+asyncpg"
 _DEFAULT_PORTS = {"http": 80, "https": 443}
+# asyncpg's own ``ssl`` connect argument (SQLAlchemy passes URL query keys through verbatim).
+# ``sslmode`` is libpq's spelling: asyncpg would reject it as an unknown keyword at connect time.
+_TLS_SSL_MODES: Final = frozenset({"require", "verify-ca", "verify-full"})
+# A release label from CI (git SHA or tag); goes into every log line.
+_RELEASE_RE = re.compile(r"^[A-Za-z0-9._-]{1,64}$")
 
 DAY_SECONDS = 24 * 60 * 60
 # A rotated-away token stays usable this long at most; it only has to cover in-flight requests.
@@ -117,6 +126,24 @@ class Settings(BaseSettings):
     # validates it here so a deployment cannot start without it. Unset in development/test means
     # uvicorn's loopback default.
     forwarded_allow_ips: Annotated[list[str], NoDecode] = []
+
+    # Logging (``app/core/logging.py``). JSON is what the platform indexes; ``text`` is for a
+    # developer's terminal.
+    log_level: LogLevel = "INFO"
+    log_format: LogFormat = "json"
+    # Immutable release id (image tag / git SHA) stamped on every log line. Optional.
+    app_release: str | None = None
+
+    # Database pool, per process. Size it so that (instances x (pool + overflow)) plus the
+    # migration job stays well below the Neon compute's connection limit (infra/neon/README.md).
+    db_pool_size: int = 5
+    db_max_overflow: int = 5
+    db_pool_timeout_seconds: int = 10
+    db_connect_timeout_seconds: int = 10
+    # Server-side guards set on every connection (0 disables): a runaway query or a transaction
+    # left open by a bug cannot hold locks or a connection indefinitely.
+    db_statement_timeout_ms: int = 15_000
+    db_idle_in_transaction_timeout_ms: int = 30_000
 
     @field_validator(
         "cors_allowed_origins", "csrf_trusted_origins", "forwarded_allow_ips", mode="before"
@@ -222,6 +249,48 @@ class Settings(BaseSettings):
         parse_service_auth_keys(value.get_secret_value())
         return value
 
+    @field_validator("app_release", mode="before")
+    @classmethod
+    def _blank_release_is_none(cls, value: object) -> object:
+        if isinstance(value, str) and not value.strip():
+            return None
+        return value
+
+    @field_validator("app_release")
+    @classmethod
+    def _check_release(cls, value: str | None) -> str | None:
+        if value is not None and not _RELEASE_RE.fullmatch(value):
+            raise ValueError("APP_RELEASE must be 1-64 letters, digits, '.', '_' or '-'")
+        return value
+
+    @field_validator("db_pool_size")
+    @classmethod
+    def _check_pool_size(cls, value: int) -> int:
+        if not 1 <= value <= 50:
+            raise ValueError("DB_POOL_SIZE must be between 1 and 50")
+        return value
+
+    @field_validator("db_max_overflow")
+    @classmethod
+    def _check_max_overflow(cls, value: int) -> int:
+        if not 0 <= value <= 50:
+            raise ValueError("DB_MAX_OVERFLOW must be between 0 and 50")
+        return value
+
+    @field_validator("db_pool_timeout_seconds", "db_connect_timeout_seconds")
+    @classmethod
+    def _check_db_timeouts(cls, value: int) -> int:
+        if not 1 <= value <= 60:
+            raise ValueError("database pool/connect timeouts must be between 1 and 60 seconds")
+        return value
+
+    @field_validator("db_statement_timeout_ms", "db_idle_in_transaction_timeout_ms")
+    @classmethod
+    def _check_db_server_timeouts(cls, value: int) -> int:
+        if not 0 <= value <= 600_000:
+            raise ValueError("database server timeouts must be between 0 and 600000 ms")
+        return value
+
     @field_validator("telegram_init_data_max_age_seconds")
     @classmethod
     def _check_max_age(cls, value: int) -> int:
@@ -233,7 +302,7 @@ class Settings(BaseSettings):
     def _check_environment_rules(self) -> Self:
         if "*" in self.cors_allowed_origins:
             raise ValueError("CORS_ALLOWED_ORIGINS must not contain '*'")
-        if self.app_env in ("staging", "production"):
+        if self.app_env in DEPLOYED_ENVS:
             insecure = [o for o in self.cors_allowed_origins if not o.startswith("https://")]
             if insecure:
                 raise ValueError(
@@ -246,7 +315,28 @@ class Settings(BaseSettings):
         self._check_session_rules()
         self._check_login_widget_rules()
         self._check_proxy_rules()
+        self._check_transport_security()
         return self
+
+    def _check_transport_security(self) -> None:
+        """Deployed environments only talk to PostgreSQL and Redis over TLS (fail closed)."""
+        url = make_url(self.database_url.get_secret_value())
+        if "sslmode" in url.query:
+            raise ValueError(
+                "DATABASE_URL must use asyncpg's ssl= parameter (e.g. ?ssl=require), not sslmode="
+            )
+        if self.app_env not in DEPLOYED_ENVS:
+            return
+        if url.query.get("ssl") not in _TLS_SSL_MODES:
+            raise ValueError(
+                "DATABASE_URL must set ssl=require (or verify-ca / verify-full) outside development"
+            )
+        if not self.redis_url.get_secret_value().startswith("rediss://"):
+            raise ValueError("REDIS_URL must use rediss:// (TLS) outside development")
+        if not self.csrf_trusted_origins:
+            raise ValueError("CSRF_TRUSTED_ORIGINS must list the web and admin origins")
+        if self.log_format != "json":
+            raise ValueError("LOG_FORMAT must be json outside development")
 
     def _check_proxy_rules(self) -> None:
         if self.app_env not in ("staging", "production"):

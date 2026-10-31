@@ -14,6 +14,8 @@ from app.core.body_limit import DEFAULT_MAX_BODY_BYTES, BodySizeLimitMiddleware
 from app.core.clock import Clock, system_clock
 from app.core.config import Settings, get_settings
 from app.core.errors import register_exception_handlers
+from app.core.logging import configure_logging
+from app.core.request_context import RequestContextMiddleware
 from app.db.session import create_engine, create_session_factory
 from app.security.cookies import SessionCookieMiddleware
 from app.security.rate_limit import InMemoryRateLimiter, RateLimiter, RedisRateLimiter
@@ -36,6 +38,8 @@ from app.telegram.identity import (
     TelegramIdentityVerifier,
 )
 from app.telegram.login_widget import LoginWidgetVerifier
+
+logger = logging.getLogger("app.main")
 
 API_PREFIX = "/api/v1"
 # initData is capped at 4096 characters; leave room for JSON framing and URL-encoding overhead.
@@ -83,7 +87,12 @@ def create_app(
     rate_limiter: RateLimiter | None = None,
 ) -> FastAPI:
     settings = settings or get_settings()
-    logging.basicConfig(level=logging.INFO)
+    configure_logging(
+        level=settings.log_level,
+        fmt=settings.log_format,
+        env=settings.app_env,
+        release=settings.app_release,
+    )
 
     engine = create_engine(settings)
     in_memory = settings.app_env == "test"
@@ -108,9 +117,21 @@ def create_app(
 
     @asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
+        # Settings were validated when they were loaded; this line only records what started.
+        logger.info(
+            "core-api starting",
+            extra={
+                "event": "startup",
+                "db_pool_size": settings.db_pool_size,
+                "db_max_overflow": settings.db_max_overflow,
+            },
+        )
         try:
             yield
         finally:
+            # Runs after uvicorn has stopped accepting connections and drained in-flight
+            # requests (SIGTERM, bounded by --timeout-graceful-shutdown).
+            logger.info("core-api stopping", extra={"event": "shutdown"})
             if redis_client is not None:
                 await redis_client.aclose()
             await engine.dispose()
@@ -143,6 +164,9 @@ def create_app(
     )
     app.state.rate_limiter = rate_limiter
     app.state.login_widget_verifier = build_login_widget_verifier(settings, clock)
+    # Readiness also checks Redis when a Redis-backed store is in use (sessions, rate limits
+    # and replay protection fail closed without it).
+    app.state.redis_ping = None if redis_client is None else redis_client.ping
 
     if settings.cors_allowed_origins:
         app.add_middleware(
@@ -175,6 +199,10 @@ def create_app(
             f"{API_PREFIX}/internal",
         ),
     )
+
+    # Outermost: every response (errors included) carries X-Request-ID and gets one access-log
+    # line.
+    app.add_middleware(RequestContextMiddleware, quiet_paths=(f"{API_PREFIX}/health",))
 
     register_exception_handlers(app)
     app.include_router(api_router)

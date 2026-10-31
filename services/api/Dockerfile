@@ -19,6 +19,11 @@ RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --locked --no-dev --no-editable
 
 FROM python:3.13-slim AS runtime
+ARG APP_RELEASE=""
+LABEL org.opencontainers.image.title="muniramarket-core-api" \
+      org.opencontainers.image.revision="${APP_RELEASE}"
+# Stamped on every log line (APP_RELEASE setting); empty for local builds.
+ENV APP_RELEASE="${APP_RELEASE}"
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PATH="/opt/venv/bin:$PATH"
@@ -31,10 +36,18 @@ COPY alembic.ini ./
 COPY alembic ./alembic
 USER app
 EXPOSE 8000
+# Containers send SIGTERM before replacing or stopping an instance (up to 15 minutes before
+# SIGKILL); uvicorn then stops accepting, finishes in-flight requests for at most 25 s, runs the
+# lifespan shutdown (closes the pool and Redis) and exits.
+STOPSIGNAL SIGTERM
 # Configuration comes from the environment (see .env.example); nothing secret is baked in.
 # --proxy-headers: the client IP (rate limits) is taken from X-Forwarded-For, but only when the
 # peer is listed in FORWARDED_ALLOW_IPS, which uvicorn reads from the environment itself (exec
 # form cannot expand variables). It is deliberately not defaulted here: the API refuses to start
 # in staging/production without it, and uvicorn's own default is loopback only.
+# --no-access-log: uvicorn's access log would record client IPs and query strings; the API
+# writes its own structured access line (app/core/request_context.py) without them.
+# --no-server-header: do not advertise the server software.
 CMD ["uvicorn", "app.main:create_app", "--factory", "--host", "0.0.0.0", "--port", "8000", \
-     "--proxy-headers"]
+     "--proxy-headers", "--no-access-log", "--no-server-header", \
+     "--timeout-graceful-shutdown", "25", "--timeout-keep-alive", "30"]
