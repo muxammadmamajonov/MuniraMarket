@@ -1031,7 +1031,20 @@ const slotTile = (id: string) =>
   screen
     .getAllByTestId('delivery-slot-option')
     .find((element) => element.getAttribute('data-slot-id') === id) as HTMLElement;
-const pickSlot = (id: string) => fireEvent.click(slotTile(id));
+const dayTab = (date: string) =>
+  screen
+    .getAllByRole('tab')
+    .find((element) => element.getAttribute('data-date') === date) as HTMLElement;
+/** Like a customer: open the window's day first when another day is shown, then tap the window. */
+const pickSlot = (id: string) => {
+  const tile = slotTile(id);
+  const date = tile.closest('[data-day]')?.getAttribute('data-day');
+  if (date !== null && date !== undefined) {
+    if (screen.getByRole('tabpanel').getAttribute('data-day') !== date)
+      fireEvent.click(dayTab(date));
+  }
+  fireEvent.click(tile);
+};
 const checkedSlots = () =>
   screen.queryAllByRole('radio', { name: /\d\d:\d\d–\d\d:\d\d/ }).filter((radio) => {
     return (radio as HTMLInputElement).checked;
@@ -1081,8 +1094,8 @@ describe('CheckoutView: delivery slots', () => {
     await pickDistrict('chilonzor');
 
     expect(slotGroup()).toBeInTheDocument();
-    const days = [...document.querySelectorAll('[data-day]')];
-    expect(days.map((day) => day.getAttribute('data-day'))).toEqual([
+    const days = screen.getAllByRole('tab');
+    expect(days.map((day) => day.getAttribute('data-date'))).toEqual([
       '2026-10-31',
       '2026-11-01',
       '2026-11-03',
@@ -1090,6 +1103,8 @@ describe('CheckoutView: delivery slots', () => {
     expect(days[0]).toHaveTextContent('Bugun');
     expect(days[1]).toHaveTextContent('Ertaga');
     expect(days[2]).toHaveTextContent('Seshanba');
+    // The first day with a free window is shown; the others' windows are one tap away.
+    expect(screen.getByRole('tabpanel')).toHaveAttribute('data-day', '2026-10-31');
     expect(
       screen.getByRole('radio', { name: 'Bugun, 31.10, 10:00–12:00' }),
     ).toHaveAccessibleDescription('2 ta joy qoldi');
@@ -1424,7 +1439,8 @@ describe('CheckoutView: delivery slots', () => {
     await screen.findByLabelText('Район');
     fireEvent.change(screen.getByLabelText('Район'), { target: { value: 'chilonzor' } });
     await screen.findByRole('radiogroup', { name: 'Время доставки' });
-    expect(screen.getByRole('radio', { name: 'Завтра, 01.11, 10:00–12:00' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: /Завтра, 01\.11/ })).toBeInTheDocument();
+    expect(screen.getByRole('radio', { name: 'Сегодня, 31.10, 10:00–12:00' })).toBeInTheDocument();
     expect(screen.getByTestId('submit-reason')).toHaveTextContent(
       'Выберите время доставки, чтобы оформить заказ.',
     );

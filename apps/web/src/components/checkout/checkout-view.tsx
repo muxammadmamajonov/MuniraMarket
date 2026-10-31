@@ -50,11 +50,12 @@ export function CheckoutView() {
   const focusField = useCallback((field: FocusTarget) => {
     // Deferred: while an order is being sent the fields are disabled and cannot take focus yet.
     setTimeout(() => {
-      // Form fields by name; the delivery-slot radio group by its `data-field` (it is the first
-      // match, ahead of its own radios).
-      const element = formRef.current?.querySelector<HTMLElement>(
-        `[name="${field}"], [data-field="${field}"]`,
-      );
+      // The delivery-slot radio group is found by its `data-field` (only the shown day's group
+      // has one; the radios of the other days are hidden and cannot take focus); every other
+      // field by name.
+      const element =
+        formRef.current?.querySelector<HTMLElement>(`[data-field="${field}"]`) ??
+        formRef.current?.querySelector<HTMLElement>(`[name="${field}"]`);
       if (element === null || element === undefined) return;
       element.focus({ preventScroll: true });
       // Not in every test DOM; the browser always has it.
