@@ -25,6 +25,7 @@ from pydantic import (
 )
 
 from app.domain.delivery import DistrictCode, slot_cutoff_is_valid
+from app.domain.text import INVISIBLE_TEXT_MESSAGE, has_invisible_characters
 from app.repositories.admin_delivery import AdminSlotRecord, AdminZoneRecord
 from app.schemas.delivery import District, hhmm
 
@@ -48,6 +49,8 @@ def _parse_hhmm(value: object) -> object:
 def _single_line(value: str) -> str:
     if _CONTROL_OR_NEWLINE.search(value):
         raise ValueError("must be a single line of text")
+    if has_invisible_characters(value):
+        raise ValueError(INVISIBLE_TEXT_MESSAGE)
     return value
 
 

@@ -11,7 +11,9 @@ Create Date: 2026-10-31
   ``reserved_count`` (``reserved_count <= capacity`` is a CHECK, the oversell backstop).
 - ``orders``: ``delivery_slot_id`` (RESTRICT) plus a date/time snapshot of the booked window, and a
   ``created_at`` index for the dashboard.
-- ``audit_log``: append-only (a trigger rejects UPDATE and DELETE).
+- ``audit_log``: append-only (row triggers reject UPDATE and DELETE, a statement trigger rejects
+  TRUNCATE). This stops mistakes in application code, not a database owner: real tamper
+  resistance needs an application role with only INSERT/SELECT on the table (deployment).
 
 The upgrade is safe on populated tables (all new columns are nullable or have defaults). The
 downgrade drops everything added here; archived products stay inactive.
@@ -46,6 +48,11 @@ _CREATE_REJECT_TRIGGER = (
     "CREATE TRIGGER audit_log_append_only BEFORE UPDATE OR DELETE ON audit_log "
     "FOR EACH ROW EXECUTE FUNCTION audit_log_reject_change()"
 )
+_CREATE_REJECT_TRUNCATE_TRIGGER = (
+    "CREATE TRIGGER audit_log_no_truncate BEFORE TRUNCATE ON audit_log "
+    "FOR EACH STATEMENT EXECUTE FUNCTION audit_log_reject_change()"
+)
+_DROP_REJECT_TRUNCATE_TRIGGER = "DROP TRIGGER IF EXISTS audit_log_no_truncate ON audit_log"
 _DROP_REJECT_TRIGGER = "DROP TRIGGER IF EXISTS audit_log_append_only ON audit_log"
 _DROP_REJECT_FUNCTION = "DROP FUNCTION IF EXISTS audit_log_reject_change()"
 
@@ -167,9 +174,11 @@ def upgrade() -> None:
     op.create_index("ix_audit_log_actor_user_id", "audit_log", ["actor_user_id"], unique=False)
     op.execute(_CREATE_REJECT_FUNCTION)
     op.execute(_CREATE_REJECT_TRIGGER)
+    op.execute(_CREATE_REJECT_TRUNCATE_TRIGGER)
 
 
 def downgrade() -> None:
+    op.execute(_DROP_REJECT_TRUNCATE_TRIGGER)
     op.execute(_DROP_REJECT_TRIGGER)
     op.execute(_DROP_REJECT_FUNCTION)
     op.drop_index("ix_audit_log_actor_user_id", table_name="audit_log")

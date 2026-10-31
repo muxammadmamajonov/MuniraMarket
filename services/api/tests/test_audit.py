@@ -132,6 +132,12 @@ def test_diff_fields() -> None:
         "https://cdn.example.com/images/olma.webp",
         "https://cdn.example.com:443/a.png?v=2#x",
         "https://img.example.uz/%D0%B0.png",
+        "https://cdn.example.com./a.png",
+        "https://cdn1.example.com/a.png",
+        "https://0a.example.com/a.png",
+        "https://x0.example.com/a.png",
+        "https://123.example.com/a.png",
+        "https://cdn.0xide.com/a.png",
     ],
 )
 def test_valid_image_urls(url: str) -> None:
@@ -162,6 +168,20 @@ def test_valid_image_urls(url: str) -> None:
         "https://cdn.example.123/a.png",
         "https://" + "a" * 2048 + ".com/",
         "https:///a.png",
+        # Hosts a browser parses as IPv4 (WHATWG "ends in a number"), or hex-numeric labels.
+        "https://127.0.0.0x1/",
+        "https://0x7f.0x0.0x0.0x1/",
+        "https://1.2.3.0x4./",
+        "https://0x7f000001/",
+        "https://2130706433/",
+        "https://0177.0.0.1/",
+        "https://127.1/",
+        "https://example.0x10/",
+        "https://example.0x/",
+        "https://example.com.0/",
+        "https://0x7f.example.com/",
+        "https://cdn.0XFF.example.com/",
+        "https://cdn.example.com../a.png",
     ],
 )
 def test_invalid_image_urls(url: str) -> None:

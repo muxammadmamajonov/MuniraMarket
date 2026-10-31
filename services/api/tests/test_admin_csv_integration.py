@@ -7,22 +7,33 @@ the ``products`` table and the audit log exactly as they were.
 import asyncio
 import csv
 import io
+import uuid
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Any
 
 import httpx
 import pytest_asyncio
 from sqlalchemy import func, select
 
-from app.domain.catalog_csv import BOM, COLUMNS
+from app.domain.catalog_csv import BOM, COLUMNS, EXPORT_COLUMNS
 from app.models.audit import AuditLog
 from app.models.catalog import Category, Product
 from app.models.enums import UserRole
 from app.repositories.users import UserRecord
 from tests.admin_factories import CSV_HEADERS, audit_rows, build_admin_app, error_of
-from tests.db_data import TEST_USER_HEADER, SessionFactory, add_category, add_product, add_user
+from tests.db_data import (
+    TEST_USER_HEADER,
+    SessionFactory,
+    add_category,
+    add_product,
+    add_user,
+    add_zone,
+    build_app,
+)
 from tests.db_support import INTEGRATION_MARKS
+from tests.order_factories import order_body
 
 pytest_plugins = ["tests.db_fixtures"]
 pytestmark = INTEGRATION_MARKS
@@ -65,6 +76,15 @@ class Shop:
     async def audit_count(self) -> int:
         async with self.factory() as session:
             return (await session.execute(select(func.count()).select_from(AuditLog))).scalar_one()
+
+    async def product_state(self, sku: str) -> tuple[int | None, datetime]:
+        async with self.factory() as session:
+            row = (
+                await session.execute(
+                    select(Product.stock_quantity, Product.updated_at).where(Product.sku == sku)
+                )
+            ).one()
+            return row.stock_quantity, row.updated_at
 
 
 @pytest_asyncio.fixture(loop_scope="module")
@@ -301,7 +321,9 @@ async def test_export_then_import_is_unchanged(shop: Shop) -> None:
     assert text.startswith(BOM)
     assert "DEMO-ARXIV" not in text
     records = list(csv.reader(io.StringIO(text.removeprefix(BOM), newline="")))
-    assert records[0] == list(COLUMNS)
+    assert records[0] == list(EXPORT_COLUMNS)
+    # Every cell is quoted (a separator inside a value never starts a new cell).
+    assert text.removeprefix(BOM).startswith('"sku","slug",')
     assert [record[0] for record in records[1:]] == sorted(record[0] for record in records[1:])
     for record in records[1:]:
         for cell in record:
@@ -343,3 +365,109 @@ async def test_concurrent_imports_of_the_same_new_sku(shop: Shop) -> None:
     assert count == 1
     creates = [row for row in await audit_rows(shop.factory) if row.action == "product.create"]
     assert len(creates) == 1
+
+
+# --- stale rows (lost updates) ----------------------------------------------------------------
+
+
+async def place_order(shop: Shop, sku: str, quantity: int) -> dict[str, Any]:
+    """A customer orders ``quantity`` of ``sku`` through the storefront API."""
+    await add_zone(shop.factory, f"demo-{uuid.uuid4().hex[:8]}", ["chilonzor"])
+    customer = await add_user(shop.factory)
+    async with shop.factory() as session:
+        product = (await session.execute(select(Product).where(Product.sku == sku))).scalar_one()
+    app = build_app(shop.factory, [customer])
+    transport = httpx.ASGITransport(app=app, raise_app_exceptions=True)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        added = await client.post(
+            "/api/v1/cart/items", json={"product_id": str(product.id), "quantity": quantity}
+        )
+        assert added.status_code == 200, added.text
+        total = product.price_uzs * quantity + 15_000
+        response = await client.post(
+            "/api/v1/orders",
+            json=order_body(expected_total_uzs=total),
+            headers={"Idempotency-Key": str(uuid.uuid4())},
+        )
+        assert response.status_code == 201, response.text
+        order: dict[str, Any] = response.json()
+        return order
+
+
+async def test_import_of_a_file_exported_before_an_order_is_stale(shop: Shop) -> None:
+    await seed(shop)  # DEMO-OLMA: 12 000, stock 5
+    exported = await shop.export()
+    stock_before, stamp_before = await shop.product_state("DEMO-OLMA")
+    assert stock_before == 5
+
+    await place_order(shop, "DEMO-OLMA", 5)  # 60 000 + delivery: above the 50 000 minimum
+    stock_after, stamp_after = await shop.product_state("DEMO-OLMA")
+    assert stock_after == 0
+    assert stamp_after > stamp_before  # the order's stock decrement bumped updated_at
+
+    before, audit_before = await shop.products(), await shop.audit_count()
+    for dry_run in (True, False):
+        result = (await shop.upload(exported, dry_run=dry_run)).json()
+        assert result["applied"] is False
+        assert [(e["row"], e["column"], e["code"]) for e in result["errors"]] == [
+            (1, "updated_at", "stale_row")
+        ]
+        assert result["errors"][0]["message"] == (
+            "The product changed after this file was exported; export again"
+        )
+    # Nothing written: the stock is not set back to 5, the other row is not applied either.
+    assert await shop.products() == before
+    assert await shop.audit_count() == audit_before
+
+    # Exporting again and importing that file works (nothing changed in between).
+    fresh = (await shop.upload(await shop.export())).json()
+    assert (fresh["applied"], fresh["errors"], fresh["unchanged"]) == (True, [], 2)
+    assert (await shop.product_state("DEMO-OLMA"))[0] == 0
+
+    # Clearing updated_at overwrites on purpose.
+    records = list(csv.reader(io.StringIO(exported.decode("utf-8").removeprefix(BOM))))
+    header, *rows = records
+    for row in rows:
+        row[header.index("updated_at")] = ""
+    buffer = io.StringIO(newline="")
+    csv.writer(buffer, lineterminator="\r\n").writerows([header, *rows])
+    forced = (await shop.upload((BOM + buffer.getvalue()).encode())).json()
+    assert (forced["applied"], forced["updates"]) == (True, 1)
+    assert (await shop.product_state("DEMO-OLMA"))[0] == 5
+
+
+async def test_cancel_restock_and_admin_edits_make_an_export_stale(shop: Shop) -> None:
+    await seed(shop)
+    order = await place_order(shop, "DEMO-OLMA", 5)
+    exported = await shop.export()
+    _, stamp = await shop.product_state("DEMO-OLMA")
+
+    # The operator cancels: the restock bumps updated_at as well.
+    operator = await add_user(shop.factory, role=UserRole.OPERATOR)
+    app = build_app(shop.factory, [operator])
+    transport = httpx.ASGITransport(app=app, raise_app_exceptions=True)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        cancelled = await client.patch(
+            f"/api/v1/admin/orders/{order['id']}/status",
+            json={"status": "CANCELLED", "reason": "Demo sabab"},
+        )
+        assert cancelled.status_code == 200, cancelled.text
+    stock, restocked_stamp = await shop.product_state("DEMO-OLMA")
+    assert (stock, restocked_stamp > stamp) == (5, True)
+    result = (await shop.upload(exported)).json()
+    assert [(e["row"], e["code"]) for e in result["errors"]] == [(1, "stale_row")]
+
+    # Another admin's edit through the API makes the file stale too (DEMO-PIYOZ, row 2).
+    exported = await shop.export()
+    async with shop.factory() as session:
+        piyoz = (
+            await session.execute(select(Product.id).where(Product.sku == "DEMO-PIYOZ"))
+        ).scalar_one()
+    patched = await shop.client.patch(
+        f"{PRODUCTS}/{piyoz}", json={"price_uzs": 4_500}, headers=shop.headers
+    )
+    assert patched.status_code == 200, patched.text
+    before = await shop.products()
+    result = (await shop.upload(exported)).json()
+    assert [(e["row"], e["code"]) for e in result["errors"]] == [(2, "stale_row")]
+    assert await shop.products() == before

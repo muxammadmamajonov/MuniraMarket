@@ -3,7 +3,8 @@
 Refuses to run unless ``APP_ENV`` is ``development`` or ``test``. Everything here is made up:
 generic ``Demo``/``Демо`` names, ``DEMO-`` SKUs, round prices and no image URLs (the web app shows a
 placeholder). It is safe to run repeatedly: rows are upserted by slug and an unchanged row is not
-touched, so a second run changes nothing.
+touched, so a second run changes nothing. A demo product an admin has archived is left alone (not
+reactivated, not updated).
 
 The data deliberately includes the edge cases the catalog and cart must handle: products with an
 old price, untracked stock, an out-of-stock product, an inactive product, an inactive category,
@@ -442,7 +443,9 @@ async def _seed_products(session: AsyncSession, category_ids: dict[str, uuid.UUI
         statement = statement.on_conflict_do_update(
             index_elements=[Product.slug],
             set_={column: getattr(statement.excluded, column) for column in PRODUCT_COLUMNS},
-            where=_differs(Product, statement.excluded, PRODUCT_COLUMNS),
+            # An admin archived it: leave it archived (and inactive, as the CHECK requires).
+            where=Product.archived_at.is_(None)
+            & _differs(Product, statement.excluded, PRODUCT_COLUMNS),
         )
         written += (await session.execute(statement)).rowcount  # type: ignore[attr-defined]
     return written

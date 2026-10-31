@@ -414,6 +414,18 @@ _FUNCTION_SQL = (
     "SELECT count(*) FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace "
     "WHERE n.nspname = current_schema() AND p.proname = 'audit_log_reject_change'"
 )
+_AUDIT_TRIGGERS_SQL = (
+    "SELECT t.tgname::text, t.tgenabled::text FROM pg_trigger t "
+    "JOIN pg_class c ON c.oid = t.tgrelid JOIN pg_namespace n ON n.oid = c.relnamespace "
+    "WHERE n.nspname = current_schema() AND NOT t.tgisinternal "
+    "AND t.tgname IN ('audit_log_append_only', 'audit_log_no_truncate') ORDER BY t.tgname"
+)
+
+
+async def _audit_triggers(engine: AsyncEngine) -> list[tuple[str, str]]:
+    """``(name, tgenabled)`` of the audit_log triggers; ``O`` means enabled."""
+    async with engine.connect() as conn:
+        return [(row[0], row[1]) for row in await conn.execute(text(_AUDIT_TRIGGERS_SQL))]
 
 
 async def test_admin_revision_downgrades_to_0003_and_back(empty_engine: AsyncEngine) -> None:
@@ -423,6 +435,10 @@ async def test_admin_revision_downgrades_to_0003_and_back(empty_engine: AsyncEng
     assert await _columns(empty_engine, "orders") >= SLOT_ORDER_COLUMNS
     assert {"sort_order", "archived_at"} <= await _columns(empty_engine, "products")
     assert await _scalar(empty_engine, _FUNCTION_SQL) == 1
+    assert await _audit_triggers(empty_engine) == [
+        ("audit_log_append_only", "O"),
+        ("audit_log_no_truncate", "O"),
+    ]
 
     await downgrade(empty_engine, "0003")
     assert not (await _tables(empty_engine) & ADMIN_TABLES)
@@ -430,6 +446,7 @@ async def test_admin_revision_downgrades_to_0003_and_back(empty_engine: AsyncEng
     assert not ({"sort_order", "archived_at"} & await _columns(empty_engine, "products"))
     assert "ck_products_archived_is_inactive" not in await _constraints(empty_engine, "products")
     assert await _scalar(empty_engine, _FUNCTION_SQL) == 0
+    assert await _audit_triggers(empty_engine) == []
     assert await _scalar(empty_engine, "SELECT version_num FROM alembic_version") == "0003"
 
     await upgrade(empty_engine)
@@ -451,6 +468,8 @@ async def test_audit_log_is_append_only(empty_engine: AsyncEngine) -> None:
         for statement in (
             "UPDATE audit_log SET action = 'zone.delete' WHERE id = :id",
             "DELETE FROM audit_log WHERE id = :id",
+            "TRUNCATE audit_log",
+            "TRUNCATE audit_log CASCADE",
         ):
             with pytest.raises(DBAPIError, match="audit_log is append-only"):
                 async with conn.begin_nested():
@@ -460,6 +479,13 @@ async def test_audit_log_is_append_only(empty_engine: AsyncEngine) -> None:
                 text("SELECT action FROM audit_log WHERE id = :id"), {"id": audit_id}
             )
         ).scalar_one() == "zone.create"
+        await conn.commit()
+
+    # The test harness empties the tables between tests: it may truncate the log, and leaves the
+    # trigger enabled again afterwards.
+    await truncate_app_tables(empty_engine)
+    assert await _scalar(empty_engine, "SELECT count(*) FROM audit_log") == 0
+    assert ("audit_log_no_truncate", "O") in await _audit_triggers(empty_engine)
 
 
 async def test_admin_check_constraints(empty_engine: AsyncEngine) -> None:

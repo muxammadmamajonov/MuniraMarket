@@ -1486,7 +1486,9 @@
               "invalid_text",
               "formula_not_allowed",
               "invalid_image_url",
-              "product_archived"
+              "invalid_updated_at",
+              "product_archived",
+              "stale_row"
             ],
             "title": "Code",
             "type": "string"
@@ -1508,7 +1510,8 @@
                   "stock_quantity",
                   "is_active",
                   "sort_order",
-                  "image_url"
+                  "image_url",
+                  "updated_at"
                 ],
                 "type": "string"
               },

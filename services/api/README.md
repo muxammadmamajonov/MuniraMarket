@@ -261,14 +261,17 @@ from the next opening. Rules: `app/domain/delivery.py`, design: `architecture/00
 | `POST /orders/{id}/cancel`       | `{reason}` (3-300); only `NEW`/`CONFIRMED`; returns tracked stock.     |
 
 - **Delivery slots** (ADR 0010): the quote also returns `slot_required` and `delivery_slots`
-  (`id`, `date`, `starts_at`/`ends_at` `HH:MM` Asia/Tashkent, `remaining`, `is_full`; active, cutoff
-  in the future, next 14 days, at most 60). A zone with at least one bookable slot requires
-  `delivery_slot_id` on `POST /orders` (`409 slot_required`); a zone without slots works as before.
-  The order books one place with a single conditional `UPDATE` (`reserved_count < capacity`,
-  active, same zone, cutoff ahead) after the product locks; otherwise `409 slot_full` or
-  `slot_unavailable`. A `CHECK (reserved_count <= capacity)` is the backstop. Cancelling (customer
-  or operator) gives the place back in the same transaction. Orders keep `delivery_slot`
-  (date and times) as a snapshot.
+  (`id`, `date`, `starts_at`/`ends_at` `HH:MM` Asia/Tashkent, `remaining`, `is_full`; at most 60).
+  One predicate (`bookable_slot` in `app/repositories/delivery.py`) defines a *bookable* slot:
+  active, cutoff in the future, and dated within the 14 Tashkent days starting today. A zone with
+  at least one bookable slot requires `delivery_slot_id` on `POST /orders` (`409 slot_required`);
+  a zone without any (none at all, or only slots further ahead) works as before, so a required
+  slot is always among those offered. The order books one place with a single conditional
+  `UPDATE` (same zone, bookable, `reserved_count < capacity`) after the product locks; otherwise
+  `409 slot_full`, or `slot_unavailable` (also for a slot beyond the 14-day window). A
+  `CHECK (reserved_count <= capacity)` is the backstop. Cancelling (customer or operator) gives
+  the place back in the same transaction. Orders keep `delivery_slot` (date and times) as a
+  snapshot.
 - **Quote** never fails because of the cart: `issues` (`cart_empty`, `cart_has_issues`,
   `below_min_order`) and `can_place_order` say what blocks an order. `409 district_not_served`
   when no active zone covers the district.
@@ -335,22 +338,48 @@ a reason from any non-final status); `expected_status` turns a lost update into
   order lines keep their snapshot and product reference. An archived product must be restored
   (it comes back inactive) before it can be edited.
 - **Image URLs** are `https` links on a public host name (no IP literals, internal suffixes,
-  credentials or non-default ports) or `null` (placeholder). The server never fetches them
+  credentials or non-default ports) or `null` (placeholder). A host a browser would read as an
+  IPv4 address is an IP literal too: after one trailing dot is dropped, the last label must not be
+  numeric (`^(0x[0-9a-f]*|[0-9]+)$`, WHATWG "ends in a number": `127.0.0.0x1`, `2130706433`), and no
+  label may be `0x`-hex (`0x7f.0x0.0x0.0x1`). The server never fetches them
   (`app/domain/image_url.py`); real uploads come with deployment.
 - **CSV** (`app/domain/catalog_csv.py`): columns `sku,slug,category_slug,name_uz,name_ru,
   description_uz,description_ru,unit,price_uzs,old_price_uzs,stock_quantity,is_active,sort_order,
-  image_url`, upsert by SKU. UTF-8 only (BOM optional), strict quoting, exact column set. Every row
-  is validated (`duplicate_sku`, `invalid_money`, `invalid_stock`, `category_not_found`,
-  `invalid_text` for control characters/U+FFFD/mojibake, `formula_not_allowed`, ...), errors are
-  returned per row and column (at most 200), and **if any row is wrong nothing is written**.
-  `dry_run=true` never writes. Applying re-validates under product row locks in one transaction and
-  audits every changed product. Export prefixes text cells starting with `=`, `+`, `-`, `@`, `'`,
-  tab or CR with `'`; import reverses exactly that and rejects unescaped formula-like text.
+  image_url,updated_at`, upsert by SKU. UTF-8 only (BOM optional), strict quoting, exact column set
+  (`updated_at` is optional on import, so older files still work). Every row is validated
+  (`duplicate_sku`, `invalid_money`, `invalid_stock`, `category_not_found`, `invalid_text` for
+  control characters/invisible or text-direction characters/U+FFFD/mojibake,
+  `formula_not_allowed`, `invalid_updated_at`, `stale_row`, ...), errors are returned per row and
+  column (at most 200), and **if any row is wrong nothing is written**. `dry_run=true` never
+  writes. Applying re-validates under product row locks in one transaction and audits every
+  changed product. Export quotes **every** cell (a `;` or tab inside a value cannot start a cell in
+  a ru/uz spreadsheet) and prefixes text cells starting with `=`, `+`, `-`, `@`, `'`, tab or CR with
+  `'`; import accepts quoted or unquoted cells, reverses exactly that prefix and rejects unescaped
+  formula-like text.
+- **Stale rows**: export (and the template) end with `updated_at`, the product's last change
+  (ISO-8601 UTC with microseconds, e.g. `2026-10-31T07:15:30.123456+00:00`). On import, a row whose
+  `updated_at` is non-empty and differs from the product's current one is `stale_row` ("the
+  product changed after this file was exported; export again"), as is a non-empty `updated_at`
+  for a SKU that does not exist. So an order that took stock (orders and cancellations bump
+  `products.updated_at`), or another admin's edit, after the export is never reverted by
+  re-importing the file. Checked in dry runs and again under the product locks when applying.
+  Leave `updated_at` empty for new products, or to overwrite on purpose.
+- **Names and descriptions** (products, categories, zones; JSON and CSV) refuse Unicode format
+  characters (category `Cf`: bidi overrides/isolates like U+202E, zero-width U+200B/U+200D, U+FEFF,
+  soft hyphen) and lone surrogates; single-line names also refuse U+2028/U+2029 and invisible
+  filler letters (`app/domain/text.py`). JSON: `422 validation_error`; CSV: `invalid_text`.
+- **Zone/slot delete**: refused with `409 zone_in_use` / `slot_in_use` while slots or orders
+  reference the zone (orders the slot). Should a slot or order be committed between that check
+  and the delete, the `RESTRICT` foreign key refuses it and the answer is the same `409`.
 - **Last admin**: role/block changes lock every active admin row (`FOR UPDATE`, id order) and
   refuse to leave no active admin (`409 last_admin`); blocking yourself is `409
   cannot_block_self`. A blocked user's next request is `403 account_blocked`.
-- **Audit log** (`app/audit.py`): one append-only row (a trigger rejects `UPDATE`/`DELETE`) per
-  catalog, CSV, zone, slot, role/block and order-status change, written in the same transaction.
+- **Audit log** (`app/audit.py`): one append-only row (triggers reject `UPDATE`/`DELETE` and
+  `TRUNCATE`) per catalog, CSV, zone, slot, role/block and order-status change, written in the same
+  transaction. The triggers stop application mistakes, not the table owner (who can drop them):
+  production should run the API as a role with only `INSERT`/`SELECT` on `audit_log`
+  (deployment item, ADR 0010). `zone.delete` records the deleted zone's `districts` and
+  `district_count`, like `zone.update`.
   `details` keeps only allow-listed fields as `{"from", "to"}` scalars; phone numbers, addresses,
   names, cancel reasons (only `has_reason`), `initData`, cookies and tokens are never recorded.
 
@@ -386,8 +415,9 @@ make seed             # or from the repo root: pnpm api:seed
 `python -m app.dev.seed` loads synthetic catalog data and delivery zones (`Demo`/`Демо` names, `DEMO-0001...` SKUs,
 round prices, no image URLs). It refuses to run unless `APP_ENV` is `development` or `test`, and is
 idempotent: rows are upserted by slug and an unchanged row is not touched, so a second run writes
-nothing. The data includes products with an old price, untracked stock, an out-of-stock product, an
-inactive product, an inactive category, and an active category under an inactive one (hidden).
+nothing. A demo product an admin archived stays archived and untouched. The data includes
+products with an old price, untracked stock, an out-of-stock product, an inactive product, an
+inactive category, and an active category under an inactive one (hidden).
 The zones cover Tashkent's districts (each in at most one zone): one with a free-delivery
 threshold, one with a higher minimum, one never free, and an inactive zone whose districts are not
 served. Delivery slots are seeded only for `demo-chekka` (chilonzor, olmazor, uchtepa, yashnobod):
@@ -415,7 +445,8 @@ once into `public` by the test setup) resolve, but migrations do **not** rely on
 autogenerate to that schema. A database whose `public` is already migrated and seeded (a developer
 database used as `TEST_DATABASE_URL`) is therefore left alone: the harness refuses to migrate a
 schema not named `mm_test_*`, fails if the tables did not land in the test schema, and empties
-tables between tests with a schema-qualified `TRUNCATE`. Without those attributes `env.py` behaves
+tables between tests with a schema-qualified `TRUNCATE` (disabling only the `audit_log_no_truncate`
+trigger around it, in the same transaction). Without those attributes `env.py` behaves
 as before. `tests/test_migrations.py` also checks
 `upgrade head` -> `downgrade base` -> `upgrade head`, that `compare_metadata` reports no difference
 between the models and the migrated schema, the `stock_quantity >= 0` constraint, and the trigram

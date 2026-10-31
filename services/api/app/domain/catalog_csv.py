@@ -3,10 +3,19 @@
 Format (template, export and import share it):
 
 - UTF-8, written with a byte-order mark and CRLF line endings; on import the BOM is optional.
-- Exactly the columns in :data:`COLUMNS` (export and template use this order; an import may
-  order them differently, but every column must be present exactly once and nothing else).
+- The columns in :data:`COLUMNS`, then ``updated_at`` (:data:`EXPORT_COLUMNS`; export and
+  template use this order). An import may order them differently, but every column of
+  :data:`COLUMNS` must be present exactly once, ``updated_at`` at most once, and nothing else.
 - RFC 4180 quoting (``"`` doubled inside quoted fields), parsed with the ``csv`` module in
-  strict mode, so a stray quote is an error instead of a silently merged field.
+  strict mode, so a stray quote is an error instead of a silently merged field. Export quotes
+  **every** cell, so a separator inside a value (``,``, or ``;`` / tab, which spreadsheets in
+  ru/uz locales split on) can never start a new cell; import accepts quoted and unquoted cells.
+
+Lost updates: ``updated_at`` is the product's last change as exported (ISO-8601, UTC, with
+microseconds). When an imported row carries one and the product's current ``updated_at`` differs
+(an order took stock, another admin edited it, ...), the row is refused (``stale_row``) instead of
+writing the file's older values back. Leave it empty for new products, or to overwrite on
+purpose; files without the column are accepted as before.
 
 Spreadsheet formula injection: a text cell beginning with ``= + - @ \\t \\r`` would be evaluated
 by Excel/LibreOffice when an exported file is opened. Export prefixes such cells (and cells that
@@ -26,9 +35,11 @@ import re
 import uuid
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from typing import Final, Literal, cast
 
 from app.domain.image_url import InvalidImageUrlError, validate_image_url
+from app.domain.text import has_invisible_characters
 from app.models.enums import Unit
 
 COLUMNS: Final = (
@@ -47,6 +58,9 @@ COLUMNS: Final = (
     "sort_order",
     "image_url",
 )
+# Optional on import; always written by export and the template (last column).
+OPTIONAL_COLUMNS: Final = ("updated_at",)
+EXPORT_COLUMNS: Final = (*COLUMNS, *OPTIONAL_COLUMNS)
 Column = Literal[
     "sku",
     "slug",
@@ -62,6 +76,7 @@ Column = Literal[
     "is_active",
     "sort_order",
     "image_url",
+    "updated_at",
 ]
 
 MAX_ROWS: Final = 2000
@@ -119,7 +134,9 @@ RowErrorCode = Literal[
     "invalid_text",
     "formula_not_allowed",
     "invalid_image_url",
+    "invalid_updated_at",
     "product_archived",
+    "stale_row",
 ]
 FileErrorCode = Literal[
     "csv_invalid_encoding", "csv_invalid_header", "csv_malformed", "csv_too_many_rows"
@@ -180,6 +197,8 @@ class CsvRow:
     is_active: bool
     sort_order: int
     image_url: str | None
+    # ``updated_at`` as exported; ``None``: the column is absent or empty (no staleness check).
+    updated_at: datetime | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -228,11 +247,11 @@ def _check_header(header: Sequence[str]) -> dict[str, int]:
             details.append(("duplicate", _echo(name)))
         seen.add(name)
     details += [("missing", column) for column in COLUMNS if column not in seen]
-    details += [("unknown", _echo(name)) for name in names if name not in COLUMNS]
+    details += [("unknown", _echo(name)) for name in names if name not in EXPORT_COLUMNS]
     if details:
         raise CsvFileError(
             "csv_invalid_header",
-            "The header must be exactly: " + ",".join(COLUMNS),
+            "The header must be exactly: " + ",".join(COLUMNS) + " (optionally ,updated_at)",
             details,
         )
     return {name: index for index, name in enumerate(names)}
@@ -257,7 +276,7 @@ def parse_catalog_csv(raw: bytes) -> ParsedCsv:
     if header is None:
         raise CsvFileError(
             "csv_invalid_header",
-            "The file is empty; the header must be: " + ",".join(COLUMNS),
+            "The file is empty; the header must be: " + ",".join(EXPORT_COLUMNS),
             [("missing", column) for column in COLUMNS],
         )
     positions = _check_header(header)
@@ -271,12 +290,12 @@ def parse_catalog_csv(raw: bytes) -> ParsedCsv:
         total += 1
         if total > MAX_ROWS:
             raise CsvFileError("csv_too_many_rows", f"At most {MAX_ROWS} product rows per file")
-        if len(record) != len(COLUMNS):
+        if len(record) != len(positions):
             raise CsvFileError(
                 "csv_malformed",
-                f"Row {total} has {len(record)} fields, expected {len(COLUMNS)}",
+                f"Row {total} has {len(record)} fields, expected {len(positions)}",
             )
-        cells = {column: record[positions[column]] for column in COLUMNS}
+        cells = {column: record[position] for column, position in positions.items()}
         parsed, row_errors = _parse_row(total, cells)
         raw_sku = cells["sku"].strip()
         if raw_sku and raw_sku in seen_skus:
@@ -308,6 +327,10 @@ def _text(raw: str, *, multiline: bool, max_length: int) -> str:
     control = _CONTROL_MULTILINE if multiline else _CONTROL
     if control.search(value):
         raise _CellError("invalid_text", "Contains control characters")
+    if has_invisible_characters(value, multiline=multiline):
+        raise _CellError(
+            "invalid_text", "Contains invisible or text-direction characters (U+200B, U+202E...)"
+        )
     if "\ufffd" in value:
         raise _CellError("invalid_text", "Contains U+FFFD (the file was not saved as UTF-8)")
     if _MOJIBAKE.search(value):
@@ -414,6 +437,22 @@ def _image_url(raw: str) -> str | None:
         raise _CellError("invalid_image_url", f"Image URL {exc}") from None
 
 
+def _updated_at(raw: str) -> datetime | None:
+    value = raw.strip()
+    if not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(value)
+    except ValueError:
+        parsed = None
+    if parsed is None or parsed.tzinfo is None:
+        raise _CellError(
+            "invalid_updated_at",
+            "Keep the exported value (ISO-8601 with time zone) or leave it empty",
+        )
+    return parsed
+
+
 _PARSERS: Final[Mapping[Column, Callable[[str], object]]] = {
     "sku": _sku,
     "slug": _slug,
@@ -429,6 +468,7 @@ _PARSERS: Final[Mapping[Column, Callable[[str], object]]] = {
     "is_active": _bool,
     "sort_order": _sort_order,
     "image_url": _image_url,
+    "updated_at": _updated_at,
 }
 
 
@@ -437,7 +477,7 @@ def _parse_row(row: int, cells: Mapping[str, str]) -> tuple[CsvRow | None, list[
     values: dict[str, object] = {}
     for column, parse in _PARSERS.items():
         try:
-            values[column] = parse(cells[column])
+            values[column] = parse(cells.get(column, ""))
         except _CellError as exc:
             errors.append(CsvRowError(row, column, exc.code, exc.message))
     if errors:
@@ -465,6 +505,7 @@ def _parse_row(row: int, cells: Mapping[str, str]) -> tuple[CsvRow | None, list[
             is_active=cast("bool", values["is_active"]),
             sort_order=cast("int", values["sort_order"]),
             image_url=cast("str | None", values["image_url"]),
+            updated_at=cast("datetime | None", values["updated_at"]),
         ),
         [],
     )
@@ -497,6 +538,8 @@ class ExistingProduct:
     archived: bool
     # Current values of every field in ``PRODUCT_FIELDS``.
     values: Mapping[str, object]
+    # The product's current ``updated_at`` (compared with the row's, see ``stale_row``).
+    updated_at: datetime
 
 
 @dataclass(frozen=True, slots=True)
@@ -547,6 +590,27 @@ def referenced_slugs(rows: Iterable[CsvRow]) -> set[str]:
     return slugs
 
 
+def _stale_row_error(row: CsvRow, existing: ExistingProduct | None) -> CsvRowError | None:
+    """The row was exported before the product last changed (or its SKU no longer exists)."""
+    if row.updated_at is None:
+        return None
+    if existing is None:
+        return CsvRowError(
+            row.row,
+            "updated_at",
+            "stale_row",
+            "No product has this SKU any more; export again (or clear updated_at to create it)",
+        )
+    if existing.updated_at != row.updated_at:
+        return CsvRowError(
+            row.row,
+            "updated_at",
+            "stale_row",
+            "The product changed after this file was exported; export again",
+        )
+    return None
+
+
 def plan_import(rows: Sequence[CsvRow], snapshot: CatalogSnapshot) -> ImportPlan:
     """Check the rows against the catalog and classify each SKU. Pure: writes nothing."""
     errors: list[CsvRowError] = []
@@ -559,6 +623,9 @@ def plan_import(rows: Sequence[CsvRow], snapshot: CatalogSnapshot) -> ImportPlan
             row_errors.append(
                 CsvRowError(row.row, "sku", "product_archived", "Restore the product first")
             )
+        stale = _stale_row_error(row, existing)
+        if stale is not None:
+            row_errors.append(stale)
         category_id = snapshot.category_ids.get(row.category_slug)
         if category_id is None:
             row_errors.append(
@@ -649,6 +716,12 @@ class ExportRow:
     is_active: bool
     sort_order: int
     image_url: str | None
+    updated_at: datetime
+
+
+def format_updated_at(value: datetime) -> str:
+    """``2026-10-31T07:00:00.000000+00:00``: UTC, always with microseconds (exact round trip)."""
+    return value.astimezone(UTC).isoformat(timespec="microseconds")
 
 
 def escape_cell(value: str) -> str:
@@ -665,16 +738,19 @@ def _cell(value: object) -> str:
         return value.value
     if isinstance(value, int):
         return str(value)
+    if isinstance(value, datetime):
+        return format_updated_at(value)
     return escape_cell(str(value))
 
 
 def render_csv(rows: Iterable[ExportRow]) -> bytes:
-    """UTF-8 with BOM, CRLF, header first. Every text cell is formula-escaped."""
+    """UTF-8 with BOM, CRLF, header first, every cell quoted. Text cells are formula-escaped."""
     buffer = io.StringIO(newline="")
-    writer = csv.writer(buffer, dialect=_StrictDialect)
-    writer.writerow(COLUMNS)
+    # Every cell quoted: a ``;`` or tab inside a value never splits it in a spreadsheet.
+    writer = csv.writer(buffer, dialect=_StrictDialect, quoting=csv.QUOTE_ALL)
+    writer.writerow(EXPORT_COLUMNS)
     for row in rows:
-        writer.writerow([_cell(getattr(row, column)) for column in COLUMNS])
+        writer.writerow([_cell(getattr(row, column)) for column in EXPORT_COLUMNS])
     return (BOM + buffer.getvalue()).encode("utf-8")
 
 

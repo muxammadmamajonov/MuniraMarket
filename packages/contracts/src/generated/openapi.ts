@@ -1461,7 +1461,9 @@ export interface components {
         | 'invalid_text'
         | 'formula_not_allowed'
         | 'invalid_image_url'
-        | 'product_archived';
+        | 'invalid_updated_at'
+        | 'product_archived'
+        | 'stale_row';
       /** Column */
       column:
         | (
@@ -1479,6 +1481,7 @@ export interface components {
             | 'is_active'
             | 'sort_order'
             | 'image_url'
+            | 'updated_at'
           )
         | null;
       /** Message */

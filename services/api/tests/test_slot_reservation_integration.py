@@ -298,6 +298,44 @@ async def test_unavailable_slots_are_refused(store: Store) -> None:
     assert (await store.order(bookable)).status_code == 201
 
 
+async def test_slots_beyond_the_offer_window_are_neither_required_nor_bookable(
+    store: Store,
+) -> None:
+    """Regression: a zone whose only slots lie beyond the 14 local days the quote offers used to
+    answer ``slot_required: true`` with an empty list, a checkout dead end."""
+    factory, zone = store.factory, store.zone
+    last_day = TODAY + timedelta(days=13)
+    far = await add_slot(factory, zone, TODAY + timedelta(days=14))
+    farther = await add_slot(factory, zone, TODAY + timedelta(days=40))
+    await store.fill_cart()
+
+    body = await store.quote()
+    assert (body["slot_required"], body["delivery_slots"]) == (False, [])
+    for slot in (far, farther):
+        error(await store.order(slot), 409, "slot_unavailable")
+        assert (await slot_state(factory, slot.id))[0] == 0
+    assert await store.count(Order) == 0
+
+    # The last day of the window is offered, required and bookable.
+    edge = await add_slot(factory, zone, last_day)
+    body = await store.quote()
+    assert body["slot_required"] is True
+    assert [slot["id"] for slot in body["delivery_slots"]] == [str(edge.id)]
+    error(await store.order(None), 409, "slot_required")
+    error(await store.order(far), 409, "slot_unavailable")
+    assert (await store.order(edge)).status_code == 201
+    assert (await slot_state(factory, edge.id))[0] == 1
+
+    # Without any slot in the window the zone works without slots again.
+    async with factory() as session:
+        await session.execute(
+            update(DeliverySlot).where(DeliverySlot.id == edge.id).values(is_active=False)
+        )
+        await session.commit()
+    await store.fill_cart()
+    assert (await store.order(None)).status_code == 201
+
+
 async def test_a_full_slot_is_refused(store: Store) -> None:
     slot = await add_slot(store.factory, store.zone, TOMORROW, capacity=1, reserved_count=1)
     await store.fill_cart()

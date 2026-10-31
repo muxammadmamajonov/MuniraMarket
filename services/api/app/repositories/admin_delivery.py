@@ -6,6 +6,10 @@ are checked and changed: a zone before its districts are replaced or it is delet
 its capacity, times or state change. Order creation books a slot with a conditional ``UPDATE`` on
 the same row, so a capacity change and a booking serialise (neither can leave
 ``reserved_count > capacity``; the CHECK constraint is the backstop).
+
+Deleting a zone or slot checks for references first; should a referencing row still win a race,
+the ``RESTRICT`` foreign key refuses the delete and that is reported as ``ZoneInUseError`` /
+``SlotInUseError`` (``409``), never as a server error.
 """
 
 import uuid
@@ -31,6 +35,10 @@ MAX_SLOT_LIST: Final = 1000
 
 ZONE_SLUG_CONSTRAINT: Final = "uq_delivery_zones_slug"
 SLOT_UNIQUE_CONSTRAINT: Final = "uq_delivery_slots_zone_id_slot_date_starts_at"
+# Foreign keys that refuse a delete (``RESTRICT``) because a row still references it; named
+# ``fk_<table>_<column>_<referenced table>`` by the naming convention.
+ZONE_REFERENCE_SUFFIX: Final = "_delivery_zones"
+SLOT_REFERENCE_SUFFIX: Final = "_delivery_slots"
 
 ZONE_FIELDS: Final = (
     "slug",
@@ -185,6 +193,12 @@ def _constraint(error: IntegrityError) -> str | None:
     if name is None:
         name = getattr(error.orig, "constraint_name", None)
     return name if isinstance(name, str) else None
+
+
+def _is_reference_to(error: IntegrityError, suffix: str) -> bool:
+    """The delete lost a race: a row inserted meanwhile references the deleted one."""
+    name = _constraint(error) or ""
+    return name.startswith("fk_") and name.endswith(suffix)
 
 
 def _zone_record(zone: DeliveryZone, districts: Iterable[str]) -> AdminZoneRecord:
@@ -347,7 +361,34 @@ class SqlAlchemyAdminDeliveryRepository:
     async def delete_zone(self, zone_id: uuid.UUID, *, actor: AuditActor) -> None:
         async with self._transaction():
             zone = await self._lock_zone(zone_id)
-            referenced = (
+            if await self._zone_referenced(zone_id):
+                raise ZoneInUseError()
+            slug = zone.slug
+            districts = sorted((await self._districts_of([zone_id]))[zone_id])
+            try:
+                async with self._session.begin_nested():
+                    await self._session.execute(
+                        delete(DeliveryZone).where(DeliveryZone.id == zone_id)
+                    )
+            except IntegrityError as error:
+                # A slot (or order) referencing the zone committed after the check above.
+                if _is_reference_to(error, ZONE_REFERENCE_SUFFIX):
+                    raise ZoneInUseError() from None
+                raise
+            record_audit(
+                self._session,
+                actor,
+                action="zone.delete",
+                entity_type=AuditEntity.ZONE,
+                entity_id=zone_id,
+                changes={"districts": (districts, None)},
+                extra={"slug": slug, "district_count": len(districts)},
+            )
+
+    async def _zone_referenced(self, zone_id: uuid.UUID) -> bool:
+        """Orders or slots point at the zone (then it is deactivated, never deleted)."""
+        return bool(
+            (
                 await self._session.execute(
                     select(
                         exists().where(Order.delivery_zone_id == zone_id)
@@ -355,18 +396,7 @@ class SqlAlchemyAdminDeliveryRepository:
                     )
                 )
             ).scalar_one()
-            if referenced:
-                raise ZoneInUseError()
-            slug = zone.slug
-            await self._session.execute(delete(DeliveryZone).where(DeliveryZone.id == zone_id))
-            record_audit(
-                self._session,
-                actor,
-                action="zone.delete",
-                entity_type=AuditEntity.ZONE,
-                entity_id=zone_id,
-                extra={"slug": slug},
-            )
+        )
 
     async def _lock_zone(self, zone_id: uuid.UUID) -> DeliveryZone:
         zone = (
@@ -551,18 +581,22 @@ class SqlAlchemyAdminDeliveryRepository:
     async def delete_slot(self, slot_id: uuid.UUID, *, actor: AuditActor) -> None:
         async with self._transaction():
             slot = await self._lock_slot(slot_id)
-            referenced = (
-                await self._session.execute(
-                    select(exists().where(Order.delivery_slot_id == slot_id))
-                )
-            ).scalar_one()
-            if slot.reserved_count > 0 or referenced:
+            if slot.reserved_count > 0 or await self._slot_referenced(slot_id):
                 raise SlotInUseError()
             removed = {
                 "zone_id": (slot.zone_id, None),
                 **{field: (value, None) for field, value in _slot_values(slot).items()},
             }
-            await self._session.execute(delete(DeliverySlot).where(DeliverySlot.id == slot_id))
+            try:
+                async with self._session.begin_nested():
+                    await self._session.execute(
+                        delete(DeliverySlot).where(DeliverySlot.id == slot_id)
+                    )
+            except IntegrityError as error:
+                # An order booking the slot committed after the check above.
+                if _is_reference_to(error, SLOT_REFERENCE_SUFFIX):
+                    raise SlotInUseError() from None
+                raise
             record_audit(
                 self._session,
                 actor,
@@ -571,6 +605,16 @@ class SqlAlchemyAdminDeliveryRepository:
                 entity_id=slot_id,
                 changes=removed,
             )
+
+    async def _slot_referenced(self, slot_id: uuid.UUID) -> bool:
+        """Orders point at the slot (even cancelled ones: their snapshot names it)."""
+        return bool(
+            (
+                await self._session.execute(
+                    select(exists().where(Order.delivery_slot_id == slot_id))
+                )
+            ).scalar_one()
+        )
 
     async def _lock_slot(self, slot_id: uuid.UUID) -> DeliverySlot:
         slot = (

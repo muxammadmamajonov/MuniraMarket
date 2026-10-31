@@ -110,12 +110,27 @@ async def engine_schema(engine: AsyncEngine) -> str:
         return await conn.run_sync(owned_test_schema)
 
 
+# The migration's statement trigger that rejects ``TRUNCATE audit_log`` (append-only log).
+AUDIT_TRUNCATE_TRIGGER = "audit_log_no_truncate"
+
+
 async def truncate_app_tables(engine: AsyncEngine) -> None:
-    """Empty the app tables of the engine's test schema, schema-qualified: never ``public``."""
+    """Empty the app tables of the engine's test schema, schema-qualified: never ``public``.
+
+    ``audit_log`` refuses ``TRUNCATE``; its trigger is disabled for this one statement only, in
+    the same transaction (DDL is transactional), so it is back on before anything else runs.
+    """
     schema = await engine_schema(engine)
     tables = ", ".join(f'"{schema}"."{table}"' for table in APP_TABLES)
+    audit_log = f'"{schema}"."audit_log"'
     async with engine.begin() as connection:
+        await connection.execute(
+            text(f"ALTER TABLE {audit_log} DISABLE TRIGGER {AUDIT_TRUNCATE_TRIGGER}")
+        )
         await connection.execute(text(f"TRUNCATE {tables} CASCADE"))
+        await connection.execute(
+            text(f"ALTER TABLE {audit_log} ENABLE TRIGGER {AUDIT_TRUNCATE_TRIGGER}")
+        )
 
 
 async def _assert_migrated_into(engine: AsyncEngine, schema: str) -> None:

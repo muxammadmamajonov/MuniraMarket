@@ -14,11 +14,16 @@ the quote; refuse unless the cart is clean, the zone serves the district, the mi
 met and the total equals what the customer was shown; then decrement tracked stock, snapshot the
 lines, write the status history and the notification outbox row, and empty the cart.
 
-Delivery slots: when the zone has an active slot whose cutoff is ahead, the order must book one.
-The reservation is a single ``UPDATE ... SET reserved_count = reserved_count + 1 WHERE`` (same
-zone, active, cutoff ahead, ``reserved_count < capacity``) ``RETURNING``, so concurrent orders can
+Delivery slots: when the zone has a bookable slot (``bookable_slot``: active, cutoff ahead, within
+the quote's 14 local days), the order must book one. The reservation is a single
+``UPDATE ... SET reserved_count = reserved_count + 1 WHERE`` (same zone, bookable,
+``reserved_count < capacity``) ``RETURNING``, so concurrent orders can
 never take more places than the slot has (the ``reserved_count <= capacity`` CHECK is the
 backstop). An idempotent replay returns before it, so it never books a second place.
+
+Stock changes go through Core ``update(Product)``, which applies the model's
+``onupdate=func.now()`` to ``products.updated_at``: a catalog CSV exported before an order (or a
+restock) is then refused as ``stale_row`` instead of writing the old stock back.
 
 Cancelling (by the customer, or an operator) returns tracked stock and the slot's place, and
 writes an ``order.status_change`` audit row (no reason text, no recipient data); so does every
@@ -74,6 +79,7 @@ from app.repositories.delivery import (
     SlotOptionRecord,
     SqlAlchemyDeliveryZoneRepository,
     ZoneRecord,
+    bookable_slot,
 )
 
 ORDER_STATUS_EVENT = "order.status_changed"
@@ -512,8 +518,7 @@ class SqlAlchemyOrderRepository:
                 .where(
                     DeliverySlot.id == slot_id,
                     DeliverySlot.zone_id == zone_id,
-                    DeliverySlot.is_active.is_(True),
-                    DeliverySlot.cutoff_at > now,
+                    bookable_slot(now),
                     DeliverySlot.reserved_count < DeliverySlot.capacity,
                 )
                 .values(reserved_count=DeliverySlot.reserved_count + 1, updated_at=func.now())
@@ -527,12 +532,12 @@ class SqlAlchemyOrderRepository:
         # Nothing booked: say why. Only "full" is worth a different message to the customer.
         slot = (
             await self._session.execute(
-                select(DeliverySlot.zone_id, DeliverySlot.is_active, DeliverySlot.cutoff_at).where(
+                select(DeliverySlot.zone_id, bookable_slot(now).label("bookable")).where(
                     DeliverySlot.id == slot_id
                 )
             )
         ).one_or_none()
-        if slot is None or slot.zone_id != zone_id or not slot.is_active or slot.cutoff_at <= now:
+        if slot is None or slot.zone_id != zone_id or not slot.bookable:
             raise SlotUnavailableError()
         raise SlotFullError()
 

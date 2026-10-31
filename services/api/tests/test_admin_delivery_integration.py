@@ -12,13 +12,19 @@ from datetime import UTC, date, datetime, time
 from typing import Any
 
 import httpx
+import pytest
 import pytest_asyncio
 from sqlalchemy import select
 
-from app.audit import AuditEntity
+from app.audit import AuditActor, AuditEntity
 from app.models.audit import AuditLog
 from app.models.delivery import DeliverySlot, DeliveryZone, DeliveryZoneDistrict
 from app.models.enums import UserRole
+from app.repositories.admin_delivery import (
+    SlotInUseError,
+    SqlAlchemyAdminDeliveryRepository,
+    ZoneInUseError,
+)
 from app.repositories.users import UserRecord
 from tests.conftest import FakeClock
 from tests.db_data import (
@@ -269,16 +275,23 @@ async def test_patch_changes_only_the_fields_sent(api: Admin) -> None:
 
 
 async def test_delete_zone(api: Admin) -> None:
-    free = (await api.post(ZONES, zone_body(slug="demo-free", districts=["sergeli"]))).json()
+    free = (
+        await api.post(ZONES, zone_body(slug="demo-free", districts=["sergeli", "bektemir"]))
+    ).json()
     response = await api.delete(f"{ZONES}/{free['id']}")
     assert response.status_code == 204
     assert response.content == b""
     assert await api.districts(free["id"]) == set()  # cascaded
     deleted = (await audit_rows(api.factory))[-1]
+    # The districts the zone served are recorded, like zone.update does.
     assert (deleted.action, deleted.entity_id, deleted.details) == (
         "zone.delete",
         free["id"],
-        {"slug": "demo-free"},
+        {
+            "changes": {"districts": {"from": "bektemir,sergeli", "to": None}},
+            "slug": "demo-free",
+            "district_count": 2,
+        },
     )
     error(await api.delete(f"{ZONES}/{free['id']}"), 404, "zone_not_found")
 
@@ -302,6 +315,62 @@ async def test_delete_zone(api: Admin) -> None:
     assert placed.status_code == 201, placed.text
     error(await api.delete(f"{ZONES}/{ordered.id}"), 409, "zone_in_use")
     assert [row.action for row in await audit_rows(api.factory)] == ["zone.create", "zone.delete"]
+
+
+class _CheckedTooEarly(SqlAlchemyAdminDeliveryRepository):
+    """Its reference checks ran before a referencing row committed (the race the foreign keys
+    still catch): they see nothing."""
+
+    async def _zone_referenced(self, zone_id: uuid.UUID) -> bool:
+        return False
+
+    async def _slot_referenced(self, slot_id: uuid.UUID) -> bool:
+        return False
+
+
+async def test_deletes_losing_a_race_to_a_reference_are_409_not_500(api: Admin) -> None:
+    actor = AuditActor(user_id=api.admin.id, role=UserRole.ADMIN)
+    zone = await add_zone(api.factory, "demo-raced", ["olmazor"])
+    await add_slot(api.factory, zone, DAY)
+    async with api.factory() as session:
+        with pytest.raises(ZoneInUseError):
+            await _CheckedTooEarly(session).delete_zone(zone.id, actor=actor)
+    assert await api.districts(str(zone.id)) == {"olmazor"}
+
+    # A slot an order points at (the order was cancelled, so no place is reserved any more).
+    category = await add_category(api.factory, "race-cat")
+    product = await add_product(api.factory, category, "race-apple", price=60_000)
+    slot = await add_slot(api.factory, zone, DAY, starts_at=time(15, 0), ends_at=time(16, 0))
+    headers = {TEST_USER_HEADER: str(api.customer.id)}
+    await api.client.post(
+        "/api/v1/cart/items", json={"product_id": str(product.id), "quantity": 1}, headers=headers
+    )
+    placed = await api.client.post(
+        "/api/v1/orders",
+        json={
+            **order_body(
+                expected_total_uzs=75_000,
+                address={"district": "olmazor", "street": "Demo ko'cha", "house": "1"},
+            ),
+            "delivery_slot_id": str(slot.id),
+        },
+        headers={**headers, "Idempotency-Key": str(uuid.uuid4())},
+    )
+    assert placed.status_code == 201, placed.text
+    cancelled = await api.client.post(
+        f"/api/v1/orders/{placed.json()['id']}/cancel", json={"reason": "Demo"}, headers=headers
+    )
+    assert cancelled.status_code == 200
+    async with api.factory() as session:
+        with pytest.raises(SlotInUseError):
+            await _CheckedTooEarly(session).delete_slot(slot.id, actor=actor)
+        assert await session.get(DeliverySlot, slot.id) is not None
+    # Nothing was audited for the refused deletes (only the customer's cancellation).
+    assert [row.action for row in await audit_rows(api.factory)] == ["order.status_change"]
+
+    # Over HTTP the same refusals are 409s.
+    error(await api.delete(f"{ZONES}/{zone.id}"), 409, "zone_in_use")
+    error(await api.delete(f"{SLOTS}/{slot.id}"), 409, "slot_in_use")
 
 
 # --- slots ----------------------------------------------------------------------------------------

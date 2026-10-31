@@ -12,7 +12,9 @@ Locking:
   two concurrent moves cannot together create a cycle the per-move check would miss; then the
   category row ``FOR UPDATE``;
 - CSV import: the products named in the file ``FOR UPDATE`` in ascending id order (the same
-  order checkout uses), then the snapshot is read and re-validated under those locks.
+  order checkout uses), then the snapshot is read and re-validated under those locks, including
+  the ``updated_at`` staleness check (``stale_row``), so an order or an admin edit that committed
+  after the export can never be overwritten by the file's older values.
 
 Products are never deleted: ``archive`` sets ``archived_at`` and ``is_active = false`` (order lines
 keep pointing at the product and carts show it as unavailable).
@@ -708,6 +710,7 @@ class SqlAlchemyAdminCatalogRepository:
                 is_active=product.is_active,
                 sort_order=product.sort_order,
                 image_url=product.image_url,
+                updated_at=product.updated_at,
             )
             for product, category_slug in rows
         ]
@@ -715,7 +718,13 @@ class SqlAlchemyAdminCatalogRepository:
     async def _catalog_snapshot(self, rows: Sequence[CsvRow]) -> CatalogSnapshot:
         skus = [row.sku for row in rows]
         products = (
-            (await self._session.execute(select(Product).where(Product.sku.in_(skus))))
+            (
+                await self._session.execute(
+                    select(Product)
+                    .where(Product.sku.in_(skus))
+                    .execution_options(populate_existing=True)
+                )
+            )
             .scalars()
             .all()
             if skus
@@ -742,6 +751,7 @@ class SqlAlchemyAdminCatalogRepository:
                     sku=product.sku,
                     archived=product.archived_at is not None,
                     values=_snapshot_of(product, PRODUCT_FIELDS),
+                    updated_at=product.updated_at,
                 )
                 for product in products
             },

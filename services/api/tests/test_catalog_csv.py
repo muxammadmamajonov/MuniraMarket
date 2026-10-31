@@ -7,6 +7,7 @@ import csv
 import io
 import uuid
 from collections.abc import Mapping, Sequence
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import pytest
@@ -14,6 +15,7 @@ import pytest
 from app.domain.catalog_csv import (
     BOM,
     COLUMNS,
+    EXPORT_COLUMNS,
     MAX_ROWS,
     CatalogSnapshot,
     CsvFileError,
@@ -31,6 +33,8 @@ from app.domain.catalog_csv import (
 from app.models.enums import Unit
 
 CATEGORY_ID = uuid.uuid4()
+UPDATED_AT = datetime(2026, 10, 31, 7, 15, 30, 123456, tzinfo=UTC)
+UPDATED_AT_CELL = "2026-10-31T07:15:30.123456+00:00"
 
 
 def row(**overrides: str) -> dict[str, str]:
@@ -248,6 +252,14 @@ def test_2000_rows_are_fine_2001_are_too_many() -> None:
         ({"name_uz": "Ã¼zum"}, "name_uz", "invalid_text"),
         ({"description_ru": "Itâ€™s"}, "description_ru", "invalid_text"),
         ({"name_ru": "Ябл�ко"}, "name_ru", "invalid_text"),
+        ({"name_uz": "Olma\u202egnp.exe"}, "name_uz", "invalid_text"),
+        ({"name_ru": "Ol\u200bma"}, "name_ru", "invalid_text"),
+        ({"name_uz": "\ufeffOlma"}, "name_uz", "invalid_text"),
+        ({"name_uz": "Olma\u2066x\u2069"}, "name_uz", "invalid_text"),
+        ({"name_uz": "Olma\u2028nok"}, "name_uz", "invalid_text"),
+        ({"name_uz": "Olma\u3164"}, "name_uz", "invalid_text"),
+        ({"description_uz": "Shirin\n\u202eolma"}, "description_uz", "invalid_text"),
+        ({"description_ru": "Shirin\u00adolma"}, "description_ru", "invalid_text"),
         ({"unit": ""}, "unit", "required"),
         ({"unit": "box"}, "unit", "invalid_unit"),
         ({"price_uzs": ""}, "price_uzs", "required"),
@@ -330,6 +342,42 @@ def test_every_bad_cell_of_a_row_is_reported() -> None:
     }
 
 
+def test_descriptions_keep_newlines_and_ordinary_unicode() -> None:
+    parsed = parse_catalog_csv(
+        to_csv([row(name_uz="O'zbek olma — 1 kg 🍎", description_uz="Birinchi\nikkinchi\tqator")])
+    )
+    assert parsed.errors == ()
+    assert parsed.rows[0].name_uz == "O'zbek olma — 1 kg 🍎"
+    assert parsed.rows[0].description_uz == "Birinchi\nikkinchi\tqator"
+
+
+def test_updated_at_is_optional_and_parsed() -> None:
+    without = parse_catalog_csv(to_csv([row()]))
+    assert without.rows[0].updated_at is None
+    header = list(EXPORT_COLUMNS)
+    empty = parse_catalog_csv(to_csv([row(updated_at="")], header=header))
+    assert empty.rows[0].updated_at is None
+    given = parse_catalog_csv(to_csv([row(updated_at=UPDATED_AT_CELL)], header=header))
+    assert given.rows[0].updated_at == UPDATED_AT
+    # Any column order, like the other columns.
+    reordered = parse_catalog_csv(
+        to_csv([row(updated_at=UPDATED_AT_CELL)], header=list(reversed(header)))
+    )
+    assert reordered.rows[0].updated_at == UPDATED_AT
+
+
+@pytest.mark.parametrize("cell", ["yesterday", "2026-10-31", "2026-10-31T07:15:30", "=NOW()"])
+def test_invalid_updated_at(cell: str) -> None:
+    raw = to_csv([row(updated_at=cell)], header=list(EXPORT_COLUMNS))
+    assert single_error(raw) == ("updated_at", "invalid_updated_at")
+
+
+def test_updated_at_twice_is_an_invalid_header() -> None:
+    error = file_error(to_csv([row()], header=[*EXPORT_COLUMNS, "updated_at"]))
+    assert error.code == "csv_invalid_header"
+    assert ("duplicate", "updated_at") in error.details
+
+
 def test_empty_optional_cells() -> None:
     parsed = parse_catalog_csv(to_csv([row(slug="", sort_order="")]))
     [parsed_row] = parsed.rows
@@ -349,7 +397,13 @@ def parsed_rows(*rows: dict[str, str]) -> tuple[CsvRow, ...]:
     return parsed.rows
 
 
-def existing(sku: str = "DEMO-0001", *, archived: bool = False, **values: Any) -> ExistingProduct:
+def existing(
+    sku: str = "DEMO-0001",
+    *,
+    archived: bool = False,
+    updated_at: datetime = UPDATED_AT,
+    **values: Any,
+) -> ExistingProduct:
     current: dict[str, object] = {
         "slug": "demo-olma",
         "category_id": CATEGORY_ID,
@@ -366,7 +420,9 @@ def existing(sku: str = "DEMO-0001", *, archived: bool = False, **values: Any) -
         "image_url": None,
     }
     current.update(values)
-    return ExistingProduct(id=uuid.uuid4(), sku=sku, archived=archived, values=current)
+    return ExistingProduct(
+        id=uuid.uuid4(), sku=sku, archived=archived, values=current, updated_at=updated_at
+    )
 
 
 def snapshot(*products: ExistingProduct) -> CatalogSnapshot:
@@ -434,6 +490,48 @@ def test_plan_errors(
     assert [(error.row, error.column, error.code) for error in plan.errors] == expected
 
 
+def stamped(*rows: dict[str, str]) -> tuple[CsvRow, ...]:
+    parsed = parse_catalog_csv(to_csv(list(rows), header=list(EXPORT_COLUMNS)))
+    assert parsed.errors == ()
+    return parsed.rows
+
+
+def test_a_row_exported_before_the_product_changed_is_stale() -> None:
+    # Exported at stock 10; an order took one since (the product's updated_at moved on).
+    rows = stamped(row(stock_quantity="10", updated_at=UPDATED_AT_CELL))
+    changed = existing(stock_quantity=9, updated_at=UPDATED_AT + timedelta(microseconds=1))
+    plan = plan_import(rows, snapshot(changed))
+    assert [(error.row, error.column, error.code) for error in plan.errors] == [
+        (1, "updated_at", "stale_row")
+    ]
+    assert plan.errors[0].message == (
+        "The product changed after this file was exported; export again"
+    )
+    assert plan.changes == ()
+
+
+def test_a_current_updated_at_imports_normally() -> None:
+    rows = stamped(row(stock_quantity="10", updated_at=UPDATED_AT_CELL))
+    # The same instant in another offset is the same instant.
+    same = existing(stock_quantity=9, updated_at=UPDATED_AT.astimezone(tz=None))
+    plan = plan_import(rows, snapshot(same))
+    assert plan.errors == ()
+    assert plan.changes[0].changes == {"stock_quantity": (9, 10)}
+
+
+def test_an_empty_updated_at_overwrites_on_purpose() -> None:
+    rows = stamped(row(stock_quantity="10", updated_at=""), row(sku="DEMO-NEW", slug="demo-new"))
+    changed = existing(stock_quantity=9, updated_at=UPDATED_AT + timedelta(days=1))
+    plan = plan_import(rows, snapshot(changed))
+    assert plan.errors == ()
+    assert [change.kind for change in plan.changes] == ["update", "create"]
+
+
+def test_updated_at_for_an_unknown_sku_is_stale() -> None:
+    plan = plan_import(stamped(row(sku="DEMO-GONE", updated_at=UPDATED_AT_CELL)), snapshot())
+    assert [(error.column, error.code) for error in plan.errors] == [("updated_at", "stale_row")]
+
+
 def test_derive_slug() -> None:
     assert derive_slug("DEMO_0001.a") == "demo-0001-a"
     assert derive_slug("x--Y") == "x-y"
@@ -466,6 +564,7 @@ def export_row(**overrides: Any) -> ExportRow:
         "is_active": False,
         "sort_order": -3,
         "image_url": "https://cdn.example.com/a.png",
+        "updated_at": UPDATED_AT,
     }
     values.update(overrides)
     return ExportRow(**values)
@@ -475,17 +574,81 @@ def test_export_format() -> None:
     raw = render_csv([export_row()])
     assert raw.startswith(BOM.encode())
     text = raw.decode("utf-8").removeprefix(BOM)
-    assert text.startswith(",".join(COLUMNS) + "\r\n")
+    assert text.startswith(",".join(f'"{column}"' for column in EXPORT_COLUMNS) + "\r\n")
+    assert EXPORT_COLUMNS[-1] == "updated_at"
     assert text.endswith("\r\n")
     assert (
-        'DEMO-0001,demo-olma,mevalar,Demo olma,Демо яблоко,,"яблоко\n яблоко",kg,12000,15000,0,'
-        "false,-3,https://cdn.example.com/a.png\r\n"
+        '"DEMO-0001","demo-olma","mevalar","Demo olma","Демо яблоко","","яблоко\n яблоко","kg",'
+        '"12000","15000","0","false","-3","https://cdn.example.com/a.png",'
+        '"2026-10-31T07:15:30.123456+00:00"\r\n'
     ) in text
 
 
+def test_updated_at_is_utc_with_microseconds() -> None:
+    whole_second = datetime(2026, 10, 31, 12, 0, tzinfo=UTC).astimezone(tz=None)
+    raw = render_csv([export_row(updated_at=whole_second)])
+    assert raw.decode("utf-8").endswith('"2026-10-31T12:00:00.000000+00:00"\r\n')
+    assert parse_catalog_csv(raw).rows[0].updated_at == whole_second
+
+
 def test_template_is_the_header_only() -> None:
-    assert render_template() == (BOM + ",".join(COLUMNS) + "\r\n").encode()
+    header = ",".join(f'"{column}"' for column in EXPORT_COLUMNS)
+    assert render_template() == (BOM + header + "\r\n").encode()
     assert parse_catalog_csv(render_template()).total_rows == 0
+
+
+def split_outside_quotes(line: str, separator: str) -> list[str]:
+    """How a spreadsheet splits a line on ``separator``: never inside a quoted stretch (a ``""``
+    pair toggles twice, so it stays inside)."""
+    pieces: list[str] = []
+    current: list[str] = []
+    quoted = False
+    for character in line:
+        if character == '"':
+            quoted = not quoted
+        if character == separator and not quoted:
+            pieces.append("".join(current))
+            current = []
+        else:
+            current.append(character)
+    return [*pieces, "".join(current)]
+
+
+@pytest.mark.parametrize(
+    "value",
+    ["Olma;=1+1", "Olma,=1+1", "Olma\t=1+1", "Olma;@SUM(1)", 'Olma;"=1";+1', "a;b,c\td"],
+)
+def test_separators_inside_a_value_never_start_a_cell(value: str) -> None:
+    """ru/uz spreadsheets split on ``;`` (or tab): every cell is quoted, so nothing after a
+    separator inside a value can become a cell of its own (let alone a formula)."""
+    name = value if "\t" not in value else "Demo olma"  # names are a single line, no tabs
+    raw = render_csv([export_row(name_ru=name, description_uz=value)])
+    data = raw.decode("utf-8").removeprefix(BOM).split("\r\n")[1]
+    for separator in (";", "\t", ","):
+        cells = split_outside_quotes(data, separator)
+        if separator == ",":
+            assert len(cells) == len(EXPORT_COLUMNS)
+            assert all(cell[:1] == '"' and cell[-1:] == '"' for cell in cells)
+        else:
+            assert cells == [data]  # the separator never appears outside quotes
+    # Without quoting every cell, the same value would have split into a formula cell.
+    unquoted = io.StringIO(newline="")
+    csv.writer(unquoted, lineterminator="\r\n").writerow(["DEMO-0001", "Olma;=1+1"])
+    assert split_outside_quotes(unquoted.getvalue(), ";")[1].startswith("=1+1")
+    # And it imports back unchanged.
+    parsed = parse_catalog_csv(raw)
+    assert parsed.errors == ()
+    assert (parsed.rows[0].name_ru, parsed.rows[0].description_uz) == (name, value)
+
+
+def test_a_fully_quoted_file_imports() -> None:
+    header = ",".join(f'"{column}"' for column in COLUMNS)
+    cells = [f'"{row()[column]}"' for column in COLUMNS]
+    parsed = parse_catalog_csv((BOM + header + "\r\n" + ",".join(cells) + "\r\n").encode())
+    assert parsed.errors == ()
+    assert parsed.rows[0].sku == "DEMO-0001"
+    assert parsed.rows[0].old_price_uzs is None
+    assert parsed.rows[0].updated_at is None
 
 
 @pytest.mark.parametrize(
@@ -529,6 +692,7 @@ def test_export_then_import_round_trips(name: str) -> None:
     [parsed_row] = parsed.rows
     assert parsed_row.name_uz == name
     assert parsed_row.description_uz == name
+    assert parsed_row.updated_at == UPDATED_AT
     plan = plan_import(
         parsed.rows,
         CatalogSnapshot(

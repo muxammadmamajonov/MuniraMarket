@@ -16,7 +16,7 @@ from fastapi import FastAPI
 from app.api import admin_deps, auth_deps
 from app.api.routes import admin_catalog, admin_csv
 from app.core.errors import ApiError
-from app.domain.catalog_csv import BOM, COLUMNS, CsvRowError, ExportRow
+from app.domain.catalog_csv import BOM, COLUMNS, EXPORT_COLUMNS, CsvRowError, ExportRow
 from app.models.enums import Unit, UserRole
 from app.repositories.admin_catalog import (
     AdminCatalogError,
@@ -36,6 +36,7 @@ from app.repositories.admin_catalog import (
 from tests.admin_factories import (
     ADMIN_LIMITS,
     CATALOG_ROUTES,
+    CREATED_AT,
     CSV_HEADERS,
     CSV_ROUTES,
     RecordingRepository,
@@ -288,6 +289,9 @@ async def test_patch_category_sends_only_given_fields(
         {"name_uz": None},
         {"name_uz": ""},
         {"name_uz": "two\nlines"},
+        {"name_uz": "Mevalar\u202e"},
+        {"name_ru": "Mevalar\u200b"},
+        {"name_ru": "\ufeffMevalar"},
         {"sort_order": 100_001},
         {"image_url": "http://cdn.example.com/a.png"},
         {"image_url": "https://192.168.1.1/a.png"},
@@ -362,6 +366,12 @@ async def test_create_product(client: httpx.AsyncClient, catalog: RecordingRepos
         {"name_ru": "x" * 256},
         {"description_uz": "x" * 5001},
         {"description_uz": "bad\x00"},
+        {"name_uz": "Olma\u202egnp.exe"},
+        {"name_ru": "Ol\u200bma"},
+        {"name_uz": "Olma\u2066x\u2069"},
+        {"name_uz": "Olma\u2028nok"},
+        {"description_uz": "Birinchi\n\u202eqator"},
+        {"description_ru": "\ufeffTavsif"},
         {"image_url": "javascript:alert(1)"},
         {"image_url": "https://localhost/a.png"},
         {"archived_at": "2026-01-01T00:00:00Z"},
@@ -490,7 +500,10 @@ async def test_template(client: httpx.AsyncClient, catalog: RecordingRepository)
     assert response.headers["content-type"] == "text/csv; charset=utf-8"
     assert response.headers["content-disposition"] == 'attachment; filename="catalog-template.csv"'
     assert response.headers["cache-control"] == "no-store"
-    assert response.content == (BOM + ",".join(COLUMNS) + "\r\n").encode()
+    assert (
+        response.content
+        == (BOM + ",".join(f'"{column}"' for column in EXPORT_COLUMNS) + "\r\n").encode()
+    )
 
 
 async def test_export(client: httpx.AsyncClient, catalog: RecordingRepository) -> None:
@@ -510,6 +523,7 @@ async def test_export(client: httpx.AsyncClient, catalog: RecordingRepository) -
             is_active=True,
             sort_order=0,
             image_url=None,
+            updated_at=CREATED_AT,
         )
     ]
     response = await client.get(f"{CSV}/export")
@@ -519,6 +533,7 @@ async def test_export(client: httpx.AsyncClient, catalog: RecordingRepository) -
     text = response.content.decode("utf-8")
     assert text.startswith(BOM)
     assert '"\'=HYPERLINK(""https://evil.example"")"' in text
+    assert text.endswith(',"0","","2026-10-01T09:00:00.000000+00:00"\r\n')
 
 
 @pytest.mark.parametrize("content_type", [None, "application/json", "text/plain"])

@@ -21,6 +21,7 @@ from app.dev.seed import (
     seed,
 )
 from app.domain.delivery import is_district_code, tashkent_instant
+from app.models.catalog import Product
 from app.models.delivery import DeliverySlot, DeliveryZone
 from app.repositories.delivery import SqlAlchemyDeliveryZoneRepository
 from tests.db_data import SessionFactory
@@ -192,3 +193,38 @@ async def test_seed_slots_are_idempotent(session_factory: SessionFactory) -> Non
         assert await zones.has_bookable_slot(slotted.zone_id, now)
         assert not await zones.has_bookable_slot(e2e.zone_id, now)
         assert len(await zones.offered_slots(slotted.zone_id, now)) > 0
+
+
+@pytest.mark.integration
+@pytest.mark.asyncio(loop_scope="module")
+async def test_seed_leaves_archived_demo_products_alone(session_factory: SessionFactory) -> None:
+    """An admin archived a demo product (and changed it): a re-run neither reactivates nor
+    updates it, and does not trip ``ck_products_archived_is_inactive``."""
+    today = date(2026, 11, 1)
+    await seed(session_factory, today=today)
+    target = next(product for product in DEMO_PRODUCTS if product.is_active)
+    async with session_factory() as session:
+        await session.execute(
+            update(Product)
+            .where(Product.slug == target.slug)
+            .values(is_active=False, archived_at=func.now(), price_uzs=target.price_uzs + 1000)
+        )
+        await session.commit()
+        before = (
+            await session.execute(select(Product.__table__).where(Product.slug == target.slug))
+        ).one()
+
+    again = await seed(session_factory, today=today)
+    assert again.products_written == 0
+    async with session_factory() as session:
+        after = (
+            await session.execute(select(Product.__table__).where(Product.slug == target.slug))
+        ).one()
+        active = (
+            await session.execute(
+                select(func.count()).select_from(Product).where(Product.is_active.is_(True))
+            )
+        ).scalar_one()
+    assert after == before
+    assert (after.is_active, after.archived_at is not None) == (False, True)
+    assert active == sum(1 for product in DEMO_PRODUCTS if product.is_active) - 1

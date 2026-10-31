@@ -3,7 +3,8 @@
 Requests forbid unknown fields. PATCH bodies have only optional fields and change exactly the
 fields that were sent (``model_fields_set``); ``null`` is accepted only for nullable columns.
 Money is integer UZS. Text is trimmed; names are a single line; descriptions may contain
-newlines and tabs but no other control characters.
+newlines and tabs but no other control characters. Neither may contain invisible or
+text-direction characters (``app.domain.text``: U+200B, U+202E, U+FEFF, ...).
 """
 
 import math
@@ -34,6 +35,7 @@ from app.domain.catalog_csv import (
     RowErrorCode,
 )
 from app.domain.image_url import MAX_IMAGE_URL_LENGTH, validate_image_url
+from app.domain.text import INVISIBLE_TEXT_MESSAGE, has_invisible_characters
 from app.models.enums import Unit
 from app.repositories.admin_catalog import (
     AdminCategoryRecord,
@@ -49,6 +51,8 @@ _CONTROL_MULTILINE = re.compile(r"[\x00-\x08\x0b-\x1f\x7f-\x9f]")
 def _single_line(value: str) -> str:
     if _CONTROL.search(value):
         raise ValueError("must be a single line of text")
+    if has_invisible_characters(value):
+        raise ValueError(INVISIBLE_TEXT_MESSAGE)
     return value
 
 
@@ -56,6 +60,8 @@ def _multi_line(value: str) -> str:
     value = value.replace("\r\n", "\n")
     if _CONTROL_MULTILINE.search(value):
         raise ValueError("contains control characters")
+    if has_invisible_characters(value, multiline=True):
+        raise ValueError(INVISIBLE_TEXT_MESSAGE)
     return value
 
 
