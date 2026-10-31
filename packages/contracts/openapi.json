@@ -3310,7 +3310,7 @@
     },
     "/api/v1/internal/telegram/notifications/{message_id}/result": {
       "post": {
-        "description": "``retry`` backs off exponentially and gives up (``failed``) after 8 attempts.\n\n404 when the message is unknown, already finished, or was never claimed.",
+        "description": "``retry`` backs off exponentially and gives up (``failed``) after 8 attempts.\n\nSend the ``attempts`` value from the claim as ``attempt``. 404 when the message is unknown,\nalready finished, its lease expired, or it was reclaimed since (a newer ``attempt``).",
         "operationId": "report_result_api_v1_internal_telegram_notifications__message_id__result_post",
         "parameters": [
           {
@@ -3330,6 +3330,11 @@
               "schema": {
                 "additionalProperties": false,
                 "properties": {
+                  "attempt": {
+                    "minimum": 1,
+                    "title": "Attempt",
+                    "type": "integer"
+                  },
                   "error_code": {
                     "anyOf": [
                       {
@@ -3354,6 +3359,7 @@
                   }
                 },
                 "required": [
+                  "attempt",
                   "outcome"
                 ],
                 "title": "ResultRequest",

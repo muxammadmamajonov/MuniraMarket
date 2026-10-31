@@ -21,8 +21,9 @@ that committed.
   actor): `POST /api/v1/internal/telegram/notifications/claim` leases up to 50 rows for 60 s
   (`FOR UPDATE SKIP LOCKED`, so concurrent drainers never share a row) and
   `POST .../{id}/result` reports `delivered`, `recipient_blocked`, `retry` (exponential backoff,
-  `failed` after 8 attempts) or `failed`. Unreported rows become claimable again when the lease
-  expires: delivery is at-least-once.
+  `failed` after 8 attempts) or `failed`, naming the claim `attempt` it holds; a report from an
+  expired or superseded lease is refused (fencing). Unreported rows become claimable again when the
+  lease expires: delivery is at-least-once.
 - **Transport behind an interface.** `services/telegram/tgcloud/lib/notifications/` defines a
   `NotificationTransport` (`deliver(notification) → outcome`), a Bot API implementation built on
   the existing message builder, and `drainOrderNotifications()` which claims, delivers and

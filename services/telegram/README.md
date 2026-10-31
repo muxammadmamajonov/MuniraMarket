@@ -36,8 +36,10 @@ runs our code without a Telegram update or a Mini App call.
   `{"items": [{id, event_type, payload, attempts}], "lease_expires_at"}`. The lease is 60 s; a
   message not reported before it expires is claimable again (at-least-once).
 - `POST /api/v1/internal/telegram/notifications/{id}/result` with
-  `{"outcome": "delivered" | "recipient_blocked" | "retry" | "failed", "error_code"?}` returns 204,
-  or 404 when the message is unknown, finished, or not claimed. `retry` backs off on the server and
+  `{"attempt", "outcome": "delivered" | "recipient_blocked" | "retry" | "failed", "error_code"?}`
+  returns 204, or 404 when the message is unknown, finished, never claimed, its lease expired, or
+  it was reclaimed since. `attempt` is the item's `attempts` from the claim: a fencing token, so a
+  worker that outlived its lease cannot overwrite the outcome of the worker that reclaimed it. `retry` backs off on the server and
   becomes `failed` after 8 attempts. `error_code` matches `^[a-z0-9_.-]{1,64}$`.
 - `order.status_changed` payload: `order_id`, `order_number`, `status`, `locale` (`uz`|`ru`),
   `total_uzs` (integer), `chat_id` (integer), optional `cancel_reason`. No address or phone.

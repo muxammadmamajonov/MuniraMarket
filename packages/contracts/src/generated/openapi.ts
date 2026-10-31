@@ -380,7 +380,8 @@ export interface paths {
      * Report Result
      * @description ``retry`` backs off exponentially and gives up (``failed``) after 8 attempts.
      *
-     *     404 when the message is unknown, already finished, or was never claimed.
+     *     Send the ``attempts`` value from the claim as ``attempt``. 404 when the message is unknown,
+     *     already finished, its lease expired, or it was reclaimed since (a newer ``attempt``).
      */
     post: operations['report_result_api_v1_internal_telegram_notifications__message_id__result_post'];
     delete?: never;
@@ -2389,6 +2390,8 @@ export interface operations {
     requestBody: {
       content: {
         'application/json': {
+          /** Attempt */
+          attempt: number;
           /** Error Code */
           error_code?: string | null;
           /**

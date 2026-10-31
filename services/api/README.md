@@ -318,9 +318,11 @@ drains it with signed requests **without an actor** (an actor gets `403`):
 
 - `POST /internal/telegram/notifications/claim` `{limit 1..50}` leases due rows for 60 s
   (`FOR UPDATE SKIP LOCKED`) and returns `{items, lease_expires_at}`.
-- `POST /internal/telegram/notifications/{id}/result` `{outcome, error_code?}`: `delivered`,
-  `recipient_blocked`, `failed`, or `retry` (backoff 30 s doubling to 1 h; `failed` after 8
-  attempts). `404` if the row is unknown, finished or not claimed. A row leased 8 times without
+- `POST /internal/telegram/notifications/{id}/result` `{attempt, outcome, error_code?}`:
+  `delivered`, `recipient_blocked`, `failed`, or `retry` (backoff 30 s doubling to 1 h; `failed`
+  after 8 attempts). `attempt` is the `attempts` value from the claim and fences the lease: `404` if
+  the row is unknown, finished, never claimed, its lease expired, or it was reclaimed since (so a
+  worker that outlived its lease cannot overwrite the current holder's outcome). A row leased 8 times without
   any report (a transport that crashes on it) is retired as `failed` (`max_attempts`).
 
 The payload holds the order id and number, status, locale, total, the Telegram chat id and, when
