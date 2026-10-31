@@ -31,9 +31,23 @@ depends_on: str | Sequence[str] | None = None
 # Existing type (created in 0001); never created or dropped here.
 USER_ROLE = postgresql.ENUM(name="user_role", create_type=False)
 
-# Unqualified on purpose: created in the first schema of the search_path, like every table here.
-_REJECT_FUNCTION = "audit_log_reject_change"
-_REJECT_TRIGGER = "audit_log_append_only"
+# The trigger function is unqualified on purpose: it is created in the first schema of the
+# search_path, like every table here. Static SQL only (no string formatting).
+_CREATE_REJECT_FUNCTION = """
+CREATE FUNCTION audit_log_reject_change() RETURNS trigger
+LANGUAGE plpgsql AS $$
+BEGIN
+    RAISE EXCEPTION 'audit_log is append-only'
+        USING ERRCODE = 'insufficient_privilege';
+END
+$$
+"""
+_CREATE_REJECT_TRIGGER = (
+    "CREATE TRIGGER audit_log_append_only BEFORE UPDATE OR DELETE ON audit_log "
+    "FOR EACH ROW EXECUTE FUNCTION audit_log_reject_change()"
+)
+_DROP_REJECT_TRIGGER = "DROP TRIGGER IF EXISTS audit_log_append_only ON audit_log"
+_DROP_REJECT_FUNCTION = "DROP FUNCTION IF EXISTS audit_log_reject_change()"
 
 
 def upgrade() -> None:
@@ -151,26 +165,13 @@ def upgrade() -> None:
         unique=False,
     )
     op.create_index("ix_audit_log_actor_user_id", "audit_log", ["actor_user_id"], unique=False)
-    op.execute(
-        f"""
-        CREATE FUNCTION {_REJECT_FUNCTION}() RETURNS trigger
-        LANGUAGE plpgsql AS $$
-        BEGIN
-            RAISE EXCEPTION 'audit_log is append-only'
-                USING ERRCODE = 'insufficient_privilege';
-        END
-        $$
-        """
-    )
-    op.execute(
-        f"CREATE TRIGGER {_REJECT_TRIGGER} BEFORE UPDATE OR DELETE ON audit_log "
-        f"FOR EACH ROW EXECUTE FUNCTION {_REJECT_FUNCTION}()"
-    )
+    op.execute(_CREATE_REJECT_FUNCTION)
+    op.execute(_CREATE_REJECT_TRIGGER)
 
 
 def downgrade() -> None:
-    op.execute(f"DROP TRIGGER IF EXISTS {_REJECT_TRIGGER} ON audit_log")
-    op.execute(f"DROP FUNCTION IF EXISTS {_REJECT_FUNCTION}()")
+    op.execute(_DROP_REJECT_TRIGGER)
+    op.execute(_DROP_REJECT_FUNCTION)
     op.drop_index("ix_audit_log_actor_user_id", table_name="audit_log")
     op.drop_index("ix_audit_log_entity_type_entity_id", table_name="audit_log")
     op.drop_index("ix_audit_log_created_at", table_name="audit_log")
