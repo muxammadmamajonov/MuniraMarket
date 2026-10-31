@@ -35,8 +35,11 @@ app/
   main.py            create_app() factory (uvicorn app.main:create_app --factory)
   core/              settings (env validation), clock, error envelope
   db/                declarative Base (naming convention, UUID pk, timestamps), engine/session
-  models/            users, catalog, carts, delivery zones, orders + history, outbox (integer UZS)
-  domain/            pure business rules (cart, delivery pricing, checkout quote, order status)
+  models/            users, catalog, carts, delivery zones + slots, orders + history, outbox,
+                     audit log (integer UZS)
+  domain/            pure business rules (cart, delivery pricing, checkout quote, order status,
+                     catalog CSV, image URLs)
+  audit.py           append-only audit writer with the PII allow/deny lists (ADR 0010)
   repositories/      persistence behind small interfaces (faked in tests)
   security/          service request signing (ADR 0003), sessions, CSRF, rate limits (ADR 0007)
   telegram/          initData and Login Widget verification
