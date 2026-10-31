@@ -38,6 +38,11 @@ export const DEFAULT_RETRY_SECONDS = 10;
 /** Cap so a bogus `Retry-After` cannot lock the button for hours. */
 export const MAX_RETRY_SECONDS = 120;
 
+/** Whole seconds to wait for a `Retry-After` of `retryAfter` seconds (or none), capped. */
+export function retryAfterSeconds(retryAfter: number | null): number {
+  return Math.min(Math.ceil(retryAfter ?? DEFAULT_RETRY_SECONDS), MAX_RETRY_SECONDS);
+}
+
 export function classifyCheckoutError(error: unknown): CheckoutFailure {
   if (!(error instanceof ApiRequestError)) return { kind: 'server' };
   switch (error.code) {
@@ -63,10 +68,7 @@ export function classifyCheckoutError(error: unknown): CheckoutFailure {
       return { kind: 'validation', fields, unmapped };
     }
     case 'rate_limited':
-      return {
-        kind: 'rate_limited',
-        seconds: Math.min(Math.ceil(error.retryAfter ?? DEFAULT_RETRY_SECONDS), MAX_RETRY_SECONDS),
-      };
+      return { kind: 'rate_limited', seconds: retryAfterSeconds(error.retryAfter) };
     case 'session_required':
     case 'unauthorized':
     case 'csrf_failed':

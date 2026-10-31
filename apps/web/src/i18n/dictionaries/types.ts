@@ -90,6 +90,8 @@ export interface Dictionary {
       /** `{available}` */
       insufficientStock: string;
       cartLimit: string;
+      /** The API asked us to wait; the add button stays disabled for as long as it said. */
+      rateLimited: string;
       generic: string;
     };
   };
@@ -114,6 +116,8 @@ export interface Dictionary {
     updateFailed: string;
     /** `{available}` */
     updateInsufficientStock: string;
+    /** The API asked us to wait; the controls are disabled for as long as it said. */
+    updateRateLimited: string;
     retry: string;
   };
   checkout: {
@@ -254,6 +258,8 @@ export interface Dictionary {
       goToOrders: string;
       unmapped: string;
       retry: string;
+      /** Shown, visually only, beside `retry` while a rate-limit wait runs. `{seconds}` */
+      retryCountdown: string;
       goToCart: string;
     };
   };

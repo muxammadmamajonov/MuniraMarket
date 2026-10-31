@@ -1502,3 +1502,226 @@ describe('CheckoutView in the Telegram Mini App: delivery slots', () => {
     expect(webApp.HapticFeedback?.notificationOccurred).toHaveBeenCalledWith('error');
   });
 });
+
+/** One second of the rate-limit countdown (the next timer is only set after React re-renders). */
+async function tick(seconds = 1) {
+  for (let index = 0; index < seconds; index += 1) {
+    await act(async () => {
+      vi.advanceTimersByTime(1000);
+    });
+  }
+}
+
+const quoteError = () => screen.getByTestId('quote-error');
+const retryInside = (element: HTMLElement) =>
+  within(element).getByRole('button', { name: 'Qayta urinish' });
+
+describe('CheckoutView: a rate-limited order (429)', () => {
+  beforeEach(() => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('says the wait once, counts it down on the button only, then retries with the SAME key', async () => {
+    let limited = true;
+    routes['POST /orders'] = () =>
+      limited ? apiError('rate_limited', 429, {}, { 'Retry-After': '3' }) : respond(order(), 201);
+    renderCheckout();
+    await loaded();
+    await fillValid();
+    fireEvent.click(submitButton());
+
+    const failure = await screen.findByTestId('submit-failure');
+    expect(failure).toHaveAttribute('data-failure', 'rate_limited');
+    expect(failure).toHaveTextContent('Juda ko‘p urinish. 3 soniyadan keyin qayta urinib ko‘ring.');
+    const retry = retryInside(failure);
+    expect(retry).toBeDisabled();
+    expect(retry).toHaveTextContent('(3 s)');
+    expect(submitButton()).toBeDisabled();
+    // The countdown is visible but not part of the accessible name (a live region would read it
+    // out every second).
+    expect(retry).toHaveAccessibleName('Qayta urinish');
+
+    await tick();
+    expect(retry).toHaveTextContent('(2 s)');
+    expect(failure).toHaveTextContent('3 soniyadan'); // the sentence does not tick
+    await tick(2);
+    expect(retry).toBeEnabled();
+    expect(retry).not.toHaveTextContent('(');
+    expect(submitButton()).toBeEnabled();
+    expect(orderPosts()).toHaveLength(1); // nothing was sent while waiting
+
+    limited = false;
+    fireEvent.click(retry);
+    await waitFor(() => expect(nav.replace).toHaveBeenCalledOnce());
+    expect(orderPosts()).toHaveLength(2);
+    expect(keyOf(1)).toBe(keyOf(0));
+    expect(bodyOf(1)).toEqual(bodyOf(0));
+  });
+
+  it('does not send anything while waiting, however the submit is triggered', async () => {
+    routes['POST /orders'] = () => apiError('rate_limited', 429, {}, { 'Retry-After': '5' });
+    renderCheckout();
+    await loaded();
+    await fillValid();
+    fireEvent.click(submitButton());
+    await screen.findByTestId('submit-failure');
+
+    // An implicit submission (Enter in a field) reaches the handler even with the button disabled.
+    fireEvent.submit(screen.getByRole('form', { name: 'Buyurtmani rasmiylashtirish' }));
+    await tick();
+    fireEvent.submit(screen.getByRole('form', { name: 'Buyurtmani rasmiylashtirish' }));
+    expect(orderPosts()).toHaveLength(1);
+  });
+
+  it('falls back to 10 s without Retry-After, and caps an absurd one at 120 s', async () => {
+    routes['POST /orders'] = () => apiError('rate_limited', 429);
+    renderCheckout();
+    await loaded();
+    await fillValid();
+    fireEvent.click(submitButton());
+    expect(await screen.findByTestId('submit-failure')).toHaveTextContent('10 soniyadan');
+
+    await tick(10);
+    routes['POST /orders'] = () => apiError('rate_limited', 429, {}, { 'Retry-After': '86400' });
+    fireEvent.click(submitButton());
+    await waitFor(() => expect(orderPosts()).toHaveLength(2));
+    expect(await screen.findByTestId('submit-failure')).toHaveTextContent('120 soniyadan');
+  });
+
+  it('speaks Russian', async () => {
+    routes['POST /orders'] = () => apiError('rate_limited', 429, {}, { 'Retry-After': '4' });
+    renderCheckout('ru');
+    await screen.findByLabelText('Район');
+    fireEvent.change(screen.getByLabelText('Район'), { target: { value: 'yunusobod' } });
+    await waitFor(() => expect(screen.getByTestId('checkout-total').textContent).not.toBe('—'));
+    fireEvent.change(screen.getByLabelText('Улица'), { target: { value: 'Тест' } });
+    fireEvent.change(screen.getByLabelText('Дом'), { target: { value: '1' } });
+    fireEvent.change(screen.getByLabelText('Номер телефона'), {
+      target: { value: '+998 00 123-45-67' },
+    });
+    fireEvent.click(screen.getByRole('radio', { name: 'Наличными при получении' }));
+    fireEvent.click(submitButton());
+    const failure = await screen.findByTestId('submit-failure');
+    expect(failure).toHaveTextContent('Слишком много попыток. Повторите через 4 сек.');
+    expect(within(failure).getByRole('button', { name: 'Повторить' })).toHaveTextContent('(4 с)');
+  });
+});
+
+describe('CheckoutView: a quote that could not be fetched', () => {
+  beforeEach(() => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  async function pickDistrictWithoutQuote() {
+    fireEvent.change(screen.getByLabelText('Tuman'), { target: { value: 'yunusobod' } });
+    await screen.findByTestId('quote-error');
+  }
+
+  function fillRest() {
+    type('Ko‘cha', 'Demo ko‘cha');
+    type('Uy', '12');
+    type('Telefon raqami', '+998 00 123-45-67');
+    fireEvent.click(screen.getByRole('radio', { name: 'Yetkazilganda naqd pul' }));
+  }
+
+  it('offers a retry next to the message (there was none: Telegram had no way out at all)', async () => {
+    let failing = true;
+    routes['POST /checkout/quote'] = () => {
+      if (failing) throw ApiRequestError.network();
+      return respond(quote());
+    };
+    renderCheckout();
+    await loaded();
+    await pickDistrictWithoutQuote();
+    expect(quoteError()).toHaveAttribute('data-failure', 'network');
+    expect(quoteError()).toHaveTextContent('Narxni hisoblab bo‘lmadi.');
+
+    failing = false;
+    fireEvent.click(retryInside(quoteError()));
+    await waitFor(() => expect(screen.getByTestId('checkout-total').textContent).not.toBe('—'));
+    expect(screen.queryByTestId('quote-error')).toBeNull();
+    expect(calls('POST', '/checkout/quote')).toHaveLength(2);
+  });
+
+  it('moves the customer to the message when a tap on "order" had to re-quote and could not', async () => {
+    routes['POST /checkout/quote'] = () => {
+      throw ApiRequestError.network();
+    };
+    renderCheckout();
+    await loaded();
+    await pickDistrictWithoutQuote();
+    fillRest();
+    fireEvent.click(submitButton());
+    await waitFor(() => expect(quoteError()).toHaveFocus());
+    expect(orderPosts()).toHaveLength(0);
+    // Retrying from there works, and the order can then be placed.
+    routes['POST /checkout/quote'] = () => respond(quote());
+    fireEvent.click(retryInside(quoteError()));
+    await waitFor(() => expect(screen.queryByTestId('quote-error')).toBeNull());
+    fireEvent.click(submitButton());
+    await waitFor(() => expect(nav.replace).toHaveBeenCalledOnce());
+  });
+
+  it('waits out a 429 on the quote too: no request from the retry or the submit control meanwhile', async () => {
+    let limited = true;
+    routes['POST /checkout/quote'] = () =>
+      limited ? apiError('rate_limited', 429, {}, { 'Retry-After': '2' }) : respond(quote());
+    renderCheckout();
+    await loaded();
+    await pickDistrictWithoutQuote();
+    expect(quoteError()).toHaveAttribute('data-failure', 'rate_limited');
+    expect(quoteError()).toHaveTextContent(
+      'Juda ko‘p urinish. 2 soniyadan keyin qayta urinib ko‘ring.',
+    );
+    const retry = retryInside(quoteError());
+    expect(retry).toBeDisabled();
+    expect(retry).toHaveTextContent('(2 s)');
+    expect(submitButton()).toBeDisabled();
+    fireEvent.click(retry);
+    fillRest();
+    fireEvent.submit(screen.getByRole('form', { name: 'Buyurtmani rasmiylashtirish' }));
+    expect(calls('POST', '/checkout/quote')).toHaveLength(1);
+
+    await tick(2);
+    expect(retry).toBeEnabled();
+    limited = false;
+    fireEvent.click(retry);
+    await waitFor(() => expect(screen.getByTestId('checkout-total').textContent).not.toBe('—'));
+    expect(calls('POST', '/checkout/quote')).toHaveLength(2);
+    expect(submitButton()).toBeEnabled();
+  });
+
+  it('keeps the district error without a retry (retrying would not help)', async () => {
+    routes['POST /checkout/quote'] = () => apiError('district_not_served', 422);
+    renderCheckout();
+    await loaded();
+    await pickDistrictWithoutQuote();
+    expect(quoteError()).toHaveAttribute('data-failure', 'district_not_served');
+    expect(within(quoteError()).queryByRole('button')).toBeNull();
+  });
+
+  it('gives the Telegram MainButton a way out: it stays disabled, the retry brings it back', async () => {
+    const { state } = trackedWebApp();
+    let failing = true;
+    routes['POST /checkout/quote'] = () => {
+      if (failing) throw ApiRequestError.network();
+      return respond(quote());
+    };
+    renderCheckout();
+    await loaded();
+    await pickDistrictWithoutQuote();
+    fillRest();
+    await waitFor(() => expect(state.visible).toBe(true));
+    expect(state.disabled).toBe(true);
+
+    failing = false;
+    fireEvent.click(retryInside(quoteError()));
+    await waitFor(() => expect(state.disabled).toBe(false));
+  });
+});

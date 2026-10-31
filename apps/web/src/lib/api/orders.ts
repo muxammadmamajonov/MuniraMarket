@@ -15,12 +15,24 @@ import { JSON_HEADERS, requestJson } from './request';
  * its single retry live there). All money in the replies is computed by the server.
  */
 
+/**
+ * How long the browser waits for a quote or an order before giving up. The same-origin proxy
+ * already answers 504 after 15 s when the Core API is slow; these are for a connection that
+ * simply stalls (a phone in a lift), where `fetch` would otherwise wait for minutes with the
+ * submit control stuck on "sending". A timeout is reported like any other network failure, and
+ * retrying an order after it reuses the same `Idempotency-Key`, so an order that did get through
+ * is never placed twice.
+ */
+export const QUOTE_TIMEOUT_MS = 20_000;
+export const ORDER_TIMEOUT_MS = 30_000;
+
 /** `POST /checkout/quote`: re-checks the cart and prices delivery for `district`. */
 export function quoteCheckout(apiFetch: ApiFetch, district: DistrictCode): Promise<CheckoutQuote> {
   return requestJson<CheckoutQuote>(apiFetch, '/checkout/quote', {
     method: 'POST',
     headers: JSON_HEADERS,
     body: JSON.stringify({ district }),
+    signal: AbortSignal.timeout(QUOTE_TIMEOUT_MS),
   });
 }
 
@@ -44,6 +56,7 @@ export async function createOrder(
     method: 'POST',
     headers: { ...JSON_HEADERS, 'Idempotency-Key': idempotencyKey },
     body: JSON.stringify(request),
+    signal: AbortSignal.timeout(ORDER_TIMEOUT_MS),
   });
   if (!response.ok) throw await ApiRequestError.fromResponse(response);
   return {

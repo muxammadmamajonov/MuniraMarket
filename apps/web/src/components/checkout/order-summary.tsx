@@ -8,6 +8,7 @@ import { formatMessage, formatPlural } from '@/i18n/format';
 import { localizedName } from '@/lib/catalog';
 import type { QuoteState } from '@/lib/checkout/use-checkout';
 import { CARD, ERROR_TEXT, LINK_BUTTON_SECONDARY } from '../ui-classes';
+import { RetryButton } from './retry-button';
 
 export interface OrderSummaryProps {
   cart: Cart;
@@ -16,6 +17,10 @@ export interface OrderSummaryProps {
   readyQuote: CheckoutQuote | null;
   /** The chosen delivery window, already worded ("Today, 31.10 · 10:00–12:00"), or `null`. */
   slotText?: string | null;
+  /** Seconds left of a rate-limit wait, 0 when there is none. */
+  cooldown?: number;
+  /** Asks for the quote again (shown with the message when pricing the cart failed). */
+  onRetryQuote?: () => void;
 }
 
 function Row({
@@ -47,7 +52,14 @@ function Row({
  * Lines, subtotal, delivery fee and total. Every amount is the server's (the quote once a
  * district is chosen, the cart before); nothing is added up here. A fee of 0 reads "Free".
  */
-export function OrderSummary({ cart, quote, readyQuote, slotText = null }: OrderSummaryProps) {
+export function OrderSummary({
+  cart,
+  quote,
+  readyQuote,
+  slotText = null,
+  cooldown = 0,
+  onRetryQuote,
+}: OrderSummaryProps) {
   const { dict, locale } = useI18n();
   const t = dict.checkout.summary;
   const lines: CartLine[] = readyQuote?.items ?? cart.items;
@@ -156,9 +168,28 @@ export function OrderSummary({ cart, quote, readyQuote, slotText = null }: Order
           </div>
         ) : null}
         {quote.kind === 'failed' ? (
-          <p role="alert" className={ERROR_TEXT}>
-            {quote.failure.kind === 'district_not_served' ? t.districtNotServed : t.quoteFailed}
-          </p>
+          // `data-field="quote"`: where a refused submit moves focus when the cart could not be
+          // priced, so the message (and the retry) is not left below the fold.
+          <div
+            tabIndex={-1}
+            data-field="quote"
+            data-testid="quote-error"
+            data-failure={quote.failure.kind}
+            className="flex flex-col items-start gap-2 outline-none"
+          >
+            <p role="alert" className={ERROR_TEXT}>
+              {quote.failure.kind === 'district_not_served'
+                ? t.districtNotServed
+                : quote.failure.kind === 'rate_limited'
+                  ? formatMessage(dict.checkout.failures.rateLimited, {
+                      seconds: quote.failure.seconds,
+                    })
+                  : t.quoteFailed}
+            </p>
+            {quote.failure.kind === 'district_not_served' || onRetryQuote === undefined ? null : (
+              <RetryButton cooldown={cooldown} onClick={onRetryQuote} testId="quote-retry" />
+            )}
+          </div>
         ) : null}
         {readyQuote !== null && !readyQuote.zone.is_open_now ? (
           <p className="text-sm text-muted-foreground" data-testid="zone-closed">

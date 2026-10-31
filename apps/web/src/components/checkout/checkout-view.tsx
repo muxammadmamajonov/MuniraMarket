@@ -210,7 +210,14 @@ export function CheckoutView() {
           onRetry={() => void flow.submit()}
           onConfirmPrice={() => void flow.submit()}
         />
-        <OrderSummary cart={load.cart} quote={quote} readyQuote={readyQuote} slotText={slotText} />
+        <OrderSummary
+          cart={load.cart}
+          quote={quote}
+          readyQuote={readyQuote}
+          slotText={slotText}
+          cooldown={cooldown}
+          onRetryQuote={flow.retryQuote}
+        />
         {inTelegram && !flow.formValid ? (
           <p className="text-sm text-muted-foreground" data-testid="fix-fields">
             {dict.checkout.summary.fixFields}
