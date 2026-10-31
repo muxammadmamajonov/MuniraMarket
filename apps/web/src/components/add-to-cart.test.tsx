@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { LocaleProvider } from '@/i18n/context';
 import { TelegramProvider } from '@/lib/telegram';
@@ -32,6 +32,15 @@ function renderAdd(overrides: Partial<typeof product> = {}) {
       </TelegramProvider>
     </LocaleProvider>,
   );
+}
+
+/** Advances the fake clock a second at a time until `done()` (bounded: never loops forever). */
+async function tickUntil(done: () => boolean, max = 15) {
+  for (let second = 0; second < max && !done(); second += 1) {
+    await act(async () => {
+      vi.advanceTimersByTime(1000);
+    });
+  }
 }
 
 const emptyCart = { items: [], item_count: 0, subtotal_uzs: 0, total_uzs: 0, has_issues: false };
@@ -93,6 +102,83 @@ describe('AddToCart', () => {
     renderAdd();
     fireEvent.click(screen.getByRole('button', { name: 'Savatga qo‘shish' }));
     expect(await screen.findByRole('alert')).toHaveTextContent('Savatga qo‘shib bo‘lmadi');
+  });
+
+  describe('when the API says to slow down (429)', () => {
+    const limited = (retryAfter?: string) =>
+      Response.json(
+        { error: { code: 'rate_limited', message: 'x' } },
+        {
+          status: 429,
+          ...(retryAfter === undefined ? {} : { headers: { 'Retry-After': retryAfter } }),
+        },
+      );
+
+    beforeEach(() => vi.useFakeTimers({ shouldAdvanceTime: true }));
+    afterEach(() => vi.useRealTimers());
+
+    it('says so, disables the button for Retry-After, then lets the customer try again', async () => {
+      session.apiFetch.mockResolvedValueOnce(limited('2'));
+      renderAdd();
+      const add = screen.getByRole('button', { name: 'Savatga qo‘shish' });
+      fireEvent.click(add);
+
+      expect(await screen.findByTestId('rate-limited')).toHaveTextContent(
+        'Juda ko‘p urinish. Birozdan keyin qayta urinib ko‘ring.',
+      );
+      expect(add).toBeDisabled();
+      fireEvent.click(add);
+      expect(session.apiFetch).toHaveBeenCalledTimes(1); // nothing is sent while waiting
+
+      await tickUntil(() => !(add as HTMLButtonElement).disabled);
+      expect(add).toBeEnabled();
+      expect(screen.queryByTestId('rate-limited')).toBeNull();
+
+      fireEvent.click(add);
+      expect(await screen.findByTestId('added-message')).toBeInTheDocument();
+      expect(session.apiFetch).toHaveBeenCalledTimes(2);
+    });
+
+    it('waits 10 s when the API did not say how long, and speaks Russian', async () => {
+      session.apiFetch.mockResolvedValueOnce(limited());
+      render(
+        <LocaleProvider locale="ru">
+          <TelegramProvider>
+            <AddToCart product={product} />
+          </TelegramProvider>
+        </LocaleProvider>,
+      );
+      const add = screen.getByRole('button', { name: 'В корзину' });
+      fireEvent.click(add);
+      expect(await screen.findByTestId('rate-limited')).toHaveTextContent(
+        'Слишком много попыток. Повторите чуть позже.',
+      );
+      // Half way through the default 10 s it is still locked (a margin that real time passing in
+      // the test cannot eat), and after 10 more it is free.
+      for (let second = 0; second < 5; second += 1) {
+        await act(async () => {
+          vi.advanceTimersByTime(1000);
+        });
+      }
+      expect(add).toBeDisabled();
+      await tickUntil(() => !(add as HTMLButtonElement).disabled);
+      expect(add).toBeEnabled();
+    });
+
+    it('keeps the Telegram MainButton disabled while waiting', async () => {
+      const webApp = makeWebApp();
+      installWebApp(webApp);
+      session.apiFetch.mockResolvedValueOnce(limited('3'));
+      renderAdd();
+      await waitFor(() => expect(webApp.MainButton.show).toHaveBeenCalled());
+      const handler = vi.mocked(webApp.MainButton.onClick).mock.calls.at(-1)?.[0];
+      act(() => handler?.());
+      await screen.findByTestId('rate-limited');
+      await waitFor(() => expect(webApp.MainButton.disable).toHaveBeenCalled());
+      const latest = vi.mocked(webApp.MainButton.onClick).mock.calls.at(-1)?.[0];
+      act(() => latest?.());
+      expect(session.apiFetch).toHaveBeenCalledTimes(1);
+    });
   });
 
   it('disables the button and shows the sign-in prompt when anonymous', () => {

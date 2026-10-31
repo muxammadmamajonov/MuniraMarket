@@ -90,6 +90,8 @@ export interface Dictionary {
       /** `{available}` */
       insufficientStock: string;
       cartLimit: string;
+      /** The API asked us to wait; the add button stays disabled for as long as it said. */
+      rateLimited: string;
       generic: string;
     };
   };
@@ -114,6 +116,8 @@ export interface Dictionary {
     updateFailed: string;
     /** `{available}` */
     updateInsufficientStock: string;
+    /** The API asked us to wait; the controls are disabled for as long as it said. */
+    updateRateLimited: string;
     retry: string;
   };
   checkout: {
@@ -206,6 +210,14 @@ export interface Dictionary {
       tomorrow: string;
       /** Full weekday names, Sunday first (index = `Date#getUTCDay`). */
       weekdays: readonly [string, string, string, string, string, string, string];
+      /** Accessible name of the row of day chips. */
+      daysLabel: string;
+      /** Compact hint under a day chip: how many windows can still be booked. `{count}` */
+      dayFree: string;
+      /** Screen-reader note on the day chip that holds the chosen window. */
+      dayChosen: string;
+      /** Describes the windows of the shown day when the chosen window is on another day. `{when}` */
+      chosenElsewhere: string;
       /** Low availability on an option. `{count}` */
       remaining: PluralForms;
       /** Marks a window with no places left; it stays visible but cannot be chosen. */
@@ -246,6 +258,8 @@ export interface Dictionary {
       goToOrders: string;
       unmapped: string;
       retry: string;
+      /** Shown, visually only, beside `retry` while a rate-limit wait runs. `{seconds}` */
+      retryCountdown: string;
       goToCart: string;
     };
   };

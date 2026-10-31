@@ -5,11 +5,21 @@ import {
   MAX_RETRY_SECONDS,
   classifyCheckoutError,
   isRetrySafe,
+  retryAfterSeconds,
 } from './failures';
 
 function error(init: ConstructorParameters<typeof ApiRequestError>[0]) {
   return new ApiRequestError(init);
 }
+
+describe('retryAfterSeconds', () => {
+  it('rounds up, defaults when missing and caps', () => {
+    expect(retryAfterSeconds(7)).toBe(7);
+    expect(retryAfterSeconds(2.1)).toBe(3);
+    expect(retryAfterSeconds(null)).toBe(DEFAULT_RETRY_SECONDS);
+    expect(retryAfterSeconds(1e9)).toBe(MAX_RETRY_SECONDS);
+  });
+});
 
 describe('classifyCheckoutError', () => {
   it('reads the new total from price_changed', () => {

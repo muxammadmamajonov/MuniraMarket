@@ -151,6 +151,43 @@ describe('ProductFormView: edit', () => {
   });
 });
 
+describe('ProductFormView: image preview', () => {
+  it('never loads an external image (the CSP is img-src self data:): placeholder plus a note', async () => {
+    const api = installFakeApi(sessionHandler('admin'), categories, getProduct(), (call) =>
+      call.method === 'PATCH'
+        ? json(product({ image_url: 'https://cdn.example.com/apple.jpg' }))
+        : undefined,
+    );
+    const { container } = renderAdmin(<ProductFormView id={IDS.product} />);
+    await screen.findByTestId('product-image-url');
+
+    type('product-image-url', 'https://cdn.example.com/apple.jpg');
+    expect(container.querySelector('img')).toBeNull();
+    expect(screen.getByTestId('image-placeholder')).toBeInTheDocument();
+    expect(screen.getByTestId('image-preview-note')).toHaveTextContent(
+      'Предпросмотр появится после включения хранилища изображений',
+    );
+    // The field still validates and saves as before.
+    expect(screen.getByTestId('product-image-url')).toHaveAttribute('aria-invalid', 'false');
+    fireEvent.click(screen.getByTestId('save-button'));
+    await waitFor(() => expect(api.calls.some((call) => call.method === 'PATCH')).toBe(true));
+    expect(api.calls.find((call) => call.method === 'PATCH')?.body).toEqual({
+      image_url: 'https://cdn.example.com/apple.jpg',
+    });
+  });
+
+  it('shows the same placeholder and note with no URL, and the note in Uzbek', async () => {
+    setLocation(`/uz/catalog/products/${IDS.product}`);
+    installFakeApi(sessionHandler('admin'), categories, getProduct());
+    const { container } = renderAdmin(<ProductFormView id={IDS.product} />, 'uz');
+    await screen.findByTestId('product-image-url');
+    expect(container.querySelector('img')).toBeNull();
+    expect(screen.getByTestId('image-preview-note')).toHaveTextContent(
+      'Rasm ko‘rinishi rasm saqlash yoqilgandan keyin paydo bo‘ladi',
+    );
+  });
+});
+
 describe('ProductFormView: create', () => {
   it('suggests the slug from the SKU until the admin edits it, and posts the full body', async () => {
     setLocation('/ru/catalog/products/new');

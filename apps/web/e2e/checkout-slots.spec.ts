@@ -14,9 +14,11 @@ import { buildSignedInitData, type FakeTelegramUser } from './telegram-init-data
  * uchtepa, yashnobod) delivery slots; the zone of `yunusobod`, used by checkout.spec.ts, has none
  * and keeps the slot-less flow. A zone with slots needs a window before an order can be placed.
  *
- * Selectors: the radio group is named "Yetkazish vaqti"; each option is
- * `[data-testid="delivery-slot-option"][data-slot-id]` (the tile) around a native radio whose
- * accessible name is "<day>, <dd.mm>, HH:MM–HH:MM".
+ * Selectors: a row of day chips (`role=tab`, `[data-testid="delivery-day-tab"]`, labelled "Yetkazish
+ * kuni") picks the day; the shown day is the only `role=tabpanel` (`[data-day]`) and holds the radio
+ * group named "Yetkazish vaqti". Each option is `[data-testid="delivery-slot-option"][data-slot-id]`
+ * (the tile) around a native radio whose accessible name is "<day>, <dd.mm>, HH:MM–HH:MM". The other
+ * days' windows stay in the DOM but are `visibility: hidden`, so role queries only see the shown day.
  */
 
 const ORDER_URL = /\/uz\/orders\/[0-9a-f-]{36}\?placed=1$/;
@@ -53,6 +55,18 @@ async function fillOrderForm(page: Page): Promise<void> {
   await page.getByRole('radio', { name: 'Yetkazilganda naqd pul' }).check();
 }
 
+/** Opens the first day chip whose shown day offers at least `min` windows that can be booked. */
+async function openDayWithWindows(page: Page, min: number): Promise<void> {
+  const chips = page.getByRole('tab');
+  const count = await chips.count();
+  for (let index = 0; index < count; index += 1) {
+    await chips.nth(index).click();
+    const free = page.getByRole('tabpanel').getByRole('radio', { disabled: false });
+    if ((await free.count()) >= min) return;
+  }
+  throw new Error(`No day offers ${String(min)} bookable windows`);
+}
+
 test('book a delivery window: picker, MainButton gate, keyboard, order page shows the window', async ({
   page,
 }) => {
@@ -75,11 +89,13 @@ test('book a delivery window: picker, MainButton gate, keyboard, order page show
   await district.selectOption('chilonzor');
   const group = page.getByRole('radiogroup', { name: 'Yetkazish vaqti' });
   await expect(group).toBeVisible();
-  const tiles = page.getByTestId('delivery-slot-option');
+  // Only the shown day's windows are visible to role queries (the other days are hidden).
+  const tiles = page.getByRole('tabpanel').getByTestId('delivery-slot-option');
   await expect(tiles.first()).toBeVisible();
-  expect(await tiles.count()).toBeGreaterThan(1);
-  // Day headings: the first offered day is today or tomorrow, by word.
-  await expect(page.locator('[data-day]').first()).toContainText(/Bugun|Ertaga/);
+  // Day chips: several days, the first one offered is today or tomorrow, by word.
+  const chips = page.getByRole('tab');
+  expect(await chips.count()).toBeGreaterThan(1);
+  await expect(chips.first()).toContainText(/Bugun|Ertaga/);
 
   await fillOrderForm(page);
 
@@ -89,6 +105,22 @@ test('book a delivery window: picker, MainButton gate, keyboard, order page show
     'Buyurtma berish uchun yetkazish vaqtini tanlang.',
   );
   expect(await pressMainButton(page)).toBe(false);
+
+  // Day chips: arrow keys and Home/End move focus along the row and show the day (roving tabindex).
+  await page.getByRole('tab', { selected: true }).focus();
+  const shownBefore = (await page.getByRole('tabpanel').getAttribute('data-day')) ?? '';
+  await page.keyboard.press('ArrowRight');
+  await expect(page.getByRole('tab', { selected: true })).toBeFocused();
+  await expect(page.getByRole('tabpanel')).not.toHaveAttribute('data-day', shownBefore);
+  await page.keyboard.press('End');
+  await expect(chips.last()).toHaveAttribute('aria-selected', 'true');
+  await expect(chips.last()).toBeFocused();
+  await page.keyboard.press('Home');
+  await expect(chips.first()).toHaveAttribute('aria-selected', 'true');
+  await expect(chips.first()).toHaveAttribute('tabindex', '0');
+
+  // A day with at least two windows to move between.
+  await openDayWithWindows(page, 2);
 
   // Real keyboard behaviour: Tab/arrow keys move through the enabled windows and select them.
   const enabled = group.getByRole('radio', { disabled: false });
@@ -121,6 +153,18 @@ test('book a delivery window: picker, MainButton gate, keyboard, order page show
   await expect(page.getByTestId('checkout-slot-summary')).toContainText(window);
   await expect.poll(() => mainButton(page)).toMatchObject({ visible: true, disabled: false });
   await expect(page.getByTestId('slot-reason')).toHaveCount(0);
+
+  // Looking at another day does not touch the choice: the chip of the chosen day carries a check.
+  const chosenChip = page.getByRole('tab', { selected: true });
+  await expect(chosenChip.getByTestId('delivery-day-chosen')).toBeVisible();
+  const otherChip = chips.nth((await chips.count()) - 1);
+  if ((await otherChip.getAttribute('data-date')) !== day) {
+    await otherChip.click();
+    await expect(page.getByTestId('checkout-slot-summary')).toContainText(window);
+    await expect(page.getByRole('radio', { checked: true })).toHaveCount(0);
+    await page.locator(`[data-testid="delivery-day-tab"][data-date="${day ?? ''}"]`).click();
+    await expect(chosenRadio).toBeChecked();
+  }
 
   // The request carries the chosen slot id.
   const slotId = await chosenTile.getAttribute('data-slot-id');
@@ -160,15 +204,42 @@ test('the picker fits a 360px screen and honours prefers-reduced-motion', async 
   await addToCart(page, 'demo-olma', 8);
   await page.goto('/uz/checkout');
   await page.getByLabel('Tuman').selectOption('chilonzor');
-  const tiles = page.getByTestId('delivery-slot-option');
+  const tiles = page.getByRole('tabpanel').getByTestId('delivery-slot-option');
   await expect(tiles.first()).toBeVisible({ timeout: 15_000 });
 
-  // No horizontal page scroll, and every window is a comfortable touch target inside the card.
-  expect(
-    await page.evaluate(
+  // No horizontal page scroll: only the row of day chips scrolls, and it is allowed to.
+  const noPageScroll = () =>
+    page.evaluate(
       () => document.documentElement.scrollWidth <= document.documentElement.clientWidth,
-    ),
-  ).toBe(true);
+    );
+  expect(await noPageScroll()).toBe(true);
+  const row = page.getByTestId('delivery-day-row');
+  const chips = page.getByRole('tab');
+  for (const chip of await chips.all()) {
+    // 44px+ touch targets, never shrunk or truncated.
+    const box = await chip.boundingBox();
+    expect(box?.height ?? 0).toBeGreaterThanOrEqual(44);
+    expect(box?.width ?? 0).toBeGreaterThanOrEqual(44);
+  }
+  // Opening the last day scrolls the row (not the page) so its chip is fully in view.
+  await chips.last().click();
+  await expect(chips.last()).toHaveAttribute('aria-selected', 'true');
+  expect(await noPageScroll()).toBe(true);
+  const rowBox = await row.boundingBox();
+  const lastBox = await chips.last().boundingBox();
+  expect(lastBox?.x ?? 0).toBeGreaterThanOrEqual((rowBox?.x ?? 0) - 1);
+  expect((lastBox?.x ?? 0) + (lastBox?.width ?? 0)).toBeLessThanOrEqual(
+    (rowBox?.x ?? 0) + (rowBox?.width ?? 0) + 1,
+  );
+  // Switching days moves nothing below the picker: the card keeps its height.
+  const cardHeight = async () => (await page.getByTestId('delivery-slots').boundingBox())?.height;
+  const heightOnLastDay = await cardHeight();
+  await chips.first().click();
+  expect(await cardHeight()).toBe(heightOnLastDay);
+  await openDayWithWindows(page, 2);
+  expect(await cardHeight()).toBe(heightOnLastDay);
+
+  // Every window is a comfortable touch target inside the card.
   const card = await page.getByTestId('delivery-slots').boundingBox();
   for (const tile of await tiles.all()) {
     const box = await tile.boundingBox();
@@ -179,18 +250,19 @@ test('the picker fits a 360px screen and honours prefers-reduced-motion', async 
       (card?.x ?? 0) + (card?.width ?? 0),
     );
   }
-  // Two windows per row at 360px (today may have only one left, so look at the second day).
-  const pair = page.locator('[data-day]').nth(1).getByTestId('delivery-slot-option');
-  const first = await pair.nth(0).boundingBox();
-  const second = await pair.nth(1).boundingBox();
+  // Two windows per row at 360px (the shown day has at least two).
+  const first = await tiles.nth(0).boundingBox();
+  const second = await tiles.nth(1).boundingBox();
   expect(Math.abs((first?.y ?? 0) - (second?.y ?? 99))).toBeLessThan(2);
 
   // Reduced motion collapses every transition and the entrance animation to (almost) nothing.
   const durations = await tiles.first().evaluate((element) => ({
     transition: getComputedStyle(element).transitionDuration,
+    chip: getComputedStyle(document.querySelector('[role="tab"]') as Element).transitionDuration,
     section: getComputedStyle(element.closest('section') as Element).animationDuration,
   }));
   expect(Number.parseFloat(durations.transition)).toBeLessThan(0.001);
+  expect(Number.parseFloat(durations.chip)).toBeLessThan(0.001);
   expect(Number.parseFloat(durations.section)).toBeLessThan(0.001);
 
   await emptyCart(page);

@@ -13,6 +13,7 @@ import { getDeliveryZones } from '@/lib/api/delivery';
 import { ApiRequestError } from '@/lib/api/errors';
 import { createOrder, quoteCheckout } from '@/lib/api/orders';
 import { useSession } from '@/lib/session';
+import { useCooldown } from '@/lib/use-cooldown';
 import { classifyCheckoutError, type CheckoutFailure, type SlotFailureReason } from './failures';
 import {
   buildOrderRequest,
@@ -49,8 +50,11 @@ export interface PriceChange {
   to: number;
 }
 
-/** A form field, or the delivery-slot group (which is not a form field of its own). */
-export type FocusTarget = FieldName | 'deliverySlot';
+/**
+ * A form field, the delivery-slot group, or the summary's "could not price the cart" message: the
+ * last two are not form fields of their own, but a refused submit moves the customer to them.
+ */
+export type FocusTarget = FieldName | 'deliverySlot' | 'quote';
 
 export interface CheckoutFlowOptions {
   /** Called after the order exists, with the created order. */
@@ -90,7 +94,7 @@ export function useCheckoutFlow({ onPlaced, onSuccess, onError, focusField }: Ch
   // (read in a callback, never while rendering).
   const [today, setToday] = useState(() => todayInTashkent());
   const [submitting, setSubmitting] = useState(false);
-  const [cooldown, setCooldown] = useState(0);
+  const { seconds: cooldown, start: startCooldown } = useCooldown();
   const quoteSeq = useRef(0);
   const lastQuote = useRef<CheckoutQuote | null>(null);
 
@@ -122,13 +126,6 @@ export function useCheckoutFlow({ onPlaced, onSuccess, onError, focusField }: Ch
     void loadData();
   }, [status, loadData]);
 
-  // Rate-limit cool-down: counts down once a second until the same request may be repeated.
-  useEffect(() => {
-    if (cooldown <= 0) return undefined;
-    const timer = setTimeout(() => setCooldown((seconds) => seconds - 1), 1000);
-    return () => clearTimeout(timer);
-  }, [cooldown]);
-
   /** Prices the cart for `district`. Resolves with the quote, or `null` when it failed. */
   const refreshQuote = useCallback(
     async (district: DistrictCode): Promise<CheckoutQuote | null> => {
@@ -151,14 +148,23 @@ export function useCheckoutFlow({ onPlaced, onSuccess, onError, focusField }: Ch
       } catch (error) {
         const classified = classifyCheckoutError(error);
         if (classified.kind === 'session') retry();
+        // A refused quote is waited out like a refused order: whatever would ask again (the retry
+        // button, the submit control) stays disabled until `Retry-After` has passed.
+        if (classified.kind === 'rate_limited') startCooldown(classified.seconds);
         if (sequence === quoteSeq.current) {
           setQuote({ kind: 'failed', district, failure: classified });
         }
         return null;
       }
     },
-    [apiFetch, retry],
+    [apiFetch, retry, startCooldown],
   );
+
+  /** Asks again for the quote that failed (the summary's retry button). */
+  const retryQuote = useCallback(() => {
+    if (cooldown > 0 || values.district === '') return;
+    void refreshQuote(values.district);
+  }, [cooldown, values.district, refreshQuote]);
 
   const setField = useCallback(<K extends FieldName>(field: K, value: CheckoutFormValues[K]) => {
     setValues((current) => ({ ...current, [field]: value }));
@@ -262,6 +268,9 @@ export function useCheckoutFlow({ onPlaced, onSuccess, onError, focusField }: Ch
   );
 
   const submit = useCallback(async () => {
+    // A rate limit is waited out. The controls are disabled meanwhile; this is the same rule for
+    // anything that reaches the handler anyway (an implicit form submission, a stale MainButton).
+    if (cooldown > 0) return;
     // Validation is synchronous and has no side effects, so it runs before the lock is taken:
     // tapping an incomplete form just reveals what is missing.
     setFailure(null);
@@ -287,7 +296,9 @@ export function useCheckoutFlow({ onPlaced, onSuccess, onError, focusField }: Ch
           ? shown.quote
           : await refreshQuote(values.district);
       if (fresh === null) {
+        // The summary says why (and offers a retry); take the customer there.
         onError?.();
+        focusField?.('quote');
         return;
       }
       // The window must still be bookable in the quote we are about to order against. If the
@@ -358,7 +369,7 @@ export function useCheckoutFlow({ onPlaced, onSuccess, onError, focusField }: Ch
             controller.reset();
             break;
           case 'rate_limited':
-            setCooldown(classified.seconds);
+            startCooldown(classified.seconds);
             break;
           case 'insufficient_stock':
           case 'product_inactive':
@@ -381,6 +392,8 @@ export function useCheckoutFlow({ onPlaced, onSuccess, onError, focusField }: Ch
     }
   }, [
     controller,
+    cooldown,
+    startCooldown,
     values,
     quote,
     priceChange,
@@ -422,5 +435,6 @@ export function useCheckoutFlow({ onPlaced, onSuccess, onError, focusField }: Ch
     submitting,
     cooldown,
     submit,
+    retryQuote,
   };
 }

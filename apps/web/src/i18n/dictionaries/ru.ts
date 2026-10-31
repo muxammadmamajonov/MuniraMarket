@@ -68,6 +68,7 @@ export const ru: Dictionary = {
     errors: {
       productInactive: 'Этот товар сейчас недоступен.',
       insufficientStock: 'Недостаточно на складе. Доступно: {available}.',
+      rateLimited: 'Слишком много попыток. Повторите чуть позже.',
       cartLimit: 'В корзине слишком много разных товаров.',
       generic: 'Не удалось добавить в корзину. Попробуйте ещё раз.',
     },
@@ -89,6 +90,7 @@ export const ru: Dictionary = {
     loadFailed: 'Не удалось загрузить корзину.',
     updateFailed: 'Не удалось обновить корзину. Попробуйте ещё раз.',
     updateInsufficientStock: 'Недостаточно на складе. Доступно: {available}.',
+    updateRateLimited: 'Слишком много попыток. Повторите чуть позже.',
     retry: 'Повторить',
   },
   checkout: {
@@ -170,6 +172,10 @@ export const ru: Dictionary = {
       today: 'Сегодня',
       tomorrow: 'Завтра',
       weekdays: ['Воскресенье', 'Понедельник', 'Вторник', 'Среда', 'Четверг', 'Пятница', 'Суббота'],
+      daysLabel: 'День доставки',
+      dayFree: 'Свободно: {count}',
+      dayChosen: 'здесь выбранное время',
+      chosenElsewhere: 'Выбранное время: {when}',
       remaining: {
         one: 'Осталось {count} место',
         few: 'Осталось {count} места',
@@ -209,6 +215,7 @@ export const ru: Dictionary = {
       goToOrders: 'Перейти к заказам',
       unmapped: 'В данных заказа есть ошибка. Проверьте поля.',
       retry: 'Повторить',
+      retryCountdown: '({seconds} с)',
       goToCart: 'Перейти в корзину',
     },
   },
