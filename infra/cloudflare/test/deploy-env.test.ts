@@ -11,7 +11,7 @@ const staging = {
   MM_TELEGRAM_BOT_USERNAME: 'muniramarket_staging_bot',
   MM_CSRF_TRUSTED_ORIGINS: 'https://shop.staging.example.test,https://admin.staging.example.test',
 };
-const DIGEST = `registry.example.test/acct/muniramarket-core-api@sha256:${'a'.repeat(64)}`;
+const DIGEST = `registry.cloudflare.com/fake-account/muniramarket-core-api@sha256:${'a'.repeat(64)}`;
 
 const variables = (env: Record<string, string | undefined>, mode: 'staging' | 'production') =>
   validateDeployEnv(mode, env).map((p) => p.variable);
@@ -68,7 +68,10 @@ describe('validateDeployEnv', () => {
     expect(problems).toContain('APP_RELEASE');
     expect(problems).toContain('MM_WEB_HOSTNAME');
     expect(
-      variables({ ...staging, CORE_API_IMAGE: 'registry.example.test/acct/api:latest' }, 'staging'),
+      variables(
+        { ...staging, CORE_API_IMAGE: 'registry.cloudflare.com/fake-account/api:latest' },
+        'staging',
+      ),
     ).toEqual(['CORE_API_IMAGE']);
     expect(
       variables({ ...staging, CORE_API_IMAGE: DIGEST, APP_RELEASE: 'sha-0123abc' }, 'staging'),

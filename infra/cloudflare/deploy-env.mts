@@ -21,7 +21,8 @@ export interface DeployEnvProblem {
 const HOSTNAME = /^(?=.{1,253}$)([a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/;
 const BOT_USERNAME = /^[A-Za-z0-9_]{5,32}$/;
 const RELEASE = /^[A-Za-z0-9._-]{1,64}$/;
-const DIGEST_REF = /^[a-z0-9.-]+(?::\d+)?\/[a-z0-9._/-]+@sha256:[0-9a-f]{64}$/;
+// Durable Object-scheduled Containers only start digest-pinned images from Cloudflare's registry.
+const DIGEST_REF = /^registry\.cloudflare\.com\/[A-Za-z0-9_-]+\/[a-z0-9._/-]+@sha256:[0-9a-f]{64}$/;
 const TEST_TLDS = ['.test', '.example', '.invalid', '.localhost', '.local', '.internal'];
 
 function hostnameProblem(value: string, allowTestTld: boolean): string | null {
@@ -110,7 +111,7 @@ export function validateDeployEnv(
   if (image !== '' && !DIGEST_REF.test(image)) {
     problems.push({
       variable: 'CORE_API_IMAGE',
-      message: 'must be pinned by digest: <registry>/<repository>@sha256:<64 hex>',
+      message: 'must be registry.cloudflare.com/<account>/<repository>@sha256:<64 hex>',
     });
   }
   return problems;

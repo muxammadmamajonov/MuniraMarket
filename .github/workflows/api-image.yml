@@ -1,0 +1,110 @@
+name: Core API image
+
+# Builds the Core API container image once per commit with an immutable tag (sha-<12 hex>) and,
+# only when explicitly enabled, pushes it to Cloudflare's managed registry and records the
+# digest. Deploys then pin that digest (CORE_API_IMAGE=registry.cloudflare.com/...@sha256:...);
+# the same image is promoted from staging to production, never rebuilt.
+#
+# Pushing is off until an operator sets the repository variable CLOUDFLARE_IMAGE_PUSH=true and
+# the `staging` environment's secrets CLOUDFLARE_API_TOKEN (Containers write only) and
+# CLOUDFLARE_ACCOUNT_ID (infra/cloudflare/README.md). Without them this workflow only builds.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - services/api/**
+      - .github/workflows/api-image.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: api-image-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  image:
+    name: Build the Core API image
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    outputs:
+      tag: ${{ steps.tag.outputs.tag }}
+    defaults:
+      run:
+        working-directory: services/api
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Immutable tag
+        id: tag
+        run: echo "tag=sha-${GITHUB_SHA::12}" >> "$GITHUB_OUTPUT"
+      - name: Build
+        env:
+          TAG: ${{ steps.tag.outputs.tag }}
+        run: |
+          docker build --pull --build-arg "APP_RELEASE=$TAG" \
+            --label "org.opencontainers.image.source=${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}" \
+            --tag "muniramarket-core-api:$TAG" .
+      - name: Startup checks
+        env:
+          TAG: ${{ steps.tag.outputs.tag }}
+        run: scripts/check-container.sh "muniramarket-core-api:$TAG"
+      - name: Save the image for the push job
+        if: vars.CLOUDFLARE_IMAGE_PUSH == 'true'
+        env:
+          TAG: ${{ steps.tag.outputs.tag }}
+        run: docker save "muniramarket-core-api:$TAG" | gzip > "$RUNNER_TEMP/core-api.tar.gz"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: vars.CLOUDFLARE_IMAGE_PUSH == 'true'
+        with:
+          name: core-api-image
+          path: ${{ runner.temp }}/core-api.tar.gz
+          retention-days: 1
+
+  push:
+    name: Push to the Cloudflare registry (opt-in)
+    needs: image
+    # Off until an operator enables it; the environment holds the Cloudflare credentials and can
+    # require a reviewer.
+    if: vars.CLOUDFLARE_IMAGE_PUSH == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: staging
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        with:
+          name: core-api-image
+          path: ${{ runner.temp }}
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile --filter @muniramarket/api-gateway...
+      - name: Push and record the digest
+        working-directory: services/api-gateway
+        env:
+          TAG: ${{ needs.image.outputs.tag }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          gunzip -c "$RUNNER_TEMP/core-api.tar.gz" | docker load
+          pnpm exec cf containers push --tag "muniramarket-core-api:$TAG"
+          digest_ref="$(docker image inspect --format '{{range .RepoDigests}}{{println .}}{{end}}' \
+            "muniramarket-core-api:$TAG" | grep '^registry.cloudflare.com/' | head -1)"
+          if [ -z "$digest_ref" ]; then
+            echo "::error::pushed image has no registry.cloudflare.com digest" >&2
+            exit 1
+          fi
+          {
+            echo "### Core API image"
+            echo ""
+            echo "- tag: \`$TAG\`"
+            echo "- CORE_API_IMAGE: \`$digest_ref\`"
+          } >> "$GITHUB_STEP_SUMMARY"

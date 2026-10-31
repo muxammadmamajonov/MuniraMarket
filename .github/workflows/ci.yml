@@ -90,13 +90,89 @@ jobs:
           uv run alembic check
           make seed
           make seed
+      # infra/neon: SQL-created migrator/runtime roles, migrations as the migrator, runtime grants;
+      # the runtime role must not be able to change or remove audit_log rows or run DDL.
+      - name: Neon role model (least privilege, append-only audit log)
+        env:
+          ADMIN_URL: postgresql://ci:ci-only-password@localhost:5432/postgres
+        run: |
+          command -v psql >/dev/null || (sudo apt-get update && sudo apt-get install -y postgresql-client)
+          ../../infra/neon/scripts/verify-roles.sh
       - run: make build
       - name: Build API container image
-        run: docker build --tag muniramarket-core-api:ci .
+        run: docker build --build-arg "APP_RELEASE=ci-${GITHUB_SHA::12}" --tag muniramarket-core-api:ci .
       - name: Smoke-test API container image
         run: >-
           docker run --rm --entrypoint python muniramarket-core-api:ci
           -c "from app.main import create_app; print('container import ok')"
+      - name: Container startup, readiness, logs and graceful shutdown
+        run: scripts/check-container.sh muniramarket-core-api:ci
+
+  workers:
+    name: Cloudflare Workers (vinext) and launch config
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      NEXT_TELEMETRY_DISABLED: '1'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      # Offline: no Cloudflare account, token or network resource is involved.
+      - name: Worker typecheck (generated binding types)
+        run: |
+          pnpm --filter @muniramarket/web typecheck:worker
+          pnpm --filter @muniramarket/admin typecheck:worker
+          pnpm --filter @muniramarket/api-gateway typecheck
+      - name: Worker builds (staging and production configuration)
+        run: |
+          for app in web admin; do
+            pnpm --filter "@muniramarket/$app" build:worker
+            pnpm --filter "@muniramarket/$app" build:worker:production
+          done
+      - name: Core API gateway build (Worker bundle + container image)
+        working-directory: services/api-gateway
+        run: pnpm exec cf build --mode staging
+      - name: Security headers on the Workers runtime (local previews)
+        run: |
+          nohup pnpm --filter @muniramarket/web preview:worker > "$RUNNER_TEMP/web-preview.log" 2>&1 &
+          nohup pnpm --filter @muniramarket/admin preview:worker > "$RUNNER_TEMP/admin-preview.log" 2>&1 &
+          for _ in $(seq 1 90); do
+            curl -fsS -o /dev/null http://localhost:3100/robots.txt \
+              && curl -fsS -o /dev/null http://localhost:3101/robots.txt && break
+            sleep 1
+          done
+          node infra/cloudflare/scripts/smoke.mts --local \
+            --web http://localhost:3100 --admin http://localhost:3101
+      - name: Deploy-time configuration validation (fixture values)
+        env:
+          MM_WEB_HOSTNAME: shop.staging.example.test
+          MM_ADMIN_HOSTNAME: admin.staging.example.test
+          MM_API_HOSTNAME: api.staging.example.test
+          MM_TELEGRAM_BOT_ID: '1234567890'
+          MM_TELEGRAM_BOT_USERNAME: muniramarket_ci_bot
+          MM_CSRF_TRUSTED_ORIGINS: https://shop.staging.example.test,https://admin.staging.example.test
+        run: |
+          node infra/cloudflare/scripts/validate-deploy-env.mts --mode staging
+          # Production must refuse fixture hostnames and a missing image digest (fail closed).
+          if node infra/cloudflare/scripts/validate-deploy-env.mts --mode production; then
+            echo "production accepted an incomplete configuration" >&2
+            exit 1
+          fi
+      - name: Upload preview logs
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: workers-preview-logs
+          path: ${{ runner.temp }}/*-preview.log
+          if-no-files-found: ignore
+          retention-days: 7
 
   contracts:
     name: Contracts up to date
