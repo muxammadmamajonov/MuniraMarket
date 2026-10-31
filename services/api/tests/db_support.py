@@ -89,6 +89,7 @@ async def drop_schema(url: str, schema: str) -> None:
 
 
 APP_TABLES = (
+    "audit_log",
     "notification_outbox",
     "order_status_history",
     "order_items",
@@ -98,6 +99,7 @@ APP_TABLES = (
     "products",
     "categories",
     "delivery_zone_districts",
+    "delivery_slots",
     "delivery_zones",
     "users",
 )

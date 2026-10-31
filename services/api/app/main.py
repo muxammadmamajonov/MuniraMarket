@@ -42,6 +42,8 @@ API_PREFIX = "/api/v1"
 INIT_DATA_MAX_BODY_BYTES = 8 * 1024
 # Login Widget payloads are a handful of short fields (the photo URL is the longest).
 LOGIN_WIDGET_MAX_BODY_BYTES = 4 * 1024
+# Catalog CSV import (admin only): the one route allowed a body above the 64 KiB default.
+CSV_IMPORT_MAX_BODY_BYTES = 1024 * 1024
 
 
 def build_identity_verifier(settings: Settings, clock: Clock) -> TelegramIdentityVerifier:
@@ -157,6 +159,7 @@ def create_app(
         path_limits={
             f"{API_PREFIX}/auth/telegram/init-data": INIT_DATA_MAX_BODY_BYTES,
             f"{API_PREFIX}/auth/telegram/login-widget": LOGIN_WIDGET_MAX_BODY_BYTES,
+            f"{API_PREFIX}/admin/catalog/csv/import": CSV_IMPORT_MAX_BODY_BYTES,
         },
     )
     # Outermost of our middleware: delivers queued session cookies on every response (errors and

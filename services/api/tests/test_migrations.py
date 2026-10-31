@@ -373,7 +373,7 @@ async def test_an_already_migrated_schema_on_the_search_path_is_never_touched() 
 
         await upgrade(my_engine)
         assert await _scalar(my_engine, tables_in, schema=mine) == 2
-        assert await _scalar(my_engine, "SELECT version_num FROM alembic_version") == "0003"
+        assert await _scalar(my_engine, "SELECT version_num FROM alembic_version") == "0004"
 
         await truncate_app_tables(my_engine)
         assert await _scalar(my_engine, count_other) == 1

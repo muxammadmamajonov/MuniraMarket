@@ -16,8 +16,8 @@ import pytest
 from fastapi import FastAPI
 from sqlalchemy.exc import IntegrityError
 
+from app.api import admin_deps as admin_routes
 from app.api import auth_deps
-from app.api.routes import admin_orders as admin_routes
 from app.api.routes import catalog as catalog_routes
 from app.api.routes import delivery as delivery_routes
 from app.api.routes import orders as order_routes

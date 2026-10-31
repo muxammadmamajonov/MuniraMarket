@@ -1,17 +1,19 @@
 import uuid
-from datetime import datetime
+from datetime import date, datetime, time
 from typing import Any
 
 from sqlalchemy import (
     BigInteger,
     Boolean,
     CheckConstraint,
+    Date,
     DateTime,
     ForeignKey,
     Index,
     Integer,
     String,
     Text,
+    Time,
     UniqueConstraint,
     func,
     text,
@@ -48,6 +50,14 @@ class Order(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     delivery_zone_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("delivery_zones.id", ondelete="SET NULL")
     )
+    # The booked delivery window (``delivery_slots``), plus a snapshot of it so the order stays
+    # readable if the slot is later edited. NULL when the zone had no slots.
+    delivery_slot_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("delivery_slots.id", ondelete="RESTRICT")
+    )
+    delivery_slot_date: Mapped[date | None] = mapped_column(Date())
+    delivery_slot_starts_at: Mapped[time | None] = mapped_column(Time())
+    delivery_slot_ends_at: Mapped[time | None] = mapped_column(Time())
     recipient_name: Mapped[str] = mapped_column(String(255), nullable=False)
     recipient_phone: Mapped[str] = mapped_column(String(32), nullable=False)
     # Structured address as entered at checkout (district code, street, house, ...).
@@ -72,6 +82,9 @@ class Order(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         # Customer history (newest first) and the operator queue by status.
         Index("ix_orders_user_id_created_at", "user_id", "created_at"),
         Index("ix_orders_status_created_at", "status", "created_at"),
+        Index("ix_orders_delivery_slot_id", "delivery_slot_id"),
+        # Dashboard: today's orders by creation time.
+        Index("ix_orders_created_at", "created_at"),
     )
 
 

@@ -1,9 +1,11 @@
 import uuid
+from datetime import datetime
 
 from sqlalchemy import (
     BigInteger,
     Boolean,
     CheckConstraint,
+    DateTime,
     ForeignKey,
     Index,
     Integer,
@@ -60,12 +62,19 @@ class Product(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     # NULL means stock is not tracked for this product.
     stock_quantity: Mapped[int | None] = mapped_column(Integer)
     image_url: Mapped[str | None] = mapped_column(String(2048))
+    sort_order: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default=text("0")
+    )
     is_active: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=True, server_default=text("true")
     )
+    # Soft delete: an archived product is never shown or sold again, but order lines keep
+    # pointing at it. Products are never hard-deleted.
+    archived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     __table_args__ = (
         CheckConstraint("price_uzs >= 0", name="price_non_negative"),
+        CheckConstraint("archived_at IS NULL OR NOT is_active", name="archived_is_inactive"),
         CheckConstraint(
             "old_price_uzs IS NULL OR old_price_uzs >= 0", name="old_price_non_negative"
         ),

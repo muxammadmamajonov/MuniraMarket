@@ -10,9 +10,9 @@ from fastapi import FastAPI, Request
 from sqlalchemy import update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from app.api import admin_deps as admin_routes
 from app.api import auth_deps
 from app.api.deps import get_session
-from app.api.routes import admin_orders as admin_routes
 from app.api.routes import cart as cart_routes
 from app.api.routes import orders as order_routes
 from app.core.clock import Clock, system_clock
