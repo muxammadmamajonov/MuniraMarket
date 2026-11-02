@@ -1,25 +1,58 @@
 /*
- * MuniraMarket design tokens (placeholder, neutral palette).
- * Brand colours are TBD: change the values here and both apps pick them up.
+ * MuniraMarket design tokens: the brand palette (the shop sign's deep acrylic red, charcoal, near-black, warm off-white).
+ * Both apps consume them; change a value here and the storefront and admin pick it up.
  *
  * Consume from an app stylesheet, after `@import "tailwindcss";`:
  *   @import "@muniramarket/ui/styles/tokens.css";
+ *
+ * Contrast (WCAG 2.2, checked with the relative-luminance formula):
+ *   light  white on primary #A8121B 7.6:1 · white on hover #860C13 10.1:1 · foreground on
+ *          background 18:1 · muted #5F5D5A on background 6.2:1, on surface-muted 5.7:1 ·
+ *          danger #B42318 on background 6.2:1 · brand-ink #A3121F on background 7.4:1
+ *   dark   white on primary #CC1822 5.6:1 · white on hover #A8121B 7.6:1 · primary against the
+ *          #121214 page 3.3:1 (non-text, >= 3:1) · muted #A8A6A3 on surface-muted 6.2:1 ·
+ *          danger #FF8A8F on surface 7.5:1 · brand-ink #FF9EA2 on brand-soft 8.8:1
+ * Red is the brand, so an error is never colour alone: error text sits next to an icon or a
+ * field label and is announced through `role="alert"`.
  */
 
 /* Make Tailwind scan the UI package sources for utility classes. */
 @source "../";
 
 :root {
-  --mm-color-background: #ffffff;
+  color-scheme: light;
+
+  /* Raw brand colours (for the logo and illustrations; UI uses the semantic tokens below). */
+  --mm-brand-red: #a8121b;
+  --mm-brand-red-dark: #860c13;
+  --mm-brand-charcoal: #2b2b2e;
+  --mm-brand-near-black: #141416;
+  --mm-brand-off-white: #faf8f5;
+
+  --mm-color-background: #faf8f5;
   --mm-color-surface: #ffffff;
-  --mm-color-surface-muted: #f4f4f5;
-  --mm-color-foreground: #18181b;
-  --mm-color-muted-foreground: #52525b;
-  --mm-color-border: #d4d4d8;
-  --mm-color-primary: #3f3f46;
-  --mm-color-primary-hover: #27272a;
+  --mm-color-surface-muted: #f2efea;
+  --mm-color-foreground: #141416;
+  --mm-color-muted-foreground: #5f5d5a;
+  --mm-color-border: #dedad3;
+  --mm-color-border-strong: #b9b4ab;
+  --mm-color-primary: #a8121b;
+  --mm-color-primary-hover: #860c13;
   --mm-color-primary-foreground: #ffffff;
-  --mm-color-focus: #2563eb;
+  --mm-color-focus: #141416;
+  --mm-color-brand-soft: #fcedee;
+  --mm-color-brand-ink: #a3121f;
+  /* Logo colours (a logotype is exempt from WCAG text contrast; it keeps the sign's deep red). */
+  --mm-color-wordmark-primary: #a8121b;
+  --mm-color-wordmark-secondary: #2b2b2e;
+
+  --mm-color-danger: #b42318;
+  --mm-color-danger-soft: #fdecea;
+  --mm-color-warning: #8a4b00;
+  --mm-color-warning-soft: #fff4e5;
+  --mm-color-success: #16704a;
+  --mm-color-success-soft: #e8f4ee;
+  --mm-color-overlay: rgb(20 20 22 / 0.5);
 
   --mm-radius-md: 0.75rem;
   --mm-font-sans:
@@ -28,16 +61,31 @@
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --mm-color-background: #09090b;
-    --mm-color-surface: #18181b;
-    --mm-color-surface-muted: #27272a;
-    --mm-color-foreground: #fafafa;
-    --mm-color-muted-foreground: #a1a1aa;
-    --mm-color-border: #3f3f46;
-    --mm-color-primary: #e4e4e7;
-    --mm-color-primary-hover: #ffffff;
-    --mm-color-primary-foreground: #18181b;
-    --mm-color-focus: #60a5fa;
+    color-scheme: dark;
+
+    --mm-color-background: #121214;
+    --mm-color-surface: #1c1c1f;
+    --mm-color-surface-muted: #26262a;
+    --mm-color-foreground: #f5f3f0;
+    --mm-color-muted-foreground: #a8a6a3;
+    --mm-color-border: #36363b;
+    --mm-color-border-strong: #55555c;
+    --mm-color-primary: #cc1822;
+    --mm-color-primary-hover: #a8121b;
+    --mm-color-primary-foreground: #ffffff;
+    --mm-color-focus: #f5f3f0;
+    --mm-color-brand-soft: #2a1517;
+    --mm-color-brand-ink: #ff9ea2;
+    --mm-color-wordmark-primary: #a8121b;
+    --mm-color-wordmark-secondary: #ffffff;
+
+    --mm-color-danger: #ff8a8f;
+    --mm-color-danger-soft: #2a1517;
+    --mm-color-warning: #f5b04a;
+    --mm-color-warning-soft: #2a2112;
+    --mm-color-success: #7ad3a6;
+    --mm-color-success-soft: #13261d;
+    --mm-color-overlay: rgb(0 0 0 / 0.6);
   }
 }
 
@@ -49,9 +97,19 @@
   --color-foreground: var(--mm-color-foreground);
   --color-muted-foreground: var(--mm-color-muted-foreground);
   --color-border: var(--mm-color-border);
+  --color-border-strong: var(--mm-color-border-strong);
   --color-primary: var(--mm-color-primary);
   --color-primary-hover: var(--mm-color-primary-hover);
   --color-primary-foreground: var(--mm-color-primary-foreground);
   --color-focus: var(--mm-color-focus);
+  --color-brand-soft: var(--mm-color-brand-soft);
+  --color-brand-ink: var(--mm-color-brand-ink);
+  --color-danger: var(--mm-color-danger);
+  --color-danger-soft: var(--mm-color-danger-soft);
+  --color-warning: var(--mm-color-warning);
+  --color-warning-soft: var(--mm-color-warning-soft);
+  --color-success: var(--mm-color-success);
+  --color-success-soft: var(--mm-color-success-soft);
+  --color-overlay: var(--mm-color-overlay);
   --font-sans: var(--mm-font-sans);
 }

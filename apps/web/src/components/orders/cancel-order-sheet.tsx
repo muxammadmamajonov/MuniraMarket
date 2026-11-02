@@ -205,7 +205,7 @@ export function CancelOrderSheet({
             size="lg"
             disabled={submitting}
             aria-busy={submitting}
-            className="bg-red-700 text-white hover:bg-red-800 dark:bg-red-600 dark:hover:bg-red-500 sm:flex-1"
+            className="bg-danger text-white hover:opacity-90 dark:text-background sm:flex-1"
           >
             {submitting ? t.cancelling : t.confirm}
           </Button>

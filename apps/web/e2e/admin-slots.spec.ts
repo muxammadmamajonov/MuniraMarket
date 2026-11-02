@@ -151,9 +151,10 @@ test('admin creates a delivery slot and a customer books exactly that window at 
     await addToCart(storefront, 'demo-uzum', 2);
 
     await storefront.goto('/uz/checkout');
-    const district = storefront.getByLabel('Tuman');
+    const district = storefront.getByRole('combobox', { name: 'Tuman' });
     await expect(district).toBeVisible({ timeout: 15_000 });
-    await district.selectOption(DISTRICT);
+    await district.click();
+    await storefront.locator(`[role="option"][data-value="${DISTRICT}"]`).click();
 
     const group = storefront.getByRole('radiogroup', { name: 'Yetkazish vaqti' });
     await expect(group).toBeVisible();
@@ -172,7 +173,7 @@ test('admin creates a delivery slot and a customer books exactly that window at 
     await storefront.getByLabel('Ko‘cha').fill('Demo ko‘cha');
     await storefront.getByLabel('Uy', { exact: true }).fill('12');
     await storefront.getByLabel('Telefon raqami').fill('+998 00 123-45-67');
-    await storefront.getByRole('radio', { name: 'Yetkazilganda naqd pul' }).check();
+    await storefront.locator('label', { hasText: 'Yetkazilganda naqd pul' }).click();
 
     // Valid form but no window yet: the native MainButton stays disabled.
     await expect

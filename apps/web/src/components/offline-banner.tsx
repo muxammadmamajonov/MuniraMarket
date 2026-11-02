@@ -16,7 +16,7 @@ export function OfflineBanner() {
     <div
       role="status"
       data-testid="offline-banner"
-      className="bg-amber-100 px-4 py-2 text-center text-sm font-medium text-amber-950"
+      className="bg-warning-soft px-4 py-2 text-center text-sm font-medium text-warning"
     >
       {dict.offline.banner}
     </div>

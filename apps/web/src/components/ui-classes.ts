@@ -24,10 +24,10 @@ export const LINK_BUTTON_SECONDARY =
 export const INPUT =
   'min-h-11 w-full min-w-0 scroll-mb-32 rounded-xl border border-border bg-surface px-3 py-2 ' +
   'text-foreground placeholder:text-muted-foreground ' +
-  'aria-[invalid=true]:border-red-600 dark:aria-[invalid=true]:border-red-400 ' +
+  'aria-[invalid=true]:border-danger ' +
   'focus-visible:outline-2 focus-visible:outline-offset-0 focus-visible:outline-focus ' +
   'disabled:cursor-not-allowed disabled:opacity-50';
 
 export const CARD = 'rounded-xl border border-border bg-surface p-4';
 
-export const ERROR_TEXT = 'text-sm font-medium text-red-700 dark:text-red-400';
+export const ERROR_TEXT = 'text-sm font-medium text-danger';

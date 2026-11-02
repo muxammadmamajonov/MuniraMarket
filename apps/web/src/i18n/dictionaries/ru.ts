@@ -29,6 +29,7 @@ export const ru: Dictionary = {
   },
   search: {
     label: 'Поиск товаров',
+    clear: 'Очистить',
     placeholder: 'Поиск товаров',
     submit: 'Найти',
     heading: 'Поиск',

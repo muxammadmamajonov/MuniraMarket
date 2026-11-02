@@ -49,6 +49,8 @@ export interface Dictionary {
   };
   search: {
     label: string;
+    /** Accessible name of the button that empties the search field. */
+    clear: string;
     placeholder: string;
     submit: string;
     heading: string;
