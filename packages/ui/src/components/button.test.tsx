@@ -26,7 +26,7 @@ describe('Button', () => {
 
   it('applies the danger variant for destructive confirmations', () => {
     render(<Button variant="danger">Delete</Button>);
-    expect(screen.getByRole('button')).toHaveClass('bg-red-700', 'text-white');
+    expect(screen.getByRole('button')).toHaveClass('bg-danger', 'text-white');
   });
 
   it('keeps a touch target of at least 44px for every size', () => {

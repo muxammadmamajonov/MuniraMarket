@@ -20,7 +20,7 @@ const VARIANTS: Record<ButtonVariant, string> = {
   primary: 'bg-primary text-primary-foreground hover:bg-primary-hover',
   secondary: 'border border-border bg-surface text-foreground hover:bg-surface-muted',
   // Destructive confirmations only (archive, delete, block): red, with text that stays AA on it.
-  danger: 'bg-red-700 text-white hover:bg-red-800 dark:bg-red-600 dark:hover:bg-red-500',
+  danger: 'bg-danger text-white hover:opacity-90 dark:text-background',
 };
 
 // Every size keeps a 44px minimum touch target (WCAG 2.5.5 / Apple HIG).

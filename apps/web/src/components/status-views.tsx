@@ -4,6 +4,7 @@ import { EmptyState, ErrorState } from '@muniramarket/ui';
 import Link from 'next/link';
 import { useI18n } from '@/i18n/context';
 import { PageContainer } from './page-container';
+import { LINK_BUTTON_PRIMARY } from './ui-classes';
 
 /** Body of `error.tsx`: localized message with a retry button. */
 export function ErrorView({ onRetry }: { onRetry: () => void }) {
@@ -29,10 +30,7 @@ export function NotFoundView() {
         title={dict.errors.notFoundTitle}
         description={dict.errors.notFoundMessage}
         action={
-          <Link
-            href={`/${locale}`}
-            className="inline-flex min-h-11 items-center rounded-xl bg-primary px-4 font-semibold text-primary-foreground hover:bg-primary-hover"
-          >
+          <Link href={`/${locale}`} className={LINK_BUTTON_PRIMARY}>
             {dict.errors.backHome}
           </Link>
         }

@@ -50,11 +50,11 @@ beforeEach(() => {
 });
 
 describe('ProductTile', () => {
-  it('shows the name (full text in the title), the price with its unit and a link to the product', () => {
+  it('shows the name (clamped; the product page has it in full), the price with its unit and a link to the product', () => {
     renderTile({ name_uz: 'Juda uzun nomli qizil olma, Samarqand navi, 1 kg qadoq' });
     const link = screen.getByRole('link');
     expect(link).toHaveAttribute('href', '/uz/p/demo-olma');
-    expect(link).toHaveAttribute('title', 'Juda uzun nomli qizil olma, Samarqand navi, 1 kg qadoq');
+    expect(link).not.toHaveAttribute('title');
     expect(within(link).getByText(/^Juda uzun/)).toHaveClass('line-clamp-2');
     expect(within(link).getByText(/12\s500/)).toBeInTheDocument();
     expect(within(link).getByText('/ kg')).toBeInTheDocument();
@@ -73,7 +73,7 @@ describe('ProductTile', () => {
   it('uses the Russian name in the Russian locale', () => {
     renderTile({}, 'ru');
     expect(screen.getByRole('link')).toHaveAttribute('href', '/ru/p/demo-olma');
-    expect(screen.getByRole('link')).toHaveAttribute('title', 'Яблоко');
+    expect(screen.getByRole('link')).toHaveTextContent('Яблоко');
     expect(screen.getByRole('button', { name: 'В корзину: Яблоко' })).toHaveTextContent(
       'В корзину',
     );

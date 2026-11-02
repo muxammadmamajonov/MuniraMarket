@@ -43,7 +43,7 @@ test('add from the home grid, step the quantity, then continue to the cart', asy
   const tile = page.locator(PURCHASABLE_TILE).first();
   await expect(tile).toBeVisible();
   const link = tile.getByRole('link');
-  const name = (await link.getAttribute('title')) ?? '';
+  const name = (await link.locator('[data-user-text]').textContent())?.trim() ?? '';
   expect(name).not.toBe('');
   const slug = new URL((await link.getAttribute('href')) ?? '', 'http://localhost').pathname
     .split('/')

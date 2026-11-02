@@ -70,7 +70,7 @@ describe('home page', () => {
     expect(screen.getByRole('heading', { level: 1, name: 'MuniraMarket' })).toBeInTheDocument();
     const search = screen.getByRole('search', { name: 'Mahsulot qidirish' });
     const input = within(search).getByRole('searchbox');
-    expect(input).toHaveAttribute('type', 'search');
+    expect(input).toHaveAttribute('type', 'text');
     expect(input).toHaveAttribute('enterkeyhint', 'search');
 
     const rail = screen.getByRole('navigation', { name: 'Kategoriyalar' });

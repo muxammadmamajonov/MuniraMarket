@@ -121,16 +121,12 @@ export function AddToCart({ product }: AddToCartProps) {
           </p>
         ) : null}
         {phase.kind === 'rate_limited' && waiting ? (
-          <p
-            role="alert"
-            data-testid="rate-limited"
-            className="text-sm font-medium text-red-600 dark:text-red-400"
-          >
+          <p role="alert" data-testid="rate-limited" className="text-sm font-medium text-danger">
             {dict.product.errors.rateLimited}
           </p>
         ) : null}
         {phase.kind === 'error' ? (
-          <p role="alert" className="text-sm font-medium text-red-600 dark:text-red-400">
+          <p role="alert" className="text-sm font-medium text-danger">
             {phase.message}
           </p>
         ) : null}

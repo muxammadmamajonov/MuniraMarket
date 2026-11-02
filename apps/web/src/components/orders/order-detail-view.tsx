@@ -211,7 +211,7 @@ export function OrderDetailView({ id, placed, found = false }: OrderDetailViewPr
           role="status"
           data-testid="placed-banner"
           data-found={found ? 'true' : undefined}
-          className="mm-enter flex flex-col gap-1 rounded-xl border border-green-700 bg-green-50 p-4 text-green-950 dark:border-green-400 dark:bg-green-950 dark:text-green-100"
+          className="mm-enter flex flex-col gap-1 rounded-xl border border-success bg-success-soft p-4 text-foreground"
         >
           <p className="font-bold">{found ? d.foundTitle : d.placedTitle}</p>
           <p className="text-sm">{found ? d.foundHint : d.placedHint}</p>
@@ -349,7 +349,7 @@ export function OrderDetailView({ id, placed, found = false }: OrderDetailViewPr
             size="lg"
             onClick={() => setSheetOpen(true)}
             data-testid="cancel-order"
-            className="text-red-700 dark:text-red-400"
+            className="text-danger"
           >
             {dict.orders.cancel.button}
           </Button>

@@ -1,6 +1,7 @@
 import type { Locale } from '@muniramarket/contracts';
 import type { Dictionary } from '@/i18n';
 import { SearchIcon } from './icons';
+import { SearchField } from './search-field';
 import { FOCUS_RING, PRESS } from './ui-classes';
 
 export interface SearchFormProps {
@@ -13,8 +14,8 @@ export interface SearchFormProps {
 
 /**
  * Plain GET form to `/<locale>/search?q=...`; works without JavaScript. The input is 16px (the
- * global rule that stops iOS Safari from zooming on focus), `type="search"` with a search key on
- * the on-screen keyboard.
+ * global rule that stops iOS Safari from zooming on focus), a plain text field (no browser cancel
+ * "x"; see `SearchField` for the custom clear button) with a search key on the on-screen keyboard.
  */
 export function SearchForm({ locale, dict, defaultValue = '', className }: SearchFormProps) {
   return (
@@ -25,28 +26,12 @@ export function SearchForm({ locale, dict, defaultValue = '', className }: Searc
       aria-label={dict.search.label}
       className={`flex gap-2 ${className ?? ''}`}
     >
-      <div className="relative min-w-0 flex-1">
-        <SearchIcon
-          width={20}
-          height={20}
-          className="pointer-events-none absolute top-1/2 left-3.5 -translate-y-1/2 text-muted-foreground"
-        />
-        <input
-          type="search"
-          name="q"
-          defaultValue={defaultValue}
-          placeholder={dict.search.placeholder}
-          aria-label={dict.search.label}
-          minLength={2}
-          maxLength={100}
-          enterKeyHint="search"
-          inputMode="search"
-          autoComplete="off"
-          autoCapitalize="none"
-          spellCheck={false}
-          className="min-h-12 w-full min-w-0 rounded-2xl border border-border bg-surface pr-3 pl-11 text-base text-foreground placeholder:text-muted-foreground focus-visible:outline-2 focus-visible:outline-offset-0 focus-visible:outline-focus"
-        />
-      </div>
+      <SearchField
+        defaultValue={defaultValue}
+        placeholder={dict.search.placeholder}
+        label={dict.search.label}
+        clearLabel={dict.search.clear}
+      />
       <button
         type="submit"
         className={`inline-flex min-h-12 min-w-12 items-center justify-center rounded-2xl bg-primary px-3 font-semibold sm:px-4 text-primary-foreground hover:bg-primary-hover ${PRESS} ${FOCUS_RING}`}

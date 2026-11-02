@@ -102,7 +102,7 @@ export const FailureNotice = forwardRef<HTMLDivElement, FailureNoticeProps>(func
         <div
           role="alert"
           data-testid="price-changed"
-          className="mm-enter flex flex-col gap-3 rounded-xl border border-amber-600 bg-amber-50 p-4 text-amber-950 dark:border-amber-400 dark:bg-amber-950 dark:text-amber-100"
+          className="mm-enter flex flex-col gap-3 rounded-xl border border-warning bg-warning-soft p-4 text-foreground"
         >
           <p className="font-bold">{f.priceChangedTitle}</p>
           <dl className="grid grid-cols-[auto_1fr] items-baseline gap-x-3 gap-y-1">

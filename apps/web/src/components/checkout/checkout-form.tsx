@@ -21,6 +21,8 @@ import {
 import { districtGroups, districtName, zoneHours, zoneName } from '@/lib/checkout/zones';
 import { FormField } from '../form-field';
 import { CARD, ERROR_TEXT, INPUT } from '../ui-classes';
+import { ListboxSelect } from '../ui/listbox-select';
+import { RadioCard } from '../ui/radio-card';
 
 export interface CheckoutFormProps {
   values: CheckoutFormValues;
@@ -147,38 +149,31 @@ export function CheckoutFormFields({
           }
         >
           {(control) => (
-            <select
+            <ListboxSelect
               {...control}
               name="district"
-              autoComplete="off"
+              dataField="district"
+              label={t.labels.district}
+              placeholder={t.districtPlaceholder}
               disabled={disabled}
               value={values.district}
-              onChange={(event) => onDistrict(event.target.value as DistrictCode | '')}
+              onChange={(code) => onDistrict(code as DistrictCode | '')}
               onBlur={() => onBlur('district')}
-              className={INPUT}
-            >
-              <option value="" disabled>
-                {t.districtPlaceholder}
-              </option>
-              {groups.map(({ zone, districts }) => (
-                <optgroup
-                  key={zone.id}
-                  label={formatMessage(t.zoneGroup, {
-                    zone: zoneName(zone, locale),
-                    fee:
-                      zone.delivery_fee_uzs === 0
-                        ? t.summary.free
-                        : formatUZS(zone.delivery_fee_uzs, locale),
-                  })}
-                >
-                  {districts.map((district) => (
-                    <option key={district.code} value={district.code}>
-                      {districtName(district, locale)}
-                    </option>
-                  ))}
-                </optgroup>
-              ))}
-            </select>
+              groups={groups.map(({ zone, districts }) => ({
+                id: String(zone.id),
+                label: formatMessage(t.zoneGroup, {
+                  zone: zoneName(zone, locale),
+                  fee:
+                    zone.delivery_fee_uzs === 0
+                      ? t.summary.free
+                      : formatUZS(zone.delivery_fee_uzs, locale),
+                }),
+                options: districts.map((district) => ({
+                  value: district.code,
+                  label: districtName(district, locale),
+                })),
+              }))}
+            />
           )}
         </FormField>
 
@@ -258,23 +253,16 @@ export function CheckoutFormFields({
         <legend className="px-1 text-lg font-bold">{t.sections.payment}</legend>
         <div role="radiogroup" className="flex flex-col gap-2">
           {PAYMENT_METHODS.map((method: PaymentMethod) => (
-            <label
+            <RadioCard
               key={method}
-              className="flex min-h-12 cursor-pointer items-center gap-3 rounded-xl border border-border px-3 py-2 transition-colors duration-150 has-checked:border-primary has-checked:bg-surface-muted has-focus-visible:outline-2 has-focus-visible:outline-focus"
+              name="paymentMethod"
+              value={method}
+              checked={values.paymentMethod === method}
+              onChange={() => onChange('paymentMethod', method)}
+              onBlur={() => onBlur('paymentMethod')}
             >
-              <input
-                type="radio"
-                name="paymentMethod"
-                value={method}
-                checked={values.paymentMethod === method}
-                onChange={() => onChange('paymentMethod', method)}
-                onBlur={() => onBlur('paymentMethod')}
-                className="size-5 shrink-0 accent-primary"
-              />
-              <span className="min-w-0 [overflow-wrap:anywhere]">
-                {dict.orders.payment[method]}
-              </span>
-            </label>
+              {dict.orders.payment[method]}
+            </RadioCard>
           ))}
         </div>
         <p id="checkout-payment-hint" className="text-sm text-muted-foreground">

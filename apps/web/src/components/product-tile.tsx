@@ -55,7 +55,6 @@ export function ProductTile({ product }: ProductTileProps) {
       <Link
         href={`/${locale}/p/${encodeURIComponent(product.slug)}`}
         prefetch={false}
-        title={name}
         className={`flex flex-col gap-2 rounded-2xl p-2 pb-1 ${FOCUS_RING}`}
       >
         <div className={state.kind === 'out' ? 'opacity-55' : undefined}>
@@ -83,9 +82,7 @@ export function ProductTile({ product }: ProductTileProps) {
             <span className="text-xs text-muted-foreground">/ {dict.units[product.unit]}</span>
           </span>
           {state.kind === 'low' ? (
-            <span className="text-xs font-medium text-amber-700 dark:text-amber-400">
-              {stockLabel(state, dict)}
-            </span>
+            <span className="text-xs font-medium text-warning">{stockLabel(state, dict)}</span>
           ) : null}
         </span>
       </Link>
@@ -144,7 +141,7 @@ export function ProductTile({ product }: ProductTileProps) {
           </div>
         )}
         {error === null ? null : (
-          <p role="alert" className="pt-1.5 text-xs font-medium text-red-700 dark:text-red-400">
+          <p role="alert" className="pt-1.5 text-xs font-medium text-danger">
             {error}
           </p>
         )}

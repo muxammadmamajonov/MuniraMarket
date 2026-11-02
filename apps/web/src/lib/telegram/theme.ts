@@ -4,16 +4,20 @@ import { useEffect } from 'react';
 import { useTelegram } from './provider';
 import type { TelegramThemeParams } from './types';
 
-/** Telegram theme parameter -> design token it overrides (see packages/ui tokens.css). */
+/**
+ * Telegram theme parameter -> design token it overrides (see packages/ui tokens.css). Only the
+ * neutral surfaces and text follow the client theme, so the Mini App sits naturally in the chat;
+ * the brand red (primary) is never replaced by the client's accent colour.
+ */
 const TOKEN_FOR_PARAM: ReadonlyArray<[keyof TelegramThemeParams, string]> = [
   ['bg_color', '--mm-color-background'],
   ['section_bg_color', '--mm-color-surface'],
   ['secondary_bg_color', '--mm-color-surface-muted'],
   ['text_color', '--mm-color-foreground'],
+  // MARKET in the wordmark follows the client's text colour, so it stays readable when the
+  // Telegram theme and the OS colour scheme disagree (dark chat on a light phone).
+  ['text_color', '--mm-color-wordmark-secondary'],
   ['hint_color', '--mm-color-muted-foreground'],
-  ['button_color', '--mm-color-primary'],
-  ['button_color', '--mm-color-primary-hover'],
-  ['button_text_color', '--mm-color-primary-foreground'],
 ];
 
 const HEX_COLOR = /^#[0-9a-fA-F]{6}$/;

@@ -9,6 +9,12 @@ import {
 } from './support';
 import { buildSignedInitData, type FakeTelegramUser } from './telegram-init-data';
 
+/** Opens the custom district listbox and clicks the option with this value (`data-value`). */
+async function chooseDistrict(page: Page, code: string): Promise<void> {
+  await page.getByRole('combobox', { name: 'Tuman' }).click();
+  await page.locator(`[role="option"][data-value="${code}"]`).click();
+}
+
 /**
  * Delivery-time selection. The seed gives only zone `demo-chekka` (districts chilonzor, olmazor,
  * uchtepa, yashnobod) delivery slots; the zone of `yunusobod`, used by checkout.spec.ts, has none
@@ -52,7 +58,7 @@ async function fillOrderForm(page: Page): Promise<void> {
   await page.getByLabel('Ko‘cha').fill('Demo ko‘cha');
   await page.getByLabel('Uy', { exact: true }).fill('12');
   await page.getByLabel('Telefon raqami').fill('+998 00 123-45-67');
-  await page.getByRole('radio', { name: 'Yetkazilganda naqd pul' }).check();
+  await page.locator('label', { hasText: 'Yetkazilganda naqd pul' }).click();
 }
 
 /** Opens the first day chip whose shown day offers at least `min` windows that can be booked. */
@@ -77,16 +83,16 @@ test('book a delivery window: picker, MainButton gate, keyboard, order page show
   await addToCart(page, 'demo-olma', 8);
   await page.goto('/uz/checkout');
 
-  const district = page.getByLabel('Tuman');
+  const district = page.getByRole('combobox', { name: 'Tuman' });
   await expect(district).toBeVisible({ timeout: 15_000 });
 
   // A zone without slots shows no picker.
-  await district.selectOption('yunusobod');
+  await chooseDistrict(page, 'yunusobod');
   await expect(page.getByTestId('checkout-total')).not.toHaveText('—');
   await expect(page.getByTestId('delivery-slots')).toHaveCount(0);
 
   // A zone with slots does, once its quote arrives.
-  await district.selectOption('chilonzor');
+  await chooseDistrict(page, 'chilonzor');
   const group = page.getByRole('radiogroup', { name: 'Yetkazish vaqti' });
   await expect(group).toBeVisible();
   // Only the shown day's windows are visible to role queries (the other days are hidden).
@@ -204,7 +210,7 @@ test('the picker fits a 360px screen and honours prefers-reduced-motion', async 
   await emptyCart(page);
   await addToCart(page, 'demo-olma', 8);
   await page.goto('/uz/checkout');
-  await page.getByLabel('Tuman').selectOption('chilonzor');
+  await chooseDistrict(page, 'chilonzor');
   const tiles = page.getByRole('tabpanel').getByTestId('delivery-slot-option');
   await expect(tiles.first()).toBeVisible({ timeout: 15_000 });
 

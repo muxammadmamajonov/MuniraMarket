@@ -1,7 +1,7 @@
 import type { CategoryNode, Locale } from '@muniramarket/contracts';
 import Link from 'next/link';
 import { localizedName } from '@/lib/catalog';
-import { initialOf, toneFor } from '@/lib/placeholder';
+import { CategoryIcon, categoryIconFor } from './category-icons';
 import { FOCUS_RING, PRESS } from './ui-classes';
 
 export interface CategoryRailProps {
@@ -11,10 +11,10 @@ export interface CategoryRailProps {
 }
 
 /**
- * Horizontally scrollable category shortcuts: a tinted initial-letter tile with the name under it.
- * The tint is the one the category's products use for their placeholders. Plain links in a list
- * (so they work without JavaScript and by keyboard); the scrollbar is hidden, the rail snaps and
- * does not chain its scroll into the page.
+ * Horizontally scrollable category shortcuts: a soft brand-tinted tile with the category's line
+ * icon and the name under it (clamped to two lines; the category page shows it in full). Plain
+ * links in a list (so they work without JavaScript and by keyboard); the scrollbar is hidden, the
+ * rail snaps and does not chain its scroll into the page.
  */
 export function CategoryRail({ categories, locale, label }: CategoryRailProps) {
   if (categories.length === 0) return null;
@@ -28,17 +28,16 @@ export function CategoryRail({ categories, locale, label }: CategoryRailProps) {
               <Link
                 href={`/${locale}/c/${encodeURIComponent(category.slug)}`}
                 prefetch={false}
-                className={`flex w-[78px] flex-col sm:w-[104px] items-center gap-1.5 rounded-2xl p-1.5 ${PRESS} ${FOCUS_RING}`}
+                className={`group flex w-[78px] flex-col items-center gap-1.5 rounded-2xl p-1.5 sm:w-[104px] ${PRESS} ${FOCUS_RING}`}
               >
                 <span
                   aria-hidden="true"
-                  className={`mm-tone-${String(toneFor(category.id))} flex h-14 w-14 items-center justify-center rounded-2xl bg-(--tone-bg) text-2xl font-semibold text-(--tone-fg)`}
+                  className="flex size-14 items-center justify-center rounded-2xl bg-brand-soft text-brand-ink transition-colors duration-150 group-hover:bg-primary group-hover:text-primary-foreground"
                 >
-                  {initialOf(name)}
+                  <CategoryIcon kind={categoryIconFor(category.slug)} className="size-7" />
                 </span>
                 <span
                   data-user-text
-                  title={name}
                   className="line-clamp-2 min-h-8 text-center text-xs leading-4 font-medium"
                 >
                   {name}

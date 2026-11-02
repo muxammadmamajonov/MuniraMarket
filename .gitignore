@@ -55,3 +55,6 @@ playwright-report/
 .wrangler/
 .dev.vars*
 !.dev.vars.example
+
+# Neon CLI local project context (org/project ids; never commit)
+.neon

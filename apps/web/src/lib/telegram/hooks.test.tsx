@@ -158,15 +158,19 @@ describe('useHaptics', () => {
 });
 
 describe('Telegram theme', () => {
-  it('maps well-formed theme colours to design tokens and undoes them', () => {
+  it('maps well-formed neutral theme colours to design tokens and undoes them', () => {
     const root = document.createElement('div');
     const undo = applyTelegramTheme(
       { bg_color: '#112233', text_color: 'red', button_color: '#abcdef' },
       root,
     );
     expect(root.style.getPropertyValue('--mm-color-background')).toBe('#112233');
-    expect(root.style.getPropertyValue('--mm-color-primary')).toBe('#abcdef');
+    // The client accent never replaces the brand red.
+    expect(root.style.getPropertyValue('--mm-color-primary')).toBe('');
     expect(root.style.getPropertyValue('--mm-color-foreground')).toBe('');
+    const undoText = applyTelegramTheme({ text_color: '#f5f5f5' }, root);
+    expect(root.style.getPropertyValue('--mm-color-wordmark-secondary')).toBe('#f5f5f5');
+    undoText();
     undo();
     expect(root.style.getPropertyValue('--mm-color-background')).toBe('');
   });

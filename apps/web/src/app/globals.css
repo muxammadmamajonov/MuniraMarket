@@ -12,104 +12,76 @@
 }
 
 /*
- * Storefront brand layer. The shared tokens are a neutral placeholder palette (the admin app keeps
- * them); the storefront overrides the primary colour with a calm grocery green. Inside Telegram the
- * client theme still wins: `useTelegramTheme` sets the same custom properties inline on <html>.
- * White on #1f6b45 is 6.2:1; #04210f on the dark-mode green is 9:1.
- */
-:root {
-  --mm-color-primary: #1f6b45;
-  --mm-color-primary-hover: #175537;
-  --mm-color-primary-foreground: #ffffff;
-  --mm-color-brand-soft: #eef6f0;
-  --mm-color-brand-ink: #1b5a3a;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --mm-color-primary: #5fd08a;
-    --mm-color-primary-hover: #7ee0a3;
-    --mm-color-primary-foreground: #04210f;
-    --mm-color-brand-soft: #14231a;
-    --mm-color-brand-ink: #8fdcaa;
-  }
-}
-
-@theme inline {
-  --color-brand-soft: var(--mm-color-brand-soft);
-  --color-brand-ink: var(--mm-color-brand-ink);
-}
-
-/*
- * Placeholder tiles for products without a photo: eight soft tints, picked deterministically from
- * the product's category (see `lib/placeholder.ts`), so a category reads as one family. Foreground
- * is only a large decorative monogram, never body text.
+ * Placeholder tiles for products without a photo: eight warm neutral tints (off-white, sand,
+ * stone, a whisper of brand red), picked deterministically from the product's category (see
+ * `lib/placeholder.ts`), so a category reads as one family. Foreground is only a large decorative
+ * monogram, never body text. No green: the storefront palette is red, charcoal and neutrals.
  */
 .mm-tone-0 {
-  --tone-bg: #e6f2e8;
-  --tone-fg: #2f6b3f;
+  --tone-bg: #f4efe8;
+  --tone-fg: #6b5a48;
 }
 .mm-tone-1 {
-  --tone-bg: #fbf0d9;
-  --tone-fg: #8a5a0b;
+  --tone-bg: #f7ebe9;
+  --tone-fg: #9e1620;
 }
 .mm-tone-2 {
-  --tone-bg: #fbe5e3;
-  --tone-fg: #a23a33;
+  --tone-bg: #eeece9;
+  --tone-fg: #4a4846;
 }
 .mm-tone-3 {
-  --tone-bg: #e1eff9;
-  --tone-fg: #24658f;
+  --tone-bg: #f3ede2;
+  --tone-fg: #7a5b2e;
 }
 .mm-tone-4 {
-  --tone-bg: #ece8f7;
-  --tone-fg: #5b49a0;
+  --tone-bg: #f1e9e7;
+  --tone-fg: #7d2b2f;
 }
 .mm-tone-5 {
-  --tone-bg: #def3f0;
-  --tone-fg: #1f6d66;
+  --tone-bg: #ebe9e6;
+  --tone-fg: #3d3b39;
 }
 .mm-tone-6 {
-  --tone-bg: #fde9dc;
-  --tone-fg: #a5501d;
+  --tone-bg: #f6efe6;
+  --tone-fg: #8a4b00;
 }
 .mm-tone-7 {
-  --tone-bg: #eef3d6;
-  --tone-fg: #5a6b14;
+  --tone-bg: #efe8e8;
+  --tone-fg: #5f3436;
 }
 
 @media (prefers-color-scheme: dark) {
   .mm-tone-0 {
-    --tone-bg: #1c2d21;
-    --tone-fg: #86c797;
+    --tone-bg: #22201d;
+    --tone-fg: #d9c4ab;
   }
   .mm-tone-1 {
-    --tone-bg: #33291a;
-    --tone-fg: #e3b86a;
+    --tone-bg: #2a1719;
+    --tone-fg: #ff9ea2;
   }
   .mm-tone-2 {
-    --tone-bg: #35201f;
-    --tone-fg: #ef9a92;
+    --tone-bg: #232325;
+    --tone-fg: #c9c6c2;
   }
   .mm-tone-3 {
-    --tone-bg: #1b2a36;
-    --tone-fg: #82bde6;
+    --tone-bg: #262118;
+    --tone-fg: #e2c08a;
   }
   .mm-tone-4 {
-    --tone-bg: #272339;
-    --tone-fg: #b3a5e8;
+    --tone-bg: #281b1c;
+    --tone-fg: #f0a7aa;
   }
   .mm-tone-5 {
-    --tone-bg: #17302d;
-    --tone-fg: #7fd0c7;
+    --tone-bg: #1f1f21;
+    --tone-fg: #bdbab6;
   }
   .mm-tone-6 {
-    --tone-bg: #35241a;
-    --tone-fg: #f0a878;
+    --tone-bg: #29211a;
+    --tone-fg: #f5b04a;
   }
   .mm-tone-7 {
-    --tone-bg: #2b3012;
-    --tone-fg: #c2d26a;
+    --tone-bg: #251d1e;
+    --tone-fg: #e0b1b3;
   }
 }
 
@@ -137,6 +109,18 @@
     touch-action: manipulation;
     user-select: none;
     -webkit-user-select: none;
+  }
+
+  /* No WebKit-drawn clear button or decorations on search fields; the field draws its own. */
+  input::-webkit-search-cancel-button,
+  input::-webkit-search-decoration {
+    -webkit-appearance: none;
+    appearance: none;
+  }
+
+  ::selection {
+    background-color: var(--mm-color-brand-soft);
+    color: var(--mm-color-brand-ink);
   }
 
   /* Money and other figures must line up and never jitter when they update. */

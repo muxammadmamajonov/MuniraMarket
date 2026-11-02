@@ -44,7 +44,8 @@ describe('SiteHeader', () => {
     renderHeader();
     const home = screen.getByRole('link', { name: /MuniraMarket/ });
     expect(home).toHaveAttribute('href', '/uz');
-    expect(within(home).getByText('MuniraMarket')).toBeInTheDocument();
+    expect(within(home).getByRole('img', { name: 'MuniraMarket' })).toBeInTheDocument();
+    expect(within(home).getByTestId('munira-mark')).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Buyurtmalarim' })).toHaveAttribute(
       'href',
       '/uz/orders',

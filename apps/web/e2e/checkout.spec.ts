@@ -10,6 +10,12 @@ import {
 } from './support';
 import { buildSignedInitData, type FakeTelegramUser } from './telegram-init-data';
 
+/** Opens the custom district listbox and clicks the option with this value (`data-value`). */
+async function chooseDistrict(page: Page, code: string): Promise<void> {
+  await page.getByRole('combobox', { name: 'Tuman' }).click();
+  await page.locator(`[role="option"][data-value="${code}"]`).click();
+}
+
 /**
  * Checkout flow: product -> cart (MainButton "Rasmiylashtirish") -> checkout (district, address,
  * phone, payment; MainButton "Buyurtma berish") -> order page with the number and status NEW ->
@@ -83,9 +89,9 @@ test('check out: cart -> delivery details -> order with status NEW -> history ->
   await expect(page).toHaveURL(/\/uz\/checkout$/);
 
   // Checkout: nothing is preselected; the name comes from the session, the phone starts at +998.
-  const district = page.getByLabel('Tuman');
+  const district = page.getByRole('combobox', { name: 'Tuman' });
   await expect(district).toBeVisible({ timeout: 15_000 });
-  await expect(district).toHaveValue('');
+  await expect(district).toHaveText('Tumanni tanlang');
   await expect(page.getByLabel('Ism')).toHaveValue('Checkout Tester');
   await expect(page.getByLabel('Telefon raqami')).toHaveValue('+998 ');
   // The submit control is the MainButton: visible but disabled while the form is incomplete.
@@ -107,7 +113,7 @@ test('check out: cart -> delivery details -> order with status NEW -> history ->
       ? 0
       : (zone?.delivery_fee_uzs ?? 0);
 
-  await district.selectOption('yunusobod');
+  await chooseDistrict(page, 'yunusobod');
   await expect(page.getByTestId('checkout-subtotal')).toHaveText(uzs(subtotal));
   await expect(page.getByTestId('checkout-delivery')).toHaveText(fee === 0 ? 'Bepul' : uzs(fee));
   await expect(page.getByTestId('checkout-total')).toHaveText(uzs(subtotal + fee));
@@ -116,7 +122,8 @@ test('check out: cart -> delivery details -> order with status NEW -> history ->
   await page.getByLabel('Uy', { exact: true }).fill('12');
   await page.getByLabel('Xonadon').fill('34');
   await page.getByLabel('Telefon raqami').fill('+998 00 123-45-67');
-  await page.getByRole('radio', { name: 'Yetkazilganda naqd pul' }).check();
+  await page.locator('label', { hasText: 'Yetkazilganda naqd pul' }).click();
+  await expect(page.getByRole('radio', { name: 'Yetkazilganda naqd pul' })).toBeChecked();
   await page.getByLabel('Kuryer uchun izoh').fill('Demo buyurtma (E2E)');
 
   await expect

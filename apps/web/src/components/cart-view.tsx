@@ -174,7 +174,7 @@ export function CartView() {
 
       <div aria-live="polite">
         {noticeText !== null ? (
-          <p role="alert" className="text-sm font-medium text-red-600 dark:text-red-400">
+          <p role="alert" className="text-sm font-medium text-danger">
             {noticeText}
           </p>
         ) : null}
@@ -271,7 +271,7 @@ function CartLineItem({ line, busy, onQuantity, onRemove }: CartLineItemProps) {
         </p>
 
         {issueText !== null ? (
-          <p role="alert" className="text-sm font-medium text-red-600 dark:text-red-400">
+          <p role="alert" className="text-sm font-medium text-danger">
             {issueText}
           </p>
         ) : null}

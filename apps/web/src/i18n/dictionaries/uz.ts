@@ -29,6 +29,7 @@ export const uz: Dictionary = {
   },
   search: {
     label: 'Mahsulot qidirish',
+    clear: 'Tozalash',
     placeholder: 'Mahsulot qidirish',
     submit: 'Qidirish',
     heading: 'Qidiruv',
