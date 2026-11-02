@@ -13,14 +13,10 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chromium } from '@playwright/test';
-import { BRAND_HEX, TAGLINE, markSvgBody } from '../src/brand/munira-mark.ts';
+import { BRAND_HEX, MARK_BOX, TAGLINE, markSvgBody } from '../src/brand/munira-mark.ts';
 
 const OUT = join(dirname(fileURLToPath(import.meta.url)), '..', 'public', 'brand');
 const FONT = "'Arial Black','Helvetica Neue',Arial,'Segoe UI',system-ui,sans-serif";
-
-/** The mark's canvas is 58 units square, starting at y = -10 (see MARK_VIEWBOX). */
-const MARK_SIZE = 58;
-const MARK_TOP = -10;
 
 interface Asset {
   name: string;
@@ -35,8 +31,8 @@ const svg = (w: number, h: number, body: string) =>
   `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${String(w)} ${String(h)}" width="${String(w)}" height="${String(h)}" role="img" aria-label="MuniraMarket"><title>MuniraMarket</title>${body}</svg>\n`;
 
 const mark = (x: number, y: number, size: number, color: string, id: string) => {
-  const scale = size / MARK_SIZE;
-  return `<g transform="translate(${String(x)} ${String(y - MARK_TOP * scale)}) scale(${String(scale)})">${markSvgBody(color, id)}</g>`;
+  const scale = size / MARK_BOX.size;
+  return `<g transform="translate(${String(x - MARK_BOX.x * scale)} ${String(y - MARK_BOX.y * scale)}) scale(${String(scale)})">${markSvgBody(color, id)}</g>`;
 };
 
 /** `textLength` fixes the word's width whatever heavy sans the viewer substitutes. */
@@ -84,21 +80,22 @@ const appIcon = () =>
   `<rect width="512" height="512" rx="112" fill="${BRAND_HEX.red}"/>` +
   mark(72, 72, 368, BRAND_HEX.white, 'i');
 
-const markOnly = (color: string) => `<g transform="translate(0 10)">${markSvgBody(color, 'm')}</g>`;
+const markOnly = (color: string) =>
+  `<g transform="translate(${String(-MARK_BOX.x)} ${String(-MARK_BOX.y)})">${markSvgBody(color, 'm')}</g>`;
 
 const assets: Asset[] = [
   {
     name: 'munira-mark',
-    width: 58,
-    height: 58,
-    svg: svg(58, 58, markOnly(BRAND_HEX.red)),
+    width: MARK_BOX.size,
+    height: MARK_BOX.size,
+    svg: svg(MARK_BOX.size, MARK_BOX.size, markOnly(BRAND_HEX.red)),
     png: [512, 1024],
   },
   {
     name: 'munira-mark-white',
-    width: 58,
-    height: 58,
-    svg: svg(58, 58, markOnly(BRAND_HEX.white)),
+    width: MARK_BOX.size,
+    height: MARK_BOX.size,
+    svg: svg(MARK_BOX.size, MARK_BOX.size, markOnly(BRAND_HEX.white)),
     png: [512, 1024],
   },
   {

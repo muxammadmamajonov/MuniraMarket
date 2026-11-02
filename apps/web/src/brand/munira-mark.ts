@@ -1,9 +1,10 @@
 /**
  * MuniraMarket logo geometry and rendering: the single source of truth for the mark. A flat 2D
- * redraw of the shop sign: a shopping cart (grip, frame, three thick basket slats, base rail, two
- * wheels) with two leaves growing out of the basket. The right leaf is about twice the size of
- * the left one (1.5x as long, so roughly 2.25x the area) and lies out to the right; the left one
- * stands up and leans left.
+ * cart built from the owner's reference drawing: five horizontal bars (the grip, the basket rim,
+ * three slats and the base rail) with square ends and sharp corners, a diagonal frame, and a
+ * slanted right wall that the three slats run into. The slats share one left edge, leaving an
+ * open gap to the frame. From the shop sign come the two wheels and the two leaves growing out
+ * of the rim: the right leaf is about twice the size of the left one.
  *
  * The React component (`components/wordmark.tsx`) and the exported files in `public/brand/`
  * (`scripts/export-brand.mts`) both render `markSvgBody`; nothing is traced from a photo or
@@ -11,12 +12,27 @@
  * shows through.
  */
 
-/** Square canvas with room above the cart for the leaves. */
-export const MARK_VIEWBOX = '0 -10 58 58';
+/** Square canvas: x and y of its top-left corner and its side, in grid units. */
+export const MARK_BOX = { x: -1, y: -2.5, size: 56 } as const;
+export const MARK_VIEWBOX = `${String(MARK_BOX.x)} ${String(MARK_BOX.y)} ${String(MARK_BOX.size)} ${String(MARK_BOX.size)}`;
 
 type Point = readonly [number, number];
 
 const n = (value: number) => String(Math.round(value * 100) / 100);
+
+const polygon = (points: ReadonlyArray<Point>) =>
+  `M${points.map(([x, y]) => `${n(x)} ${n(y)}`).join('L')}z`;
+
+const rect = (x0: number, y0: number, x1: number, y1: number) =>
+  polygon([
+    [x0, y0],
+    [x1, y0],
+    [x1, y1],
+    [x0, y1],
+  ]);
+
+const circle = (cx: number, cy: number, r: number) =>
+  `M${n(cx - r)} ${n(cy)}a${n(r)} ${n(r)} 0 1 0 ${n(2 * r)} 0a${n(r)} ${n(r)} 0 1 0-${n(2 * r)} 0z`;
 
 /**
  * A leaf from `base` to `tip`: two cubic curves bulging either side of the axis, the upper side a
@@ -40,61 +56,79 @@ function leaf(base: Point, tip: Point, width: number): { shape: string; midrib: 
   return { shape, midrib };
 }
 
-// Left leaf: smaller, standing up and leaning left. Right leaf: about twice its size, lying out
-// to the right. Their bases meet in a V just above the middle of the rim.
-const LEFT_LEAF = leaf([27.4, 14.6], [18.6, -1.6], 10);
-const RIGHT_LEAF = leaf([30, 14.6], [52.2, -3], 15);
-
-/** Bar with round ends (basket slat) as a path. */
-const slat = (x: number, y: number, w: number, h: number) => {
-  const r = h / 2;
-  return `M${n(x + r)} ${n(y)}H${n(x + w - r)}a${n(r)} ${n(r)} 0 0 1 0 ${n(h)}H${n(x + r)}a${n(r)} ${n(r)} 0 0 1 0-${n(h)}z`;
-};
-
-const circle = (cx: number, cy: number, r: number) =>
-  `M${n(cx - r)} ${n(cy)}a${n(r)} ${n(r)} 0 1 0 ${n(2 * r)} 0a${n(r)} ${n(r)} 0 1 0-${n(2 * r)} 0z`;
-
-/** Line weight of the cart: one weight everywhere, like the sign's routed letters. */
-const W = 3.4;
-
-/** Frame: from the end of the grip (9, 10) down the diagonal; x at height y. */
-const frameX = (y: number) => 9 + (y - 10) * 0.26;
-/** Right wall of the basket: from (46, 15.6) down to (42, 33.4); x at height y. */
-const wallX = (y: number) => 46 - (y - 15.6) * (4 / 17.8);
-
-/**
- * The three slats: thick bars filling the basket, each running into the right wall; their left
- * ends are rounded and step right with the diagonal frame, leaving a gap to it.
+/*
+ * The cart, in grid units. Bar thicknesses follow the reference: the grip, frame and slats are
+ * 2.75 thick, the rim and base rail a little heavier.
  */
-const SLAT_H = 3.2;
-const SLATS = [20.1, 24.5, 28.9].map((centre) => {
-  const left = frameX(centre) + W / 2 + 2.3;
-  return slat(left, centre - SLAT_H / 2, wallX(centre) - left, SLAT_H);
-});
+const BAR = 2.75;
+const RIM = { top: 18, bottom: 21.5, left: 11.9, right: 46.1 };
+const BASE = { top: 43.2, bottom: 46.8, right: 42 };
 
-/** Stroked parts (round caps and joins). */
-export const MARK_STROKES: ReadonlyArray<{ d: string; width: number }> = [
-  // Grip with its downturned end, then the frame running down to the base rail.
-  { d: `M2.6 13.2V10H9L${n(frameX(37.6))} 37.6`, width: W },
-  // Basket: rim, slanted right wall and bottom, back to the frame.
-  { d: `M${n(frameX(15.6))} 15.6H46L42 33.4H${n(frameX(33.4))}`, width: W },
-  // Base rail the wheels hang from.
-  { d: `M${n(frameX(37.6))} 37.6H43.6`, width: W },
+/** Frame: the diagonal bar from the grip down to the base rail; its left edge at height y. */
+const FRAME = { x0: 7.7, y0: 8, x1: 13.8, y1: BASE.bottom };
+const frameLeft = (y: number) =>
+  FRAME.x0 + ((y - FRAME.y0) * (FRAME.x1 - FRAME.x0)) / (FRAME.y1 - FRAME.y0);
+
+/** Right wall: from under the rim's right end down to the bottom of the last slat. */
+const WALL = { top: RIM.bottom, bottom: 40.45, outerTop: 45.7, outerBottom: 42.4, thick: 2.9 };
+const wallOuter = (y: number) =>
+  WALL.outerTop + ((y - WALL.top) * (WALL.outerBottom - WALL.outerTop)) / (WALL.bottom - WALL.top);
+
+/** The three slats: one shared left edge, each running into the wall. */
+const SLAT_LEFT = 21.7;
+const SLAT_ROWS: ReadonlyArray<readonly [number, number]> = [
+  [24.06, 26.81],
+  [31.1, 33.85],
+  [37.7, WALL.bottom],
 ];
 
-/** Filled parts: the slats, two wheels and the two leaves. */
+const GRIP = rect(2, FRAME.y0, FRAME.x0 + BAR, FRAME.y0 + BAR);
+const FRAME_BAR = polygon([
+  [FRAME.x0, FRAME.y0],
+  [FRAME.x0 + BAR, FRAME.y0],
+  [FRAME.x1 + BAR, FRAME.y1],
+  [FRAME.x1, FRAME.y1],
+]);
+const RIM_BAR = rect(frameLeft(RIM.top), RIM.top, RIM.right, RIM.bottom);
+const WALL_BAR = polygon([
+  [WALL.outerTop - WALL.thick, WALL.top],
+  [WALL.outerTop, WALL.top],
+  [WALL.outerBottom, WALL.bottom],
+  [WALL.outerBottom - WALL.thick, WALL.bottom],
+]);
+const SLATS = SLAT_ROWS.map(([top, bottom]) =>
+  polygon([
+    [SLAT_LEFT, top],
+    [wallOuter(top) - 0.2, top],
+    [wallOuter(bottom) - 0.2, bottom],
+    [SLAT_LEFT, bottom],
+  ]),
+);
+const BASE_BAR = rect(frameLeft(BASE.top), BASE.top, BASE.right, BASE.bottom);
+
+// Left leaf: smaller, standing up and leaning left. Right leaf: about twice its size, lying out
+// to the right. Their bases meet in a V on top of the rim.
+const LEFT_LEAF = leaf([28, RIM.top + 0.6], [20, 2.6], 10);
+const RIGHT_LEAF = leaf([30.4, RIM.top + 0.6], [51.4, 0.8], 15);
+
+/** Filled parts: the cart bars, two wheels and the two leaves. */
 export const MARK_FILLS: ReadonlyArray<string> = [
+  GRIP,
+  FRAME_BAR,
+  RIM_BAR,
+  WALL_BAR,
   ...SLATS,
-  circle(21.2, 43.4, 3.3),
-  circle(38.8, 43.4, 3.3),
+  BASE_BAR,
+  circle(19.4, 50, 2.5),
+  circle(37.2, 50, 2.5),
   LEFT_LEAF.shape,
   RIGHT_LEAF.shape,
 ];
 
 /** Leaf midribs, cut out of the leaves. */
 export const MARK_CUTS: ReadonlyArray<{ d: string; width: number }> = [
-  { d: LEFT_LEAF.midrib, width: 1.3 },
-  { d: RIGHT_LEAF.midrib, width: 1.6 },
+  { d: LEFT_LEAF.midrib, width: 1.2 },
+  { d: RIGHT_LEAF.midrib, width: 1.5 },
 ];
 
 /** Brand colours for files exported outside the app (inside the app the CSS tokens apply). */
@@ -114,19 +148,15 @@ export const TAGLINE = 'SIFATLI MAHSULOT HAR KUN SIZ BILAN';
  * document: it names the midrib mask.
  */
 export function markSvgBody(color: string = BRAND_HEX.red, id = 'mm'): string {
+  const { x, y, size } = MARK_BOX;
   const cuts = MARK_CUTS.map(
     (cut) =>
       `<path d="${cut.d}" fill="none" stroke="#000" stroke-width="${n(cut.width)}" stroke-linecap="round"/>`,
   ).join('');
-  const strokes = MARK_STROKES.map((s) => `<path d="${s.d}" stroke-width="${n(s.width)}"/>`).join(
-    '',
-  );
   const fills = MARK_FILLS.map((d) => `<path d="${d}"/>`).join('');
   return (
-    `<mask id="${id}-cut" maskUnits="userSpaceOnUse" x="0" y="-10" width="58" height="58">` +
-    `<rect x="0" y="-10" width="58" height="58" fill="#fff"/>${cuts}</mask>` +
-    `<g mask="url(#${id}-cut)">` +
-    `<g fill="none" stroke="${color}" stroke-linecap="round" stroke-linejoin="round">${strokes}</g>` +
-    `<g fill="${color}">${fills}</g></g>`
+    `<mask id="${id}-cut" maskUnits="userSpaceOnUse" x="${String(x)}" y="${String(y)}" width="${String(size)}" height="${String(size)}">` +
+    `<rect x="${String(x)}" y="${String(y)}" width="${String(size)}" height="${String(size)}" fill="#fff"/>${cuts}</mask>` +
+    `<g mask="url(#${id}-cut)" fill="${color}">${fills}</g>`
   );
 }
