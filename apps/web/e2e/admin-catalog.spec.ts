@@ -67,7 +67,7 @@ test('admin signs in with the Login Widget, changes a product price, and the sto
     await page.getByTestId('product-search').fill(SKU);
     const row = page.getByTestId('product-row-link');
     await expect(row).toHaveCount(1);
-    await expect(row).toContainText('Demo sabzi');
+    await expect(row).toContainText('Sabzi');
     await row.click();
     await expect(page).toHaveURL(/\/uz\/catalog\/products\/[0-9a-f-]{36}$/);
     productId = page.url().split('/').pop() ?? null;

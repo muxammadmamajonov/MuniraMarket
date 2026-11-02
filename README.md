@@ -1,113 +1,95 @@
 # MuniraMarket
 
-E-commerce platform for MuniraMarket: a mobile-first website and a Telegram Mini App backed by one
-Core API.
+MuniraMarket is an online grocery store for Tashkent. Customers browse the catalog, fill a cart
+and order delivery either on a mobile-first website or inside a Telegram Mini App; both talk to
+one Core API. Prices are in Uzbek so‘m, and the storefront is available in Uzbek and Russian.
 
-The repository contains application source code and safe development configuration only.
-Credentials, operational material, and internal product documentation are intentionally excluded
-from version control.
+Telegram is the primary identity: the server verifies every Telegram login, and the apps never
+trust a Telegram user ID sent by the client.
 
-## Layout
+## What is in this repository
 
-```
-apps/
-  web/          Next.js — public website + Telegram Mini App UI
-  admin/        Next.js — admin panel
-services/
-  api/          FastAPI Core API (PostgreSQL, Redis); runs on Cloudflare Containers
-  api-gateway/  Cloudflare Worker in front of the Core API container
-  telegram/     Telegram Serverless project (handlers, Mini App endpoints)
-packages/
-  ui/           shared UI components, design tokens, UZS formatter
-  contracts/    shared API types
-infra/          local services (Docker Compose) and the secret-free cloud blueprint:
-                Cloudflare, Neon, Redis, R2 runbooks and launch checklists
-architecture/   decision records
-```
+| Part                 | Stack                      | Purpose                                       |
+| -------------------- | -------------------------- | --------------------------------------------- |
+| `apps/web`           | Next.js, Tailwind CSS      | Storefront website and Telegram Mini App UI   |
+| `apps/admin`         | Next.js                    | Catalog, delivery and order administration    |
+| `services/api`       | FastAPI, PostgreSQL, Redis | Core API: catalog, cart, checkout, orders     |
+| `services/telegram`  | Telegram Serverless        | Bot handlers and Mini App endpoints           |
+| `packages/ui`        | React                      | Shared components, design tokens, so‘m format |
+| `packages/contracts` | TypeScript                 | API types generated from the OpenAPI document |
 
-See [architecture/](architecture/README.md) for the decisions behind this structure.
+Design decisions are recorded in [architecture/](architecture/README.md).
 
-## Requirements
+## Run it locally
 
-- Node.js 24 (`.nvmrc`) and pnpm 12
-- Python 3.13 and [uv](https://docs.astral.sh/uv/)
-- Docker (for local PostgreSQL and Redis)
-
-## Getting started
+You need Node.js 24 with pnpm 12, Python 3.13 with [uv](https://docs.astral.sh/uv/), and Docker
+for the local PostgreSQL and Redis.
 
 ```bash
 pnpm install
-cp infra/.env.example infra/.env            # set a local-only password
+cp infra/.env.example infra/.env            # choose a local-only password
 docker compose -f infra/docker-compose.yml --env-file infra/.env up -d
 ```
 
-Core API:
+Start the Core API with demo data:
 
 ```bash
 cd services/api
 cp .env.example .env                        # local placeholders; never commit .env
 make install
 make migrate                                # local database only
+make seed                                   # synthetic demo catalog, zones and slots
 make run                                    # http://localhost:8000/api/v1/health
 ```
 
-Web and admin:
+Start the storefront and the admin panel:
 
 ```bash
 pnpm --filter @muniramarket/web dev         # http://localhost:3000
 pnpm --filter @muniramarket/admin dev       # http://localhost:3001
 ```
 
-Cloudflare Workers builds of the same apps (vinext; `next dev` above stays the everyday loop):
+Open `http://localhost:3000/uz` (or `/ru`) on a phone-sized window to see the storefront.
 
-```bash
-pnpm --filter @muniramarket/web preview:worker      # workerd on http://localhost:3100
-pnpm --filter @muniramarket/admin preview:worker    # workerd on http://localhost:3101
-```
+### Demo data
 
-Deployment (Cloudflare Workers + Containers, Neon, managed Redis, R2) is described in
-[infra/README.md](infra/README.md) and [ADR 0011](architecture/0011-cloudflare-neon-deployment.md).
+`make seed` fills a local database with a made-up Tashkent grocery catalog: about ten categories,
+several dozen products with Uzbek and Russian names, prices in so‘m, kg/piece/litre units and a
+mix of stock states, plus demo delivery zones and time slots. Every product is synthetic: SKUs
+start with `DEMO-`, slugs with `demo-`, brand names are invented, and no product has an image,
+so the storefront shows its placeholder. Real product images will be stored in object storage
+later; the demo never links to external images.
 
-The Telegram Serverless project is deployed with the `tgcloud` CLI by an operator who holds the
-bot's credentials; see [services/telegram/README.md](services/telegram/README.md).
+The seed refuses to run unless `APP_ENV` is `development` or `test`, and running it twice
+changes nothing.
 
-## Quality checks
+## Tests and quality checks
 
 ```bash
 pnpm format:check && pnpm lint && pnpm typecheck && pnpm test && pnpm build
 cd services/api && make lint typecheck test build
 ```
 
-The same checks, plus a secret scan, a contracts drift check, the Playwright E2E (storefront
-and admin), the Cloudflare Workers builds with a Workers-runtime security-header check, the
-container startup checks and the Neon role-model check, run on every pull request.
+API integration tests run when `TEST_DATABASE_URL` points at a throw-away local database;
+otherwise they are skipped.
 
-### E2E (Playwright)
+The Playwright specs in `apps/web/e2e/` drive the built storefront and admin apps against a
+seeded local Core API. Install the browser once with
+`pnpm --filter @muniramarket/web exec playwright install chromium`, then run
+`pnpm --filter @muniramarket/web test:e2e`. The comments in `apps/web/playwright.config.ts`
+list the environment the specs expect; sign-in uses a throw-away Telegram bot token, and no
+production code contains a test bypass.
 
-The specs in `apps/web/e2e/` drive the built storefront and admin apps against a seeded Core API;
-CI wires all of it up in the `e2e` job of `.github/workflows/ci.yml`. To run them locally:
+After changing an API schema or route, run `pnpm contracts:generate` and commit the regenerated
+contract files; CI fails when they are stale.
 
-1. Start the Core API against a throw-away database with `APP_ENV=development`, a throw-away
-   `TELEGRAM_BOT_TOKEN`, `TELEGRAM_LOGIN_WIDGET_ENABLED=true`, a `TELEGRAM_BOT_USERNAME` and
-   `CSRF_TRUSTED_ORIGINS=http://localhost:3000,http://localhost:3001`; run `make migrate seed`.
-2. Create the E2E admin: `cd services/api && uv run python -m app.dev.set_role 990000001 admin --create`.
-3. Build and start both apps: `pnpm --filter @muniramarket/web build`, then `... start` (web on
-   port 3000), and the same for `@muniramarket/admin` (port 3001).
-4. Run `pnpm --filter @muniramarket/web exec playwright install chromium`, then with
-   `E2E_TELEGRAM_BOT_TOKEN` (the same throw-away token), `E2E_ADMIN_TELEGRAM_ID=990000001` and
-   optionally `E2E_BASE_URL` / `E2E_ADMIN_URL`: `pnpm --filter @muniramarket/web test:e2e`.
+Every pull request runs these checks, a secret scan and the end-to-end tests.
 
-The admin specs sign in through the Telegram Login Widget redirect with fields signed by the
-throw-away token; no production code has a test bypass. See the comment in
-`apps/web/playwright.config.ts` for details.
+## Security boundaries
 
-`packages/contracts` is generated from the Core API's OpenAPI document. After changing an API
-schema or route, run `pnpm contracts:generate` and commit `packages/contracts/openapi.json` and
-`packages/contracts/src/generated/openapi.ts`; CI fails when they are stale.
-
-## Security
-
-- Never commit `.env` files, tokens, database URLs with real credentials, customer data or
-  catalog exports. Use `.env.example` with placeholders.
-- Telegram identity is verified on the server; client-supplied Telegram user IDs are never trusted.
+- Never commit `.env` files, tokens, database URLs, customer data or catalog exports. Use the
+  `.env.example` files, which contain placeholders only.
+- Demo data and dev scripts run only against local development or test databases.
+- Telegram identity is verified on the server; sessions use HTTP-only cookies with CSRF checks.
+- Credentials, deployment settings and operational runbooks are kept outside this repository.
 - Report security issues privately to the maintainers rather than in public issues.

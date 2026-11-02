@@ -22,6 +22,26 @@ describe('ImagePlaceholder', () => {
     expect(document.querySelector('img')).toBeNull();
   });
 
+  it('shows a custom fallback instead of the neutral icon, inside the labelled placeholder', () => {
+    render(
+      <ImagePlaceholder src={null} alt="Apple" fallback={<span data-testid="mono">A</span>} />,
+    );
+    expect(screen.getByTestId('image-placeholder')).toContainElement(screen.getByTestId('mono'));
+    expect(screen.getByTestId('image-placeholder').querySelector('svg')).toBeNull();
+  });
+
+  it('uses the custom fallback when the image fails to load', () => {
+    render(
+      <ImagePlaceholder
+        src="https://img.test/broken.jpg"
+        alt="Apple"
+        fallback={<span data-testid="mono">A</span>}
+      />,
+    );
+    fireEvent.error(document.querySelector('img') as HTMLImageElement);
+    expect(screen.getByTestId('mono')).toBeInTheDocument();
+  });
+
   it('falls back to the placeholder when the image fails to load', () => {
     render(<ImagePlaceholder src="https://img.test/broken.jpg" alt="Apple" />);
     fireEvent.error(document.querySelector('img') as HTMLImageElement);

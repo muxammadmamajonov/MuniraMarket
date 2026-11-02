@@ -36,6 +36,16 @@ export interface Dictionary {
     tagline: string;
     categoriesHeading: string;
     newestHeading: string;
+    /** Shown instead of the sections when the catalog has no categories and no products. */
+    emptyTitle: string;
+    emptyHint: string;
+    /** How ordering works; only what the app really does. */
+    info: {
+      deliveryTitle: string;
+      deliveryText: string;
+      paymentTitle: string;
+      paymentText: string;
+    };
   };
   search: {
     label: string;
@@ -80,6 +90,8 @@ export interface Dictionary {
     decrease: string;
     increase: string;
     addToCart: string;
+    /** Short label of the add button on a product card. */
+    addShort: string;
     adding: string;
     added: string;
     viewCart: string;
@@ -397,5 +409,8 @@ export interface Dictionary {
     label: string;
     uz: string;
     ru: string;
+    /** Short labels of the compact header switch. */
+    uzShort: string;
+    ruShort: string;
   };
 }
