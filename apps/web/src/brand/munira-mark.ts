@@ -1,10 +1,8 @@
 /**
  * MuniraMarket logo geometry and rendering: the single source of truth for the mark. A flat 2D
- * cart built from the owner's reference drawing: five horizontal bars (the grip, the basket rim,
- * three slats and the base rail) with square ends and sharp corners, a diagonal frame, and a
- * slanted right wall that the three slats run into. The slats share one left edge, leaving an
- * open gap to the frame. From the shop sign come the two wheels and the two leaves growing out
- * of the rim: the right leaf is about twice the size of the left one.
+ * redraw of the shop sign: a cart with five horizontal bars (the grip, the basket rim, three
+ * thick slats growing out of the right wall, and the bottom bar), a diagonal frame, two wheels,
+ * and two leaves growing out of the rim, the right leaf about twice the size of the left one.
  *
  * The React component (`components/wordmark.tsx`) and the exported files in `public/brand/`
  * (`scripts/export-brand.mts`) both render `markSvgBody`; nothing is traced from a photo or
@@ -13,7 +11,7 @@
  */
 
 /** Square canvas: x and y of its top-left corner and its side, in grid units. */
-export const MARK_BOX = { x: -1, y: -2.5, size: 56 } as const;
+export const MARK_BOX = { x: -1, y: -3.5, size: 56 } as const;
 export const MARK_VIEWBOX = `${String(MARK_BOX.x)} ${String(MARK_BOX.y)} ${String(MARK_BOX.size)} ${String(MARK_BOX.size)}`;
 
 type Point = readonly [number, number];
@@ -57,30 +55,46 @@ function leaf(base: Point, tip: Point, width: number): { shape: string; midrib: 
 }
 
 /*
- * The cart, in grid units. Bar thicknesses follow the reference: the grip, frame and slats are
- * 2.75 thick, the rim and base rail a little heavier.
+ * The cart, in grid units, as on the shop sign. The basket is a closed frame: the rim on top, the
+ * slanted right wall, the bottom bar (which also carries the wheels and runs a little past the
+ * wall) and the diagonal frame on the left. Inside it three thick slats grow out of the right
+ * wall, separated by thin grooves; their left ends are rounded and stop short of the frame,
+ * leaving an open gap.
  */
-const BAR = 2.75;
-const RIM = { top: 18, bottom: 21.5, left: 11.9, right: 46.1 };
-const BASE = { top: 43.2, bottom: 46.8, right: 42 };
+const BAR = 3.2;
+const RIM = { top: 18, bottom: 18 + BAR, right: 46.3 };
+const BOTTOM = { top: 40.6, bottom: 40.6 + BAR, right: 44.2 };
 
-/** Frame: the diagonal bar from the grip down to the base rail; its left edge at height y. */
-const FRAME = { x0: 7.7, y0: 8, x1: 13.8, y1: BASE.bottom };
+/** Frame: the diagonal bar from the grip down to the bottom bar; its left edge at height y. */
+const FRAME = { x0: 7.6, y0: 8, x1: 13.8, y1: BOTTOM.bottom };
 const frameLeft = (y: number) =>
   FRAME.x0 + ((y - FRAME.y0) * (FRAME.x1 - FRAME.x0)) / (FRAME.y1 - FRAME.y0);
 
-/** Right wall: from under the rim's right end down to the bottom of the last slat. */
-const WALL = { top: RIM.bottom, bottom: 40.45, outerTop: 45.7, outerBottom: 42.4, thick: 2.9 };
+/** Right wall: its outer edge runs from the rim's right end down to the bottom bar. */
+const WALL = { outerTop: 46.3, outerBottom: 42.4, thick: 3.4 };
 const wallOuter = (y: number) =>
-  WALL.outerTop + ((y - WALL.top) * (WALL.outerBottom - WALL.outerTop)) / (WALL.bottom - WALL.top);
+  WALL.outerTop + ((y - RIM.top) * (WALL.outerBottom - WALL.outerTop)) / (BOTTOM.top - RIM.top);
 
-/** The three slats: one shared left edge, each running into the wall. */
-const SLAT_LEFT = 21.7;
-const SLAT_ROWS: ReadonlyArray<readonly [number, number]> = [
-  [24.06, 26.81],
-  [31.1, 33.85],
-  [37.7, WALL.bottom],
-];
+/** Three slats filling the inside, thin grooves between them and against the rim and floor. */
+const GROOVE = 1.15;
+const SLAT_H = (BOTTOM.top - RIM.bottom - 4 * GROOVE) / 3;
+const SLAT_ROWS = [0, 1, 2].map((i) => {
+  const top = RIM.bottom + GROOVE + i * (SLAT_H + GROOVE);
+  return [top, top + SLAT_H] as const;
+});
+/** All three start at the same x, an open gap to the right of the frame's inner edge. */
+const SLAT_LEFT = frameLeft(BOTTOM.top) + BAR + 2.2;
+
+/** Bar that grows out of the wall: rounded left end, right end buried in the wall. */
+function slat(top: number, bottom: number): string {
+  const r = (bottom - top) / 2;
+  const right = wallOuter(top) - 0.6;
+  const rightLow = wallOuter(bottom) - 0.6;
+  return (
+    `M${n(SLAT_LEFT + r)} ${n(top)}L${n(right)} ${n(top)}L${n(rightLow)} ${n(bottom)}` +
+    `L${n(SLAT_LEFT + r)} ${n(bottom)}a${n(r)} ${n(r)} 0 0 1 0-${n(2 * r)}z`
+  );
+}
 
 const GRIP = rect(2, FRAME.y0, FRAME.x0 + BAR, FRAME.y0 + BAR);
 const FRAME_BAR = polygon([
@@ -91,20 +105,13 @@ const FRAME_BAR = polygon([
 ]);
 const RIM_BAR = rect(frameLeft(RIM.top), RIM.top, RIM.right, RIM.bottom);
 const WALL_BAR = polygon([
-  [WALL.outerTop - WALL.thick, WALL.top],
-  [WALL.outerTop, WALL.top],
-  [WALL.outerBottom, WALL.bottom],
-  [WALL.outerBottom - WALL.thick, WALL.bottom],
+  [WALL.outerTop - WALL.thick, RIM.top],
+  [WALL.outerTop, RIM.top],
+  [WALL.outerBottom, BOTTOM.bottom],
+  [WALL.outerBottom - WALL.thick, BOTTOM.bottom],
 ]);
-const SLATS = SLAT_ROWS.map(([top, bottom]) =>
-  polygon([
-    [SLAT_LEFT, top],
-    [wallOuter(top) - 0.2, top],
-    [wallOuter(bottom) - 0.2, bottom],
-    [SLAT_LEFT, bottom],
-  ]),
-);
-const BASE_BAR = rect(frameLeft(BASE.top), BASE.top, BASE.right, BASE.bottom);
+const SLATS = SLAT_ROWS.map(([top, bottom]) => slat(top, bottom));
+const BOTTOM_BAR = rect(frameLeft(BOTTOM.top), BOTTOM.top, BOTTOM.right, BOTTOM.bottom);
 
 // Left leaf: smaller, standing up and leaning left. Right leaf: about twice its size, lying out
 // to the right. Their bases meet in a V on top of the rim.
@@ -118,9 +125,9 @@ export const MARK_FILLS: ReadonlyArray<string> = [
   RIM_BAR,
   WALL_BAR,
   ...SLATS,
-  BASE_BAR,
-  circle(19.4, 50, 2.5),
-  circle(37.2, 50, 2.5),
+  BOTTOM_BAR,
+  circle(19.6, 47.4, 2.8),
+  circle(37.4, 47.4, 2.8),
   LEFT_LEAF.shape,
   RIGHT_LEAF.shape,
 ];
