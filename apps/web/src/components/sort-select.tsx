@@ -2,7 +2,9 @@
 
 import { PRODUCT_SORTS, type ProductSort } from '@muniramarket/contracts';
 import { useRouter } from 'next/navigation';
+import { useId } from 'react';
 import { useI18n } from '@/i18n/context';
+import { ListboxSelect } from './ui/listbox-select';
 
 export interface SortSelectProps {
   value: ProductSort;
@@ -24,27 +26,24 @@ export function sortHref(
   return text === '' ? basePath : `${basePath}?${text}`;
 }
 
-/** Sort dropdown; changing it navigates to the sorted listing. */
+/** Sort dropdown (custom listbox); changing it navigates to the sorted listing. */
 export function SortSelect({ value, basePath, params }: SortSelectProps) {
   const { dict } = useI18n();
   const router = useRouter();
+  const labelId = useId();
 
   return (
-    <label className="flex items-center gap-2 text-sm">
-      <span className="text-muted-foreground">{dict.catalog.sortLabel}</span>
-      <select
+    <div className="flex items-center gap-2 text-sm">
+      <span id={labelId} className="text-muted-foreground">
+        {dict.catalog.sortLabel}
+      </span>
+      <ListboxSelect
+        aria-labelledby={labelId}
+        className="min-w-44"
         value={value}
-        onChange={(event) =>
-          router.push(sortHref(basePath, event.target.value as ProductSort, params))
-        }
-        className="min-h-11 rounded-xl border border-border bg-surface px-3 text-base focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus"
-      >
-        {PRODUCT_SORTS.map((sort) => (
-          <option key={sort} value={sort}>
-            {dict.catalog.sort[sort]}
-          </option>
-        ))}
-      </select>
-    </label>
+        options={PRODUCT_SORTS.map((sort) => ({ value: sort, label: dict.catalog.sort[sort] }))}
+        onChange={(next) => router.push(sortHref(basePath, next as ProductSort, params))}
+      />
+    </div>
   );
 }

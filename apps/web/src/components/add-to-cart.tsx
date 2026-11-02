@@ -8,6 +8,8 @@ import { useI18n } from '@/i18n/context';
 import { formatMessage } from '@/i18n/format';
 import { addCartItem } from '@/lib/api/cart';
 import { ApiRequestError } from '@/lib/api/errors';
+import { useCartSync } from '@/lib/cart';
+import { addToCartErrorMessage } from '@/lib/cart/messages';
 import { MAX_LINE_QUANTITY, maxQuantityFor } from '@/lib/catalog';
 import { retryAfterSeconds } from '@/lib/checkout/failures';
 import { useSession } from '@/lib/session';
@@ -39,6 +41,7 @@ export function AddToCart({ product }: AddToCartProps) {
   const [requested, setRequested] = useState(1);
   const [phase, setPhase] = useState<Phase>({ kind: 'idle' });
   const { seconds: waitSeconds, start: startCooldown } = useCooldown();
+  const syncCart = useCartSync();
 
   const quantity = Math.min(requested, max);
   const authenticated = session.status === 'authenticated';
@@ -50,7 +53,7 @@ export function AddToCart({ product }: AddToCartProps) {
   const add = useCallback(async () => {
     setPhase({ kind: 'pending' });
     try {
-      await addCartItem(apiFetch, { product_id: product.id, quantity });
+      syncCart(await addCartItem(apiFetch, { product_id: product.id, quantity }));
       setPhase({ kind: 'added' });
       haptics.notify('success');
     } catch (error) {
@@ -60,9 +63,9 @@ export function AddToCart({ product }: AddToCartProps) {
         setPhase({ kind: 'rate_limited' });
         return;
       }
-      setPhase({ kind: 'error', message: addErrorMessage(error, dict, retry) });
+      setPhase({ kind: 'error', message: addToCartErrorMessage(error, dict, retry) });
     }
-  }, [apiFetch, retry, product.id, quantity, haptics, dict, startCooldown]);
+  }, [apiFetch, retry, product.id, quantity, haptics, dict, startCooldown, syncCart]);
 
   const priceText = formatUZS(product.price_uzs, locale);
   useMainButton(
@@ -118,45 +121,16 @@ export function AddToCart({ product }: AddToCartProps) {
           </p>
         ) : null}
         {phase.kind === 'rate_limited' && waiting ? (
-          <p
-            role="alert"
-            data-testid="rate-limited"
-            className="text-sm font-medium text-red-600 dark:text-red-400"
-          >
+          <p role="alert" data-testid="rate-limited" className="text-sm font-medium text-danger">
             {dict.product.errors.rateLimited}
           </p>
         ) : null}
         {phase.kind === 'error' ? (
-          <p role="alert" className="text-sm font-medium text-red-600 dark:text-red-400">
+          <p role="alert" className="text-sm font-medium text-danger">
             {phase.message}
           </p>
         ) : null}
       </div>
     </div>
   );
-}
-
-function addErrorMessage(
-  error: unknown,
-  dict: ReturnType<typeof useI18n>['dict'],
-  retrySession: () => void,
-): string {
-  if (!(error instanceof ApiRequestError)) return dict.product.errors.generic;
-  switch (error.code) {
-    case 'insufficient_stock':
-      return formatMessage(dict.product.errors.insufficientStock, {
-        available: error.availableQuantity ?? 0,
-      });
-    case 'product_inactive':
-    case 'product_not_found':
-      return dict.product.errors.productInactive;
-    case 'cart_limit_reached':
-      return dict.product.errors.cartLimit;
-    case 'session_required':
-      // The session expired underneath us; re-establish it so the sign-in prompt can take over.
-      retrySession();
-      return dict.product.errors.generic;
-    default:
-      return dict.product.errors.generic;
-  }
 }

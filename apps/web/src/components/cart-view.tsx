@@ -5,7 +5,6 @@ import {
   Button,
   EmptyState,
   ErrorState,
-  ImagePlaceholder,
   QuantityStepper,
   Skeleton,
   formatUZS,
@@ -17,11 +16,13 @@ import { useI18n } from '@/i18n/context';
 import { formatMessage } from '@/i18n/format';
 import { getCart, removeCartItem, updateCartItem } from '@/lib/api/cart';
 import { ApiRequestError } from '@/lib/api/errors';
+import { useCartSettled, useCartSync } from '@/lib/cart';
 import { localizedName, maxQuantityFor } from '@/lib/catalog';
 import { retryAfterSeconds } from '@/lib/checkout/failures';
 import { useSession } from '@/lib/session';
 import { useMainButton } from '@/lib/telegram';
 import { useCooldown } from '@/lib/use-cooldown';
+import { ProductImage } from './product-image';
 import { SignInPrompt } from './sign-in-prompt';
 import { LINK_BUTTON_PRIMARY } from './ui-classes';
 
@@ -39,6 +40,8 @@ export function CartView() {
   const { dict, locale } = useI18n();
   const { status, apiFetch, retry } = useSession();
   const router = useRouter();
+  const syncCart = useCartSync();
+  const cartSettled = useCartSettled();
   const [load, setLoad] = useState<Load>({ kind: 'loading' });
   const [busyProduct, setBusyProduct] = useState<string | null>(null);
   const [notice, setNotice] = useState<Notice | null>(null);
@@ -57,12 +60,16 @@ export function CartView() {
   const fetchCart = useCallback(async () => {
     setLoad({ kind: 'loading' });
     try {
-      setLoad({ kind: 'ready', cart: await getCart(apiFetch) });
+      // Changes tapped on the product cards just before opening the cart may still be in flight.
+      await cartSettled();
+      const loaded = await getCart(apiFetch);
+      syncCart(loaded);
+      setLoad({ kind: 'ready', cart: loaded });
     } catch (error) {
       if (error instanceof ApiRequestError && error.code === 'session_required') retry();
       setLoad({ kind: 'failed' });
     }
-  }, [apiFetch, retry]);
+  }, [apiFetch, retry, syncCart, cartSettled]);
 
   useEffect(() => {
     if (status !== 'authenticated') return;
@@ -76,7 +83,9 @@ export function CartView() {
       setBusyProduct(productId);
       setNotice(null);
       try {
-        setLoad({ kind: 'ready', cart: await action() });
+        const updated = await action();
+        syncCart(updated);
+        setLoad({ kind: 'ready', cart: updated });
       } catch (error) {
         if (error instanceof ApiRequestError && error.code === 'rate_limited') {
           startCooldown(retryAfterSeconds(error.retryAfter));
@@ -95,7 +104,7 @@ export function CartView() {
         setBusyProduct(null);
       }
     },
-    [dict, startCooldown],
+    [dict, startCooldown, syncCart],
   );
 
   // Telegram: the native MainButton opens the checkout. Only offered for a cart that can be
@@ -165,7 +174,7 @@ export function CartView() {
 
       <div aria-live="polite">
         {noticeText !== null ? (
-          <p role="alert" className="text-sm font-medium text-red-600 dark:text-red-400">
+          <p role="alert" className="text-sm font-medium text-danger">
             {noticeText}
           </p>
         ) : null}
@@ -244,7 +253,12 @@ function CartLineItem({ line, busy, onQuantity, onRemove }: CartLineItemProps) {
       data-issue={line.issue ?? undefined}
       className="flex gap-3 rounded-xl border border-border bg-surface p-3"
     >
-      <ImagePlaceholder src={product.image_url} alt={name} className="w-20 shrink-0" />
+      <ProductImage
+        src={product.image_url}
+        name={name}
+        toneKey={product.category_id}
+        className="w-20 shrink-0 self-start"
+      />
       <div className="flex min-w-0 flex-1 flex-col gap-2">
         <Link
           href={`/${locale}/p/${encodeURIComponent(product.slug)}`}
@@ -257,7 +271,7 @@ function CartLineItem({ line, busy, onQuantity, onRemove }: CartLineItemProps) {
         </p>
 
         {issueText !== null ? (
-          <p role="alert" className="text-sm font-medium text-red-600 dark:text-red-400">
+          <p role="alert" className="text-sm font-medium text-danger">
             {issueText}
           </p>
         ) : null}

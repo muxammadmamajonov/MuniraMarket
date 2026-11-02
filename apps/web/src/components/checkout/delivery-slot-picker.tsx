@@ -464,10 +464,7 @@ function SlotTile({
         {slotWindow(slot)}
       </span>
       {note === null ? null : (
-        <span
-          id={noteId}
-          className={`text-xs ${full ? '' : 'font-medium text-amber-800 dark:text-amber-300'}`}
-        >
+        <span id={noteId} className={`text-xs ${full ? '' : 'font-medium text-warning'}`}>
           {note}
         </span>
       )}

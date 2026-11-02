@@ -146,8 +146,16 @@ function type(label: string | RegExp, value: string) {
   fireEvent.change(screen.getByLabelText(label), { target: { value } });
 }
 
+/** Opens the custom district select and clicks the option with this value. */
+function chooseDistrict(label: string, code: DistrictCode) {
+  fireEvent.click(screen.getByRole('combobox', { name: label }));
+  const option = screen.getAllByRole('option').find((el) => el.dataset.value === code);
+  if (option === undefined) throw new Error(`no district option ${code}`);
+  fireEvent.click(option);
+}
+
 async function pickDistrict(code: DistrictCode = 'yunusobod') {
-  fireEvent.change(screen.getByLabelText('Tuman'), { target: { value: code } });
+  chooseDistrict('Tuman', code);
   await waitFor(() => expect(screen.getByTestId('checkout-total').textContent).not.toBe('—'));
 }
 
@@ -232,8 +240,9 @@ describe('CheckoutView: states', () => {
 
   it('is localized (ru) including the zone group labels', async () => {
     renderCheckout('ru');
-    await screen.findByLabelText('Район');
+    await screen.findByRole('combobox', { name: 'Район' });
     expect(screen.getByText('Адрес доставки')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('combobox', { name: 'Район' }));
     const group = screen.getByRole('group', {
       name: `Демо центральная зона — доставка 15${NB}000${NB}сум`,
     });
@@ -246,7 +255,10 @@ describe('CheckoutView: the form', () => {
     renderCheckout();
     await loaded();
 
-    expect(screen.getByLabelText('Tuman')).toHaveValue('');
+    expect(screen.getByRole('combobox', { name: 'Tuman' })).toHaveTextContent('Tumanni tanlang');
+    expect(screen.getByRole('combobox', { name: 'Tuman' }).tagName).toBe('BUTTON');
+    expect(document.querySelector('select')).toBeNull();
+    expect(document.querySelector<HTMLInputElement>('input[name="district"]')?.value).toBe('');
     expect(screen.getByLabelText('Ism')).toHaveValue('Ali Valiyev');
     expect(screen.getByRole('radio', { name: 'Yetkazilganda naqd pul' })).not.toBeChecked();
     expect(screen.getByRole('radio', { name: 'Yetkazilganda karta orqali' })).not.toBeChecked();
@@ -264,13 +276,20 @@ describe('CheckoutView: the form', () => {
   it('groups deliverable districts by zone with the fee, and lists no other districts', async () => {
     renderCheckout();
     await loaded();
-    const groups = screen.getAllByRole('group').filter((el) => el.tagName === 'OPTGROUP');
-    expect(groups.map((g) => g.getAttribute('label'))).toEqual([
+    fireEvent.click(screen.getByRole('combobox', { name: 'Tuman' }));
+    const listbox = screen.getByRole('listbox', { name: 'Tuman' });
+    const groups = within(listbox).getAllByRole('group');
+    expect(groups.map((g) => g.getAttribute('aria-labelledby')).every(Boolean)).toBe(true);
+    expect(
+      groups.map(
+        (g) => document.getElementById(g.getAttribute('aria-labelledby') ?? '')?.textContent,
+      ),
+    ).toEqual([
       `Demo markaziy zona — yetkazish 15${NB}000${NB}so‘m`,
       'Demo chekka zona — yetkazish Bepul',
     ]);
     const options = screen.getAllByRole('option').map((o) => o.textContent);
-    expect(options).toEqual(['Tumanni tanlang', 'Yunusobod', 'Mirobod', 'Chilonzor']);
+    expect(options).toEqual(['Yunusobod', 'Mirobod', 'Chilonzor']);
   });
 
   it('caps every field at the server limit and wraps long user text', async () => {
@@ -307,9 +326,9 @@ describe('CheckoutView: the form', () => {
     await loaded();
     fireEvent.click(submitButton());
 
-    await waitFor(() => expect(screen.getByLabelText('Tuman')).toHaveFocus());
+    await waitFor(() => expect(screen.getByRole('combobox', { name: 'Tuman' })).toHaveFocus());
     expect(orderPosts()).toHaveLength(0);
-    expect(screen.getByLabelText('Tuman')).toHaveAttribute('aria-invalid', 'true');
+    expect(screen.getByRole('combobox', { name: 'Tuman' })).toHaveAttribute('aria-invalid', 'true');
     expect(screen.getByLabelText('Ko‘cha')).toHaveAttribute('aria-invalid', 'true');
     expect(screen.getAllByText('To‘ldirish shart').length).toBeGreaterThanOrEqual(5);
     expect(screen.getByLabelText('Ko‘cha')).toHaveAccessibleDescription('To‘ldirish shart');
@@ -369,8 +388,8 @@ describe('CheckoutView: quote', () => {
     routes['POST /checkout/quote'] = () =>
       respond(quote({ delivery_fee_uzs: 0, total_uzs: 60000, free_delivery_remaining_uzs: null }));
     renderCheckout('ru');
-    await screen.findByLabelText('Район');
-    fireEvent.change(screen.getByLabelText('Район'), { target: { value: 'yunusobod' } });
+    await screen.findByRole('combobox', { name: 'Район' });
+    chooseDistrict('Район', 'yunusobod');
     await waitFor(() =>
       expect(screen.getByTestId('checkout-delivery').textContent).toBe('Бесплатно'),
     );
@@ -398,8 +417,8 @@ describe('CheckoutView: quote', () => {
     };
     renderCheckout();
     await loaded();
-    fireEvent.change(screen.getByLabelText('Tuman'), { target: { value: 'yunusobod' } });
-    fireEvent.change(screen.getByLabelText('Tuman'), { target: { value: 'chilonzor' } });
+    chooseDistrict('Tuman', 'yunusobod');
+    chooseDistrict('Tuman', 'chilonzor');
     await waitFor(() => expect(screen.getByTestId('checkout-total').textContent).toBe(uzs(111000)));
 
     await act(async () => {
@@ -455,7 +474,8 @@ describe('CheckoutView: quote', () => {
     renderCheckout();
     await loaded();
     await pickDistrict();
-    const description = screen.getByLabelText('Tuman').getAttribute('aria-describedby') ?? '';
+    const description =
+      screen.getByRole('combobox', { name: 'Tuman' }).getAttribute('aria-describedby') ?? '';
     const hint = document.getElementById(description.split(' ').pop() ?? '');
     expect(hint).toHaveTextContent('09:00–21:00');
     expect(hint?.textContent).toContain(`Minimal buyurtma: 50${NB}000${NB}so‘m`);
@@ -466,7 +486,7 @@ describe('CheckoutView: quote', () => {
     routes['POST /checkout/quote'] = () => apiError('district_not_served', 409);
     renderCheckout();
     await loaded();
-    fireEvent.change(screen.getByLabelText('Tuman'), { target: { value: 'yunusobod' } });
+    chooseDistrict('Tuman', 'yunusobod');
     expect(
       await screen.findByText('Bu tumanga yetkazib berilmaydi. Boshqa tuman tanlang.'),
     ).toBeInTheDocument();
@@ -1124,8 +1144,8 @@ describe('CheckoutView: worst-case data (break-ui)', () => {
     for (const [count, text] of counts) {
       routes['POST /checkout/quote'] = () => respond(quote({ items, item_count: count }));
       const { unmount } = renderCheckout('ru');
-      await screen.findByLabelText('Район');
-      fireEvent.change(screen.getByLabelText('Район'), { target: { value: 'yunusobod' } });
+      await screen.findByRole('combobox', { name: 'Район' });
+      chooseDistrict('Район', 'yunusobod');
       expect(await screen.findByText(text)).toBeInTheDocument();
       unmount();
       session.apiFetch.mockClear();
@@ -1493,7 +1513,7 @@ describe('CheckoutView: delivery slots', () => {
 
     let release: (response: Response) => void = () => undefined;
     routes['POST /checkout/quote'] = () => new Promise<Response>((resolve) => (release = resolve));
-    fireEvent.change(screen.getByLabelText('Tuman'), { target: { value: 'olmazor' } });
+    chooseDistrict('Tuman', 'olmazor');
 
     // While the new quote is on its way the windows stay (dimmed and inert), so the list does not
     // vanish under the customer's finger.
@@ -1529,7 +1549,7 @@ describe('CheckoutView: delivery slots', () => {
           delivery_slots: [slotOption({ id: SLOT.later, date: '2026-11-03', starts_at: '16:00' })],
         }),
       );
-    fireEvent.change(screen.getByLabelText('Tuman'), { target: { value: 'olmazor' } });
+    chooseDistrict('Tuman', 'olmazor');
     await waitFor(() => expect(screen.getAllByTestId('delivery-slot-option')).toHaveLength(1));
     expect(checkedSlots()).toHaveLength(0);
     expect(screen.queryByTestId('checkout-slot-summary')).toBeNull();
@@ -1542,7 +1562,7 @@ describe('CheckoutView: delivery slots', () => {
     await fillValidForSlotZone('chilonzor');
     pickSlot(SLOT.tomorrow);
 
-    fireEvent.change(screen.getByLabelText('Tuman'), { target: { value: 'yunusobod' } });
+    chooseDistrict('Tuman', 'yunusobod');
     await waitFor(() => expect(screen.queryByTestId('delivery-slots')).toBeNull());
     expect(submitButton()).toBeEnabled();
     fireEvent.click(submitButton());
@@ -1557,7 +1577,7 @@ describe('CheckoutView: delivery slots', () => {
     await fillValidForSlotZone('chilonzor');
     pickSlot(SLOT.tomorrow);
     await pickDistrict('yunusobod');
-    fireEvent.change(screen.getByLabelText('Tuman'), { target: { value: 'chilonzor' } });
+    chooseDistrict('Tuman', 'chilonzor');
     await waitFor(() => expect(screen.getByTestId('delivery-slots')).toBeInTheDocument());
     await waitFor(() =>
       expect(screen.getByTestId('delivery-slots')).toHaveAttribute('aria-busy', 'false'),
@@ -1598,8 +1618,8 @@ describe('CheckoutView: delivery slots', () => {
 
   it('works in Russian', async () => {
     renderCheckout('ru');
-    await screen.findByLabelText('Район');
-    fireEvent.change(screen.getByLabelText('Район'), { target: { value: 'chilonzor' } });
+    await screen.findByRole('combobox', { name: 'Район' });
+    chooseDistrict('Район', 'chilonzor');
     await screen.findByRole('radiogroup', { name: 'Время доставки' });
     expect(screen.getByRole('tab', { name: /Завтра, 01\.11/ })).toBeInTheDocument();
     expect(screen.getByRole('radio', { name: 'Сегодня, 31.10, 10:00–12:00' })).toBeInTheDocument();
@@ -1774,8 +1794,8 @@ describe('CheckoutView: a rate-limited order (429)', () => {
   it('speaks Russian', async () => {
     routes['POST /orders'] = () => apiError('rate_limited', 429, {}, { 'Retry-After': '4' });
     renderCheckout('ru');
-    await screen.findByLabelText('Район');
-    fireEvent.change(screen.getByLabelText('Район'), { target: { value: 'yunusobod' } });
+    await screen.findByRole('combobox', { name: 'Район' });
+    chooseDistrict('Район', 'yunusobod');
     await waitFor(() => expect(screen.getByTestId('checkout-total').textContent).not.toBe('—'));
     fireEvent.change(screen.getByLabelText('Улица'), { target: { value: 'Тест' } });
     fireEvent.change(screen.getByLabelText('Дом'), { target: { value: '1' } });
@@ -1799,7 +1819,7 @@ describe('CheckoutView: a quote that could not be fetched', () => {
   });
 
   async function pickDistrictWithoutQuote() {
-    fireEvent.change(screen.getByLabelText('Tuman'), { target: { value: 'yunusobod' } });
+    chooseDistrict('Tuman', 'yunusobod');
     await screen.findByTestId('quote-error');
   }
 

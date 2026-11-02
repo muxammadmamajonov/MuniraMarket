@@ -11,6 +11,80 @@
   --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
 }
 
+/*
+ * Placeholder tiles for products without a photo: eight warm neutral tints (off-white, sand,
+ * stone, a whisper of brand red), picked deterministically from the product's category (see
+ * `lib/placeholder.ts`), so a category reads as one family. Foreground is only a large decorative
+ * monogram, never body text. No green: the storefront palette is red, charcoal and neutrals.
+ */
+.mm-tone-0 {
+  --tone-bg: #f4efe8;
+  --tone-fg: #6b5a48;
+}
+.mm-tone-1 {
+  --tone-bg: #f7ebe9;
+  --tone-fg: #9e1620;
+}
+.mm-tone-2 {
+  --tone-bg: #eeece9;
+  --tone-fg: #4a4846;
+}
+.mm-tone-3 {
+  --tone-bg: #f3ede2;
+  --tone-fg: #7a5b2e;
+}
+.mm-tone-4 {
+  --tone-bg: #f1e9e7;
+  --tone-fg: #7d2b2f;
+}
+.mm-tone-5 {
+  --tone-bg: #ebe9e6;
+  --tone-fg: #3d3b39;
+}
+.mm-tone-6 {
+  --tone-bg: #f6efe6;
+  --tone-fg: #8a4b00;
+}
+.mm-tone-7 {
+  --tone-bg: #efe8e8;
+  --tone-fg: #5f3436;
+}
+
+@media (prefers-color-scheme: dark) {
+  .mm-tone-0 {
+    --tone-bg: #22201d;
+    --tone-fg: #d9c4ab;
+  }
+  .mm-tone-1 {
+    --tone-bg: #2a1719;
+    --tone-fg: #ff9ea2;
+  }
+  .mm-tone-2 {
+    --tone-bg: #232325;
+    --tone-fg: #c9c6c2;
+  }
+  .mm-tone-3 {
+    --tone-bg: #262118;
+    --tone-fg: #e2c08a;
+  }
+  .mm-tone-4 {
+    --tone-bg: #281b1c;
+    --tone-fg: #f0a7aa;
+  }
+  .mm-tone-5 {
+    --tone-bg: #1f1f21;
+    --tone-fg: #bdbab6;
+  }
+  .mm-tone-6 {
+    --tone-bg: #29211a;
+    --tone-fg: #f5b04a;
+  }
+  .mm-tone-7 {
+    --tone-bg: #251d1e;
+    --tone-fg: #e0b1b3;
+  }
+}
+
 @layer base {
   html {
     -webkit-text-size-adjust: 100%;
@@ -35,6 +109,18 @@
     touch-action: manipulation;
     user-select: none;
     -webkit-user-select: none;
+  }
+
+  /* No WebKit-drawn clear button or decorations on search fields; the field draws its own. */
+  input::-webkit-search-cancel-button,
+  input::-webkit-search-decoration {
+    -webkit-appearance: none;
+    appearance: none;
+  }
+
+  ::selection {
+    background-color: var(--mm-color-brand-soft);
+    color: var(--mm-color-brand-ink);
   }
 
   /* Money and other figures must line up and never jitter when they update. */
@@ -79,4 +165,58 @@
 
 .mm-enter {
   animation: mm-enter 180ms var(--ease-out-strong) both;
+}
+
+/* Quantity stepper / add button swap on a product card: a short fade with a hint of scale. */
+@keyframes mm-pop {
+  from {
+    opacity: 0;
+    transform: scale(0.94);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.mm-pop {
+  /* `backwards`, not `both`: a held transform would override the :active press scale. */
+  animation: mm-pop 160ms var(--ease-out-strong) backwards;
+}
+
+/* The "go to cart" bar rising in the first time the cart gets an item. */
+@keyframes mm-bar-in {
+  from {
+    opacity: 0;
+    transform: translateY(16px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.mm-bar-in {
+  animation: mm-bar-in 220ms var(--ease-out-strong) backwards;
+}
+
+/*
+ * Horizontal shortcut rail (categories): swipeable, snaps to the start of each tile, never chains
+ * the scroll into the page/back-swipe, scrollbar hidden. The tiles are links, so the rail stays
+ * keyboard-operable (focus scrolls the tile into view).
+ */
+.mm-rail {
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scroll-snap-type: x proximity;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+}
+
+.mm-rail::-webkit-scrollbar {
+  display: none;
+}
+
+.mm-rail > * {
+  scroll-snap-align: start;
 }

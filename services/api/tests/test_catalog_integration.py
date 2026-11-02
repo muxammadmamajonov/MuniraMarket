@@ -466,8 +466,14 @@ async def test_seed_is_idempotent_and_shows_the_expected_catalog(
     tree = (await api.get("/api/v1/categories")).json()["items"]
     assert [node["slug"] for node in tree] == [
         "demo-mevalar-sabzavotlar",
-        "demo-ichimliklar",
+        "demo-non",
         "demo-sut",
+        "demo-gosht",
+        "demo-bakaleya",
+        "demo-yog-ziravor",
+        "demo-ichimliklar",
+        "demo-choy-shirinlik",
+        "demo-uy-rozgor",
     ]
     assert [child["slug"] for child in tree[0]["children"]] == ["demo-mevalar", "demo-sabzavotlar"]
 
@@ -481,4 +487,8 @@ async def test_seed_is_idempotent_and_shows_the_expected_catalog(
     out_of_stock = next(item for item in page["items"] if item["slug"] == "demo-shaftoli-sharbati")
     assert (out_of_stock["stock_quantity"], out_of_stock["in_stock"]) == (0, False)
     fruit = await products(api, category="demo-mevalar-sabzavotlar", page_size=48)
-    assert fruit["total"] == 6
+    assert fruit["total"] == sum(
+        1
+        for product in DEMO_PRODUCTS
+        if product.is_active and product.category_slug in ("demo-mevalar", "demo-sabzavotlar")
+    )

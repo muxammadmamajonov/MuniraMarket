@@ -8,6 +8,12 @@ import {
 } from './support';
 import { buildSignedInitData } from './telegram-init-data';
 
+/** Opens the custom district listbox and clicks the option with this value (`data-value`). */
+async function chooseDistrict(page: Page, code: string): Promise<void> {
+  await page.getByRole('combobox', { name: 'Tuman' }).click();
+  await page.locator(`[role="option"][data-value="${code}"]`).click();
+}
+
 /**
  * An order attempt whose answer never arrived, followed by a reload. The pending attempt (key and
  * a hash of the body) lives in `sessionStorage`, so:
@@ -37,14 +43,14 @@ async function addToCart(page: Page, slug: string, quantity: number): Promise<vo
 /** The same details every time, so the request body is identical across a reload. */
 async function fillCheckout(page: Page): Promise<void> {
   await page.goto('/uz/checkout');
-  const district = page.getByLabel('Tuman');
+  const district = page.getByRole('combobox', { name: 'Tuman' });
   await expect(district).toBeVisible({ timeout: 15_000 });
-  await district.selectOption('yunusobod');
+  await chooseDistrict(page, 'yunusobod');
   await expect(page.getByTestId('checkout-total')).not.toHaveText('—');
   await page.getByLabel('Ko‘cha').fill('Demo ko‘cha');
   await page.getByLabel('Uy', { exact: true }).fill('12');
   await page.getByLabel('Telefon raqami').fill('+998 00 123-45-67');
-  await page.getByRole('radio', { name: 'Yetkazilganda naqd pul' }).check();
+  await page.locator('label', { hasText: 'Yetkazilganda naqd pul' }).click();
   await expect.poll(() => mainButton(page)).toMatchObject({ visible: true, disabled: false });
 }
 

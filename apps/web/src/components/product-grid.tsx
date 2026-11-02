@@ -1,49 +1,23 @@
-import type { Locale, ProductSummary } from '@muniramarket/contracts';
-import { ProductCard, type ProductCardLinkProps } from '@muniramarket/ui';
-import Link from 'next/link';
-import type { Dictionary } from '@/i18n';
-import { localizedName, stockLabel, stockState } from '@/lib/catalog';
-
-function NextLink({ href, className, children }: ProductCardLinkProps) {
-  return (
-    <Link href={href} className={className}>
-      {children}
-    </Link>
-  );
-}
+import type { ProductSummary } from '@muniramarket/contracts';
+import { ProductTile } from './product-tile';
 
 export interface ProductGridProps {
   products: ProductSummary[];
-  locale: Locale;
-  dict: Dictionary;
   label: string;
 }
 
-/** Responsive product grid: 2 columns on phones, up to 4 on wide screens. */
-export function ProductGrid({ products, locale, dict, label }: ProductGridProps) {
+/**
+ * Responsive product grid: 2 columns from 320px up (the card is built to fit 138px), 3 and 4 on
+ * wider screens. Cards stretch to the tallest in their row; the cart control stays at the bottom.
+ */
+export function ProductGrid({ products, label }: ProductGridProps) {
   return (
     <ul aria-label={label} className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
-      {products.map((product) => {
-        const state = stockState(product);
-        return (
-          <li key={product.id} className="flex">
-            <ProductCard
-              className="w-full"
-              linkComponent={NextLink}
-              href={`/${locale}/p/${encodeURIComponent(product.slug)}`}
-              locale={locale}
-              name={localizedName(product, locale)}
-              imageUrl={product.image_url}
-              price={product.price_uzs}
-              oldPrice={product.old_price_uzs ?? undefined}
-              unitLabel={dict.units[product.unit]}
-              stockLabel={state.kind === 'in' ? undefined : stockLabel(state, dict)}
-              currentPriceLabel={dict.product.priceCurrentLabel}
-              oldPriceLabel={dict.product.priceOldLabel}
-            />
-          </li>
-        );
-      })}
+      {products.map((product) => (
+        <li key={product.id} className="flex min-w-0">
+          <ProductTile product={product} />
+        </li>
+      ))}
     </ul>
   );
 }

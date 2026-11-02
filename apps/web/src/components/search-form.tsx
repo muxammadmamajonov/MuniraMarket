@@ -1,5 +1,8 @@
 import type { Locale } from '@muniramarket/contracts';
 import type { Dictionary } from '@/i18n';
+import { SearchIcon } from './icons';
+import { SearchField } from './search-field';
+import { FOCUS_RING, PRESS } from './ui-classes';
 
 export interface SearchFormProps {
   locale: Locale;
@@ -9,7 +12,11 @@ export interface SearchFormProps {
   className?: string;
 }
 
-/** Plain GET form to `/<locale>/search?q=...`; works without JavaScript. */
+/**
+ * Plain GET form to `/<locale>/search?q=...`; works without JavaScript. The input is 16px (the
+ * global rule that stops iOS Safari from zooming on focus), a plain text field (no browser cancel
+ * "x"; see `SearchField` for the custom clear button) with a search key on the on-screen keyboard.
+ */
 export function SearchForm({ locale, dict, defaultValue = '', className }: SearchFormProps) {
   return (
     <form
@@ -19,23 +26,19 @@ export function SearchForm({ locale, dict, defaultValue = '', className }: Searc
       aria-label={dict.search.label}
       className={`flex gap-2 ${className ?? ''}`}
     >
-      <input
-        type="search"
-        name="q"
+      <SearchField
         defaultValue={defaultValue}
         placeholder={dict.search.placeholder}
-        aria-label={dict.search.label}
-        minLength={2}
-        maxLength={100}
-        enterKeyHint="search"
-        autoComplete="off"
-        className="min-h-11 min-w-0 flex-1 rounded-xl border border-border bg-surface px-3 text-base focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus"
+        label={dict.search.label}
+        clearLabel={dict.search.clear}
       />
       <button
         type="submit"
-        className="inline-flex min-h-11 items-center justify-center rounded-xl bg-primary px-4 font-semibold text-primary-foreground hover:bg-primary-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus"
+        className={`inline-flex min-h-12 min-w-12 items-center justify-center rounded-2xl bg-primary px-3 font-semibold sm:px-4 text-primary-foreground hover:bg-primary-hover ${PRESS} ${FOCUS_RING}`}
       >
-        {dict.search.submit}
+        {/* Icon only on the narrowest phones so the placeholder is not cut off. */}
+        <SearchIcon width={22} height={22} className="sm:hidden" />
+        <span className="sr-only sm:not-sr-only">{dict.search.submit}</span>
       </button>
     </form>
   );

@@ -8,6 +8,7 @@ import { SiteHeader } from '@/components/site-header';
 import { TelegramChrome } from '@/components/telegram-chrome';
 import { getDictionary } from '@/i18n';
 import { LocaleProvider } from '@/i18n/context';
+import { CartProvider } from '@/lib/cart';
 import { SessionProvider } from '@/lib/session';
 import { TELEGRAM_WEB_APP_SCRIPT_URL, TelegramProvider } from '@/lib/telegram';
 import '../globals.css';
@@ -28,8 +29,8 @@ export const viewport: Viewport = {
   interactiveWidget: 'resizes-content',
   colorScheme: 'light dark',
   themeColor: [
-    { media: '(prefers-color-scheme: light)', color: '#ffffff' },
-    { media: '(prefers-color-scheme: dark)', color: '#09090b' },
+    { media: '(prefers-color-scheme: light)', color: '#faf8f5' },
+    { media: '(prefers-color-scheme: dark)', color: '#121214' },
   ],
 };
 
@@ -37,7 +38,15 @@ export async function generateMetadata({ params }: LayoutProps<'/[locale]'>): Pr
   const { locale } = await params;
   if (!isLocale(locale)) return {};
   const { meta } = getDictionary(locale);
-  return { title: meta.title, description: meta.description };
+  return {
+    title: meta.title,
+    description: meta.description,
+    // Generated from the shared mark by `scripts/export-brand.mts`.
+    icons: {
+      icon: [{ url: '/brand/munira-mark.svg', type: 'image/svg+xml' }],
+      apple: [{ url: '/brand/munira-app-icon-180.png', sizes: '180x180' }],
+    },
+  };
 }
 
 export default async function RootLayout({ children, params }: LayoutProps<'/[locale]'>) {
@@ -65,13 +74,15 @@ export default async function RootLayout({ children, params }: LayoutProps<'/[lo
           <TelegramProvider>
             <SessionProvider>
               <TelegramChrome />
-              <div className="flex min-h-dvh flex-col pb-[env(safe-area-inset-bottom)]">
-                {/* Below the header: the header pads itself by the top safe-area inset, so a banner
-                    above it would sit under the notch / status bar in fullscreen and installed modes. */}
-                <SiteHeader locale={locale} dict={dict} />
-                <OfflineBanner />
-                {children}
-              </div>
+              <CartProvider>
+                <div className="flex min-h-dvh flex-col pb-[env(safe-area-inset-bottom)]">
+                  {/* Below the header: the header pads itself by the top safe-area inset, so a banner
+                      above it would sit under the notch / status bar in fullscreen and installed modes. */}
+                  <SiteHeader locale={locale} dict={dict} />
+                  <OfflineBanner />
+                  {children}
+                </div>
+              </CartProvider>
             </SessionProvider>
           </TelegramProvider>
         </LocaleProvider>

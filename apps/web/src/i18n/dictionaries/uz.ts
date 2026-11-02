@@ -17,9 +17,19 @@ export const uz: Dictionary = {
     tagline: 'Yangi oziq-ovqat mahsulotlari eshigingizgacha.',
     categoriesHeading: 'Kategoriyalar',
     newestHeading: 'Yangi mahsulotlar',
+    emptyTitle: 'Katalog hozircha bo‘sh',
+    emptyHint: 'Mahsulotlar tez orada qo‘shiladi. Keyinroq qaytib ko‘ring.',
+    info: {
+      deliveryTitle: 'Toshkent bo‘ylab yetkazib berish',
+      deliveryText:
+        'Yetkazish narxi va vaqti tumaningizga qarab belgilanadi. Buyurtma berishda ko‘rasiz.',
+      paymentTitle: 'To‘lov yetkazilganda',
+      paymentText: 'Naqd pul yoki karta orqali: buyurtmani qabul qilganingizda to‘laysiz.',
+    },
   },
   search: {
     label: 'Mahsulot qidirish',
+    clear: 'Tozalash',
     placeholder: 'Mahsulot qidirish',
     submit: 'Qidirish',
     heading: 'Qidiruv',
@@ -61,6 +71,7 @@ export const uz: Dictionary = {
     decrease: 'Kamaytirish',
     increase: 'Ko‘paytirish',
     addToCart: 'Savatga qo‘shish',
+    addShort: 'Savatga',
     adding: 'Qo‘shilmoqda…',
     added: 'Savatga qo‘shildi',
     viewCart: 'Savatni ochish',
@@ -361,5 +372,7 @@ export const uz: Dictionary = {
     label: 'Til',
     uz: 'O‘zbekcha',
     ru: 'Русский',
+    uzShort: 'UZ',
+    ruShort: 'RU',
   },
 };

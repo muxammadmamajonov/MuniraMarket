@@ -1,12 +1,16 @@
 import { isLocale } from '@muniramarket/contracts';
-import { EmptyState } from '@muniramarket/ui';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
+import { CartBar } from '@/components/cart-bar';
 import { CategoryChips } from '@/components/category-chips';
+import { EmptyPanel } from '@/components/empty-panel';
+import { BasketIcon } from '@/components/icons';
 import { PageContainer } from '@/components/page-container';
 import { Pagination } from '@/components/pagination';
 import { ProductGrid } from '@/components/product-grid';
+import { SessionNotice } from '@/components/session-notice';
 import { SortSelect } from '@/components/sort-select';
+import { LINK_BUTTON_PRIMARY } from '@/components/ui-classes';
 import { getDictionary } from '@/i18n';
 import { formatMessage } from '@/i18n/format';
 import { ApiRequestError } from '@/lib/api/errors';
@@ -80,14 +84,20 @@ export default async function CategoryPage({
         </div>
 
         {products.items.length === 0 ? (
-          <EmptyState title={dict.catalog.emptyCategory} />
-        ) : (
-          <ProductGrid
-            products={products.items}
-            locale={locale}
-            dict={dict}
-            label={localizedName(category, locale)}
+          <EmptyPanel
+            icon={<BasketIcon width={28} height={28} />}
+            title={dict.catalog.emptyCategory}
+            action={
+              <Link href={`/${locale}`} className={LINK_BUTTON_PRIMARY}>
+                {dict.errors.backHome}
+              </Link>
+            }
           />
+        ) : (
+          <>
+            <SessionNotice />
+            <ProductGrid products={products.items} label={localizedName(category, locale)} />
+          </>
         )}
 
         <Pagination
@@ -96,6 +106,7 @@ export default async function CategoryPage({
           hrefFor={(nextPage) => hrefFor(nextPage)}
           dict={dict}
         />
+        <CartBar />
       </PageContainer>
     </main>
   );
