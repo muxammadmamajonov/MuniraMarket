@@ -352,7 +352,16 @@ async def test_happy_path(shop: Shop) -> None:
         "chat_id": shop.user.telegram_user_id,
     }
     serialized = str(message.payload)
-    for personal in ("998", "Demo ko'cha", "Demo Mijoz", "chilonzor", "Demo izoh"):
+    # The full phone (and its local part), not a bare "998": random UUIDs in the payload can
+    # contain that digit run.
+    for personal in (
+        DEMO_PHONE,
+        DEMO_PHONE[4:],
+        "Demo ko'cha",
+        "Demo Mijoz",
+        "chilonzor",
+        "Demo izoh",
+    ):
         assert personal not in serialized
 
     # Snapshots survive catalog changes.
