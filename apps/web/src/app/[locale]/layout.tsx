@@ -8,6 +8,7 @@ import { SiteHeader } from '@/components/site-header';
 import { TelegramChrome } from '@/components/telegram-chrome';
 import { getDictionary } from '@/i18n';
 import { LocaleProvider } from '@/i18n/context';
+import { CartProvider } from '@/lib/cart';
 import { SessionProvider } from '@/lib/session';
 import { TELEGRAM_WEB_APP_SCRIPT_URL, TelegramProvider } from '@/lib/telegram';
 import '../globals.css';
@@ -65,13 +66,15 @@ export default async function RootLayout({ children, params }: LayoutProps<'/[lo
           <TelegramProvider>
             <SessionProvider>
               <TelegramChrome />
-              <div className="flex min-h-dvh flex-col pb-[env(safe-area-inset-bottom)]">
-                {/* Below the header: the header pads itself by the top safe-area inset, so a banner
-                    above it would sit under the notch / status bar in fullscreen and installed modes. */}
-                <SiteHeader locale={locale} dict={dict} />
-                <OfflineBanner />
-                {children}
-              </div>
+              <CartProvider>
+                <div className="flex min-h-dvh flex-col pb-[env(safe-area-inset-bottom)]">
+                  {/* Below the header: the header pads itself by the top safe-area inset, so a banner
+                      above it would sit under the notch / status bar in fullscreen and installed modes. */}
+                  <SiteHeader locale={locale} dict={dict} />
+                  <OfflineBanner />
+                  {children}
+                </div>
+              </CartProvider>
             </SessionProvider>
           </TelegramProvider>
         </LocaleProvider>

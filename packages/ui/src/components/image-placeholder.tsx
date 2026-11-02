@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, type ImgHTMLAttributes } from 'react';
+import { useState, type ImgHTMLAttributes, type ReactNode } from 'react';
 import { cx } from '../cx';
 
 export interface ImagePlaceholderProps extends Omit<
@@ -12,13 +12,25 @@ export interface ImagePlaceholderProps extends Omit<
   alt: string;
   /** Classes of the square wrapper (size, rounding). */
   className?: string;
+  /**
+   * Replaces the neutral icon when there is no (working) image, for example a branded monogram.
+   * It is rendered inside the labelled placeholder, so it should fill it (`h-full w-full`) and be
+   * `aria-hidden` itself.
+   */
+  fallback?: ReactNode;
 }
 
 /**
  * Square product image with a neutral placeholder for missing or broken images, so layouts never
  * collapse. The placeholder carries the product name as its accessible name.
  */
-export function ImagePlaceholder({ src, alt, className, ...rest }: ImagePlaceholderProps) {
+export function ImagePlaceholder({
+  src,
+  alt,
+  className,
+  fallback,
+  ...rest
+}: ImagePlaceholderProps) {
   // Remember which URL failed so a different `src` gets a fresh attempt.
   const [failedSrc, setFailedSrc] = useState<string | null>(null);
   const showImage = typeof src === 'string' && src !== '' && failedSrc !== src;
@@ -53,20 +65,22 @@ export function ImagePlaceholder({ src, alt, className, ...rest }: ImagePlacehol
           aria-label={alt}
           className="flex h-full w-full items-center justify-center text-muted-foreground"
         >
-          <svg
-            aria-hidden="true"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="1.5"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            className="h-1/3 w-1/3 opacity-60"
-          >
-            <rect x="3" y="3" width="18" height="18" rx="3" />
-            <circle cx="9" cy="9" r="1.75" />
-            <path d="m21 15-4.5-4.5L6 21" />
-          </svg>
+          {fallback ?? (
+            <svg
+              aria-hidden="true"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.5"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              className="h-1/3 w-1/3 opacity-60"
+            >
+              <rect x="3" y="3" width="18" height="18" rx="3" />
+              <circle cx="9" cy="9" r="1.75" />
+              <path d="m21 15-4.5-4.5L6 21" />
+            </svg>
+          )}
         </div>
       )}
     </div>

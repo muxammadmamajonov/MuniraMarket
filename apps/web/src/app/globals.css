@@ -11,6 +11,108 @@
   --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
 }
 
+/*
+ * Storefront brand layer. The shared tokens are a neutral placeholder palette (the admin app keeps
+ * them); the storefront overrides the primary colour with a calm grocery green. Inside Telegram the
+ * client theme still wins: `useTelegramTheme` sets the same custom properties inline on <html>.
+ * White on #1f6b45 is 6.2:1; #04210f on the dark-mode green is 9:1.
+ */
+:root {
+  --mm-color-primary: #1f6b45;
+  --mm-color-primary-hover: #175537;
+  --mm-color-primary-foreground: #ffffff;
+  --mm-color-brand-soft: #eef6f0;
+  --mm-color-brand-ink: #1b5a3a;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --mm-color-primary: #5fd08a;
+    --mm-color-primary-hover: #7ee0a3;
+    --mm-color-primary-foreground: #04210f;
+    --mm-color-brand-soft: #14231a;
+    --mm-color-brand-ink: #8fdcaa;
+  }
+}
+
+@theme inline {
+  --color-brand-soft: var(--mm-color-brand-soft);
+  --color-brand-ink: var(--mm-color-brand-ink);
+}
+
+/*
+ * Placeholder tiles for products without a photo: eight soft tints, picked deterministically from
+ * the product's category (see `lib/placeholder.ts`), so a category reads as one family. Foreground
+ * is only a large decorative monogram, never body text.
+ */
+.mm-tone-0 {
+  --tone-bg: #e6f2e8;
+  --tone-fg: #2f6b3f;
+}
+.mm-tone-1 {
+  --tone-bg: #fbf0d9;
+  --tone-fg: #8a5a0b;
+}
+.mm-tone-2 {
+  --tone-bg: #fbe5e3;
+  --tone-fg: #a23a33;
+}
+.mm-tone-3 {
+  --tone-bg: #e1eff9;
+  --tone-fg: #24658f;
+}
+.mm-tone-4 {
+  --tone-bg: #ece8f7;
+  --tone-fg: #5b49a0;
+}
+.mm-tone-5 {
+  --tone-bg: #def3f0;
+  --tone-fg: #1f6d66;
+}
+.mm-tone-6 {
+  --tone-bg: #fde9dc;
+  --tone-fg: #a5501d;
+}
+.mm-tone-7 {
+  --tone-bg: #eef3d6;
+  --tone-fg: #5a6b14;
+}
+
+@media (prefers-color-scheme: dark) {
+  .mm-tone-0 {
+    --tone-bg: #1c2d21;
+    --tone-fg: #86c797;
+  }
+  .mm-tone-1 {
+    --tone-bg: #33291a;
+    --tone-fg: #e3b86a;
+  }
+  .mm-tone-2 {
+    --tone-bg: #35201f;
+    --tone-fg: #ef9a92;
+  }
+  .mm-tone-3 {
+    --tone-bg: #1b2a36;
+    --tone-fg: #82bde6;
+  }
+  .mm-tone-4 {
+    --tone-bg: #272339;
+    --tone-fg: #b3a5e8;
+  }
+  .mm-tone-5 {
+    --tone-bg: #17302d;
+    --tone-fg: #7fd0c7;
+  }
+  .mm-tone-6 {
+    --tone-bg: #35241a;
+    --tone-fg: #f0a878;
+  }
+  .mm-tone-7 {
+    --tone-bg: #2b3012;
+    --tone-fg: #c2d26a;
+  }
+}
+
 @layer base {
   html {
     -webkit-text-size-adjust: 100%;
@@ -79,4 +181,58 @@
 
 .mm-enter {
   animation: mm-enter 180ms var(--ease-out-strong) both;
+}
+
+/* Quantity stepper / add button swap on a product card: a short fade with a hint of scale. */
+@keyframes mm-pop {
+  from {
+    opacity: 0;
+    transform: scale(0.94);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.mm-pop {
+  /* `backwards`, not `both`: a held transform would override the :active press scale. */
+  animation: mm-pop 160ms var(--ease-out-strong) backwards;
+}
+
+/* The "go to cart" bar rising in the first time the cart gets an item. */
+@keyframes mm-bar-in {
+  from {
+    opacity: 0;
+    transform: translateY(16px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.mm-bar-in {
+  animation: mm-bar-in 220ms var(--ease-out-strong) backwards;
+}
+
+/*
+ * Horizontal shortcut rail (categories): swipeable, snaps to the start of each tile, never chains
+ * the scroll into the page/back-swipe, scrollbar hidden. The tiles are links, so the rail stays
+ * keyboard-operable (focus scrolls the tile into view).
+ */
+.mm-rail {
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scroll-snap-type: x proximity;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+}
+
+.mm-rail::-webkit-scrollbar {
+  display: none;
+}
+
+.mm-rail > * {
+  scroll-snap-align: start;
 }

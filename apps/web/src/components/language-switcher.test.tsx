@@ -33,3 +33,36 @@ describe('LanguageSwitcher', () => {
     expect(document.cookie).toContain('locale=ru');
   });
 });
+
+describe('LanguageSwitcher (compact)', () => {
+  it('is one link to the other language, named by the full language name', () => {
+    render(
+      <LanguageSwitcher
+        compact
+        locale="uz"
+        label="Language"
+        names={names}
+        shortNames={{ uz: 'UZ', ru: 'RU' }}
+      />,
+    );
+    const link = screen.getByRole('link', { name: names.ru });
+    expect(link).toHaveTextContent('RU');
+    expect(link).toHaveAttribute('href', '/ru/cart');
+    expect(screen.getAllByRole('link')).toHaveLength(1);
+  });
+
+  it('stores the choice in the locale cookie', () => {
+    render(
+      <LanguageSwitcher
+        compact
+        locale="ru"
+        label="Language"
+        names={names}
+        shortNames={{ uz: 'UZ', ru: 'RU' }}
+      />,
+    );
+    document.addEventListener('click', (event) => event.preventDefault(), { once: true });
+    fireEvent.click(screen.getByRole('link', { name: names.uz }), { button: 0 });
+    expect(document.cookie).toContain('locale=uz');
+  });
+});

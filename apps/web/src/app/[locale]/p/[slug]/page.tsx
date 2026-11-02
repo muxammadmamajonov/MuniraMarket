@@ -1,10 +1,11 @@
 import { isLocale } from '@muniramarket/contracts';
-import { ImagePlaceholder, Price } from '@muniramarket/ui';
+import { Price } from '@muniramarket/ui';
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { AddToCart } from '@/components/add-to-cart';
 import { PageContainer } from '@/components/page-container';
+import { ProductImage } from '@/components/product-image';
 import { getDictionary } from '@/i18n';
 import { fetchProduct } from '@/lib/api/server';
 import { localizedDescription, localizedName, stockLabel, stockState } from '@/lib/catalog';
@@ -38,7 +39,12 @@ export default async function ProductPage({ params }: PageProps<'/[locale]/p/[sl
   return (
     <main className="flex-1">
       <PageContainer className="grid gap-6 py-6 md:grid-cols-2">
-        <ImagePlaceholder src={product.image_url} alt={name} className="max-w-md" />
+        <ProductImage
+          src={product.image_url}
+          name={name}
+          toneKey={product.category_id}
+          className="max-w-md rounded-2xl"
+        />
 
         <div className="flex flex-col gap-4">
           <p className="text-sm text-muted-foreground">

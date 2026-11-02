@@ -17,6 +17,15 @@ export const ru: Dictionary = {
     tagline: 'Свежие продукты с доставкой до двери.',
     categoriesHeading: 'Категории',
     newestHeading: 'Новинки',
+    emptyTitle: 'Каталог пока пуст',
+    emptyHint: 'Товары скоро появятся. Загляните позже.',
+    info: {
+      deliveryTitle: 'Доставка по Ташкенту',
+      deliveryText:
+        'Стоимость и время доставки зависят от района. Вы увидите их при оформлении заказа.',
+      paymentTitle: 'Оплата при получении',
+      paymentText: 'Наличными или картой: платите, когда получите заказ.',
+    },
   },
   search: {
     label: 'Поиск товаров',
@@ -61,6 +70,7 @@ export const ru: Dictionary = {
     decrease: 'Уменьшить',
     increase: 'Увеличить',
     addToCart: 'В корзину',
+    addShort: 'В корзину',
     adding: 'Добавляем…',
     added: 'Добавлено в корзину',
     viewCart: 'Открыть корзину',
@@ -358,5 +368,7 @@ export const ru: Dictionary = {
     label: 'Язык',
     uz: 'O‘zbekcha',
     ru: 'Русский',
+    uzShort: 'UZ',
+    ruShort: 'RU',
   },
 };

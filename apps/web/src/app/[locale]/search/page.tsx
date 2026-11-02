@@ -1,11 +1,16 @@
 import { isLocale } from '@muniramarket/contracts';
-import { EmptyState } from '@muniramarket/ui';
+import Link from 'next/link';
 import { notFound } from 'next/navigation';
+import { CartBar } from '@/components/cart-bar';
+import { EmptyPanel } from '@/components/empty-panel';
+import { SearchIcon } from '@/components/icons';
 import { PageContainer } from '@/components/page-container';
 import { Pagination } from '@/components/pagination';
 import { ProductGrid } from '@/components/product-grid';
 import { SearchForm } from '@/components/search-form';
+import { SessionNotice } from '@/components/session-notice';
 import { SortSelect } from '@/components/sort-select';
+import { LINK_BUTTON_PRIMARY } from '@/components/ui-classes';
 import { getDictionary } from '@/i18n';
 import { formatMessage } from '@/i18n/format';
 import { fetchProducts } from '@/lib/api/server';
@@ -42,7 +47,8 @@ export default async function SearchPage({ params, searchParams }: PageProps<'/[
         <SearchForm locale={locale} dict={dict} defaultValue={q} />
 
         {results === null ? (
-          <EmptyState
+          <EmptyPanel
+            icon={<SearchIcon width={28} height={28} />}
             title={dict.search.heading}
             description={formatMessage(dict.search.tooShort, { min: MIN_QUERY })}
           />
@@ -57,14 +63,21 @@ export default async function SearchPage({ params, searchParams }: PageProps<'/[
               <SortSelect value={sort} basePath={base} params={{ q }} />
             </div>
             {results.items.length === 0 ? (
-              <EmptyState title={dict.search.noResults} description={dict.search.noResultsHint} />
-            ) : (
-              <ProductGrid
-                products={results.items}
-                locale={locale}
-                dict={dict}
-                label={dict.search.heading}
+              <EmptyPanel
+                icon={<SearchIcon width={28} height={28} />}
+                title={dict.search.noResults}
+                description={dict.search.noResultsHint}
+                action={
+                  <Link href={`/${locale}`} className={LINK_BUTTON_PRIMARY}>
+                    {dict.errors.backHome}
+                  </Link>
+                }
               />
+            ) : (
+              <>
+                <SessionNotice />
+                <ProductGrid products={results.items} label={dict.search.heading} />
+              </>
             )}
             <Pagination
               page={results.page}
@@ -74,6 +87,7 @@ export default async function SearchPage({ params, searchParams }: PageProps<'/[
             />
           </>
         )}
+        <CartBar />
       </PageContainer>
     </main>
   );
