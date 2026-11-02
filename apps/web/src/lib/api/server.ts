@@ -2,6 +2,8 @@ import 'server-only';
 import type {
   CategoryList,
   CategoryNode,
+  DeliveryZone,
+  DeliveryZoneList,
   ProductDetail,
   ProductPage,
   ProductSort,
@@ -57,6 +59,8 @@ export async function fetchCategories(): Promise<CategoryNode[]> {
 export interface ProductQuery {
   category?: string | undefined;
   q?: string | undefined;
+  /** Only products that can be added to the cart now. */
+  inStock?: boolean | undefined;
   sort?: ProductSort | undefined;
   page?: number | undefined;
   pageSize?: number | undefined;
@@ -67,6 +71,7 @@ export function productQueryString(query: ProductQuery): string {
   const params = new URLSearchParams();
   if (query.category) params.set('category', query.category);
   if (query.q) params.set('q', query.q);
+  if (query.inStock === true) params.set('in_stock', 'true');
   if (query.sort) params.set('sort', query.sort);
   if (query.page !== undefined) params.set('page', String(query.page));
   if (query.pageSize !== undefined) params.set('page_size', String(query.pageSize));
@@ -93,5 +98,19 @@ export async function fetchProduct(slug: string): Promise<ProductDetail | null> 
   } catch (error) {
     if (error instanceof ApiRequestError && error.code === 'product_not_found') return null;
     throw error;
+  }
+}
+
+/**
+ * Active delivery zones with their districts, fee, free-delivery threshold and hours (public).
+ * `null` when the API cannot be reached: the storefront still renders and checkout, which loads
+ * the zones itself, stays the final authority on what delivery costs.
+ */
+export async function fetchDeliveryZones(): Promise<DeliveryZone[] | null> {
+  try {
+    const list = await getJson<DeliveryZoneList>('/delivery/zones', { next: { revalidate: 30 } });
+    return list.items;
+  } catch {
+    return null;
   }
 }

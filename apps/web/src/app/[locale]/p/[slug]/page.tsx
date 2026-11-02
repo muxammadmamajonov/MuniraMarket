@@ -8,7 +8,13 @@ import { PageContainer } from '@/components/page-container';
 import { ProductImage } from '@/components/product-image';
 import { getDictionary } from '@/i18n';
 import { fetchProduct } from '@/lib/api/server';
-import { localizedDescription, localizedName, stockLabel, stockState } from '@/lib/catalog';
+import {
+  localizedDescription,
+  localizedName,
+  previousPrice,
+  stockLabel,
+  stockState,
+} from '@/lib/catalog';
 
 export async function generateMetadata({
   params,
@@ -35,6 +41,7 @@ export default async function ProductPage({ params }: PageProps<'/[locale]/p/[sl
   const name = localizedName(product, locale);
   const description = localizedDescription(product, locale);
   const state = stockState(product);
+  const oldPrice = previousPrice(product);
 
   return (
     <main className="flex-1">
@@ -61,7 +68,7 @@ export default async function ProductPage({ params }: PageProps<'/[locale]/p/[sl
           <p className="flex flex-wrap items-baseline gap-x-2 text-2xl">
             <Price
               amount={product.price_uzs}
-              {...(product.old_price_uzs === null ? {} : { oldAmount: product.old_price_uzs })}
+              {...(oldPrice === null ? {} : { oldAmount: oldPrice })}
               locale={locale}
               data-testid="product-price"
               currentLabel={dict.product.priceCurrentLabel}

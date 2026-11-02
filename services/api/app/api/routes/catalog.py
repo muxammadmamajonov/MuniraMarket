@@ -83,6 +83,10 @@ async def list_products(
             "after trimming. `%`, `_` and `\\` are matched literally."
         ),
     ] = None,
+    in_stock: Annotated[
+        bool,
+        Query(description="Only products that can be added to the cart now (`in_stock` true)."),
+    ] = False,
     sort: Annotated[ProductSort, Query()] = ProductSort.NEWEST,
     page: Annotated[int, Query(ge=1, le=MAX_PAGE)] = 1,
     page_size: Annotated[int, Query(ge=1, le=MAX_PAGE_SIZE)] = DEFAULT_PAGE_SIZE,
@@ -90,7 +94,12 @@ async def list_products(
     """Active products in active categories, with stable pagination."""
     try:
         result = await catalog.list_products(
-            category_slug=category, query=q, sort=sort, page=page, page_size=page_size
+            category_slug=category,
+            query=q,
+            in_stock_only=in_stock,
+            sort=sort,
+            page=page,
+            page_size=page_size,
         )
     except CategoryNotFoundError:
         raise ApiError(404, "category_not_found", "Category not found") from None

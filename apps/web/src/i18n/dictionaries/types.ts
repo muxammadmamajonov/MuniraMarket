@@ -41,11 +41,41 @@ export interface Dictionary {
     emptyHint: string;
     /** How ordering works; only what the app really does. */
     info: {
-      deliveryTitle: string;
-      deliveryText: string;
       paymentTitle: string;
       paymentText: string;
     };
+  };
+  /** The storefront's delivery-district chooser. Never claims the location was detected. */
+  delivery: {
+    heading: string;
+    /** Before a district is chosen: why it matters (fee and time windows depend on it). */
+    prompt: string;
+    choose: string;
+    change: string;
+    /** `{fee}` */
+    fee: string;
+    freeFee: string;
+    /** `{threshold}` */
+    freeFrom: string;
+    /** `{min}` */
+    minOrder: string;
+    /** `{time}` */
+    hours: string;
+    /** Checkout re-checks everything; the summary is a preview. */
+    checkoutNote: string;
+    sheetTitle: string;
+    sheetDescription: string;
+    /** Zone group header in the sheet. `{fee}` */
+    zoneFee: string;
+    confirm: string;
+    close: string;
+    /** Zones could not be loaded; catalog browsing still works. */
+    unavailable: string;
+    noZones: string;
+    /** The remembered district is no longer served by any active zone. */
+    previousUnavailable: string;
+    /** Screen-reader announcement after a choice. `{district}` */
+    saved: string;
   };
   search: {
     label: string;
@@ -69,6 +99,12 @@ export interface Dictionary {
     /** `{count}` */
     productsCount: string;
     emptyCategory: string;
+    filterLabel: string;
+    /** Toggle: only products that can be added to the cart now. */
+    inStockOnly: string;
+    /** Empty listing while the in-stock filter is on. */
+    noneInStock: string;
+    clearFilter: string;
     pagination: {
       label: string;
       previous: string;

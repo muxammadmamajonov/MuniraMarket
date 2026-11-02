@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import openapi from '../openapi.json';
 import { API_ERROR_CODES, PRODUCT_SORTS } from './api';
-import { PRODUCT_UNITS, USER_ROLES } from './enums';
+import { DISTRICT_CODES, PRODUCT_UNITS, USER_ROLES } from './enums';
 import { SUPPORTED_LOCALES } from './locale';
 
 /**
@@ -28,6 +28,11 @@ describe('openapi.json', () => {
 
   it('PRODUCT_SORTS equals the ProductSort enum, in the same order', () => {
     expect([...PRODUCT_SORTS]).toEqual(enumOf('ProductSort'));
+  });
+
+  it('DISTRICT_CODES equals the District.code enum', () => {
+    const district = schemas['District'] as { properties: { code: EnumSchema } };
+    expect([...DISTRICT_CODES].sort()).toEqual([...district.properties.code.enum].sort());
   });
 
   it('shared enums match the API', () => {

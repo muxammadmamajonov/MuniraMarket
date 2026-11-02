@@ -8,6 +8,8 @@ export interface CategoryRailProps {
   categories: CategoryNode[];
   locale: Locale;
   label: string;
+  /** Slug of the category being viewed (its tile is filled and marked `aria-current`). */
+  activeSlug?: string | undefined;
 }
 
 /**
@@ -16,23 +18,29 @@ export interface CategoryRailProps {
  * links in a list (so they work without JavaScript and by keyboard); the scrollbar is hidden, the
  * rail snaps and does not chain its scroll into the page.
  */
-export function CategoryRail({ categories, locale, label }: CategoryRailProps) {
+export function CategoryRail({ categories, locale, label, activeSlug }: CategoryRailProps) {
   if (categories.length === 0) return null;
   return (
     <nav aria-label={label}>
       <ul className="mm-rail -mx-4 flex gap-1 scroll-pl-1 py-1 pr-4 pl-1 sm:-mx-6 sm:scroll-pl-[13px] sm:pr-6 sm:pl-[13px]">
         {categories.map((category) => {
           const name = localizedName(category, locale);
+          const active = category.slug === activeSlug;
           return (
             <li key={category.id} className="shrink-0">
               <Link
                 href={`/${locale}/c/${encodeURIComponent(category.slug)}`}
                 prefetch={false}
+                aria-current={active ? 'page' : undefined}
                 className={`group flex w-[78px] flex-col items-center gap-1.5 rounded-2xl p-1.5 sm:w-[104px] ${PRESS} ${FOCUS_RING}`}
               >
                 <span
                   aria-hidden="true"
-                  className="flex size-14 items-center justify-center rounded-2xl bg-brand-soft text-brand-ink transition-colors duration-150 group-hover:bg-primary group-hover:text-primary-foreground"
+                  className={`flex size-14 items-center justify-center rounded-2xl transition-colors duration-150 ${
+                    active
+                      ? 'bg-primary text-primary-foreground'
+                      : 'bg-brand-soft text-brand-ink group-hover:bg-primary group-hover:text-primary-foreground'
+                  }`}
                 >
                   <CategoryIcon kind={categoryIconFor(category.slug)} className="size-7" />
                 </span>

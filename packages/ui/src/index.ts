@@ -7,7 +7,7 @@ export {
   type ContainerTag,
   type ScreenProps,
 } from './components/layout';
-export { Price, type PriceProps } from './components/price';
+export { MoneyText, Price, type PriceProps } from './components/price';
 export {
   ProductCard,
   type ProductCardLinkProps,

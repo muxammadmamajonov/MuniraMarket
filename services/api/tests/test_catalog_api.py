@@ -39,6 +39,7 @@ class FakeCatalogRepository:
         *,
         category_slug: str | None,
         query: str | None,
+        in_stock_only: bool = False,
         sort: ProductSort,
         page: int,
         page_size: int,
@@ -47,6 +48,7 @@ class FakeCatalogRepository:
             {
                 "category_slug": category_slug,
                 "query": query,
+                "in_stock_only": in_stock_only,
                 "sort": sort,
                 "page": page,
                 "page_size": page_size,
@@ -164,6 +166,7 @@ async def test_products_defaults_and_page_shape(
         {
             "category_slug": None,
             "query": None,
+            "in_stock_only": False,
             "sort": ProductSort.NEWEST,
             "page": 1,
             "page_size": 24,
@@ -201,6 +204,7 @@ async def test_products_passes_filters_to_repository(
         params={
             "category": "demo-fruit",
             "q": "  olma  ",
+            "in_stock": "true",
             "sort": "price_desc",
             "page": 3,
             "page_size": 48,
@@ -211,6 +215,7 @@ async def test_products_passes_filters_to_repository(
         {
             "category_slug": "demo-fruit",
             "query": "olma",  # trimmed
+            "in_stock_only": True,
             "sort": ProductSort.PRICE_DESC,
             "page": 3,
             "page_size": 48,
@@ -243,6 +248,7 @@ async def test_products_accepts_every_sort(
         {"q": "   "},
         {"q": "x" * 101},
         {"category": ""},
+        {"in_stock": "maybe"},
     ],
 )
 async def test_products_rejects_bad_parameters(

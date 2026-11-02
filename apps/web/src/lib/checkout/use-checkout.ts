@@ -13,6 +13,10 @@ import { getCart } from '@/lib/api/cart';
 import { getDeliveryZones } from '@/lib/api/delivery';
 import { ApiRequestError } from '@/lib/api/errors';
 import { createOrder, listOrders, quoteCheckout } from '@/lib/api/orders';
+import {
+  readDistrictPreference,
+  writeDistrictPreference,
+} from '@/lib/delivery/district-preference';
 import { useSession } from '@/lib/session';
 import { useCooldown } from '@/lib/use-cooldown';
 import { classifyCheckoutError, type CheckoutFailure, type SlotFailureReason } from './failures';
@@ -227,10 +231,26 @@ export function useCheckoutFlow({ onPlaced, onSuccess, onError, focusField }: Ch
         setQuote({ kind: 'idle' });
       } else {
         void refreshQuote(district);
+        // The storefront remembers only this code (never the address); see district-preference.ts.
+        writeDistrictPreference(district);
       }
     },
     [setField, refreshQuote],
   );
+
+  // Preselect the district the customer chose on the storefront, once, if this checkout still
+  // serves it. It is only a starting point: the quote re-checks it, and the select can change it.
+  const districtPrefilled = useRef(false);
+  useEffect(() => {
+    if (districtPrefilled.current || load.kind !== 'ready') return;
+    districtPrefilled.current = true;
+    if (values.district !== '') return;
+    const saved = readDistrictPreference();
+    if (saved === null || zoneForDistrict(load.zones, saved) === null) return;
+    // One-time sync from storage after the zones arrive; the quote request it starts is async.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setDistrict(saved);
+  }, [load, values.district, setDistrict]);
 
   const touch = useCallback((field: FieldName) => {
     setTouched((current) => (current[field] === true ? current : { ...current, [field]: true }));

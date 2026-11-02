@@ -5813,6 +5813,8 @@ export interface operations {
         category?: string | null;
         /** @description Case-insensitive substring of name (uz/ru) or SKU; 2-100 characters after trimming. `%`, `_` and `\` are matched literally. */
         q?: string | null;
+        /** @description Only products that can be added to the cart now (`in_stock` true). */
+        in_stock?: boolean;
         sort?: components['schemas']['ProductSort'];
         page?: number;
         page_size?: number;

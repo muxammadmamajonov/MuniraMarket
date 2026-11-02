@@ -1,22 +1,21 @@
 import type { Dictionary } from '@/i18n';
-import { PinIcon, WalletIcon } from './icons';
+import { WalletIcon } from './icons';
 
 /**
- * A calm note about how ordering works, using only what the app does: delivery inside Tashkent
- * (fee and hours depend on the district and are shown at checkout) and payment on delivery.
+ * A calm note about how paying works, using only what the app does: payment on delivery. Delivery
+ * itself (fee and hours per district) is explained by the district chooser at the top of the page.
  * No offers, discounts or promises.
  */
 export function DeliveryInfo({ dict }: { dict: Dictionary }) {
   const { info } = dict.home;
   const items = [
-    { key: 'delivery', icon: <PinIcon />, title: info.deliveryTitle, text: info.deliveryText },
     { key: 'payment', icon: <WalletIcon />, title: info.paymentTitle, text: info.paymentText },
   ];
   return (
     <section
-      aria-label={info.deliveryTitle}
+      aria-label={info.paymentTitle}
       data-testid="delivery-info"
-      className="grid gap-4 rounded-2xl bg-brand-soft p-4 sm:grid-cols-2"
+      className="grid gap-4 rounded-2xl border border-border bg-surface p-4"
     >
       {items.map((item) => (
         <div key={item.key} className="flex items-start gap-3">

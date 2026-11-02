@@ -22,6 +22,24 @@ export const PRODUCT_UNITS = ['piece', 'kg', 'g', 'l', 'ml'] as const;
 
 export type ProductUnit = (typeof PRODUCT_UNITS)[number];
 
+/** Tashkent districts the API knows (`District.code`); which ones are served comes from the zones. */
+export const DISTRICT_CODES = [
+  'bektemir',
+  'chilonzor',
+  'mirobod',
+  'mirzo_ulugbek',
+  'olmazor',
+  'sergeli',
+  'shayxontohur',
+  'uchtepa',
+  'yakkasaroy',
+  'yangihayot',
+  'yashnobod',
+  'yunusobod',
+] as const;
+
+export type KnownDistrictCode = (typeof DISTRICT_CODES)[number];
+
 export function isOrderStatus(value: unknown): value is OrderStatus {
   return typeof value === 'string' && (ORDER_STATUSES as readonly string[]).includes(value);
 }
@@ -36,4 +54,8 @@ export function isPaymentMethod(value: unknown): value is PaymentMethod {
 
 export function isProductUnit(value: unknown): value is ProductUnit {
   return typeof value === 'string' && (PRODUCT_UNITS as readonly string[]).includes(value);
+}
+
+export function isDistrictCode(value: unknown): value is KnownDistrictCode {
+  return typeof value === 'string' && (DISTRICT_CODES as readonly string[]).includes(value);
 }

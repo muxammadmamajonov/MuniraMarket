@@ -39,6 +39,39 @@ export function parseSort(value: string | string[] | undefined): ProductSort {
     : 'newest';
 }
 
+/** `?stock=1` turns on the "in stock only" filter; anything else leaves it off. */
+export function parseInStock(value: string | string[] | undefined): boolean {
+  return firstParam(value) === '1';
+}
+
+/**
+ * Listing URL with the given sort / filter; defaults are left out of the query and pagination
+ * resets (a filter change makes the old page number meaningless).
+ */
+export function listingHref(
+  basePath: string,
+  state: { sort: ProductSort; inStock: boolean; page?: number },
+  params: Readonly<Record<string, string>> = {},
+): string {
+  const search = new URLSearchParams(params);
+  if (state.sort !== 'newest') search.set('sort', state.sort);
+  if (state.inStock) search.set('stock', '1');
+  if (state.page !== undefined && state.page > 1) search.set('page', String(state.page));
+  const text = search.toString();
+  return text === '' ? basePath : `${basePath}?${text}`;
+}
+
+/**
+ * The previous price, only when the demo data really has one and it is higher than today's: a
+ * stored `old_price_uzs` equal to or below the price is not a reduction and is never shown.
+ */
+export function previousPrice(
+  product: Pick<ProductSummary, 'price_uzs' | 'old_price_uzs'>,
+): number | null {
+  const old = product.old_price_uzs;
+  return old !== null && old > product.price_uzs ? old : null;
+}
+
 /** Validates the `page` query parameter: a positive integer, default 1. */
 export function parsePage(value: string | string[] | undefined): number {
   const first = Array.isArray(value) ? value[0] : value;

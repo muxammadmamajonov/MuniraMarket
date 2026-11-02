@@ -79,3 +79,15 @@ export const BasketIcon = (props: IconProps) => (
     <path d="m8 9.5 3-5M16 9.5l-3-5" />
   </Icon>
 );
+
+export const ChevronRightIcon = (props: IconProps) => (
+  <Icon {...props}>
+    <path d="m9.5 6 6 6-6 6" />
+  </Icon>
+);
+
+export const CheckIcon = (props: IconProps) => (
+  <Icon {...props}>
+    <path d="m5 12.5 4.5 4.5L19 7.5" />
+  </Icon>
+);
