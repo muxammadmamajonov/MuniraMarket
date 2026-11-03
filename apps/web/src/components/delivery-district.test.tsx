@@ -78,7 +78,7 @@ describe('DeliveryDistrict', () => {
     // One list of districts: zones (pricing tiers) and their fees are not shown.
     expect(within(dialog).getAllByRole('group')).toHaveLength(1);
     expect(dialog.textContent).not.toMatch(/so‘m|сум|bepul|\d{2}:\d{2}/);
-    expect(within(dialog).getByRole('button', { name: 'Xaritada belgilash' })).toBeVisible();
+    expect(within(dialog).getByRole('button', { name: 'Xaritada ko‘rish' })).toBeVisible();
 
     // Nothing is chosen yet, so "Tanlash" waits for a pick.
     const confirm = within(dialog).getByRole('button', { name: 'Tanlash' });
@@ -161,7 +161,7 @@ describe('DeliveryDistrict: map step', () => {
     fireEvent.click(
       screen.getByRole('button', { name: /Yetkazib berish manzilini tanlang|O‘zgartirish/ }),
     );
-    fireEvent.click(screen.getByRole('button', { name: 'Xaritada belgilash' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Xaritada ko‘rish' }));
     return screen.getByTestId('address-picker');
   }
 
@@ -173,7 +173,7 @@ describe('DeliveryDistrict: map step', () => {
     expect(screen.getByRole('dialog', { name: 'Yetkazib berish manzili' })).toBeInTheDocument();
   });
 
-  it('never stores, logs or sends the map point; only "a point was marked" shows, for this view', async () => {
+  it('panning the map stores, logs and sends nothing, and leads back to the district list', async () => {
     window.localStorage.setItem(DISTRICT_STORAGE_ITEM, 'yunusobod');
     const fake = makeYMaps();
     autoloadYandexScript('load', fake.api);
@@ -191,40 +191,24 @@ describe('DeliveryDistrict: map step', () => {
     renderChooser(ZONES, 'uz', KEY);
     openMapFromSheet();
     const canvas = await screen.findByTestId('map-canvas');
-    await waitFor(() => expect(fake.listeners).toHaveLength(1));
-
-    // Move the map around: by "gesture" and by keyboard.
-    act(() => fake.listeners[0]?.onActionStart?.());
-    act(() => fake.listeners[0]?.onClick?.(null, { coordinates: [69.211, 41.287] }));
-    act(() => fake.listeners[0]?.onActionEnd?.());
+    await waitFor(() => expect(fake.maps).toHaveLength(1));
     fireEvent.keyDown(canvas, { key: 'ArrowLeft' });
-    fireEvent.click(screen.getByRole('button', { name: 'Shu nuqtani belgilash' }));
+    fireEvent.keyDown(canvas, { key: '+' });
+    fireEvent.click(screen.getByRole('button', { name: 'Ro‘yxatga qaytish' }));
 
-    expect(screen.getByTestId('delivery-map-marked')).toHaveTextContent(
-      'Xaritada nuqta belgilangan',
-    );
+    // Back in the district list; the summary is unchanged (no "point marked" anywhere).
+    expect(screen.getByRole('dialog', { name: 'Yetkazib berish manzili' })).toBeInTheDocument();
     expect(screen.getByTestId('delivery-district-name')).toHaveTextContent('Yunusobod');
+    expect(screen.queryByText(/nuqta belgilan|saqlandi/i)).toBeNull();
 
     expect(fetchSpy).not.toHaveBeenCalled();
     expect(beacon).not.toHaveBeenCalled();
     for (const log of logs) expect(log).not.toHaveBeenCalled();
     expect(localSet).not.toHaveBeenCalled();
     expect(Object.keys({ ...window.localStorage })).toEqual([DISTRICT_STORAGE_ITEM]);
-    expect(window.localStorage.getItem(DISTRICT_STORAGE_ITEM)).toBe('yunusobod');
     expect(window.sessionStorage).toHaveLength(0);
     expect(document.cookie).not.toMatch(/69\.|41\./);
     Reflect.deleteProperty(navigator, 'sendBeacon');
-  });
-
-  it('after marking a point with no district yet, asks for the district next', async () => {
-    const fake = makeYMaps();
-    autoloadYandexScript('load', fake.api);
-    renderChooser(ZONES, 'uz', KEY);
-    openMapFromSheet();
-    await screen.findByTestId('map-canvas');
-    fireEvent.click(screen.getByRole('button', { name: 'Shu nuqtani belgilash' }));
-    expect(screen.getByRole('dialog', { name: 'Yetkazib berish manzili' })).toBeInTheDocument();
-    expect(screen.getByTestId('delivery-district')).toHaveAttribute('data-state', 'unset');
   });
 
   it('in Telegram, asks for fullscreen only when the map is opened, and leaves it after', async () => {
@@ -240,7 +224,7 @@ describe('DeliveryDistrict: map step', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Yetkazib berish manzilini tanlang' }));
     expect(webApp.requestFullscreen).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByRole('button', { name: 'Xaritada belgilash' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Xaritada ko‘rish' }));
     expect(webApp.requestFullscreen).toHaveBeenCalledTimes(1);
 
     // The client switched (Telegram reports it); closing the map leaves fullscreen again.

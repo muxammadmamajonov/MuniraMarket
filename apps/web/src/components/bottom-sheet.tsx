@@ -96,7 +96,11 @@ function SheetContent({
     document.body.style.overflow = 'hidden';
     return () => {
       document.body.style.overflow = overflow;
-      if (previouslyFocused instanceof HTMLElement)
+      // Give focus back only if it is still ours (or lost to <body>): when the sheet closed
+      // because another dialog opened (the map view), that dialog keeps it.
+      const active = document.activeElement;
+      const ours = active === null || active === document.body || panel?.contains(active) === true;
+      if (ours && previouslyFocused instanceof HTMLElement)
         previouslyFocused.focus({ preventScroll: true });
     };
   }, []);

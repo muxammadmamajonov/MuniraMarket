@@ -15,24 +15,22 @@ function renderPicker({
   apiKey = KEY,
   locale = 'uz',
   onClose = vi.fn(),
-  onConfirm = vi.fn(),
 }: {
   apiKey?: string | null;
   locale?: 'uz' | 'ru';
   onClose?: () => void;
-  onConfirm?: () => void;
 } = {}) {
   const view = render(
     <LocaleProvider locale={locale}>
       <TelegramProvider>
         <MapsConfigProvider apiKey={apiKey}>
           <button>trigger</button>
-          <AddressPicker open onClose={onClose} onConfirm={onConfirm} />
+          <AddressPicker open onClose={onClose} />
         </MapsConfigProvider>
       </TelegramProvider>
     </LocaleProvider>,
   );
-  return { onClose, onConfirm, unmount: view.unmount };
+  return { onClose, unmount: view.unmount };
 }
 
 let fake: FakeYMaps;
@@ -53,11 +51,11 @@ describe('AddressPicker: without a key', () => {
   it('shows its own "map unavailable" state, loads nothing and offers the list instead', () => {
     const append = vi.spyOn(document.head, 'append');
     const { onClose } = renderPicker({ apiKey: null });
-    const dialog = screen.getByRole('dialog', { name: 'Xaritada belgilash' });
+    const dialog = screen.getByRole('dialog', { name: 'Xaritada ko‘rish' });
     expect(within(dialog).getByTestId('map-unavailable')).toHaveTextContent(
       'Xarita hozircha mavjud emas',
     );
-    expect(within(dialog).queryByRole('button', { name: 'Shu nuqtani belgilash' })).toBeNull();
+    expect(within(dialog).getAllByRole('button', { name: 'Ro‘yxatga qaytish' })).toHaveLength(1);
     expect(append).not.toHaveBeenCalled();
     expect(document.querySelector('script[data-mm-yandex-maps]')).toBeNull();
     fireEvent.click(within(dialog).getByRole('button', { name: 'Ro‘yxatga qaytish' }));
@@ -66,18 +64,19 @@ describe('AddressPicker: without a key', () => {
 
   it('is localized', () => {
     renderPicker({ apiKey: null, locale: 'ru' });
-    expect(screen.getByRole('dialog', { name: 'Отметить на карте' })).toHaveTextContent(
+    expect(screen.getByRole('dialog', { name: 'Посмотреть на карте' })).toHaveTextContent(
       'Карта пока недоступна',
     );
   });
 });
 
 describe('AddressPicker: loading and errors', () => {
-  it('shows a loading state with the confirm button disabled', () => {
+  it('shows a loading state, with the way back always available', () => {
     autoloadYandexScript('hang');
-    renderPicker();
+    const { onClose } = renderPicker();
     expect(screen.getByTestId('map-loading')).toHaveTextContent('Xarita yuklanmoqda…');
-    expect(screen.getByRole('button', { name: 'Shu nuqtani belgilash' })).toBeDisabled();
+    fireEvent.click(screen.getByRole('button', { name: 'Ro‘yxatga qaytish' }));
+    expect(onClose).toHaveBeenCalledTimes(1);
   });
 
   it('shows an error with a working retry', async () => {
@@ -99,7 +98,7 @@ describe('AddressPicker: loading and errors', () => {
   });
 });
 
-describe('AddressPicker: the map', () => {
+describe('AddressPicker: the map (orientation only)', () => {
   async function ready(options: Parameters<typeof renderPicker>[0] = {}) {
     autoloadYandexScript('load', fake.api);
     const result = renderPicker(options);
@@ -108,37 +107,24 @@ describe('AddressPicker: the map', () => {
     return result;
   }
 
-  it('starts centred on Tashkent, with our own pin and Yandex layers', async () => {
+  it('starts centred on Tashkent with the Yandex layers and no listener reading points', async () => {
     await ready();
-    expect(fake.maps).toHaveLength(1);
     expect(fake.maps[0]?.props.location).toEqual({ center: TASHKENT_CENTER, zoom: 12 });
-    expect(fake.maps[0]?.children).toHaveLength(3);
-    expect(screen.getByTestId('map-pin')).toHaveAttribute('data-moving', 'false');
-    expect(screen.getByRole('button', { name: 'Shu nuqtani belgilash' })).toBeEnabled();
+    expect(fake.maps[0]?.children).toHaveLength(2);
   });
 
-  it('lifts the pin while the map moves and settles it after', async () => {
+  it('offers no pin and no "confirm": nothing can look like a saved address', async () => {
     await ready();
-    const listener = fake.listeners[0];
-    act(() => listener?.onActionStart?.());
-    expect(screen.getByTestId('map-pin')).toHaveAttribute('data-moving', 'true');
-    act(() => listener?.onActionEnd?.());
-    expect(screen.getByTestId('map-pin')).toHaveAttribute('data-moving', 'false');
+    expect(screen.queryByTestId('map-pin')).toBeNull();
+    const dialog = screen.getByRole('dialog', { name: 'Xaritada ko‘rish' });
+    expect(dialog.textContent).not.toMatch(/belgila|saqlandi|tasdiq/i);
+    expect(dialog).toHaveTextContent('hech narsa saqlanmaydi');
   });
 
-  it('a tap moves the tapped spot under the pin', async () => {
-    await ready();
-    act(() => fake.listeners[0]?.onClick?.(null, { coordinates: [69.3, 41.33] }));
-    expect(fake.maps[0]?.update).toHaveBeenLastCalledWith({
-      location: { center: [69.3, 41.33], zoom: 12, duration: 200 },
-    });
-  });
-
-  it('confirming reports only that a point was marked, never the point', async () => {
-    const { onConfirm } = await ready();
-    fireEvent.click(screen.getByRole('button', { name: 'Shu nuqtani belgilash' }));
-    expect(onConfirm).toHaveBeenCalledTimes(1);
-    expect(onConfirm).toHaveBeenCalledWith();
+  it('"Back to the list" closes the map', async () => {
+    const { onClose } = await ready();
+    fireEvent.click(screen.getByRole('button', { name: 'Ro‘yxatga qaytish' }));
+    expect(onClose).toHaveBeenCalledTimes(1);
   });
 
   it('cleans the map up when it closes', async () => {
@@ -157,14 +143,14 @@ describe('AddressPicker: keyboard', () => {
     expect(back).toHaveFocus();
     await screen.findByTestId('map-canvas');
 
-    const confirm = screen.getByRole('button', { name: 'Shu nuqtani belgilash' });
-    confirm.focus();
-    fireEvent.keyDown(confirm, { key: 'Tab' });
+    const last = screen.getByRole('button', { name: 'Ro‘yxatga qaytish' });
+    last.focus();
+    fireEvent.keyDown(last, { key: 'Tab' });
     expect(back).toHaveFocus();
     fireEvent.keyDown(back, { key: 'Tab', shiftKey: true });
-    expect(confirm).toHaveFocus();
+    expect(last).toHaveFocus();
 
-    fireEvent.keyDown(confirm, { key: 'Escape' });
+    fireEvent.keyDown(last, { key: 'Escape' });
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 

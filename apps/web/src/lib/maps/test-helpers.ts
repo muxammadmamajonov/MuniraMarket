@@ -1,5 +1,5 @@
 import { vi, type Mock } from 'vitest';
-import type { LngLat, YMapListenerProps, YMapProps, YMaps3 } from './yandex-types';
+import type { LngLat, YMapProps, YMaps3 } from './yandex-types';
 
 /**
  * A fake `window.ymaps3` for tests. Test-only; not imported by app code. Nothing here (or in any
@@ -20,12 +20,10 @@ export interface FakeMap {
 export interface FakeYMaps {
   api: YMaps3;
   maps: FakeMap[];
-  listeners: YMapListenerProps[];
 }
 
 export function makeYMaps(): FakeYMaps {
   const maps: FakeMap[] = [];
-  const listeners: YMapListenerProps[] = [];
 
   class YMap {
     readonly fake: FakeMap;
@@ -71,21 +69,14 @@ export function makeYMaps(): FakeYMaps {
     }
   }
 
-  class YMapListener {
-    constructor(props: YMapListenerProps) {
-      listeners.push(props);
-    }
-  }
-
   const api = {
     ready: Promise.resolve(),
     YMap,
     YMapDefaultSchemeLayer: class {},
     YMapDefaultFeaturesLayer: class {},
-    YMapListener,
   } as unknown as YMaps3;
 
-  return { api, maps, listeners };
+  return { api, maps };
 }
 
 /**

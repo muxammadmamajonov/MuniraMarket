@@ -28,9 +28,9 @@ const BUTTON =
  * delivery there (fees, thresholds and hours are not shown on the storefront).
  *
  * Before a choice the whole card is one button ("Choose the delivery address"). After a choice it
- * shows only the district (and, for this page view, that a point was marked on the map) and a
- * "Change" button. The district is the real coverage choice and the only thing remembered (see
- * `district-preference.ts`); the map point is never stored or sent anywhere.
+ * shows only the district and a "Change" button. The district is the real coverage choice and the
+ * only thing remembered (see `district-preference.ts`). The map in the sheet is for orientation
+ * only: it marks and saves nothing; the exact address is typed in the checkout form.
  */
 export function DeliveryDistrict({ zones }: DeliveryDistrictProps) {
   const { dict, locale } = useI18n();
@@ -38,14 +38,11 @@ export function DeliveryDistrict({ zones }: DeliveryDistrictProps) {
   const [stored, setStored, ready] = useDistrictPreference();
   const [sheetOpen, setSheetOpen] = useState(false);
   const [mapOpen, setMapOpen] = useState(false);
-  // In memory only, for this page view: "a point was marked". Never the point itself.
-  const [mapMarked, setMapMarked] = useState(false);
   const [announcement, setAnnouncement] = useState('');
   const haptics = useHaptics();
   const telegram = useTelegram();
   const webApp = telegram.kind === 'telegram' ? telegram.webApp : null;
   const fullscreenRequested = useRef(false);
-  const changeRef = useRef<HTMLButtonElement>(null);
 
   const groups = zones === null ? [] : districtGroups(zones);
   const served = zones === null ? null : findServedDistrict(zones, stored);
@@ -68,26 +65,12 @@ export function DeliveryDistrict({ zones }: DeliveryDistrictProps) {
     fullscreenRequested.current = requestFullscreenOnce(webApp);
   };
 
-  const leaveMap = () => {
+  // Leaving the map always returns to the district list, where the real choice is made.
+  const closeMap = () => {
     setMapOpen(false);
     if (fullscreenRequested.current) exitFullscreenIfOn(webApp);
     fullscreenRequested.current = false;
-  };
-
-  // Back from the map: return to the district list, where the real choice is made.
-  const closeMap = () => {
-    leaveMap();
     setSheetOpen(true);
-  };
-
-  const confirmMap = () => {
-    leaveMap();
-    setMapMarked(true);
-    haptics.impact('light');
-    setAnnouncement(dict.delivery.mapPointMarked);
-    // Without a district there is still nothing to deliver to: ask for it next.
-    if (served === null) setSheetOpen(true);
-    else changeRef.current?.focus({ preventScroll: true });
   };
 
   const live = (
@@ -134,7 +117,7 @@ export function DeliveryDistrict({ zones }: DeliveryDistrictProps) {
         onChoose={choose}
         onOpenMap={openMap}
       />
-      <AddressPicker open={mapOpen} onClose={closeMap} onConfirm={confirmMap} />
+      <AddressPicker open={mapOpen} onClose={closeMap} />
       {live}
     </>
   );
@@ -188,14 +171,8 @@ export function DeliveryDistrict({ zones }: DeliveryDistrictProps) {
         >
           {name}
         </p>
-        {mapMarked ? (
-          <p data-testid="delivery-map-marked" className="text-xs leading-4 text-muted-foreground">
-            {t.mapPointMarked}
-          </p>
-        ) : null}
       </div>
       <button
-        ref={changeRef}
         type="button"
         aria-haspopup="dialog"
         aria-label={`${t.change}: ${t.heading}, ${name}`}
@@ -244,7 +221,7 @@ interface DistrictSheetProps {
 }
 
 /**
- * The picker: an optional "Mark on the map" step on top, then one radio group with every served
+ * The picker: an optional "View on the map" (orientation only) on top, then one radio group with every served
  * district and a "Choose" button that commits. Arrow keys move between districts without
  * committing (native radio behaviour), so a keyboard or screen-reader user can browse the list;
  * Escape, the backdrop and the close button leave the previous choice untouched.

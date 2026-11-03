@@ -27,28 +27,26 @@ const FOCUSABLE =
 
 export interface AddressPickerProps {
   open: boolean;
-  /** Back / Escape / backdrop: nothing is marked. */
+  /** Back / Escape / backdrop / "Back to the list". */
   onClose: () => void;
-  /** "Mark this point". Receives nothing on purpose: the point never leaves the map. */
-  onConfirm: () => void;
 }
 
 /**
- * Optional map step for choosing where to deliver. Mobile: an immersive full-height page; wide
- * screens: a centred panel. The map is Yandex Maps, loaded only now (see `yandex-loader.ts`); the
- * pin is drawn by the app at the map's centre and the customer moves the map under it.
+ * Optional map view from the address chooser, for orientation only. Mobile: an immersive
+ * full-height page; wide screens: a centred panel. The map is Yandex Maps, loaded only now (see
+ * `yandex-loader.ts`); the customer can pan, zoom and, on request, centre it on their location.
  *
- * What this is not: the delivery address or a coverage check. The district list stays the real
- * choice and the checkout form stays the address. The picked point is never read out of the map,
- * so it cannot be stored, logged or sent anywhere; confirming only tells the parent "a point was
- * marked".
+ * It selects nothing. There is no pin and no "confirm": no point is read out of the map, stored,
+ * sent or passed to checkout, and no Yandex geocoder or address data is used. The district list
+ * is the delivery-coverage choice and the checkout form is the address. Storing a real point on
+ * an order needs its own privacy, schema, consent and licence decision first.
  *
  * Without a key, offline, or when the script fails, it shows its own fallback instead of a map
  * and the rest of the storefront is unaffected. Yandex's attribution and "Open in Yandex Maps"
- * links sit in the map's bottom corner; nothing of ours overlays that edge (the confirm bar is
- * below the map, not on it).
+ * links sit in the map's bottom corner; nothing of ours overlays that edge (the bar with "Back to
+ * the list" is below the map, not on it).
  */
-export function AddressPicker({ open, onClose, onConfirm }: AddressPickerProps) {
+export function AddressPicker({ open, onClose }: AddressPickerProps) {
   const [rendered, setRendered] = useState(open);
   if (open && !rendered) setRendered(true);
 
@@ -58,29 +56,27 @@ export function AddressPicker({ open, onClose, onConfirm }: AddressPickerProps) 
     return () => clearTimeout(timer);
   }, [open, rendered]);
 
-  // Telegram: the native BackButton closes the picker and the MainButton (for example "Go to
-  // cart") is hidden while it is open, so it never competes with "Mark this point".
+  // Telegram: the native BackButton closes the map and the MainButton (for example "Go to cart")
+  // is hidden while it is open, so it never sits under the map's own "Back to the list".
   useBackButton({ visible: open, onClick: onClose });
   useSuppressMainButton(open);
 
   if (!rendered) return null;
-  return <PickerPanel closing={!open} onClose={onClose} onConfirm={onConfirm} />;
+  return <PickerPanel closing={!open} onClose={onClose} />;
 }
 
 interface PickerPanelProps {
   closing: boolean;
   onClose: () => void;
-  onConfirm: () => void;
 }
 
-function PickerPanel({ closing, onClose, onConfirm }: PickerPanelProps) {
+function PickerPanel({ closing, onClose }: PickerPanelProps) {
   const { dict } = useI18n();
   const t = dict.map;
   const titleId = useId();
   const hintId = useId();
   const panelRef = useRef<HTMLDivElement>(null);
   const [maps, retry] = useYandexMaps(true);
-  const ready = maps.status === 'ready';
 
   // Focus the back button on open and return focus on close; lock the page behind.
   useEffect(() => {
@@ -216,14 +212,7 @@ function PickerPanel({ closing, onClose, onConfirm }: PickerPanelProps) {
             <p id={hintId} className="text-sm leading-5 text-muted-foreground">
               {t.hint}
             </p>
-            <button
-              type="button"
-              disabled={!ready}
-              onClick={() => onConfirm()}
-              className={`inline-flex min-h-12 w-full items-center justify-center rounded-xl bg-primary px-6 text-base font-semibold text-primary-foreground enabled:hover:bg-primary-hover disabled:cursor-not-allowed disabled:opacity-50 ${PRESS} ${FOCUS_RING}`}
-            >
-              {t.confirm}
-            </button>
+            <PrimaryButton onClick={onClose}>{t.backToList}</PrimaryButton>
           </div>
         ) : null}
       </div>
@@ -242,15 +231,14 @@ function degreesPerPixel(zoom: number): number {
 }
 
 /**
- * The live map. Holds the `YMap` instance in a ref; the centre is only ever read here, to pan by
- * keyboard, and handed straight back to the map.
+ * The live map. Holds the `YMap` instance in a ref; its centre is only read here, to pan by
+ * keyboard, and handed straight back to the map. Gestures are the SDK's own.
  */
 function MapStage({ api, hintId }: { api: YMaps3; hintId: string }) {
   const { dict } = useI18n();
   const t = dict.map;
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<YMapInstance | null>(null);
-  const [moving, setMoving] = useState(false);
   const [locate, setLocate] = useState<LocateState>('idle');
   const canLocate = typeof navigator !== 'undefined' && 'geolocation' in navigator;
 
@@ -264,15 +252,6 @@ function MapStage({ api, hintId }: { api: YMaps3; hintId: string }) {
     });
     map.addChild(new api.YMapDefaultSchemeLayer({}));
     map.addChild(new api.YMapDefaultFeaturesLayer({}));
-    map.addChild(
-      new api.YMapListener({
-        onActionStart: () => setMoving(true),
-        onActionEnd: () => setMoving(false),
-        // A tap moves the map so the tapped spot comes under the pin.
-        onClick: (_object, event) =>
-          map.update({ location: { center: event.coordinates, zoom: map.zoom, duration: 200 } }),
-      }),
-    );
     mapRef.current = map;
     return () => {
       mapRef.current = null;
@@ -342,28 +321,6 @@ function MapStage({ api, hintId }: { api: YMaps3; hintId: string }) {
         onKeyDown={onKeyDown}
         className="absolute inset-0 outline-none focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-focus"
       />
-      {/* The pin: ours, centred, never interactive. Its tip marks the point; it lifts while the
-          map moves and settles when it stops (transform only). */}
-      <div
-        aria-hidden="true"
-        data-testid="map-pin"
-        data-moving={moving}
-        className="pointer-events-none absolute top-1/2 left-1/2"
-      >
-        <span className="absolute -top-1 -left-2 h-2 w-4 rounded-[50%] bg-black/25 transition-[transform,opacity] duration-150 ease-out-strong in-data-[moving=true]:scale-75 in-data-[moving=true]:opacity-60" />
-        <svg
-          viewBox="0 0 32 44"
-          width="32"
-          height="44"
-          className="absolute -top-11 -left-4 text-primary drop-shadow-md transition-transform duration-150 ease-out-strong in-data-[moving=true]:-translate-y-2 motion-reduce:transition-none"
-        >
-          <path
-            fill="currentColor"
-            d="M16 1C7.7 1 1 7.6 1 15.8 1 26.6 16 43 16 43s15-16.4 15-27.2C31 7.6 24.3 1 16 1z"
-          />
-          <circle cx="16" cy="15.5" r="5.5" fill="var(--mm-color-primary-foreground, #fff)" />
-        </svg>
-      </div>
       {canLocate ? (
         <div className="absolute top-3 right-[max(0.75rem,var(--mm-inset-right))] flex max-w-[calc(100%-1.5rem)] flex-col items-end gap-2">
           <button

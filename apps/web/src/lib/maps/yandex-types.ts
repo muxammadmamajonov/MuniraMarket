@@ -30,18 +30,11 @@ export interface YMapProps {
   theme?: 'light' | 'dark';
 }
 
-export interface YMapListenerProps {
-  onActionStart?: () => void;
-  onActionEnd?: () => void;
-  onClick?: (object: unknown, event: { coordinates: LngLat }) => void;
-}
-
 export interface YMaps3 {
   readonly ready: Promise<void>;
   YMap: new (element: HTMLElement, props: YMapProps) => YMapInstance;
   YMapDefaultSchemeLayer: new (props?: object) => YMapEntity;
   YMapDefaultFeaturesLayer: new (props?: object) => YMapEntity;
-  YMapListener: new (props: YMapListenerProps) => YMapEntity;
 }
 
 declare global {

@@ -30,6 +30,13 @@ async function shot(page: Page, name: string): Promise<void> {
  * `/auth/session`, which the API limits to 60 a minute per IP, and the whole E2E run shares that
  * budget. The answer is the API's own "no session" (401).
  */
+/** Waits until the map view's entrance transition (and the sheet's exit) has finished. */
+async function settled(page: Page): Promise<void> {
+  await page.evaluate(() =>
+    Promise.all(document.getAnimations().map((animation) => animation.finished.catch(() => null))),
+  );
+}
+
 async function browseAnonymously(page: Page): Promise<void> {
   await page.route(/^https:\/\/([^/]+\.)?telegram\.org\//, (route) => route.abort());
   await page.route('**/api/v1/auth/session', (route) =>
@@ -264,7 +271,7 @@ test.describe('break-ui: worst realistic data', () => {
       .filter({ visible: true })
       .getByRole('button', { name: 'Yetkazib berish manzilini tanlang' })
       .click();
-    await page.getByRole('button', { name: 'Xaritada belgilash' }).click();
+    await page.getByRole('button', { name: 'Xaritada ko‘rish' }).click();
     await expect(page.getByTestId('address-picker').getByRole('dialog')).toBeVisible();
     await expectNoHorizontalScroll(page);
     await context.setOffline(false);
@@ -292,20 +299,23 @@ test.describe('map step without a Maps key (CI)', () => {
 
       await card.getByRole('button', { name: /O‘zgartirish/ }).click();
       const sheet = page.getByRole('dialog', { name: 'Yetkazib berish manzili' });
-      await sheet.getByRole('button', { name: 'Xaritada belgilash' }).click();
-      const picker = page.getByRole('dialog', { name: 'Xaritada belgilash' });
+      await sheet.getByRole('button', { name: 'Xaritada ko‘rish' }).click();
+      const picker = page.getByRole('dialog', { name: 'Xaritada ko‘rish' });
       await expect(picker).toBeVisible();
       await expect(picker.getByTestId('map-unavailable')).toContainText(
         'Xarita hozircha mavjud emas',
       );
       await expect(picker.getByRole('button', { name: 'Orqaga' })).toBeFocused();
       await expectNoHorizontalScroll(page);
+      await settled(page);
       await shot(page, `p9-map-fallback-${scheme}`);
 
       // Escape goes back to the district list, where the real choice is made.
       await page.keyboard.press('Escape');
       await expect(picker).toBeHidden();
       await expect(sheet).toBeVisible();
+      // The map selects nothing: no "point marked" or "saved" wording anywhere.
+      await expect(page.getByText(/nuqta belgilan|saqlandi/i)).toHaveCount(0);
       expect(yandex).toEqual([]);
       // Still only the district code is remembered.
       expect(await page.evaluate(() => Object.keys(window.localStorage))).toEqual([DISTRICT_ITEM]);
@@ -320,13 +330,14 @@ test.describe('map step without a Maps key (CI)', () => {
       .filter({ visible: true })
       .getByRole('button', { name: 'Выберите адрес доставки' })
       .click();
-    await page.getByRole('button', { name: 'Отметить на карте' }).click();
-    const picker = page.getByRole('dialog', { name: 'Отметить на карте' });
+    await page.getByRole('button', { name: 'Посмотреть на карте' }).click();
+    const picker = page.getByRole('dialog', { name: 'Посмотреть на карте' });
     await expect(picker).toContainText('Карта пока недоступна');
     // Wait out the 200ms entrance before measuring and capturing.
     await expect(picker).toHaveCSS('opacity', '1');
     const box = await picker.boundingBox();
     expect(box !== null && box.width <= 768 && box.x > 0).toBe(true);
+    await settled(page);
     await shot(page, 'p9-desktop-map-fallback');
   });
 });
@@ -398,7 +409,7 @@ test.describe('Telegram fullscreen safe areas', () => {
       .filter({ visible: true })
       .getByRole('button', { name: 'Yetkazib berish manzilini tanlang' })
       .click();
-    await page.getByRole('button', { name: 'Xaritada belgilash' }).click();
+    await page.getByRole('button', { name: 'Xaritada ko‘rish' }).click();
     const back = page.getByRole('button', { name: 'Orqaga' });
     const backBox = await back.boundingBox();
     expect(backBox !== null && backBox.y >= 93).toBe(true);
@@ -407,6 +418,7 @@ test.describe('Telegram fullscreen safe areas', () => {
         () => (window as { __mmFullscreenRequests?: number }).__mmFullscreenRequests,
       ),
     ).toBe(0);
+    await settled(page);
     await shot(page, 'p9-telegram-fullscreen-map');
   });
 

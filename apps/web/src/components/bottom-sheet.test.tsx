@@ -84,6 +84,22 @@ describe('BottomSheet', () => {
     expect(trigger).toHaveFocus();
   });
 
+  it('does not pull focus back when the sheet closed because another dialog took it', () => {
+    vi.useFakeTimers();
+    render(<Harness />);
+    const trigger = screen.getByText('trigger');
+    trigger.focus();
+    fireEvent.click(trigger);
+    fireEvent.click(screen.getByRole('button', { name: 'Close' }));
+    // Something else (e.g. the map view) is focused while the sheet slides away.
+    screen.getByText('outside').focus();
+    act(() => {
+      vi.advanceTimersByTime(250);
+    });
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(screen.getByText('outside')).toHaveFocus();
+  });
+
   it('closes with Escape and with a tap on the backdrop', () => {
     vi.useFakeTimers();
     render(<Harness />);

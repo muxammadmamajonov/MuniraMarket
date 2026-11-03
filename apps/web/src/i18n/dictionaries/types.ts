@@ -70,10 +70,8 @@ export interface Dictionary {
     previousUnavailable: string;
     /** Screen-reader announcement after a choice. `{district}` */
     saved: string;
-    /** Second line of the summary after a point was marked on the map (this page view only). */
-    mapPointMarked: string;
   };
-  /** The optional map picker (Yandex Maps). It never decides delivery coverage or the address. */
+  /** The optional map view (Yandex Maps): orientation only, it selects and saves nothing. */
   map: {
     /** Button in the district sheet that opens the picker. */
     open: string;
@@ -89,9 +87,8 @@ export interface Dictionary {
     offlineTitle: string;
     errorText: string;
     retry: string;
-    /** Under the map: the point is a guide only, the address is typed at checkout. */
+    /** Under the map: orientation only; the district is chosen in the list, the address at checkout. */
     hint: string;
-    confirm: string;
     myLocation: string;
     locating: string;
     locationDenied: string;
