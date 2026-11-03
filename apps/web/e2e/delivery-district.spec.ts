@@ -59,17 +59,19 @@ test.describe('delivery district chooser', () => {
     await page.goto('/uz');
     const card = chooser(page);
     await expect(card).toHaveAttribute('data-state', 'unset');
-    await expect(card).toContainText(
-      'Yetkazish narxi va vaqt oralig‘lari tanlangan tumanga bog‘liq.',
-    );
+    // One clear action, no fee / hours / promotional text on the storefront.
+    await expect(card.getByRole('button')).toHaveCount(1);
+    await expect(card).not.toContainText('so‘m');
     // Non-blocking: the catalog is already there.
     await expect(page.getByTestId('product-tile').first()).toBeVisible();
     await shot(page, 'uz-mobile-home-unset');
 
-    await card.getByRole('button', { name: 'Tumanni tanlash' }).click();
-    const sheet = page.getByRole('dialog', { name: 'Yetkazish tumanini tanlang' });
+    await card.getByRole('button', { name: 'Yetkazib berish manzilini tanlang' }).click();
+    const sheet = page.getByRole('dialog', { name: 'Yetkazib berish manzili' });
     await expect(sheet).toBeVisible();
-    await expect(sheet.getByRole('group')).toHaveCount(3); // the inactive seed zone is not offered
+    // One list of served districts; zones and their fees stay on the server.
+    await expect(sheet.getByRole('group')).toHaveCount(1);
+    await expect(sheet).not.toContainText('so‘m');
     await expect(sheet.getByRole('radio', { name: 'Bektemir' })).toHaveCount(0);
     await sheet.getByText('Yunusobod', { exact: true }).click();
     await shot(page, 'district-picker');
@@ -78,8 +80,9 @@ test.describe('delivery district chooser', () => {
 
     await expect(card).toHaveAttribute('data-state', 'set');
     await expect(chooser(page).getByTestId('delivery-district-name')).toHaveText('Yunusobod');
-    await expect(card).toContainText(`Yetkazish: ${uzs(15_000)}`);
-    await expect(card).toContainText(`${uzs(300_000)} dan bepul`);
+    await expect(card).not.toContainText('so‘m');
+    await expect(card).not.toContainText('bepul');
+    await expect(card).not.toContainText(/\d{2}:\d{2}/);
     expect(await page.evaluate((key) => window.localStorage.getItem(key), ITEM)).toBe('yunusobod');
     expect(await page.evaluate(() => Object.keys(window.localStorage))).toEqual([ITEM]);
     await shot(page, 'uz-mobile-home');
@@ -94,23 +97,22 @@ test.describe('delivery district chooser', () => {
     await expect(sheet).toBeHidden();
     await expect(chooser(page).getByTestId('delivery-district-name')).toHaveText('Yunusobod');
 
-    // Change for real: a zone without free delivery shows no "free from" line.
+    // Change for real.
     await card.getByRole('button', { name: /O‘zgartirish/ }).click();
     await sheet.getByText('Sergeli', { exact: true }).click();
     await sheet.getByRole('button', { name: 'Tanlash' }).click();
     await expect(chooser(page).getByTestId('delivery-district-name')).toHaveText('Sergeli');
-    await expect(card).toContainText(`Yetkazish: ${uzs(30_000)}`);
-    await expect(card).not.toContainText('bepul');
+    await expect(card).not.toContainText('so‘m');
   });
 
   test('keyboard: Tab, Enter, arrows browse without committing, Escape cancels, Enter confirms', async ({
     page,
   }) => {
     await page.goto('/uz');
-    const open = chooser(page).getByRole('button', { name: 'Tumanni tanlash' });
+    const open = chooser(page).getByRole('button', { name: 'Yetkazib berish manzilini tanlang' });
     await open.focus();
     await page.keyboard.press('Enter');
-    const sheet = page.getByRole('dialog', { name: 'Yetkazish tumanini tanlang' });
+    const sheet = page.getByRole('dialog', { name: 'Yetkazib berish manzili' });
     await expect(sheet).toBeVisible();
 
     // Focus starts on the first district; arrows move the pending choice only.
@@ -151,13 +153,13 @@ test.describe('delivery district chooser', () => {
     await page.goto('/ru');
     const card = chooser(page);
     await expect(chooser(page).getByTestId('delivery-district-name')).toHaveText('Чиланзарский');
-    await expect(card).toContainText('Район доставки');
-    await expect(card).toContainText(`Доставка: ${money(25_000, 'ru')}`);
-    await expect(card).toContainText(`Бесплатно от ${money(500_000, 'ru')}`);
+    await expect(card).toContainText('Доставка');
+    await expect(card).not.toContainText(money(25_000, 'ru'));
+    await expect(card).not.toContainText('Бесплатно');
     await shot(page, 'ru-mobile-home');
 
     await card.getByRole('button', { name: /Изменить/ }).click();
-    const sheet = page.getByRole('dialog', { name: 'Выберите район доставки' });
+    const sheet = page.getByRole('dialog', { name: 'Адрес доставки' });
     await expect(sheet.getByRole('radio', { name: 'Чиланзарский' })).toBeChecked();
     await expect(sheet.getByRole('button', { name: 'Выбрать' })).toBeVisible();
     await shot(page, 'ru-district-picker');
@@ -188,7 +190,7 @@ test.describe('delivery district chooser', () => {
       });
     });
     await page.goto('/uz');
-    await chooser(page).getByRole('button', { name: 'Tumanni tanlash' }).click();
+    await chooser(page).getByRole('button', { name: 'Yetkazib berish manzilini tanlang' }).click();
     const sheet = page.getByRole('dialog');
     await sheet.getByText('Mirobod', { exact: true }).click();
     await sheet.getByRole('button', { name: 'Tanlash' }).click();

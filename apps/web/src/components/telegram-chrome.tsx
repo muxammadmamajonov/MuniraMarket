@@ -4,7 +4,7 @@ import { usePathname, useRouter } from 'next/navigation';
 import { useEffect } from 'react';
 import { useI18n } from '@/i18n/context';
 import { localeFromPathname } from '@/i18n/switch-locale';
-import { useBackButton, useTelegram, useTelegramTheme } from '@/lib/telegram';
+import { useBackButton, useTelegram, useTelegramSafeArea, useTelegramTheme } from '@/lib/telegram';
 
 /** True for `/<locale>` (the home page), where there is nothing to go back to. */
 export function isHomePath(pathname: string): boolean {
@@ -28,6 +28,8 @@ export function isCheckoutPath(pathname: string): boolean {
  * - MainButton: hidden by default; pages that use it (product, cart, checkout) claim it
  *   themselves with `useMainButton`.
  * - Theme: mirrors Telegram's theme colours onto the design tokens.
+ * - Safe areas: mirrors `safeAreaInset` / `contentSafeAreaInset` (and their change events) onto
+ *   the CSS variables the shell pads by (see `lib/telegram/safe-area.ts`).
  */
 export function TelegramChrome() {
   const pathname = usePathname();
@@ -37,6 +39,7 @@ export function TelegramChrome() {
   const webApp = telegram.kind === 'telegram' ? telegram.webApp : null;
 
   useTelegramTheme();
+  useTelegramSafeArea();
 
   useBackButton({
     visible: !isHomePath(pathname),

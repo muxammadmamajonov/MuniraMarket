@@ -20,9 +20,9 @@ import { OrderSummary } from './order-summary';
 import { SubmitBar } from './submit-bar';
 
 /** Room under the form for the browser's sticky submit bar (button row + safe-area inset). */
-const BAR_CLEARANCE = 'pb-[calc(6.5rem+env(safe-area-inset-bottom,0px))]';
+const BAR_CLEARANCE = 'pb-[calc(6.5rem+var(--mm-inset-bottom))]';
 /** Same, when the bar also carries a reason line (up to two lines at 320px, plus the gap). */
-const BAR_CLEARANCE_WITH_REASON = 'pb-[calc(9.5rem+env(safe-area-inset-bottom,0px))]';
+const BAR_CLEARANCE_WITH_REASON = 'pb-[calc(9.5rem+var(--mm-inset-bottom))]';
 
 function CheckoutSkeleton({ label }: { label: string }) {
   return (

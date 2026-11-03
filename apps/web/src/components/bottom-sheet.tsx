@@ -179,7 +179,7 @@ function SheetContent({
             <span aria-hidden="true">×</span>
           </button>
         </div>
-        <div className="overflow-y-auto overscroll-contain px-4 pt-3 pb-[calc(1rem+env(safe-area-inset-bottom,0px))]">
+        <div className="overflow-y-auto overscroll-contain px-4 pt-3 pb-[calc(1rem+var(--mm-inset-bottom))]">
           {children}
         </div>
       </div>

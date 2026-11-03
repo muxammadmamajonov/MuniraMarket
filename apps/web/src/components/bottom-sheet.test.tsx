@@ -60,7 +60,7 @@ describe('BottomSheet', () => {
     render(<Harness />);
     fireEvent.click(screen.getByText('trigger'));
     const content = screen.getByLabelText('reason').closest('div.overflow-y-auto');
-    expect(content?.className).toContain('safe-area-inset-bottom');
+    expect(content?.className).toContain('var(--mm-inset-bottom)');
     expect(content?.className).toContain('overscroll-contain');
     expect(screen.getByRole('dialog').className).toContain('max-h-[90dvh]');
   });

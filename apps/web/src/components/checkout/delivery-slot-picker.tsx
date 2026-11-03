@@ -190,7 +190,7 @@ export function DeliverySlotPicker({
             onKeyDown={onTabKeyDown}
             className={
               'relative -mx-4 flex snap-x snap-mandatory gap-2 overflow-x-auto overscroll-x-contain px-4 py-1 ' +
-              'scroll-pl-[max(1rem,env(safe-area-inset-left,0px))] scroll-pr-[max(1rem,env(safe-area-inset-right,0px))] ' +
+              'scroll-pl-[max(1rem,var(--mm-inset-left))] scroll-pr-[max(1rem,var(--mm-inset-right))] ' +
               '[scrollbar-width:thin] transition-opacity duration-150 ease-out motion-reduce:transition-none ' +
               (inert ? 'opacity-60' : '')
             }

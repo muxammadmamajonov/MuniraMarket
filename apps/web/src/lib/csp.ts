@@ -1,3 +1,5 @@
+import { YANDEX_MAPS_API_ORIGIN, YANDEX_MAPS_DATA_ORIGIN } from './maps/config';
+
 /**
  * Content Security Policy for HTML pages, built per request in `src/proxy.ts`.
  *
@@ -6,10 +8,17 @@
  * trusted script loads (for example the Telegram widget) is allowed without a host allow-list.
  * `https://telegram.org` is listed for browsers that ignore `'strict-dynamic'`. There is no
  * `'unsafe-inline'` in `script-src`.
+ *
+ * Yandex Maps hosts are added only when a Maps key is configured (`yandexMaps`): the official API
+ * host in `script-src` (for browsers that ignore `'strict-dynamic'`) and `connect-src`, its data
+ * hosts in `connect-src`, and `blob:` workers, which the API uses to render vector tiles. Tiles
+ * that arrive as images are already covered by `img-src https:`.
  */
 
 export interface CspOptions {
   nonce: string;
+  /** Allow the Yandex Maps JavaScript API (only when a key is configured). */
+  yandexMaps?: boolean;
   /** Adds `'unsafe-eval'` to `script-src`; React's dev tooling needs it. Never in production. */
   isDevelopment?: boolean;
 }
@@ -25,7 +34,11 @@ export function generateNonce(): string {
 // The nonce is interpolated into a response header, so refuse anything that is not base64.
 const NONCE_PATTERN = /^[A-Za-z0-9+/_-]+={0,2}$/;
 
-export function buildContentSecurityPolicy({ nonce, isDevelopment = false }: CspOptions): string {
+export function buildContentSecurityPolicy({
+  nonce,
+  isDevelopment = false,
+  yandexMaps = false,
+}: CspOptions): string {
   if (!NONCE_PATTERN.test(nonce)) throw new Error('CSP nonce must be a base64 string.');
 
   const scriptSrc = [
@@ -33,6 +46,7 @@ export function buildContentSecurityPolicy({ nonce, isDevelopment = false }: Csp
     `'nonce-${nonce}'`,
     "'strict-dynamic'",
     'https://telegram.org',
+    ...(yandexMaps ? [YANDEX_MAPS_API_ORIGIN] : []),
     ...(isDevelopment ? ["'unsafe-eval'"] : []),
   ];
 
@@ -46,7 +60,11 @@ export function buildContentSecurityPolicy({ nonce, isDevelopment = false }: Csp
     ['img-src', ["'self'", 'data:', 'blob:', 'https:']],
     ['font-src', ["'self'"]],
     // The browser only talks to this origin: the API is reached through the same-origin proxy.
-    ['connect-src', ["'self'"]],
+    [
+      'connect-src',
+      ["'self'", ...(yandexMaps ? [YANDEX_MAPS_API_ORIGIN, YANDEX_MAPS_DATA_ORIGIN] : [])],
+    ],
+    ...(yandexMaps ? ([['worker-src', ["'self'", 'blob:']]] as Array<[string, string[]]>) : []),
     // Telegram Login Widget iframe.
     ['frame-src', ['https://oauth.telegram.org']],
     // Telegram Web embeds Mini Apps in an iframe; native clients use webviews (no framing).

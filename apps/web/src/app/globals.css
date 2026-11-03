@@ -85,6 +85,48 @@
   }
 }
 
+/*
+ * Safe-area insets for the app shell. The browser's `env(safe-area-inset-*)` (needs the
+ * `viewport-fit=cover` viewport) is combined with what Telegram reports (`--mm-tg-*`, written by
+ * `lib/telegram/safe-area.ts`; 0 outside the Mini App): in fullscreen the top inset is the status
+ * bar plus Telegram's own Close / "…" row. Fixed and sticky UI pads by these, never by `env()`
+ * directly. `--mm-nav-h` is the mobile bottom navigation's height while it is on screen.
+ */
+:root {
+  --mm-tg-safe-top: 0px;
+  --mm-tg-safe-bottom: 0px;
+  --mm-tg-safe-left: 0px;
+  --mm-tg-safe-right: 0px;
+  --mm-tg-content-top: 0px;
+  --mm-tg-content-bottom: 0px;
+  --mm-tg-content-left: 0px;
+  --mm-tg-content-right: 0px;
+  --mm-inset-top: max(
+    env(safe-area-inset-top, 0px),
+    calc(var(--mm-tg-safe-top) + var(--mm-tg-content-top))
+  );
+  --mm-inset-bottom: max(
+    env(safe-area-inset-bottom, 0px),
+    calc(var(--mm-tg-safe-bottom) + var(--mm-tg-content-bottom))
+  );
+  --mm-inset-left: max(
+    env(safe-area-inset-left, 0px),
+    calc(var(--mm-tg-safe-left) + var(--mm-tg-content-left))
+  );
+  --mm-inset-right: max(
+    env(safe-area-inset-right, 0px),
+    calc(var(--mm-tg-safe-right) + var(--mm-tg-content-right))
+  );
+  --mm-nav-h: 0px;
+}
+
+/* Matches the bottom navigation's `md:hidden`: below 48rem, and only while it is rendered. */
+@media (width < 48rem) {
+  :root:has([data-bottom-nav]) {
+    --mm-nav-h: 3.5rem;
+  }
+}
+
 @layer base {
   html {
     -webkit-text-size-adjust: 100%;
