@@ -144,6 +144,10 @@ test('the home page fits a 320px phone: no sideways scroll, two equal columns', 
   page,
 }) => {
   await page.route(/^https:\/\/([^/]+\.)?telegram\.org\//, (route) => route.abort());
+  // Signed out without spending the API's shared session-read budget.
+  await page.route('**/api/v1/auth/session', (route) =>
+    route.fulfill({ status: 401, json: { error: { code: 'not_authenticated', message: '' } } }),
+  );
   await page.setViewportSize({ width: 320, height: 640 });
   await page.goto('/uz');
   const tiles = page.getByTestId('product-tile');

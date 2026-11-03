@@ -33,8 +33,15 @@ async function shot(page: Page, name: string): Promise<void> {
   if (dir !== undefined && dir !== '') await page.screenshot({ path: `${dir}/${name}.png` });
 }
 
+/**
+ * Signed out, without spending the Core API's session-read budget (60 a minute per IP, shared by
+ * the whole run): `/auth/session` gets the API's own "no session" answer locally.
+ */
 async function browseAnonymously(page: Page): Promise<void> {
   await page.route(/^https:\/\/([^/]+\.)?telegram\.org\//, (route) => route.abort());
+  await page.route('**/api/v1/auth/session', (route) =>
+    route.fulfill({ status: 401, json: { error: { code: 'not_authenticated', message: '' } } }),
+  );
 }
 
 async function expectNoHorizontalScroll(page: Page): Promise<void> {
