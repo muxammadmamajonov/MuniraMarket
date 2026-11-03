@@ -87,11 +87,16 @@ class CatalogRepository(Protocol):
         *,
         category_slug: str | None,
         query: str | None,
+        in_stock_only: bool = False,
         sort: ProductSort,
         page: int,
         page_size: int,
     ) -> ProductPageRecord:
-        """Raises ``CategoryNotFoundError`` for an unknown or hidden ``category_slug``."""
+        """Raises ``CategoryNotFoundError`` for an unknown or hidden ``category_slug``.
+
+        ``in_stock_only`` keeps untracked products (``stock_quantity IS NULL``) and tracked ones
+        with stock left, the same rule as ``is_in_stock``.
+        """
         ...
 
     async def get_product_by_slug(self, slug: str) -> ProductDetailRecord | None: ...
@@ -265,6 +270,7 @@ class SqlAlchemyCatalogRepository:
         *,
         category_slug: str | None,
         query: str | None,
+        in_stock_only: bool = False,
         sort: ProductSort,
         page: int,
         page_size: int,
@@ -295,6 +301,8 @@ class SqlAlchemyCatalogRepository:
 
         if query is not None:
             conditions.append(_search_filter(query))
+        if in_stock_only:
+            conditions.append(or_(Product.stock_quantity.is_(None), Product.stock_quantity > 0))
 
         total = (
             await self._session.execute(

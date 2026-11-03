@@ -3,7 +3,13 @@ import { ApiRequestError } from './errors';
 
 const incoming = vi.hoisted(() => ({ headers: new Headers() }));
 vi.mock('next/headers', () => ({ headers: async () => incoming.headers }));
-import { fetchCategories, fetchProduct, fetchProducts, productQueryString } from './server';
+import {
+  fetchCategories,
+  fetchDeliveryZones,
+  fetchProduct,
+  fetchProducts,
+  productQueryString,
+} from './server';
 
 const fetchMock = vi.fn<typeof fetch>();
 
@@ -27,8 +33,32 @@ describe('productQueryString', () => {
     );
   });
 
+  it('sends in_stock only when the filter is on', () => {
+    expect(productQueryString({ inStock: false })).toBe('');
+    expect(productQueryString({ category: 'demo', inStock: true })).toBe(
+      '?category=demo&in_stock=true',
+    );
+  });
+
   it('encodes free text', () => {
     expect(productQueryString({ q: 'ol ma&x' })).toBe('?q=ol+ma%26x');
+  });
+});
+
+describe('fetchDeliveryZones', () => {
+  it('returns the active zones', async () => {
+    fetchMock.mockResolvedValue(
+      Response.json({ items: [{ id: 'z1' }], timezone: 'Asia/Tashkent' }),
+    );
+    await expect(fetchDeliveryZones()).resolves.toEqual([{ id: 'z1' }]);
+    expect(String(fetchMock.mock.calls[0]?.[0])).toBe('http://api.test:8000/api/v1/delivery/zones');
+  });
+
+  it('degrades to null when the API is unreachable or fails', async () => {
+    fetchMock.mockRejectedValueOnce(new TypeError('fetch failed'));
+    await expect(fetchDeliveryZones()).resolves.toBeNull();
+    fetchMock.mockResolvedValueOnce(new Response('nope', { status: 503 }));
+    await expect(fetchDeliveryZones()).resolves.toBeNull();
   });
 });
 

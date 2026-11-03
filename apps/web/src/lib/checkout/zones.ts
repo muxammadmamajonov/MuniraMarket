@@ -21,6 +21,19 @@ export function zoneForDistrict(
   return zones.find((zone) => zone.districts.some((district) => district.code === code)) ?? null;
 }
 
+/** The district with `code` and the active zone serving it, or `null` when no zone serves it. */
+export function findServedDistrict(
+  zones: readonly DeliveryZone[],
+  code: DistrictCode | null,
+): { zone: DeliveryZone; district: District } | null {
+  if (code === null) return null;
+  for (const zone of zones) {
+    const district = zone.districts.find((candidate) => candidate.code === code);
+    if (district !== undefined) return { zone, district };
+  }
+  return null;
+}
+
 export function zoneName(zone: Pick<DeliveryZone, 'name_uz' | 'name_ru'>, locale: Locale): string {
   return locale === 'ru' ? zone.name_ru : zone.name_uz;
 }

@@ -103,6 +103,23 @@ test('add from the home grid, step the quantity, then continue to the cart', asy
       .getByRole('status'),
   ).toHaveText('2', { timeout: 15_000 });
 
+  // Delivery district picked on the storefront carries into checkout, where the server prices it
+  // (checkout stays the authority; this reuses the sign-in above to stay inside the login limit).
+  const district = page.getByTestId('delivery-district').filter({ visible: true });
+  await district.getByRole('button', { name: 'Tumanni tanlash' }).click();
+  const sheet = page.getByRole('dialog', { name: 'Yetkazish tumanini tanlang' });
+  await sheet.getByText('Yunusobod', { exact: true }).click();
+  await sheet.getByRole('button', { name: 'Tanlash' }).click();
+  await expect(district).toHaveAttribute('data-district', 'yunusobod');
+  const quote = page.waitForRequest(
+    (request) => request.url().endsWith('/api/v1/checkout/quote') && request.method() === 'POST',
+  );
+  await page.goto('/uz/checkout');
+  await expect(page.getByRole('combobox', { name: 'Tuman' })).toHaveText('Yunusobod', {
+    timeout: 15_000,
+  });
+  expect((await quote).postDataJSON()).toEqual({ district: 'yunusobod' });
+
   await emptyCart(page);
   expect(await cspViolations()).toEqual([]);
 });

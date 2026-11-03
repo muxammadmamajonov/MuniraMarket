@@ -2,6 +2,8 @@ import { isLocale } from '@muniramarket/contracts';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { CartBar } from '@/components/cart-bar';
+import { CatalogToolbar } from '@/components/catalog-toolbar';
+import { CategoryRail } from '@/components/category-rail';
 import { EmptyPanel } from '@/components/empty-panel';
 import { SearchIcon } from '@/components/icons';
 import { PageContainer } from '@/components/page-container';
@@ -9,12 +11,11 @@ import { Pagination } from '@/components/pagination';
 import { ProductGrid } from '@/components/product-grid';
 import { SearchForm } from '@/components/search-form';
 import { SessionNotice } from '@/components/session-notice';
-import { SortSelect } from '@/components/sort-select';
 import { LINK_BUTTON_PRIMARY } from '@/components/ui-classes';
 import { getDictionary } from '@/i18n';
 import { formatMessage } from '@/i18n/format';
-import { fetchProducts } from '@/lib/api/server';
-import { firstParam, parsePage, parseSort } from '@/lib/catalog';
+import { fetchCategories, fetchProducts } from '@/lib/api/server';
+import { firstParam, listingHref, parseInStock, parsePage, parseSort } from '@/lib/catalog';
 
 /** The API accepts 2..100 characters. */
 const MIN_QUERY = 2;
@@ -29,16 +30,19 @@ export default async function SearchPage({ params, searchParams }: PageProps<'/[
   const q = (firstParam(query['q']) ?? '').trim().slice(0, MAX_QUERY);
   const sort = parseSort(query['sort']);
   const page = parsePage(query['page']);
+  const inStock = parseInStock(query['stock']);
   const searched = q.length >= MIN_QUERY;
-  const results = searched ? await fetchProducts({ q, sort, page }) : null;
+  const [results, categories] = await Promise.all([
+    searched ? fetchProducts({ q, sort, page, inStock }) : null,
+    // Categories are a way out of an empty or too-short search; never fatal for the page.
+    fetchCategories().catch(() => []),
+  ]);
 
   const base = `/${locale}/search`;
-  const hrefFor = (nextPage: number) => {
-    const search = new URLSearchParams({ q });
-    if (sort !== 'newest') search.set('sort', sort);
-    if (nextPage > 1) search.set('page', String(nextPage));
-    return `${base}?${search.toString()}`;
-  };
+  const hrefFor = (nextPage: number) => listingHref(base, { sort, inStock, page: nextPage }, { q });
+  const browse = (
+    <CategoryRail categories={categories} locale={locale} label={dict.home.categoriesHeading} />
+  );
 
   return (
     <main className="flex-1">
@@ -47,32 +51,47 @@ export default async function SearchPage({ params, searchParams }: PageProps<'/[
         <SearchForm locale={locale} dict={dict} defaultValue={q} />
 
         {results === null ? (
-          <EmptyPanel
-            icon={<SearchIcon width={28} height={28} />}
-            title={dict.search.heading}
-            description={formatMessage(dict.search.tooShort, { min: MIN_QUERY })}
-          />
+          <>
+            <EmptyPanel
+              icon={<SearchIcon width={28} height={28} />}
+              title={dict.search.heading}
+              description={formatMessage(dict.search.tooShort, { min: MIN_QUERY })}
+            />
+            {browse}
+          </>
         ) : (
           <>
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <p className="text-sm text-muted-foreground">
-                {formatMessage(dict.search.resultsFor, { query: q })}
-                {' · '}
-                {formatMessage(dict.catalog.productsCount, { count: results.total })}
-              </p>
-              <SortSelect value={sort} basePath={base} params={{ q }} />
-            </div>
+            <CatalogToolbar
+              total={results.total}
+              sort={sort}
+              inStock={inStock}
+              basePath={base}
+              params={{ q }}
+              lead={formatMessage(dict.search.resultsFor, { query: q })}
+            />
             {results.items.length === 0 ? (
-              <EmptyPanel
-                icon={<SearchIcon width={28} height={28} />}
-                title={dict.search.noResults}
-                description={dict.search.noResultsHint}
-                action={
-                  <Link href={`/${locale}`} className={LINK_BUTTON_PRIMARY}>
-                    {dict.errors.backHome}
-                  </Link>
-                }
-              />
+              <>
+                <EmptyPanel
+                  icon={<SearchIcon width={28} height={28} />}
+                  title={inStock ? dict.catalog.noneInStock : dict.search.noResults}
+                  {...(inStock ? {} : { description: dict.search.noResultsHint })}
+                  action={
+                    inStock ? (
+                      <Link
+                        href={listingHref(base, { sort, inStock: false }, { q })}
+                        className={LINK_BUTTON_PRIMARY}
+                      >
+                        {dict.catalog.clearFilter}
+                      </Link>
+                    ) : (
+                      <Link href={`/${locale}`} className={LINK_BUTTON_PRIMARY}>
+                        {dict.errors.backHome}
+                      </Link>
+                    )
+                  }
+                />
+                {inStock ? null : browse}
+              </>
             ) : (
               <>
                 <SessionNotice />

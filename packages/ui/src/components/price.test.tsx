@@ -9,6 +9,15 @@ describe('Price', () => {
     expect(screen.queryByText(/./, { selector: 'del' })).toBeNull();
   });
 
+  it('offers a single line break, before the currency, without changing the text', () => {
+    const { container } = render(<Price amount={9_999_999_000} locale="uz" data-testid="p" />);
+    expect(container.querySelectorAll('wbr')).toHaveLength(1);
+    expect(screen.getByTestId('p').textContent).toBe('9\u00A0999\u00A0999\u00A0000\u00A0so\u2018m');
+    const wbr = container.querySelector('wbr');
+    // After the no-break space, so a wrapped currency starts flush, not with a space.
+    expect(wbr?.nextSibling?.textContent).toBe('so\u2018m');
+  });
+
   it('renders ru', () => {
     render(<Price amount={5000} locale="ru" data-testid="p" />);
     expect(screen.getByTestId('p').textContent).toBe('5\u00A0000\u00A0\u0441\u0443\u043C');
