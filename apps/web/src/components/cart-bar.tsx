@@ -49,7 +49,7 @@ export function CartBar() {
       <div aria-hidden="true" className="h-20" />
       <div
         data-testid="cart-bar"
-        className="pointer-events-none fixed inset-x-0 bottom-0 z-30 pb-[env(safe-area-inset-bottom,0px)]"
+        className="pointer-events-none fixed inset-x-0 bottom-0 z-30 pb-[calc(var(--mm-nav-h)+var(--mm-inset-bottom))] pl-(--mm-inset-left) pr-(--mm-inset-right)"
       >
         <div className="mx-auto w-full max-w-5xl px-4 pb-3 sm:px-6">
           <Link

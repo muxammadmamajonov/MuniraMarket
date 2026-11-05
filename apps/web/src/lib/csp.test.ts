@@ -70,4 +70,22 @@ describe('buildContentSecurityPolicy', () => {
     expect(() => buildContentSecurityPolicy({ nonce: '' })).toThrow();
     expect(() => buildContentSecurityPolicy({ nonce: 'a\r\nb' })).toThrow();
   });
+
+  it('allows no Yandex host unless a Maps key is configured', () => {
+    expect(production).not.toContain('yandex');
+    expect(production).not.toContain('worker-src');
+  });
+
+  it('with a Maps key, allows only the official Yandex Maps hosts', () => {
+    const withMaps = buildContentSecurityPolicy({ nonce, yandexMaps: true });
+    expect(directive(withMaps, 'script-src')).toContain('https://api-maps.yandex.ru');
+    expect(directive(withMaps, 'connect-src')).toEqual([
+      "'self'",
+      'https://api-maps.yandex.ru',
+      'https://*.maps.yandex.net',
+    ]);
+    expect(directive(withMaps, 'worker-src')).toEqual(["'self'", 'blob:']);
+    expect(directive(withMaps, 'frame-src')).toEqual(['https://oauth.telegram.org']);
+    expect(directive(withMaps, 'script-src')).not.toContain("'unsafe-inline'");
+  });
 });

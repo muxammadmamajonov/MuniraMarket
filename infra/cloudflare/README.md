@@ -114,3 +114,9 @@ Cloudflare sets `CF-Connecting-IP`; the apps forward it as `X-Forwarded-For`
 writes `X-Forwarded-For` itself. `FORWARDED_ALLOW_IPS` on the API trusts the private ranges the
 platform's container proxy connects from; after the first staging deploy, narrow it to the
 observed peer range.
+
+The storefront's optional map step reads `YANDEX_MAPS_API_KEY` (a Yandex developer key, UUID)
+at runtime. It is deliberately not bound in `apps/web/cloudflare.config.ts` yet: unset, the map
+picker shows its own "map unavailable" state, nothing loads from Yandex and the CSP lists no
+Yandex host. Bind it only after the paid-licence and privacy decisions, restricted by HTTP
+Referer to the shop's domains in the Yandex console (the key is visible to browsers by design).

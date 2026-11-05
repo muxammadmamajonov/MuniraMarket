@@ -12,7 +12,7 @@ import { buildSignedInitData, type FakeTelegramUser } from './telegram-init-data
 
 /**
  * Home page as a shopping surface: search, category rail, product grid with cart controls on the
- * cards, the header cart badge and the Telegram MainButton that replaces the web "go to cart" bar
+ * cards, the bottom tab bar's cart badge (phones) and the Telegram MainButton that replaces the web "go to cart" bar
  * inside the Mini App. Products are picked from the grid itself (first purchasable card), never by
  * seed name, so it survives catalog changes; only the price is read back from the API by slug.
  *
@@ -58,11 +58,11 @@ test('add from the home grid, step the quantity, then continue to the cart', asy
   await add.click();
   const stepper = tile.getByRole('group', { name: `Miqdor: ${name}` });
   await expect(stepper.getByRole('status')).toHaveText('1');
-  await expect(page.getByTestId('cart-count')).toHaveText('1');
+  await expect(page.getByTestId('bottom-nav-cart-count')).toHaveText('1');
 
   await stepper.getByRole('button', { name: `Ko‘paytirish: ${name}` }).click();
   await expect(stepper.getByRole('status')).toHaveText('2');
-  await expect(page.getByTestId('cart-count')).toHaveText('2');
+  await expect(page.getByTestId('bottom-nav-cart-count')).toHaveText('2');
 
   // Inside Telegram the native MainButton is the "go to cart" control (the web bar is not drawn).
   await expect(page.getByTestId('cart-bar')).toHaveCount(0);
@@ -75,7 +75,7 @@ test('add from the home grid, step the quantity, then continue to the cart', asy
   await expect(stepper.getByRole('status')).toHaveText('1');
   await stepper.getByRole('button', { name: `O‘chirish: ${name}` }).click();
   await expect(add).toBeVisible();
-  await expect(page.getByTestId('cart-count')).toHaveCount(0);
+  await expect(page.getByTestId('bottom-nav-cart-count')).toHaveCount(0);
   await add.click();
   await expect(stepper.getByRole('status')).toHaveText('1');
   await stepper.getByRole('button', { name: `Ko‘paytirish: ${name}` }).click();
@@ -91,8 +91,10 @@ test('add from the home grid, step the quantity, then continue to the cart', asy
   await expect(line).toBeVisible();
   await expect(line.getByRole('status')).toHaveText('2');
   await expect(page.getByTestId('cart-total')).toHaveText(uzs(2 * apiProduct.price_uzs));
-  // The header badge agrees with the cart page.
-  await expect(page.getByTestId('cart-count')).toHaveText('2');
+  // The tab bar's badge agrees with the cart page, and the Cart tab is the current one.
+  await expect(page.getByTestId('bottom-nav-cart-count')).toHaveText('2');
+  await expect(page.getByTestId('bottom-nav-cart')).toHaveAttribute('aria-current', 'page');
+  await expect(page.getByTestId('bottom-nav-cart')).toHaveAccessibleName('Savat: 2 ta mahsulot');
 
   // Back on the home grid the card already shows the stepper at 2.
   await page.goto('/uz');
@@ -106,8 +108,8 @@ test('add from the home grid, step the quantity, then continue to the cart', asy
   // Delivery district picked on the storefront carries into checkout, where the server prices it
   // (checkout stays the authority; this reuses the sign-in above to stay inside the login limit).
   const district = page.getByTestId('delivery-district').filter({ visible: true });
-  await district.getByRole('button', { name: 'Tumanni tanlash' }).click();
-  const sheet = page.getByRole('dialog', { name: 'Yetkazish tumanini tanlang' });
+  await district.getByRole('button', { name: 'Yetkazib berish manzilini tanlang' }).click();
+  const sheet = page.getByRole('dialog', { name: 'Yetkazib berish manzili' });
   await sheet.getByText('Yunusobod', { exact: true }).click();
   await sheet.getByRole('button', { name: 'Tanlash' }).click();
   await expect(district).toHaveAttribute('data-district', 'yunusobod');
@@ -119,6 +121,8 @@ test('add from the home grid, step the quantity, then continue to the cart', asy
     timeout: 15_000,
   });
   expect((await quote).postDataJSON()).toEqual({ district: 'yunusobod' });
+  // Checkout is a focused flow: no tab bar competing with the MainButton / submit control.
+  await expect(page.getByTestId('bottom-nav')).toHaveCount(0);
 
   await emptyCart(page);
   expect(await cspViolations()).toEqual([]);
@@ -140,6 +144,10 @@ test('the home page fits a 320px phone: no sideways scroll, two equal columns', 
   page,
 }) => {
   await page.route(/^https:\/\/([^/]+\.)?telegram\.org\//, (route) => route.abort());
+  // Signed out without spending the API's shared session-read budget.
+  await page.route('**/api/v1/auth/session', (route) =>
+    route.fulfill({ status: 401, json: { error: { code: 'not_authenticated', message: '' } } }),
+  );
   await page.setViewportSize({ width: 320, height: 640 });
   await page.goto('/uz');
   const tiles = page.getByTestId('product-tile');
@@ -161,17 +169,20 @@ test('the home page fits a 320px phone: no sideways scroll, two equal columns', 
   expect((second?.x ?? 0) > (first?.x ?? 0) + (first?.width ?? 0) - 1).toBe(true);
   expect(Math.abs((first?.width ?? 0) - (second?.width ?? 1))).toBeLessThan(1);
 
-  // The header keeps its controls at least 44px square.
-  for (const name of ['Buyurtmalarim', /^Savat/]) {
-    const box = await page.getByRole('banner').getByRole('link', { name }).boundingBox();
+  // On phones the tab bar carries orders, cart and profile; every tab is at least 44px square.
+  const bar = page.getByTestId('bottom-nav');
+  for (const name of ['Bosh sahifa', 'Katalog', /^Savat/, 'Profil']) {
+    const box = await bar.getByRole('link', { name }).boundingBox();
     expect(box?.width ?? 0).toBeGreaterThanOrEqual(44);
     expect(box?.height ?? 0).toBeGreaterThanOrEqual(44);
   }
-  // Signed out, the wordmark and the header controls share one row (no wrapped second row).
-  const wordmark = await page.getByRole('link', { name: /^MuniraMarket/ }).boundingBox();
-  const cart = await page
+  // The header keeps the wordmark and the language toggle on one row, the toggle 44px square.
+  const language = await page
     .getByRole('banner')
-    .getByRole('link', { name: /^Savat/ })
+    .getByRole('link', { name: 'Русский' })
     .boundingBox();
-  expect(Math.abs((wordmark?.y ?? 0) - (cart?.y ?? 100))).toBeLessThan(4);
+  expect(language?.width ?? 0).toBeGreaterThanOrEqual(44);
+  expect(language?.height ?? 0).toBeGreaterThanOrEqual(44);
+  const wordmark = await page.getByRole('link', { name: /^MuniraMarket/ }).boundingBox();
+  expect(Math.abs((wordmark?.y ?? 0) - (language?.y ?? 100))).toBeLessThan(8);
 });

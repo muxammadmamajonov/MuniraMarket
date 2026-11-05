@@ -126,7 +126,7 @@ describe('home page', () => {
     api.fetchProducts.mockResolvedValue(page([]));
     await renderHome('ru');
     expect(screen.getByTestId('empty-panel')).toHaveTextContent('Каталог пока пуст');
-    expect(screen.getByTestId('delivery-district')).toHaveTextContent('Район доставки');
+    expect(screen.getByTestId('delivery-district')).toHaveTextContent('Выберите адрес доставки');
   });
 
   it('still renders the catalog when the delivery zones cannot be loaded', async () => {

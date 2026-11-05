@@ -91,3 +91,57 @@ export const CheckIcon = (props: IconProps) => (
     <path d="m5 12.5 4.5 4.5L19 7.5" />
   </Icon>
 );
+
+export const ChevronLeftIcon = (props: IconProps) => (
+  <Icon {...props}>
+    <path d="m14.5 6-6 6 6 6" />
+  </Icon>
+);
+
+export const HomeIcon = (props: IconProps) => (
+  <Icon {...props}>
+    <path d="M4 10.5 12 4l8 6.5" />
+    <path d="M6 9v9.5A1.5 1.5 0 0 0 7.5 20H10v-5.5h4V20h2.5a1.5 1.5 0 0 0 1.5-1.5V9" />
+  </Icon>
+);
+
+/** Catalog: four rounded tiles. */
+export const GridIcon = (props: IconProps) => (
+  <Icon {...props}>
+    <rect x="4" y="4" width="6.5" height="6.5" rx="1.8" />
+    <rect x="13.5" y="4" width="6.5" height="6.5" rx="1.8" />
+    <rect x="4" y="13.5" width="6.5" height="6.5" rx="1.8" />
+    <rect x="13.5" y="13.5" width="6.5" height="6.5" rx="1.8" />
+  </Icon>
+);
+
+export const UserIcon = (props: IconProps) => (
+  <Icon {...props}>
+    <circle cx="12" cy="8.5" r="3.8" />
+    <path d="M4.8 20a7.2 7.2 0 0 1 14.4 0" />
+  </Icon>
+);
+
+export const GlobeIcon = (props: IconProps) => (
+  <Icon {...props}>
+    <circle cx="12" cy="12" r="8.5" />
+    <path d="M3.5 12h17M12 3.5c2.3 2.4 3.4 5.2 3.4 8.5s-1.1 6.1-3.4 8.5c-2.3-2.4-3.4-5.2-3.4-8.5S9.7 5.9 12 3.5z" />
+  </Icon>
+);
+
+/** Folded paper map, for "show on the map". */
+export const MapIcon = (props: IconProps) => (
+  <Icon {...props}>
+    <path d="m3.5 6.5 5.5-2 6 2 5.5-2v13l-5.5 2-6-2-5.5 2z" />
+    <path d="M9 4.5v13M15 6.5v13" />
+  </Icon>
+);
+
+/** Crosshair, for "my location". */
+export const LocateIcon = (props: IconProps) => (
+  <Icon {...props}>
+    <circle cx="12" cy="12" r="5.5" />
+    <circle cx="12" cy="12" r="1.5" />
+    <path d="M12 2.5v4M12 17.5v4M2.5 12h4M17.5 12h4" />
+  </Icon>
+);

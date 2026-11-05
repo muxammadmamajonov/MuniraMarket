@@ -989,9 +989,9 @@ describe('CheckoutView: submit control', () => {
     const bar = screen.getByTestId('submit-bar');
     expect(bar.className).toContain('fixed');
     expect(bar.className).toContain('bottom-0');
-    expect(bar.className).toContain('pb-[env(safe-area-inset-bottom');
+    expect(bar.className).toContain('pb-(--mm-inset-bottom)');
     expect(screen.getByRole('form', { name: 'Buyurtmani rasmiylashtirish' }).className).toContain(
-      'safe-area-inset-bottom',
+      'var(--mm-inset-bottom)',
     );
     expect(submitButton()).toHaveTextContent('Buyurtma berish');
     expect(within(bar).queryByTestId('bar-total')).toBeNull();

@@ -3,12 +3,15 @@ import type { Metadata, Viewport } from 'next';
 import { notFound } from 'next/navigation';
 import { connection } from 'next/server';
 import Script from 'next/script';
+import { BottomNav } from '@/components/bottom-nav';
 import { OfflineBanner } from '@/components/offline-banner';
 import { SiteHeader } from '@/components/site-header';
 import { TelegramChrome } from '@/components/telegram-chrome';
 import { getDictionary } from '@/i18n';
 import { LocaleProvider } from '@/i18n/context';
 import { CartProvider } from '@/lib/cart';
+import { readYandexMapsApiKey } from '@/lib/maps/config';
+import { MapsConfigProvider } from '@/lib/maps/use-yandex-maps';
 import { SessionProvider } from '@/lib/session';
 import { TELEGRAM_WEB_APP_SCRIPT_URL, TelegramProvider } from '@/lib/telegram';
 import '../globals.css';
@@ -23,7 +26,8 @@ export function generateStaticParams() {
 export const viewport: Viewport = {
   width: 'device-width',
   initialScale: 1,
-  // Lets `env(safe-area-inset-*)` work (notch / home indicator), including in the Mini App.
+  // Lets `env(safe-area-inset-*)` work (notch / home indicator), including in the Mini App; the
+  // shell pads by the `--mm-inset-*` variables built from it (globals.css).
   viewportFit: 'cover',
   // Keep bottom controls visible when the phone keyboard opens.
   interactiveWidget: 'resizes-content',
@@ -58,6 +62,9 @@ export default async function RootLayout({ children, params }: LayoutProps<'/[lo
   const { locale } = await params;
   if (!isLocale(locale)) notFound();
   const dict = getDictionary(locale);
+  // Read per request like the other runtime settings; `null` (unset or malformed) keeps the map
+  // picker in its custom "map unavailable" state and nothing is ever loaded from Yandex.
+  const mapsApiKey = readYandexMapsApiKey();
 
   return (
     <html lang={locale}>
@@ -75,13 +82,19 @@ export default async function RootLayout({ children, params }: LayoutProps<'/[lo
             <SessionProvider>
               <TelegramChrome />
               <CartProvider>
-                <div className="flex min-h-dvh flex-col pb-[env(safe-area-inset-bottom)]">
-                  {/* Below the header: the header pads itself by the top safe-area inset, so a banner
-                      above it would sit under the notch / status bar in fullscreen and installed modes. */}
-                  <SiteHeader locale={locale} dict={dict} />
-                  <OfflineBanner />
-                  {children}
-                </div>
+                <MapsConfigProvider apiKey={mapsApiKey}>
+                  {/* Bottom padding: the home indicator / Telegram's bottom inset, plus the mobile
+                      tab bar while it is shown (`--mm-nav-h`, see globals.css). */}
+                  <div className="flex min-h-dvh flex-col pb-[calc(var(--mm-inset-bottom)+var(--mm-nav-h))]">
+                    {/* Below the header: the header pads itself by the top safe-area inset, so a
+                        banner above it would sit under the notch / status bar in fullscreen and
+                        installed modes. */}
+                    <SiteHeader locale={locale} dict={dict} />
+                    <OfflineBanner />
+                    {children}
+                  </div>
+                  <BottomNav />
+                </MapsConfigProvider>
               </CartProvider>
             </SessionProvider>
           </TelegramProvider>
