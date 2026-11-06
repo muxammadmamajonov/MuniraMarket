@@ -316,3 +316,46 @@ describe('notification outbox calls', () => {
     }
   });
 });
+describe('staff chat connect', () => {
+  const GROUP_ID = -1001234567890;
+
+  it('connectStaffChat posts the group with the sender as the signed actor', async () => {
+    const fetch = createFakeFetch(() => ({ body: '{"connected":true}' }));
+    const client = createCoreApiClient({ fetch, config: config(), ...fixed });
+    await expect(
+      client.connectStaffChat({ actorTelegramUserId: 42, chatId: GROUP_ID, chatType: 'group' }),
+    ).resolves.toEqual({ connected: true });
+    const [call] = fetch.calls;
+    expect(call.url).toBe('https://core.example.test/api/v1/internal/telegram/staff-chat/connect');
+    expect(call.init.method).toBe('POST');
+    expect(call.init.headers['X-MM-Actor']).toBe('tg:42');
+    expect(new TextDecoder().decode(call.init.body)).toBe(
+      `{"chat_id":${GROUP_ID},"chat_type":"group"}`,
+    );
+    expect(verifyWire(call)).toBe(true);
+  });
+
+  it('surfaces 403 as CoreApiError with status 403', async () => {
+    const fetch = createFakeFetch(() => ({ status: 403, body: '{}' }));
+    const client = createCoreApiClient({ fetch, config: config(), ...fixed });
+    const error = await client
+      .connectStaffChat({ actorTelegramUserId: 42, chatId: GROUP_ID, chatType: 'supergroup' })
+      .catch((e) => e);
+    expect(error).toBeInstanceOf(CoreApiError);
+    expect(error.status).toBe(403);
+  });
+
+  it.each([
+    [{ actorTelegramUserId: 0, chatId: GROUP_ID, chatType: 'group' }],
+    [{ actorTelegramUserId: 42, chatId: 555, chatType: 'group' }],
+    [{ actorTelegramUserId: 42, chatId: 0, chatType: 'group' }],
+    [{ actorTelegramUserId: 42, chatId: -(10 ** 16), chatType: 'group' }],
+    [{ actorTelegramUserId: 42, chatId: GROUP_ID, chatType: 'private' }],
+    [{ actorTelegramUserId: 42, chatId: GROUP_ID, chatType: 'channel' }],
+  ])('validates %j before any request', async (input) => {
+    const fetch = createFakeFetch();
+    const client = createCoreApiClient({ fetch, config: config(), ...fixed });
+    await expect(client.connectStaffChat(input)).rejects.toThrow(TypeError);
+    expect(fetch.calls).toHaveLength(0);
+  });
+});

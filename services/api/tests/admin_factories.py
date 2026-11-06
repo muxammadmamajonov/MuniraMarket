@@ -238,7 +238,8 @@ async def widget_session(app: FastAPI, user: UserRecord) -> StaffSession:
     issued = await app.state.session_manager.create(
         user_id=user.id,
         telegram_user_id=user.telegram_user_id,
-        auth_method="telegram_login_widget",
+        auth_method="telegram_oidc",
+        entrance="admin",
     )
     cookie = {"Cookie": f"{SECURE_COOKIE}={issued.token}"}
     return StaffSession(

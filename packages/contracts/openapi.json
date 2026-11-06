@@ -857,12 +857,12 @@
       },
       "AuthConfigResponse": {
         "properties": {
-          "telegram_login_widget": {
-            "$ref": "#/components/schemas/LoginWidgetConfig"
+          "telegram_oidc": {
+            "$ref": "#/components/schemas/OidcConfig"
           }
         },
         "required": [
-          "telegram_login_widget"
+          "telegram_oidc"
         ],
         "title": "AuthConfigResponse",
         "type": "object"
@@ -1351,6 +1351,19 @@
           "lease_expires_at"
         ],
         "title": "ClaimResponse",
+        "type": "object"
+      },
+      "ConnectResponse": {
+        "properties": {
+          "connected": {
+            "title": "Connected",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "connected"
+        ],
+        "title": "ConnectResponse",
         "type": "object"
       },
       "CreateOrderRequest": {
@@ -2151,101 +2164,49 @@
         "title": "Language",
         "type": "string"
       },
-      "LoginWidgetConfig": {
+      "OidcConfig": {
         "properties": {
-          "bot_username": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Bot Username"
-          },
           "enabled": {
             "title": "Enabled",
             "type": "boolean"
           }
         },
         "required": [
-          "enabled",
-          "bot_username"
+          "enabled"
         ],
-        "title": "LoginWidgetConfig",
+        "title": "OidcConfig",
         "type": "object"
       },
-      "LoginWidgetRequest": {
+      "OidcStartRequest": {
         "additionalProperties": false,
-        "description": "Fields of the Telegram Login Widget callback, passed through unchanged.\n\nUnknown fields are rejected: they would otherwise be silently included in (or excluded from)\nthe signed data-check-string.",
         "properties": {
-          "auth_date": {
-            "exclusiveMinimum": 0.0,
-            "title": "Auth Date",
-            "type": "integer"
-          },
-          "first_name": {
-            "maxLength": 255,
-            "minLength": 1,
-            "title": "First Name",
+          "return_to": {
+            "anyOf": [
+              {
+                "maxLength": 512,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Return To"
+          }
+        },
+        "title": "OidcStartRequest",
+        "type": "object"
+      },
+      "OidcStartResponse": {
+        "properties": {
+          "authorization_url": {
+            "title": "Authorization Url",
             "type": "string"
-          },
-          "hash": {
-            "maxLength": 64,
-            "minLength": 64,
-            "title": "Hash",
-            "type": "string"
-          },
-          "id": {
-            "exclusiveMinimum": 0.0,
-            "title": "Id",
-            "type": "integer"
-          },
-          "last_name": {
-            "anyOf": [
-              {
-                "maxLength": 255,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Last Name"
-          },
-          "photo_url": {
-            "anyOf": [
-              {
-                "maxLength": 2048,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Photo Url"
-          },
-          "username": {
-            "anyOf": [
-              {
-                "maxLength": 64,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Username"
           }
         },
         "required": [
-          "id",
-          "first_name",
-          "auth_date",
-          "hash"
+          "authorization_url"
         ],
-        "title": "LoginWidgetRequest",
+        "title": "OidcStartResponse",
         "type": "object"
       },
       "OrderAddress": {
@@ -6832,7 +6793,7 @@
     },
     "/api/v1/auth/config": {
       "get": {
-        "description": "Which sign-in methods the website may offer.",
+        "description": "Which browser sign-in methods this origin may offer.",
         "operationId": "auth_config_api_v1_auth_config_get",
         "responses": {
           "200": {
@@ -7041,15 +7002,76 @@
         ]
       }
     },
-    "/api/v1/auth/telegram/login-widget": {
+    "/api/v1/auth/telegram/oidc/callback": {
+      "get": {
+        "description": "Telegram redirects here. Always answers ``303`` to a same-origin path.",
+        "operationId": "finish_oidc_login_api_v1_auth_telegram_oidc_callback_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "code",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 1024,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Code"
+            }
+          },
+          {
+            "in": "query",
+            "name": "state",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 64,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "State"
+            }
+          }
+        ],
+        "responses": {
+          "303": {
+            "description": "Back to the app (signed in) or to its sign-in page"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Finish Oidc Login",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/v1/auth/telegram/oidc/start": {
       "post": {
-        "description": "Verify a Telegram Login Widget payload (website) and start a cookie session.",
-        "operationId": "sign_in_with_login_widget_api_v1_auth_telegram_login_widget_post",
+        "description": "Begin a Telegram sign-in: returns the authorization URL the browser must navigate to.\n\nSets a short-lived binding cookie; only the browser holding it can complete the login.",
+        "operationId": "start_oidc_login_api_v1_auth_telegram_oidc_start_post",
         "requestBody": {
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/LoginWidgetRequest"
+                "$ref": "#/components/schemas/OidcStartRequest"
               }
             }
           },
@@ -7060,21 +7082,11 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/SessionResponse"
+                  "$ref": "#/components/schemas/OidcStartResponse"
                 }
               }
             },
             "description": "Successful Response"
-          },
-          "401": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            },
-            "description": "Unauthorized"
           },
           "403": {
             "content": {
@@ -7127,7 +7139,7 @@
             "description": "Service Unavailable"
           }
         },
-        "summary": "Sign In With Login Widget",
+        "summary": "Start Oidc Login",
         "tags": [
           "auth"
         ]
@@ -7712,7 +7724,7 @@
     },
     "/api/v1/health/ready": {
       "get": {
-        "description": "Readiness: the database answers ``SELECT 1`` and, when sessions and rate limits use\nRedis, Redis answers ``PING``. Failures are logged by class only, never returned.",
+        "description": "Readiness: the database answers and the security-state tables (sessions, rate limits,\nreplay nonces, OIDC states) are reachable. Failures are logged by class only.",
         "operationId": "ready_api_v1_health_ready_get",
         "responses": {
           "200": {
@@ -7733,12 +7745,27 @@
                 }
               }
             },
-            "description": "Database or Redis unavailable"
+            "description": "Database unavailable"
           }
         },
         "summary": "Ready",
         "tags": [
           "health"
+        ]
+      }
+    },
+    "/api/v1/internal/maintenance/cleanup": {
+      "post": {
+        "description": "Delete expired sessions, rate-limit windows, replay nonces and OIDC login states.\n\nCorrectness never depends on this (readers filter on ``expires_at``); it only bounds table\nsize. Safe to call concurrently and repeatedly.",
+        "operationId": "cleanup_api_v1_internal_maintenance_cleanup_post",
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Cleanup",
+        "tags": [
+          "internal"
         ]
       }
     },
@@ -7970,6 +7997,63 @@
           }
         },
         "summary": "Create Session",
+        "tags": [
+          "internal"
+        ]
+      }
+    },
+    "/api/v1/internal/telegram/staff-chat/connect": {
+      "post": {
+        "description": "Make the given group the staff order-alert chat. ``403`` unless the actor is an admin.",
+        "operationId": "connect_api_v1_internal_telegram_staff_chat_connect_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "chat_id": {
+                    "exclusiveMaximum": 0.0,
+                    "minimum": -1000000000000000.0,
+                    "title": "Chat Id",
+                    "type": "integer"
+                  },
+                  "chat_type": {
+                    "enum": [
+                      "group",
+                      "supergroup"
+                    ],
+                    "title": "Chat Type",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "chat_id",
+                  "chat_type"
+                ],
+                "title": "ConnectRequest",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConnectResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "403": {
+            "description": "The actor is not an admin"
+          }
+        },
+        "summary": "Connect",
         "tags": [
           "internal"
         ]

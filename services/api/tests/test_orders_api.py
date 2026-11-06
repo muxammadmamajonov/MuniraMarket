@@ -887,7 +887,8 @@ async def test_real_session_and_csrf_wiring(clock: FakeClock) -> None:
         widget = await app.state.session_manager.create(
             user_id=record.id,
             telegram_user_id=record.telegram_user_id,
-            auth_method="telegram_login_widget",
+            auth_method="telegram_oidc",
+            entrance="admin",
         )
         admin_session = cookie_header(widget.token)
         admin_csrf = {

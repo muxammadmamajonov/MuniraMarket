@@ -24,6 +24,9 @@ export const uz: Dictionary = {
     retry: 'Qayta urinish',
     signInTitle: 'Telegram orqali kiring',
     signInHint: 'Buyurtmalarni boshqarish uchun xodim hisobingiz bilan kiring.',
+    loginButton: 'Telegram orqali kirish',
+    loginStarting: 'Telegramga o‘tilmoqda…',
+    loginStartFailed: 'Telegram orqali kirishni boshlab bo‘lmadi. Qayta urinib ko‘ring.',
     notConfiguredTitle: 'Kirish sozlanmagan',
     notConfiguredMessage:
       'Bu muhitda Telegram orqali kirish sozlanmagan. Administratorga murojaat qiling.',
@@ -34,9 +37,14 @@ export const uz: Dictionary = {
     rateLimited: 'Juda ko‘p urinish. Birozdan keyin qayta urinib ko‘ring.',
     serviceUnavailable: 'Xizmat vaqtincha ishlamayapti. Birozdan keyin qayta urinib ko‘ring.',
     sessionFailed: 'Sessiyani tekshirib bo‘lmadi.',
-    callbackSigningIn: 'Kirilmoqda…',
-    callbackFailed: 'Telegram orqali kirib bo‘lmadi.',
-    callbackBack: 'Qayta urinish',
+    callbackTitle: 'Kirish amalga oshmadi',
+    callbackStatus: {
+      failed: 'Telegram orqali kirib bo‘lmadi. Qayta urinib ko‘ring.',
+      cancelled: 'Kirish bekor qilindi.',
+      blocked: 'Hisobingiz bloklangan.',
+      unavailable: 'Xizmat vaqtincha ishlamayapti. Birozdan keyin qayta urinib ko‘ring.',
+    },
+    callbackBack: 'Bosh sahifaga qaytish',
   },
   orders: {
     title: 'Buyurtmalar',

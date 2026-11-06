@@ -12,11 +12,14 @@ const session = vi.hoisted(() => ({
   error: null as unknown,
   apiFetch: vi.fn<(path: string, init?: RequestInit) => Promise<Response>>(),
   retry: vi.fn(),
-  loginWithWidget: vi.fn(),
+  startTelegramLogin: vi.fn<(returnTo: string) => Promise<string>>(),
   logout: vi.fn(),
 }));
 
+const navigation = vi.hoisted(() => ({ navigateTo: vi.fn<(url: string) => void>() }));
+
 vi.mock('@/lib/session', () => ({ useSession: () => session }));
+vi.mock('@/lib/auth/navigate', () => navigation);
 
 function renderPrompt() {
   return render(
@@ -28,17 +31,21 @@ function renderPrompt() {
   );
 }
 
-function authConfig(enabled: boolean, botUsername: string | null) {
-  session.apiFetch.mockResolvedValue(
-    Response.json({ telegram_login_widget: { enabled, bot_username: botUsername } }),
-  );
+function authConfig(enabled: boolean) {
+  session.apiFetch.mockResolvedValue(Response.json({ telegram_oidc: { enabled } }));
 }
+
+const AUTHORIZATION_URL =
+  'https://oauth.telegram.org/auth?response_type=code&client_id=1&state=s&nonce=n';
 
 beforeEach(() => {
   session.status = 'anonymous';
   session.error = null;
   session.apiFetch.mockReset();
   session.retry.mockReset();
+  session.startTelegramLogin.mockReset();
+  navigation.navigateTo.mockReset();
+  window.history.replaceState(null, '', '/uz/cart?from=tile');
 });
 
 afterEach(() => {
@@ -46,47 +53,88 @@ afterEach(() => {
 });
 
 describe('SignInPrompt', () => {
-  it('in a browser with the widget disabled, asks to open the shop in Telegram', async () => {
-    authConfig(false, null);
+  it('in a browser with Telegram sign-in disabled, asks to open the shop in Telegram', async () => {
+    authConfig(false);
     renderPrompt();
     expect(screen.getByRole('status')).toHaveTextContent('Telegram orqali oching');
     await waitFor(() => expect(session.apiFetch).toHaveBeenCalledWith('/auth/config'));
-    expect(screen.queryByTestId('telegram-login-widget')).toBeNull();
+    expect(screen.queryByTestId('telegram-login-button')).toBeNull();
     expect(screen.queryByRole('button')).toBeNull();
   });
 
-  it('in a browser with the widget enabled, renders the official widget script for the bot', async () => {
-    authConfig(true, 'muniramarket_test_bot');
+  it('in a browser with Telegram sign-in enabled, shows the custom sign-in button', async () => {
+    authConfig(true);
     renderPrompt();
-    const container = await screen.findByTestId('telegram-login-widget');
-    const script = container.querySelector('script');
-    expect(script).not.toBeNull();
-    expect(script?.src).toBe('https://telegram.org/js/telegram-widget.js?22');
-    expect(script?.getAttribute('data-telegram-login')).toBe('muniramarket_test_bot');
-    // `data-onauth` would need eval, which the CSP forbids: the redirect mode is used instead.
-    expect(script?.hasAttribute('data-onauth')).toBe(false);
-    // A fresh one-time state binds the redirect to this tab (login CSRF defence).
-    expect(script?.getAttribute('data-auth-url')).toMatch(
-      new RegExp(`^${window.location.origin}/uz/auth/telegram\\?state=[0-9a-f]{32}$`),
+    const button = await screen.findByRole('button', { name: 'Telegram orqali kirish' });
+    expect(button.tagName).toBe('BUTTON');
+    expect(button).toHaveAttribute('type', 'button');
+    expect(button).toHaveAttribute('aria-busy', 'false');
+    expect(button.className).toContain('min-h-12');
+    expect(button.className).toContain('focus-visible:outline');
+    // No Telegram script or iframe is ever injected.
+    expect(document.querySelector('script[src*="telegram"]')).toBeNull();
+    expect(document.querySelector('iframe')).toBeNull();
+  });
+
+  it('starts the sign-in with the current page as return_to, then navigates top-level', async () => {
+    authConfig(true);
+    let resolve: (url: string) => void = () => undefined;
+    session.startTelegramLogin.mockReturnValue(
+      new Promise<string>((done) => {
+        resolve = done;
+      }),
     );
-  });
-
-  it('never renders the widget for a suspicious bot username', async () => {
-    authConfig(true, 'bad"><img src=x onerror=alert(1)>');
     renderPrompt();
-    const container = await screen.findByTestId('telegram-login-widget');
-    expect(container.querySelector('script')).toBeNull();
+    const button = await screen.findByRole('button', { name: 'Telegram orqali kirish' });
+    fireEvent.click(button);
+
+    expect(session.startTelegramLogin).toHaveBeenCalledWith('/uz/cart?from=tile');
+    expect(button).toHaveAttribute('aria-busy', 'true');
+    expect(button).toHaveTextContent('Telegramga o‘tilmoqda…');
+    // A second click while starting does nothing.
+    fireEvent.click(button);
+    expect(session.startTelegramLogin).toHaveBeenCalledOnce();
+
+    resolve(AUTHORIZATION_URL);
+    await waitFor(() => expect(navigation.navigateTo).toHaveBeenCalledWith(AUTHORIZATION_URL));
+    expect(screen.queryByRole('alert')).toBeNull();
   });
 
-  it('shows the widget only when the config call succeeded', async () => {
+  it.each([
+    [new ApiRequestError({ status: 429, code: 'rate_limited', message: 'x' }), 'Juda ko‘p urinish'],
+    [
+      new ApiRequestError({ status: 404, code: 'feature_disabled', message: 'x' }),
+      'hozircha mavjud emas',
+    ],
+    [ApiRequestError.network(), 'Xizmat vaqtincha ishlamayapti'],
+    [
+      new ApiRequestError({ status: 503, code: 'service_unavailable', message: 'x' }),
+      'ishlamayapti',
+    ],
+    [new ApiRequestError({ status: 403, code: 'csrf_failed', message: 'x' }), 'boshlab bo‘lmadi'],
+  ])('shows an inline alert when the start fails (%s)', async (error, text) => {
+    authConfig(true);
+    session.startTelegramLogin.mockRejectedValue(error);
+    renderPrompt();
+    const button = await screen.findByRole('button', { name: 'Telegram orqali kirish' });
+    fireEvent.click(button);
+
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent(text);
+    expect(button).toHaveAttribute('aria-busy', 'false');
+    expect(button).toHaveAttribute('aria-describedby', alert.id);
+    expect(navigation.navigateTo).not.toHaveBeenCalled();
+  });
+
+  it('shows the button only when the config call succeeded', async () => {
     session.apiFetch.mockRejectedValue(ApiRequestError.network());
     renderPrompt();
     await waitFor(() => expect(session.apiFetch).toHaveBeenCalled());
-    expect(screen.queryByTestId('telegram-login-widget')).toBeNull();
+    expect(screen.queryByTestId('telegram-login-button')).toBeNull();
     expect(screen.getByRole('status')).toHaveTextContent('Telegram orqali oching');
   });
 
-  it('inside the Mini App shows a retry instead of the widget and does not fetch the config', () => {
+  it('inside the Mini App shows a retry instead of the sign-in button and does not fetch the config', () => {
     installWebApp(makeWebApp());
     session.status = 'error';
     renderPrompt();

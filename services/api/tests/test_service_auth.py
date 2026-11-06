@@ -5,20 +5,21 @@ from typing import Any, cast
 import httpx
 import pytest
 from pydantic import SecretStr
-from redis.asyncio import Redis
 from starlette.datastructures import Headers
 
 from app.models.enums import Language
 from app.repositories.users import TelegramProfile
+from app.security.errors import StoreUnavailableError
 from app.security.service_auth import (
     InMemoryNonceStore,
-    RedisNonceStore,
+    PostgresNonceStore,
     ServiceAuthenticator,
     ServiceAuthError,
     body_sha256_hex,
     canonical_string,
     sign,
 )
+from tests.auth_helpers import failing_factory
 from tests.conftest import NOW, TEST_KEY_ID, TEST_SECRET, FakeClock, FakeUserRepository
 
 # ADR 0003 test vector.
@@ -239,29 +240,10 @@ async def test_in_memory_nonce_store_expires_entries() -> None:
     assert await store.register("k", "n" * 16, 660)
 
 
-class _FakeRedis:
-    def __init__(self) -> None:
-        self.data: dict[str, tuple[str, int | None]] = {}
-        self.calls: list[dict[str, Any]] = []
-
-    async def set(
-        self, name: str, value: str, *, nx: bool = False, ex: int | None = None
-    ) -> bool | None:
-        self.calls.append({"name": name, "value": value, "nx": nx, "ex": ex})
-        if nx and name in self.data:
-            return None
-        self.data[name] = (value, ex)
-        return True
-
-
-async def test_redis_nonce_store_uses_set_nx_ex() -> None:
-    fake = _FakeRedis()
-    store = RedisNonceStore(cast("Redis", fake))
-    assert await store.register("test-key", "n" * 16, 660)
-    assert not await store.register("test-key", "n" * 16, 660)
-    assert fake.calls[0]["nx"] is True
-    assert fake.calls[0]["ex"] == 660
-    assert fake.calls[0]["name"] == f"mm:svc-nonce:test-key:{'n' * 16}"
+async def test_postgres_nonce_store_fails_closed() -> None:
+    store = PostgresNonceStore(failing_factory())
+    with pytest.raises(StoreUnavailableError):
+        await store.register("test-key", "n" * 16, 660)
 
 
 # --- HTTP integration through the internal router -------------------------------------------

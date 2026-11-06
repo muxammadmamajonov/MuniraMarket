@@ -32,7 +32,7 @@ _REDACTED: Final = "[redacted]"
 # (access_token=, bot-token:, client_secret=, "hash": "...").
 _SECRET_KEY_PARTS: Final = re.compile(
     r"authorization|cookie|token|csrf|hash|signature|init_?data|password|passwd|secret|"
-    r"api_?key|mm_session",
+    r"api_?key|mm_session|mm_oidc|code_?verifier|nonce",
     re.IGNORECASE,
 )
 
@@ -145,6 +145,11 @@ _ALLOWED_EXTRA: Final = frozenset(
         "db_pool_size",
         "db_max_overflow",
         "scope",
+        # Row counts of the security-state cleanup job (no identifiers).
+        "auth_sessions",
+        "rate_limit_counters",
+        "service_request_nonces",
+        "oidc_login_states",
     }
 )
 

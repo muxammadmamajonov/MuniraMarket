@@ -19,7 +19,12 @@ export interface DeployEnvProblem {
 }
 
 const HOSTNAME = /^(?=.{1,253}$)([a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/;
-const BOT_USERNAME = /^[A-Za-z0-9_]{5,32}$/;
+// Production is pinned to the hostnames whose OIDC redirect URIs are registered with BotFather
+// (`https://<host>/api/v1/auth/telegram/oidc/callback`, ADR 0014) and to the one bot whose id is
+// the OIDC client id. `munira-market.uz` is deliberately not canonical (a later redirect, if ever).
+export const PRODUCTION_WEB_HOSTNAME = 'muniramarket.uz';
+export const PRODUCTION_ADMIN_HOSTNAME = 'admin.muniramarket.uz';
+export const PRODUCTION_TELEGRAM_BOT_ID = '9038491407';
 const RELEASE = /^[A-Za-z0-9._-]{1,64}$/;
 // Durable Object-scheduled Containers only start digest-pinned images from Cloudflare's registry.
 const DIGEST_REF = /^registry\.cloudflare\.com\/[A-Za-z0-9_-]+\/[a-z0-9._/-]+@sha256:[0-9a-f]{64}$/;
@@ -66,16 +71,26 @@ export function validateDeployEnv(
   if (botId !== '' && !/^[1-9]\d{4,14}$/.test(botId)) {
     problems.push({ variable: 'MM_TELEGRAM_BOT_ID', message: 'must be the numeric bot id' });
   }
-  const botUsername = require('MM_TELEGRAM_BOT_USERNAME');
-  if (botUsername !== '' && !BOT_USERNAME.test(botUsername.replace(/^@/, ''))) {
-    problems.push({ variable: 'MM_TELEGRAM_BOT_USERNAME', message: 'is not a bot username' });
-  }
-  const adminBotUsername = require('MM_ADMIN_TELEGRAM_BOT_USERNAME');
-  if (adminBotUsername !== '' && !BOT_USERNAME.test(adminBotUsername.replace(/^@/, ''))) {
-    problems.push({
-      variable: 'MM_ADMIN_TELEGRAM_BOT_USERNAME',
-      message: 'is not a bot username',
-    });
+  if (mode === 'production') {
+    // One bot for everything: the Mini App, the bot itself and OIDC browser sign-in.
+    if (botId !== '' && botId !== PRODUCTION_TELEGRAM_BOT_ID) {
+      problems.push({
+        variable: 'MM_TELEGRAM_BOT_ID',
+        message: `must be the production bot (OIDC client id ${PRODUCTION_TELEGRAM_BOT_ID})`,
+      });
+    }
+    const pinned: Array<[string, string]> = [
+      ['MM_WEB_HOSTNAME', PRODUCTION_WEB_HOSTNAME],
+      ['MM_ADMIN_HOSTNAME', PRODUCTION_ADMIN_HOSTNAME],
+    ];
+    for (const [name, expected] of pinned) {
+      if (hosts[name] && hosts[name] !== expected) {
+        problems.push({
+          variable: name,
+          message: `must be ${expected} (its OIDC redirect URI is registered with BotFather)`,
+        });
+      }
+    }
   }
 
   // The Core API must trust exactly the storefront and admin origins (CSRF Origin check).

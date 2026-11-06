@@ -1,11 +1,8 @@
 """Catalog routes against a fake repository (no database)."""
 
-from typing import cast
-
 import httpx
 import pytest
 from fastapi import FastAPI
-from redis.asyncio import Redis
 
 from app.api.routes.catalog import get_catalog_repository
 from app.repositories.catalog import (
@@ -15,8 +12,8 @@ from app.repositories.catalog import (
     ProductPageRecord,
     ProductSort,
 )
-from app.security.rate_limit import RedisRateLimiter
-from tests.auth_helpers import FakeRedis
+from app.security.rate_limit import PostgresRateLimiter
+from tests.auth_helpers import failing_factory
 from tests.catalog_factories import make_category, make_detail, make_product
 from tests.conftest import FakeClock
 
@@ -130,15 +127,13 @@ async def test_catalog_ip_limit_is_not_cached(
     assert response.headers["cache-control"] == "no-store"  # never "public"
     assert int(response.headers["retry-after"]) >= 1
     assert looked_up == []  # rejected before the database session is opened
-    assert any(
-        key.startswith("mm:rl:catalog_ip:127.0.0.1:") for key in app.state.rate_limiter._counters
-    )
+    assert any(key.startswith("catalog_ip:127.0.0.1:") for key in app.state.rate_limiter._counters)
 
 
 async def test_catalog_limiter_outage_fails_closed(
     app: FastAPI, client: httpx.AsyncClient, catalog: FakeCatalogRepository
 ) -> None:
-    app.state.rate_limiter = RedisRateLimiter(cast("Redis", FakeRedis(fail=True)), FakeClock())
+    app.state.rate_limiter = PostgresRateLimiter(failing_factory(), FakeClock())
     response = await client.get("/api/v1/products")
     assert response.status_code == 503
     assert response.json()["error"]["code"] == "service_unavailable"

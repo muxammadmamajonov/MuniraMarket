@@ -10,7 +10,6 @@ common=(
   -e SERVICE_AUTH_KEYS=ci:ci-only-service-key-not-a-secret-000000
   -e CSRF_TRUSTED_ORIGINS=https://shop.example.test,https://admin.example.test
   -e FORWARDED_ALLOW_IPS=10.0.0.0/8
-  -e REDIS_URL=rediss://:ci-redis-pw@redis.example.test:6380/0
   -e DB_CONNECT_TIMEOUT_SECONDS=2
 )
 log="$(mktemp)"
@@ -56,7 +55,7 @@ for line in lines:
     entry = json.loads(line)
     assert {"ts", "level", "logger", "msg", "env"} <= entry.keys(), entry
 PY
-if grep -q "ci-db-pw\|ci-redis-pw\|ci-only-service-key" "$log"; then
+if grep -q "ci-db-pw\|ci-only-service-key" "$log"; then
   echo "logs contain a secret" >&2; exit 1
 fi
 echo "container checks passed"

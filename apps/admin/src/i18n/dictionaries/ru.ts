@@ -24,6 +24,9 @@ export const ru: Dictionary = {
     retry: 'Повторить',
     signInTitle: 'Войдите через Telegram',
     signInHint: 'Для работы с заказами войдите под учётной записью сотрудника.',
+    loginButton: 'Войти через Telegram',
+    loginStarting: 'Переходим в Telegram…',
+    loginStartFailed: 'Не удалось начать вход через Telegram. Попробуйте ещё раз.',
     notConfiguredTitle: 'Вход не настроен',
     notConfiguredMessage:
       'В этом окружении вход через Telegram не настроен. Обратитесь к администратору.',
@@ -34,9 +37,14 @@ export const ru: Dictionary = {
     rateLimited: 'Слишком много попыток. Попробуйте чуть позже.',
     serviceUnavailable: 'Сервис временно недоступен. Попробуйте чуть позже.',
     sessionFailed: 'Не удалось проверить сессию.',
-    callbackSigningIn: 'Выполняется вход…',
-    callbackFailed: 'Не удалось войти через Telegram.',
-    callbackBack: 'Повторить',
+    callbackTitle: 'Вход не выполнен',
+    callbackStatus: {
+      failed: 'Не удалось войти через Telegram. Попробуйте ещё раз.',
+      cancelled: 'Вход отменён.',
+      blocked: 'Ваша учётная запись заблокирована.',
+      unavailable: 'Сервис временно недоступен. Попробуйте чуть позже.',
+    },
+    callbackBack: 'На главную',
   },
   orders: {
     title: 'Заказы',

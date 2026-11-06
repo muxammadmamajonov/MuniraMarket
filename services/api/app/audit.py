@@ -105,6 +105,7 @@ class AuditEntity:
     SLOT: Final = "slot"
     USER: Final = "user"
     ORDER: Final = "order"
+    STAFF_CHAT: Final = "staff_chat"
 
 
 @dataclass(frozen=True, slots=True)

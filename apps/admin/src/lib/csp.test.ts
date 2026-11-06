@@ -20,13 +20,13 @@ describe('buildContentSecurityPolicy', () => {
   const nonce = 'dGVzdC1ub25jZQ==';
   const production = buildContentSecurityPolicy({ nonce });
 
-  it('puts the nonce, strict-dynamic and telegram.org in script-src', () => {
+  it('puts only self, the nonce and strict-dynamic in script-src (nothing from Telegram)', () => {
     expect(directive(production, 'script-src')).toEqual([
       "'self'",
       `'nonce-${nonce}'`,
       "'strict-dynamic'",
-      'https://telegram.org',
     ]);
+    expect(production).not.toContain('telegram');
   });
 
   it('never allows unsafe-inline scripts, and unsafe-eval only in development', () => {
@@ -37,10 +37,10 @@ describe('buildContentSecurityPolicy', () => {
     expect(dev.match(/unsafe-eval/g)).toHaveLength(1);
   });
 
-  it('is never embeddable and only talks to its own origin and the Telegram widget frame', () => {
+  it('is never embeddable, frames nothing and only talks to its own origin', () => {
     expect(directive(production, 'frame-ancestors')).toEqual(["'none'"]);
     expect(directive(production, 'connect-src')).toEqual(["'self'"]);
-    expect(directive(production, 'frame-src')).toEqual(['https://oauth.telegram.org']);
+    expect(directive(production, 'frame-src')).toEqual(["'none'"]);
     expect(directive(production, 'default-src')).toEqual(["'self'"]);
     expect(directive(production, 'base-uri')).toEqual(["'none'"]);
     expect(directive(production, 'form-action')).toEqual(["'self'"]);

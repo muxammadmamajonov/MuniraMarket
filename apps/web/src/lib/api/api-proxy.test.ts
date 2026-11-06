@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { MAX_BODY_BYTES, createApiProxy } from './api-proxy';
+import { MAX_BODY_BYTES, isSafeRelativeLocation, createApiProxy } from './api-proxy';
 
 function setup(upstream: () => Response | Promise<Response> = () => Response.json({ ok: true })) {
   const fetchMock = vi.fn<typeof fetch>(async () => upstream());
@@ -63,6 +63,7 @@ describe('api proxy', () => {
       'x-csrf-token': 'csrf',
       origin: 'http://web.test',
       'user-agent': 'UA',
+      'x-mm-entrance': 'storefront',
     });
   });
 
@@ -351,5 +352,162 @@ describe('api proxy', () => {
     });
     expect(response.status).toBe(200);
     expect(fetchMock).toHaveBeenCalledOnce();
+  });
+});
+
+describe('web api proxy: entrance header', () => {
+  it('always sends x-mm-entrance: storefront and never forwards a browser-supplied one', async () => {
+    const { fetchMock, call } = setup();
+    await call(['auth', 'session'], 'http://web.test/api/v1/auth/session', {
+      headers: { 'x-mm-entrance': 'admin', 'X-MM-Entrance': 'evil' },
+    });
+    expect(lastCall(fetchMock).headers.get('x-mm-entrance')).toBe('storefront');
+
+    await call(
+      ['auth', 'telegram', 'oidc', 'callback'],
+      'http://web.test/api/v1/auth/telegram/oidc/start',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'x-mm-entrance': 'nope' },
+        body: '{}',
+      },
+    );
+    expect(lastCall(fetchMock).headers.get('x-mm-entrance')).toBe('storefront');
+  });
+});
+
+describe('web api proxy: OIDC callback redirect', () => {
+  const callbackUrl = 'http://web.test/api/v1/auth/telegram/oidc/callback?code=abc&state=xyz';
+
+  function redirect(location: string | null, status = 303, cookies: string[] = []) {
+    return () => {
+      const headers = new Headers({ 'x-internal-secret': 'leak', server: 'uvicorn' });
+      if (location !== null) headers.set('location', location);
+      for (const cookie of cookies) headers.append('set-cookie', cookie);
+      return new Response(null, { status, headers });
+    };
+  }
+
+  it('passes a 303 with a relative Location, all cookies, no-store and no-referrer', async () => {
+    const { fetchMock, call } = setup(
+      redirect('/uz/orders?tab=active', 303, [
+        '__Host-mm_session=s; Path=/; HttpOnly; Secure; SameSite=Lax',
+        '__Host-mm_oidc=; Path=/; Max-Age=0; HttpOnly; Secure',
+      ]),
+    );
+    const response = await call(['auth', 'telegram', 'oidc', 'callback'], callbackUrl);
+
+    expect(lastCall(fetchMock).url).toBe(
+      'http://api.test:8000/api/v1/auth/telegram/oidc/callback?code=abc&state=xyz',
+    );
+    expect(lastCall(fetchMock).init.redirect).toBe('manual');
+    expect(response.status).toBe(303);
+    expect(response.headers.get('location')).toBe('/uz/orders?tab=active');
+    expect(response.headers.get('cache-control')).toBe('no-store');
+    expect(response.headers.get('referrer-policy')).toBe('no-referrer');
+    expect(response.headers.get('x-internal-secret')).toBeNull();
+    expect(response.headers.get('server')).toBeNull();
+    expect(response.headers.getSetCookie()).toEqual([
+      '__Host-mm_session=s; Path=/; HttpOnly; Secure; SameSite=Lax',
+      '__Host-mm_oidc=; Path=/; Max-Age=0; HttpOnly; Secure',
+    ]);
+    expect(response.body).toBeNull();
+  });
+
+  it('passes the failure redirect to the sign-in page through', async () => {
+    const { call } = setup(redirect('/ru/auth/telegram?status=cancelled'));
+    const response = await call(['auth', 'telegram', 'oidc', 'callback'], callbackUrl);
+    expect(response.status).toBe(303);
+    expect(response.headers.get('location')).toBe('/ru/auth/telegram?status=cancelled');
+  });
+
+  it.each([
+    ['https://evil.test/uz'],
+    ['http://api.internal/uz'],
+    ['//evil.test/uz'],
+    ['/\\evil.test/uz'],
+    ['\\evil.test'],
+    ['/uz\\..'],
+    ['javascript:alert(1)'],
+    ['uz/orders'],
+    ['/uz\t/x'],
+    ['/uz\u007f'],
+    ['/uz orders'],
+  ])('answers 502 for an unsafe Location %j', async (location) => {
+    const { call } = setup(redirect(location, 303, ['__Host-mm_session=s; Path=/']));
+    const response = await call(['auth', 'telegram', 'oidc', 'callback'], callbackUrl);
+    expect(response.status).toBe(502);
+    expect(response.headers.get('location')).toBeNull();
+    expect(response.headers.getSetCookie()).toEqual([]);
+  });
+
+  it('answers 502 for a callback redirect without Location', async () => {
+    const { call } = setup(redirect(null));
+    const response = await call(['auth', 'telegram', 'oidc', 'callback'], callbackUrl);
+    expect(response.status).toBe(502);
+  });
+
+  it.each([[301], [302], [307], [308]])(
+    'answers 502 for any other redirect status (%i)',
+    async (status) => {
+      const { call } = setup(redirect('/uz', status));
+      const response = await call(['auth', 'telegram', 'oidc', 'callback'], callbackUrl);
+      expect(response.status).toBe(502);
+      expect(response.headers.get('location')).toBeNull();
+    },
+  );
+
+  it('answers 502 for a redirect from the callback route on another method', async () => {
+    const { call } = setup(redirect('/uz'));
+    const response = await call(['auth', 'telegram', 'oidc', 'callback'], callbackUrl, {
+      method: 'POST',
+      body: '{}',
+    });
+    expect(response.status).toBe(502);
+  });
+
+  it.each([[['auth', 'telegram', 'oidc', 'start']], [['auth', 'session']], [['products']]])(
+    'answers 502 for a relative redirect from any other route: %j',
+    async (path) => {
+      const { call } = setup(redirect('/uz'));
+      const response = await call(path, `http://web.test/api/v1/${path.join('/')}`);
+      expect(response.status).toBe(502);
+      expect(response.headers.get('location')).toBeNull();
+    },
+  );
+
+  it('passes a non-redirect callback answer (e.g. 429) through as usual', async () => {
+    const { call } = setup(() =>
+      Response.json({ error: { code: 'rate_limited', message: 'x' } }, { status: 429 }),
+    );
+    const response = await call(['auth', 'telegram', 'oidc', 'callback'], callbackUrl);
+    expect(response.status).toBe(429);
+  });
+});
+
+describe('isSafeRelativeLocation', () => {
+  it.each([['/uz'], ['/ru/orders?status=active#top'], ['/uz/auth/telegram?status=failed'], ['/']])(
+    'accepts %j',
+    (location) => {
+      expect(isSafeRelativeLocation(location)).toBe(true);
+    },
+  );
+
+  it.each([
+    [''],
+    [' /uz'],
+    ['uz'],
+    ['//evil.test'],
+    ['/\\evil.test'],
+    ['https://evil.test/'],
+    ['javascript:alert(1)'],
+    ['/uz\nSet-Cookie: a=b'],
+    ['/uz\r\n'],
+    ['/uz\u0000'],
+    ['/\t/evil.test'],
+    ['/uz\u007f'],
+    ['/' + 'a'.repeat(2048)],
+  ])('rejects %j', (location) => {
+    expect(isSafeRelativeLocation(location)).toBe(false);
   });
 });

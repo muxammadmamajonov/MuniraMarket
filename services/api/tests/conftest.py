@@ -33,7 +33,6 @@ def make_settings(**overrides: Any) -> Settings:
     values: dict[str, Any] = {
         "app_env": "test",
         "database_url": "postgresql+asyncpg://fake:fake-password@127.0.0.1:1/fake",
-        "redis_url": "redis://localhost:6379/0",
         "cors_allowed_origins": [],
         "service_auth_keys": f"{TEST_KEY_ID}:{TEST_SECRET}",
         "telegram_bot_id": TEST_BOT_ID,
@@ -42,11 +41,10 @@ def make_settings(**overrides: Any) -> Settings:
         "forwarded_allow_ips": "10.20.0.2",
     }
     if overrides.get("app_env") in ("staging", "production"):
-        # Deployed environments require TLS to PostgreSQL and Redis and trusted origins; tests
+        # Deployed environments require TLS to PostgreSQL and trusted origins; tests
         # that exercise those rules override these again.
         values.update(
             database_url="postgresql+asyncpg://fake:fake-password@127.0.0.1:1/fake?ssl=verify-full",
-            redis_url="rediss://localhost:6379/0",
             csrf_trusted_origins="https://shop.example.test,https://admin.example.test",
             telegram_environment="production",
         )
@@ -113,22 +111,11 @@ async def client(app: FastAPI) -> AsyncIterator[httpx.AsyncClient]:
         yield http_client
 
 
-def pytest_configure(config: pytest.Config) -> None:
-    config.addinivalue_line(
-        "markers", "redis: requires a real Redis (set TEST_REDIS_URL); skipped otherwise"
-    )
-
-
 def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
     skip_db = pytest.mark.skip(reason="integration test: set TEST_DATABASE_URL to run")
-    skip_redis = pytest.mark.skip(reason="integration test: set TEST_REDIS_URL to run")
     has_db = bool(os.environ.get("TEST_DATABASE_URL"))
-    has_redis = bool(os.environ.get("TEST_REDIS_URL"))
     for item in items:
-        if item.get_closest_marker("redis") is not None:
-            if not has_redis:
-                item.add_marker(skip_redis)
-        elif item.get_closest_marker("integration") is not None and not has_db:
+        if item.get_closest_marker("integration") is not None and not has_db:
             item.add_marker(skip_db)
 
 

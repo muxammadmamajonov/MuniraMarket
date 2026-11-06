@@ -12,6 +12,9 @@ import {
 } from '@/test-utils/fake-api';
 import { OrdersList } from './orders-list';
 
+const navigation = vi.hoisted(() => ({ navigateTo: vi.fn<(url: string) => void>() }));
+vi.mock('@/lib/auth/navigate', () => navigation);
+
 vi.mock('next/navigation', () => ({
   useSearchParams: () => new URLSearchParams(''),
   usePathname: () => '/ru',
@@ -20,16 +23,14 @@ vi.mock('next/navigation', () => ({
 
 afterEach(() => {
   vi.unstubAllGlobals();
-  window.sessionStorage.clear();
+  navigation.navigateTo.mockReset();
 });
 
 const ordersHandler = (call: { path: string }) =>
   call.path.startsWith('/api/v1/admin/orders') ? json(orderPage([orderSummary()])) : undefined;
 
-const widgetConfig = (enabled: boolean, botUsername: string | null) => (call: { path: string }) =>
-  call.path === '/api/v1/auth/config'
-    ? json({ telegram_login_widget: { enabled, bot_username: botUsername } })
-    : undefined;
+const oidcConfig = (enabled: boolean) => (call: { path: string }) =>
+  call.path === '/api/v1/auth/config' ? json({ telegram_oidc: { enabled } }) : undefined;
 
 const noSession = (call: { path: string }) =>
   call.path === '/api/v1/auth/session' ? apiError(401, 'session_required') : undefined;
@@ -75,37 +76,54 @@ describe('AdminShell session and role gate', () => {
     expect(await screen.findByRole('heading', { name: 'Ruxsat yo‘q' })).toBeInTheDocument();
   });
 
-  it('shows sign-in (and no admin request) without a session, with the widget when enabled', async () => {
-    const api = installFakeApi(noSession, widgetConfig(true, 'test_admin_bot'), ordersHandler);
+  it('shows sign-in (and no admin request) without a session, with the button when enabled', async () => {
+    const url = 'https://oauth.telegram.org/auth?response_type=code&client_id=1';
+    const api = installFakeApi(noSession, oidcConfig(true), ordersHandler, (call) =>
+      call.method === 'POST' && call.path === '/api/v1/auth/telegram/oidc/start'
+        ? json({ authorization_url: url })
+        : undefined,
+    );
     renderAdmin(<OrdersList />);
 
     expect(
       await screen.findByRole('heading', { name: 'Войдите через Telegram' }),
     ).toBeInTheDocument();
-    await waitFor(() =>
-      expect(document.querySelector('script[data-telegram-login="test_admin_bot"]')).not.toBeNull(),
-    );
-    const script = document.querySelector('script[data-telegram-login]');
-    // Redirect mode (the callback mode needs `eval`, which the CSP forbids), with a login state.
-    expect(script?.getAttribute('data-auth-url')).toMatch(
-      /\/ru\/auth\/telegram\?state=[0-9a-f]{32}$/,
-    );
-    expect(script?.getAttribute('data-onauth')).toBeNull();
+    const button = await screen.findByRole('button', { name: 'Войти через Telegram' });
+    expect(button).toHaveAttribute('aria-busy', 'false');
+    // Nothing from Telegram is loaded into the page.
+    expect(document.querySelector('script[src*="telegram"]')).toBeNull();
+    expect(document.querySelector('iframe')).toBeNull();
+    expect(api.to('/api/v1/admin/')).toHaveLength(0);
+
+    fireEvent.click(button);
+    await waitFor(() => expect(navigation.navigateTo).toHaveBeenCalledWith(url));
+    // The admin always returns to its locale root; the gate decides what the session may see.
+    expect(api.to('/api/v1/auth/telegram/oidc/start')[0]?.body).toEqual({ return_to: '/ru' });
     expect(api.to('/api/v1/admin/')).toHaveLength(0);
   });
 
-  it('says clearly that sign-in is not configured when the widget is disabled', async () => {
-    const api = installFakeApi(noSession, widgetConfig(false, null));
+  it('shows an inline alert when the sign-in cannot be started', async () => {
+    installFakeApi(noSession, oidcConfig(true), (call) =>
+      call.path === '/api/v1/auth/telegram/oidc/start'
+        ? apiError(503, 'service_unavailable')
+        : undefined,
+    );
+    renderAdmin(<OrdersList />, 'uz');
+    fireEvent.click(await screen.findByRole('button', { name: 'Telegram orqali kirish' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('Xizmat vaqtincha ishlamayapti');
+    expect(navigation.navigateTo).not.toHaveBeenCalled();
+    expect(screen.getByRole('button', { name: 'Telegram orqali kirish' })).toHaveAttribute(
+      'aria-busy',
+      'false',
+    );
+  });
+
+  it('says clearly that sign-in is not configured when Telegram sign-in is disabled', async () => {
+    const api = installFakeApi(noSession, oidcConfig(false));
     renderAdmin(<OrdersList />, 'uz');
     expect(await screen.findByRole('heading', { name: 'Kirish sozlanmagan' })).toBeInTheDocument();
-    expect(document.querySelector('script[data-telegram-login]')).toBeNull();
+    expect(screen.queryByTestId('telegram-login-button')).toBeNull();
     expect(api.to('/api/v1/admin/')).toHaveLength(0);
-  });
-
-  it('treats an enabled widget without a bot username as not configured', async () => {
-    installFakeApi(noSession, widgetConfig(true, null));
-    renderAdmin(<OrdersList />);
-    expect(await screen.findByRole('heading', { name: 'Вход не настроен' })).toBeInTheDocument();
   });
 
   it('offers a retry when the auth config cannot be loaded', async () => {
@@ -115,7 +133,7 @@ describe('AdminShell session and role gate', () => {
       attempts += 1;
       return attempts === 1
         ? apiError(503, 'service_unavailable')
-        : json({ telegram_login_widget: { enabled: false, bot_username: null } });
+        : json({ telegram_oidc: { enabled: false } });
     });
     renderAdmin(<OrdersList />);
     fireEvent.click(await screen.findByRole('button', { name: 'Повторить' }));
@@ -153,7 +171,7 @@ describe('AdminShell session and role gate', () => {
         call.path.startsWith('/api/v1/admin/orders')
           ? apiError(401, 'session_required')
           : undefined,
-      widgetConfig(false, null),
+      oidcConfig(false),
     );
     renderAdmin(<OrdersList />);
     expect(await screen.findByRole('heading', { name: 'Вход не настроен' })).toBeInTheDocument();

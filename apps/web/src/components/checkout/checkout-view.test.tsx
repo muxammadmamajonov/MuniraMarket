@@ -37,7 +37,7 @@ const session = vi.hoisted(() => ({
   error: null as unknown,
   apiFetch: vi.fn<(path: string, init?: RequestInit) => Promise<Response>>(),
   retry: vi.fn(),
-  loginWithWidget: vi.fn(),
+  startTelegramLogin: vi.fn(),
   logout: vi.fn(),
 }));
 vi.mock('@/lib/session', () => ({ useSession: () => session }));
@@ -199,8 +199,7 @@ describe('CheckoutView: states', () => {
     unmount();
 
     session.status = 'anonymous';
-    routes['GET /auth/config'] = () =>
-      respond({ telegram_login_widget: { enabled: false, bot_username: null } });
+    routes['GET /auth/config'] = () => respond({ telegram_oidc: { enabled: false } });
     renderCheckout();
     expect(screen.getByRole('status')).toHaveTextContent(
       'Savatdan foydalanish uchun saytni Telegram orqali oching.',

@@ -42,7 +42,7 @@ USER app
 EXPOSE 8000
 # Containers send SIGTERM before replacing or stopping an instance (up to 15 minutes before
 # SIGKILL); uvicorn then stops accepting, finishes in-flight requests for at most 25 s, runs the
-# lifespan shutdown (closes the pool and Redis) and exits.
+# lifespan shutdown (closes the database pool) and exits.
 STOPSIGNAL SIGTERM
 # Configuration comes from the environment (see .env.example); nothing secret is baked in.
 # --proxy-headers: the client IP (rate limits) is taken from X-Forwarded-For, but only when the

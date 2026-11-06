@@ -2,7 +2,18 @@ import uuid
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import CheckConstraint, DateTime, ForeignKey, Index, Integer, String, func, text
+from sqlalchemy import (
+    BigInteger,
+    CheckConstraint,
+    DateTime,
+    ForeignKey,
+    Index,
+    Integer,
+    SmallInteger,
+    String,
+    func,
+    text,
+)
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -52,4 +63,30 @@ class NotificationOutbox(UUIDPrimaryKeyMixin, Base):
             postgresql_where=text("processed_at IS NULL"),
         ),
         Index("ix_notification_outbox_order_id", "order_id"),
+    )
+
+
+class StaffNotificationChat(Base):
+    """The one Telegram group that receives staff order alerts (``/connect_orders``, ADR 0015).
+
+    A single row (``id = 1``). Written only through the service-signed internal route after the
+    acting Telegram user was checked to be an ``admin`` in this database; never exposed by a
+    public or back-office route, never sent to a browser.
+    """
+
+    __tablename__ = "staff_notification_chat"
+
+    id: Mapped[int] = mapped_column(SmallInteger, primary_key=True, autoincrement=False, default=1)
+    chat_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    connected_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL")
+    )
+    connected_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    __table_args__ = (
+        CheckConstraint("id = 1", name="single_row"),
+        # Telegram group and supergroup ids are negative.
+        CheckConstraint("chat_id < 0", name="group_chat_id"),
     )

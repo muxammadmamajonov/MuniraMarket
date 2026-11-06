@@ -1,21 +1,25 @@
 """Fixed-window rate limiting (ADR 0007).
 
-One counter per ``(scope, subject, window)``: ``INCR`` plus ``EXPIRE ... NX`` in a single
-``MULTI`` transaction under ``mm:rl:<scope>:<subject>:<window_start>``. Store failures raise
-:class:`StoreUnavailableError` so callers fail closed.
+One counter per ``(scope, subject, window)`` in ``rate_limit_counters`` (ADR 0013), keyed
+``<scope>:<subject>:<window_start>``. A hit is one atomic ``INSERT ... ON CONFLICT DO UPDATE SET
+hits = hits + 1 RETURNING hits``: concurrent requests serialise on the row lock, so no hit is lost
+and no two requests see the same count. Store failures raise :class:`StoreUnavailableError` so
+callers fail closed.
 """
 
 import math
 from dataclasses import dataclass
 from typing import Final, Protocol
 
-from redis.asyncio import Redis
-from redis.exceptions import RedisError
+from sqlalchemy.dialects.postgresql import insert as pg_insert
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.clock import Clock
-from app.security.session import StoreUnavailableError
+from app.models.security_state import RateLimitCounter
+from app.security.errors import StoreUnavailableError
+from app.security.pg import SessionFactory, as_datetime, in_transaction
 
-RATE_LIMIT_KEY_PREFIX: Final = "mm:rl"
+__all__ = ["StoreUnavailableError"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -72,7 +76,8 @@ def _window(now: float, window_seconds: int) -> tuple[int, int]:
 
 
 def rate_limit_key(scope: str, subject: str, window_start: int) -> str:
-    return f"{RATE_LIMIT_KEY_PREFIX}:{scope}:{subject}:{window_start}"
+    # The subject is an IP or a user id; scopes are short identifiers (``auth_deps.rate_limit``).
+    return f"{scope}:{subject}:{window_start}"
 
 
 class InMemoryRateLimiter:
@@ -95,9 +100,9 @@ class InMemoryRateLimiter:
         return RateLimitDecision(allowed=count <= limit, retry_after_seconds=retry_after)
 
 
-class RedisRateLimiter:
-    def __init__(self, client: Redis, clock: Clock) -> None:
-        self._client = client
+class PostgresRateLimiter:
+    def __init__(self, factory: SessionFactory, clock: Clock) -> None:
+        self._factory = factory
         self._clock = clock
 
     async def hit(
@@ -105,13 +110,23 @@ class RedisRateLimiter:
     ) -> RateLimitDecision:
         now = self._clock()
         window_start, retry_after = _window(now, window_seconds)
-        key = rate_limit_key(scope, subject, window_start)
-        try:
-            async with self._client.pipeline(transaction=True) as pipe:
-                pipe.incr(key)
-                # NX: only the request that created the counter sets its expiry.
-                pipe.expire(key, window_seconds, nx=True)
-                count, _ = await pipe.execute()
-        except RedisError:
-            raise StoreUnavailableError from None
-        return RateLimitDecision(allowed=int(count) <= limit, retry_after_seconds=retry_after)
+        bucket = rate_limit_key(scope, subject, window_start)
+        # The row outlives its window by one window, which is plenty for the cleanup job.
+        expires_at = as_datetime(window_start + 2 * window_seconds)
+
+        async def work(db: AsyncSession) -> int:
+            statement = pg_insert(RateLimitCounter).values(
+                bucket=bucket, hits=1, expires_at=expires_at
+            )
+            count: int = (
+                await db.execute(
+                    statement.on_conflict_do_update(
+                        index_elements=[RateLimitCounter.bucket],
+                        set_={"hits": RateLimitCounter.hits + 1},
+                    ).returning(RateLimitCounter.hits)
+                )
+            ).scalar_one()
+            return count
+
+        count = await in_transaction(self._factory, work)
+        return RateLimitDecision(allowed=count <= limit, retry_after_seconds=retry_after)

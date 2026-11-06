@@ -13,7 +13,7 @@ const session = vi.hoisted(() => ({
   error: null as unknown,
   apiFetch: vi.fn<(path: string, init?: RequestInit) => Promise<Response>>(),
   retry: vi.fn(),
-  loginWithWidget: vi.fn(),
+  startTelegramLogin: vi.fn(),
   logout: vi.fn(() => Promise.resolve()),
 }));
 vi.mock('@/lib/session', () => ({ useSession: () => session }));
@@ -31,9 +31,7 @@ function renderProfile(locale: 'uz' | 'ru' = 'uz') {
 beforeEach(() => {
   session.status = 'anonymous';
   session.user = null;
-  session.apiFetch.mockResolvedValue(
-    Response.json({ telegram_login_widget: { enabled: false, bot_username: null } }),
-  );
+  session.apiFetch.mockResolvedValue(Response.json({ telegram_oidc: { enabled: false } }));
 });
 
 afterEach(() => {

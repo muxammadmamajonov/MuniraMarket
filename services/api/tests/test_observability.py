@@ -208,26 +208,26 @@ class _OkSession:
         return None
 
 
-async def test_ready_checks_redis_when_configured(app: FastAPI, client: httpx.AsyncClient) -> None:
-    async def session() -> _OkSession:
-        return _OkSession()
+async def test_ready_fails_closed_when_a_security_table_is_missing(
+    app: FastAPI, client: httpx.AsyncClient
+) -> None:
+    """A missing migration or grant on the security-state tables makes the instance unready."""
 
-    async def broken_ping() -> bool:
-        raise ConnectionError("rediss://default:s3cr3t@cache:6380 refused")
+    class _MissingTable:
+        async def execute(self, statement: object) -> None:
+            if "auth_sessions" in str(statement):
+                raise RuntimeError('relation "auth_sessions" does not exist (password=s3cr3t)')
+
+    async def session() -> _MissingTable:
+        return _MissingTable()
 
     app.dependency_overrides[get_session] = session
-    app.state.redis_ping = broken_ping
     response = await client.get("/api/v1/health/ready")
     assert response.status_code == 503
     assert response.json() == {"status": "unavailable"}
     assert response.headers["cache-control"] == "no-store"
     assert "s3cr3t" not in response.text
-
-    async def ok_ping() -> bool:
-        return True
-
-    app.state.redis_ping = ok_ping
-    assert (await client.get("/api/v1/health/ready")).status_code == 200
+    assert not hasattr(app.state, "redis_ping")
 
 
 # --- database connection settings ---------------------------------------------------------

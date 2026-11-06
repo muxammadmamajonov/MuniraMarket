@@ -14,7 +14,7 @@ INTERFACE CONTRACT (catalog/cart code depends on these names and semantics):
 - ``rate_limit(scope, limit, window_seconds, key="ip" | "user")``: returns a dependency that
   raises ``ApiError(429, "rate_limited", headers={"Retry-After": ...})`` once exceeded.
   ``key="user"`` depends on ``get_current_user`` (so it also requires a session).
-- Store (Redis) failures raise ``ApiError(503, "service_unavailable")``: fail closed.
+- Security-store failures raise ``ApiError(503, "service_unavailable")``: fail closed.
 
 Tests override ``get_current_user`` (and ``require_csrf`` for write routes when not testing
 CSRF itself) and may override ``get_rate_limiter`` / ``get_session_manager`` via

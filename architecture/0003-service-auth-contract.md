@@ -3,6 +3,8 @@
 - Status: accepted (foundation)
 - Scope: `services/telegram` (signer) and `services/api` (verifier)
 
+> The replay store is the PostgreSQL table `service_request_nonces` since [ADR 0013](0013-security-state-in-postgres.md).
+
 ## Context
 
 Telegram Serverless endpoints and handlers run on Telegram's infrastructure. They need to call the

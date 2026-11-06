@@ -18,6 +18,8 @@ export const DEFAULT_TIMEOUT_MS = 8000;
 const SESSION_PATH = '/api/v1/internal/telegram/session';
 const ME_PATH = '/api/v1/internal/telegram/me';
 const NOTIFICATIONS_PATH = '/api/v1/internal/telegram/notifications';
+const STAFF_CHAT_CONNECT_PATH = '/api/v1/internal/telegram/staff-chat/connect';
+const MIN_GROUP_CHAT_ID = -(10 ** 15);
 const MAX_TELEGRAM_ID = 2 ** 52;
 const MAX_CLAIM_LIMIT = 50;
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -190,6 +192,27 @@ export function createCoreApiClient({
      */
     getMe(telegramUserId) {
       return request('GET', ME_PATH, { actorTelegramUserId: telegramUserId });
+    },
+
+    /**
+     * Connects a Telegram group as the staff order-alert chat (`/connect_orders`). Signed with
+     * the SENDER as the actor (taken from the platform-verified update, never from message text);
+     * the Core API answers 200 `{ connected: true }`, or 403 when the actor is not an admin.
+     * Rejects with `CoreApiError` on any non-2xx status.
+     * @param {{ actorTelegramUserId: number, chatId: number, chatType: 'group' | 'supergroup' }} input
+     */
+    async connectStaffChat({ actorTelegramUserId, chatId, chatType }) {
+      assertTelegramUserId(actorTelegramUserId);
+      if (!Number.isSafeInteger(chatId) || chatId >= 0 || chatId < MIN_GROUP_CHAT_ID) {
+        throw new TypeError('Invalid group chat id');
+      }
+      if (chatType !== 'group' && chatType !== 'supergroup') {
+        throw new TypeError('Invalid chat type');
+      }
+      return request('POST', STAFF_CHAT_CONNECT_PATH, {
+        actorTelegramUserId,
+        json: { chat_id: chatId, chat_type: chatType },
+      });
     },
 
     /**

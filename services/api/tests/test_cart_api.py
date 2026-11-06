@@ -362,7 +362,7 @@ async def test_ip_limit_runs_before_the_session_lookup(
     # Unauthenticated: the real per-IP limiter counts the request, then the session check fails.
     assert (await client.get("/api/v1/cart")).status_code == 401
     counters = app.state.rate_limiter._counters
-    assert any(key.startswith("mm:rl:cart_ip:127.0.0.1:") for key in counters)
+    assert any(key.startswith("cart_ip:127.0.0.1:") for key in counters)
 
     looked_up.clear()
     limited = ApiError(429, "rate_limited", "Too many requests", headers={"Retry-After": "3"})
@@ -374,7 +374,7 @@ async def test_ip_limit_runs_before_the_session_lookup(
         await client.delete(f"{ITEMS}/{PRODUCT_ID}"),
     ):
         assert response.status_code == 429
-    assert looked_up == []  # rejected before any session (Redis) or database work
+    assert looked_up == []  # rejected before any session or database work
     assert carts.calls == []
 
 

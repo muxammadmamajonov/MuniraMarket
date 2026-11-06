@@ -11,16 +11,35 @@
  */
 import { BotApiError } from 'sdk';
 import { buildOrderStatusMessage, sendOrderStatusNotification } from './orderStatus.js';
+import { buildStaffAlertMessage } from './staffAlert.js';
 
 /**
- * A validated order status notification, as handed to a transport.
+ * A validated order status notification for the customer, as handed to a transport.
  * @typedef {object} OrderNotification
+ * @property {'order_status'} [kind] absent or `order_status`
  * @property {number} chatId Telegram chat id (a private chat: the user's Telegram id)
  * @property {string} orderNumber
  * @property {import('../types.js').OrderStatus} status
  * @property {string} [locale] `uz` | `ru`
  * @property {number} [totalUzs] integer amount in UZS
  * @property {string} [cancelReason] customer-safe text; shown only for CANCELLED
+ */
+
+/**
+ * A validated staff group alert (`order.staff_alert`), as handed to a transport.
+ * @typedef {object} StaffAlertNotification
+ * @property {'staff_alert'} kind
+ * @property {number} chatId negative group/supergroup chat id
+ * @property {string} orderNumber
+ * @property {import('../types.js').OrderStatus} status
+ * @property {import('../types.js').OrderStatus | null} previousStatus
+ * @property {number} totalUzs integer amount in UZS
+ * @property {boolean} cancelledByCustomer
+ */
+
+/**
+ * Anything the drain hands to a transport.
+ * @typedef {OrderNotification | StaffAlertNotification} Notification
  */
 
 /**
@@ -37,7 +56,7 @@ import { buildOrderStatusMessage, sendOrderStatusNotification } from './orderSta
  * `DeliveryResult` (the drain still treats a rejection as `retry` / `transport_error`).
  *
  * @typedef {object} NotificationTransport
- * @property {(notification: OrderNotification) => Promise<DeliveryResult>} deliver
+ * @property {(notification: Notification) => Promise<DeliveryResult>} deliver
  */
 
 /** @param {number} code */
@@ -75,12 +94,50 @@ function assertDeliverable(notification) {
 }
 
 /**
- * Bot API transport built on `sendOrderStatusNotification`.
+ * Builds the staff alert text, or throws `TypeError` when the alert is unusable.
+ * @param {StaffAlertNotification} alert
+ * @returns {string}
+ */
+function staffAlertText(alert) {
+  if (!Number.isSafeInteger(alert.chatId) || alert.chatId >= 0) {
+    throw new TypeError('Invalid group chat id');
+  }
+  return buildStaffAlertMessage(alert).text;
+}
+
+/**
+ * Sends a staff alert. Bot API 403 means the bot was removed from (or muted in) the group: final,
+ * reported as `recipient_blocked`, like a customer who blocked the bot.
+ * @param {{ sendMessage: (params: Record<string, unknown>) => Promise<unknown> }} api
+ * @param {StaffAlertNotification} alert
+ * @returns {Promise<DeliveryResult>}
+ */
+async function deliverStaffAlert(api, alert) {
+  /** @type {string} */
+  let text;
+  try {
+    text = staffAlertText(alert);
+  } catch {
+    return { outcome: 'failed', errorCode: 'invalid_payload' };
+  }
+  try {
+    await api.sendMessage({ chat_id: alert.chatId, text });
+    return { outcome: 'delivered' };
+  } catch (error) {
+    if (error instanceof BotApiError && error.code === 403) return { outcome: 'recipient_blocked' };
+    return classifySendError(error);
+  }
+}
+
+/**
+ * Bot API transport: customer notifications via `sendOrderStatusNotification`, staff alerts via
+ * `buildStaffAlertMessage` + `api.sendMessage` (both plain text, no `parse_mode`).
  *
  * | Situation                                   | Result                                     |
  * | ------------------------------------------- | ------------------------------------------ |
  * | sent                                        | `delivered`                                |
- * | Bot API 403 (user blocked the bot)          | `recipient_blocked`                        |
+ * | Bot API 403 (user blocked the bot / bot     | `recipient_blocked`                        |
+ * | removed from the staff group)               |                                            |
  * | Bot API 401, 429 or >= 500                  | `retry`, `bot_api_<code>`                  |
  * | any other Bot API 4xx (e.g. 400)            | `failed`, `bot_api_<code>`                 |
  * | malformed notification (TypeError)          | `failed`, `invalid_payload`                |
@@ -92,6 +149,7 @@ function assertDeliverable(notification) {
 export function createTelegramBotTransport({ api }) {
   return {
     async deliver(notification) {
+      if (notification?.kind === 'staff_alert') return deliverStaffAlert(api, notification);
       try {
         assertDeliverable(notification);
       } catch {

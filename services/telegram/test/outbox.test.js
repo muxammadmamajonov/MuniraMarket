@@ -3,8 +3,10 @@ import { CoreApiError } from '../tgcloud/lib/coreApi/errors.js';
 import {
   LEASE_MS,
   LEASE_SAFETY_MARGIN_MS,
+  ORDER_STAFF_ALERT,
   drainOrderNotifications,
   parseOrderStatusPayload,
+  parseStaffAlertPayload,
 } from '../tgcloud/lib/notifications/outbox.js';
 
 const T0 = Date.parse('2026-10-31T10:00:00Z');
@@ -25,6 +27,20 @@ const message = (n, extra = {}) => ({
   attempts: 1,
   ...extra,
 });
+
+const GROUP_ID = -1001234567890;
+const staffPayload = (extra = {}) => ({
+  order_id: uuid(901),
+  order_number: '261031-7KQ2MX',
+  status: 'NEW',
+  previous_status: null,
+  total_uzs: 125000,
+  chat_id: GROUP_ID,
+  cancelled_by_customer: false,
+  ...extra,
+});
+const staffMessage = (n, extra = {}) =>
+  message(n, { event_type: 'order.staff_alert', payload: staffPayload(), ...extra });
 
 /** Fake Core API: `batches` are served one per claim; reports are recorded. */
 function createCoreApi({ batches, leaseMs = LEASE_MS, reportError } = {}) {
@@ -112,7 +128,89 @@ describe('parseOrderStatusPayload', () => {
   });
 });
 
+describe('parseStaffAlertPayload', () => {
+  it('maps a valid payload to a staff alert notification', () => {
+    expect(ORDER_STAFF_ALERT).toBe('order.staff_alert');
+    expect(parseStaffAlertPayload(staffPayload())).toEqual({
+      kind: 'staff_alert',
+      chatId: GROUP_ID,
+      orderNumber: '261031-7KQ2MX',
+      status: 'NEW',
+      previousStatus: null,
+      totalUzs: 125000,
+      cancelledByCustomer: false,
+    });
+    expect(
+      parseStaffAlertPayload(
+        staffPayload({
+          status: 'CANCELLED',
+          previous_status: 'CONFIRMED',
+          cancelled_by_customer: true,
+          extra: 'ignored',
+        }),
+      ),
+    ).toMatchObject({
+      status: 'CANCELLED',
+      previousStatus: 'CONFIRMED',
+      cancelledByCustomer: true,
+    });
+  });
+
+  it.each([
+    ['a private (positive) chat id', { chat_id: 555 }],
+    ['a zero chat id', { chat_id: 0 }],
+    ['an out-of-range chat id', { chat_id: -(10 ** 16) }],
+    ['a string chat id', { chat_id: String(GROUP_ID) }],
+    ['an unknown status', { status: 'SHIPPED' }],
+    ['an unknown previous status', { previous_status: 'SHIPPED' }],
+    ['a missing previous status', { previous_status: undefined }],
+    ['a non-boolean cancelled flag', { cancelled_by_customer: 'yes' }],
+    ['a fractional total', { total_uzs: 1.5 }],
+    ['a negative total', { total_uzs: -1 }],
+    ['a bad order id', { order_id: 'x' }],
+    ['an empty order number', { order_number: '' }],
+    ['a too long order number', { order_number: 'A'.repeat(33) }],
+  ])('rejects %s', (_label, extra) => {
+    expect(parseStaffAlertPayload(staffPayload(extra))).toBeNull();
+  });
+
+  it.each([null, [], 'x', 1])('rejects a non-object payload %j', (value) => {
+    expect(parseStaffAlertPayload(value)).toBeNull();
+  });
+});
+
 describe('drainOrderNotifications', () => {
+  it('delivers staff alerts and customer notifications from the same batch', async () => {
+    const coreApi = createCoreApi({
+      batches: [[message(1), staffMessage(2, { attempts: 3 })]],
+    });
+    const transport = createTransport();
+    const summary = await drainOrderNotifications({ coreApi, transport, now: () => T0 });
+    expect(transport.delivered).toEqual([
+      expect.not.objectContaining({ kind: 'staff_alert' }),
+      expect.objectContaining({ kind: 'staff_alert', chatId: GROUP_ID, status: 'NEW' }),
+    ]);
+    expect(coreApi.reports).toEqual([
+      { id: uuid(1), attempt: 1, outcome: 'delivered' },
+      { id: uuid(2), attempt: 3, outcome: 'delivered' },
+    ]);
+    expect(summary).toMatchObject({ claimed: 2, delivered: 2 });
+  });
+
+  it('reports malformed staff alerts as failed/invalid_payload', async () => {
+    const coreApi = createCoreApi({
+      batches: [[staffMessage(1, { payload: staffPayload({ chat_id: 555 }) }), staffMessage(2)]],
+    });
+    const transport = createTransport(() => ({ outcome: 'recipient_blocked' }));
+    const summary = await drainOrderNotifications({ coreApi, transport, now: () => T0 });
+    expect(coreApi.reports).toEqual([
+      { id: uuid(1), attempt: 1, outcome: 'failed', errorCode: 'invalid_payload' },
+      { id: uuid(2), attempt: 1, outcome: 'recipient_blocked' },
+    ]);
+    expect(transport.delivered).toHaveLength(1);
+    expect(summary).toMatchObject({ failed: 1, blocked: 1 });
+  });
+
   it('claims with the limit, delivers sequentially and reports every outcome', async () => {
     const coreApi = createCoreApi({
       batches: [[message(1), message(2), message(3), message(4)]],
@@ -574,5 +672,37 @@ describe('transport + outbox together', () => {
       { id: uuid(5), attempt: 1, outcome: 'retry', errorCode: 'transport_error' },
     ]);
     expect(summary).toMatchObject({ claimed: 5, delivered: 1, blocked: 1, retried: 2, failed: 1 });
+  });
+
+  it('delivers a staff alert to the group and maps a removed bot (403) to recipient_blocked', async () => {
+    const { BotApiError } = await import('sdk');
+    const { createTelegramBotTransport } =
+      await import('../tgcloud/lib/notifications/transport.js');
+    const { createRecordingApi } = await import('./sdk-fake/api.js');
+    const api = createRecordingApi();
+    const script = [
+      () => ({ message_id: 1 }),
+      () => {
+        throw new BotApiError(403, 'Forbidden: bot was kicked from the supergroup chat');
+      },
+      () => {
+        throw new BotApiError(429, 'Too Many Requests');
+      },
+    ];
+    api.respond('sendMessage', () => script.shift()());
+    const coreApi = createCoreApi({ batches: [[1, 2, 3].map((n) => staffMessage(n))] });
+    const summary = await drainOrderNotifications({
+      coreApi,
+      transport: createTelegramBotTransport({ api }),
+      now: () => T0,
+    });
+    expect(api.calls[0].params.chat_id).toBe(GROUP_ID);
+    expect(api.calls[0].params).not.toHaveProperty('parse_mode');
+    expect(coreApi.reports).toEqual([
+      { id: uuid(1), attempt: 1, outcome: 'delivered' },
+      { id: uuid(2), attempt: 1, outcome: 'recipient_blocked' },
+      { id: uuid(3), attempt: 1, outcome: 'retry', errorCode: 'bot_api_429' },
+    ]);
+    expect(summary).toMatchObject({ claimed: 3, delivered: 1, blocked: 1, retried: 1 });
   });
 });

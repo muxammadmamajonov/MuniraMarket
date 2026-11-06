@@ -26,6 +26,11 @@ _STATE_KEY: Final = "mm_session_cookie"
 _EXPIRED: Final = "Thu, 01 Jan 1970 00:00:00 GMT"
 
 
+def binding_cookie_name(secure: bool) -> str:
+    """Short-lived cookie binding an OIDC login to the browser that started it (ADR 0014)."""
+    return "__Host-mm_oidc" if secure else "mm_oidc"
+
+
 def session_cookie_header(*, name: str, token: str, max_age: int, secure: bool) -> str:
     """``HttpOnly; SameSite=Lax; Path=/``, never ``Domain`` (host-only cookie)."""
     parts = [f"{name}={token}", f"Max-Age={max_age}", "Path=/", "HttpOnly", "SameSite=Lax"]
@@ -44,9 +49,14 @@ def expired_cookie_header(*, name: str, secure: bool) -> str:
 def queue_session_cookie(request: Request, header_value: str) -> None:
     """Send ``Set-Cookie: header_value`` with the response, whatever its status.
 
-    A later call replaces an earlier one: only the final session state reaches the browser.
+    Cookies are queued per name: a later call for the same cookie replaces an earlier one, so
+    only the final session state reaches the browser; different cookies (the session and the
+    OIDC login binding) are all sent.
     """
-    request.state.mm_session_cookie = header_value  # read back via scope["state"][_STATE_KEY]
+    name = header_value.split("=", 1)[0]
+    queued: dict[str, str] = dict(getattr(request.state, _STATE_KEY, None) or {})
+    queued[name] = header_value
+    setattr(request.state, _STATE_KEY, queued)  # read back via scope["state"][_STATE_KEY]
 
 
 def _under(path: str, prefixes: tuple[str, ...]) -> bool:
@@ -72,10 +82,10 @@ class SessionCookieMiddleware:
             if message["type"] == "http.response.start":
                 response_started = True
                 state: dict[str, Any] = scope.get("state") or {}
-                cookie = state.get(_STATE_KEY)
-                if cookie is not None or no_store_path or force_no_store:
+                cookies: dict[str, str] = state.get(_STATE_KEY) or {}
+                if cookies or no_store_path or force_no_store:
                     headers = MutableHeaders(scope=message)
-                    if cookie is not None:
+                    for cookie in cookies.values():
                         headers.append("set-cookie", cookie)
                     headers["cache-control"] = "no-store"
             await send(message)

@@ -111,3 +111,84 @@ describe('createTelegramBotTransport', () => {
     }
   });
 });
+
+describe('createTelegramBotTransport: staff alerts', () => {
+  const GROUP_ID = -1001234567890;
+  const alert = (extra = {}) => ({
+    kind: 'staff_alert',
+    chatId: GROUP_ID,
+    orderNumber: '261031-7KQ2MX',
+    status: 'CANCELLED',
+    previousStatus: 'CONFIRMED',
+    totalUzs: 85000,
+    cancelledByCustomer: true,
+    ...extra,
+  });
+
+  it('sends one bilingual plain-text message to the group', async () => {
+    const api = createRecordingApi();
+    const result = await createTelegramBotTransport({ api }).deliver(alert());
+    expect(result).toEqual({ outcome: 'delivered' });
+    expect(api.calls).toHaveLength(1);
+    const { params } = api.calls[0];
+    expect(params.chat_id).toBe(GROUP_ID);
+    expect(params).not.toHaveProperty('parse_mode');
+    expect(params.text).toBe(
+      [
+        'Buyurtma bekor qilindi №261031-7KQ2MX',
+        'Holat: Tasdiqlangan → Bekor qilingan',
+        `Jami: 85${NBSP}000${NBSP}so‘m`,
+        'Mijoz tomonidan bekor qilindi',
+        '',
+        'Заказ отменён №261031-7KQ2MX',
+        'Статус: Подтверждён → Отменён',
+        `Итого: 85${NBSP}000${NBSP}сум`,
+        'Отменён клиентом',
+      ].join('\n'),
+    );
+  });
+
+  it('maps 403 (bot removed from the group) to recipient_blocked', async () => {
+    const api = throwing(new BotApiError(403, 'Forbidden: bot was kicked from the group chat'));
+    await expect(createTelegramBotTransport({ api }).deliver(alert())).resolves.toEqual({
+      outcome: 'recipient_blocked',
+    });
+  });
+
+  it.each([
+    [429, 'retry'],
+    [500, 'retry'],
+    [401, 'retry'],
+    [400, 'failed'],
+  ])('maps Bot API %i to %s', async (code, outcome) => {
+    const api = throwing(new BotApiError(code, `chat ${GROUP_ID}`));
+    await expect(createTelegramBotTransport({ api }).deliver(alert())).resolves.toEqual({
+      outcome,
+      errorCode: `bot_api_${code}`,
+    });
+  });
+
+  it('maps network errors to retry transport_error', async () => {
+    const api = throwing(new Error(`ECONNRESET ${GROUP_ID}`));
+    await expect(createTelegramBotTransport({ api }).deliver(alert())).resolves.toEqual({
+      outcome: 'retry',
+      errorCode: 'transport_error',
+    });
+  });
+
+  it.each([
+    ['a positive (private) chat id', { chatId: 555 }],
+    ['a non-integer chat id', { chatId: -1.5 }],
+    ['an unknown status', { status: 'SHIPPED' }],
+    ['an unknown previous status', { previousStatus: 'SHIPPED' }],
+    ['a bad order number', { orderNumber: 'a b' }],
+    ['a negative total', { totalUzs: -1 }],
+  ])('fails with invalid_payload for %s without calling the API', async (_label, extra) => {
+    const api = createRecordingApi();
+    await expect(createTelegramBotTransport({ api }).deliver(alert(extra))).resolves.toEqual({
+      outcome: 'failed',
+      errorCode: 'invalid_payload',
+    });
+    expect(api.calls).toHaveLength(0);
+  });
+});

@@ -1,5 +1,10 @@
-import { expect, type Browser, type BrowserContext, type Page } from '@playwright/test';
-import { buildSignedLoginWidgetFields } from './telegram-login-widget';
+import {
+  expect,
+  type Browser,
+  type BrowserContext,
+  type Page,
+  type Request,
+} from '@playwright/test';
 
 /**
  * Shared helpers for the storefront E2E specs.
@@ -9,8 +14,8 @@ import { buildSignedLoginWidgetFields } from './telegram-login-widget';
  * and the app posts it to the Core API exactly as inside Telegram. Every other telegram.org
  * request is blocked.
  *
- * The admin app signs in through the real Telegram Login Widget redirect flow instead; see
- * `signInToAdmin` below.
+ * The admin app signs in through the real "Sign in with Telegram" OIDC redirect flow instead,
+ * against a local fake provider (`fake-telegram-oidc.ts`); see `signInToAdmin` below.
  */
 
 const WEB_APP_SCRIPT = 'https://telegram.org/js/telegram-web-app.js';
@@ -161,8 +166,6 @@ export async function emptyCart(page: Page): Promise<void> {
 
 // --- Admin app --------------------------------------------------------------------------------
 
-const LOGIN_WIDGET_SCRIPT = /^https:\/\/telegram\.org\/js\/telegram-widget\.js(\?.*)?$/;
-
 /** Base URL of the admin app (`E2E_ADMIN_URL`, default http://localhost:3001). */
 export function adminBaseUrl(): string {
   const value = process.env['E2E_ADMIN_URL'];
@@ -189,35 +192,10 @@ export function requireAdminTelegramId(): number {
 export const ADMIN_FIRST_NAME = 'E2E';
 export const ADMIN_LAST_NAME = 'Admin';
 
-/**
- * Stand-in for `https://telegram.org/js/telegram-widget.js`. The real script is injected by the
- * admin's own `TelegramLoginButton` with `data-auth-url` (carrying the one-time `state` the app
- * stored in this tab's sessionStorage); it renders a button in an iframe and, once the user
- * authorises, sends the browser to `data-auth-url` with the signed fields appended. The stub does
- * the same with a plain button, so the app itself issues the state, the callback page verifies it
- * and posts the fields to the Core API, which checks the HMAC. Nothing in production code knows
- * about the test.
- */
-function loginWidgetStub(fields: Record<string, string>): string {
-  return `
-(() => {
-  const script = document.currentScript;
-  const authUrl = script?.getAttribute('data-auth-url');
-  const host = script?.parentElement;
-  if (!authUrl || !host) throw new Error('Login Widget stub: missing data-auth-url or container');
-  const fields = ${JSON.stringify(fields)};
-  const button = document.createElement('button');
-  button.type = 'button';
-  button.textContent = 'Log in with Telegram';
-  button.setAttribute('data-testid', 'telegram-login-stub');
-  button.addEventListener('click', () => {
-    const url = new URL(authUrl);
-    for (const [key, value] of Object.entries(fields)) url.searchParams.append(key, value);
-    window.location.assign(url.toString());
-  });
-  host.appendChild(button);
-})();
-`;
+/** Issuer of the fake Telegram OIDC provider the Core API under test uses (`E2E_OIDC_ISSUER`). */
+export function oidcIssuer(): string {
+  const value = process.env['E2E_OIDC_ISSUER'];
+  return value === undefined || value === '' ? 'http://127.0.0.1:8899' : value.replace(/\/+$/, '');
 }
 
 /** A browser context for the admin app: desktop viewport, base URL `E2E_ADMIN_URL`, no storefront cookies. */
@@ -230,30 +208,37 @@ export async function newAdminContext(browser: Browser): Promise<BrowserContext>
 }
 
 /**
- * Signs in to the admin app through the Telegram Login Widget redirect flow: the widget script is
- * answered by `loginWidgetStub` with fields signed (fresh `auth_date`) by `E2E_TELEGRAM_BOT_TOKEN`,
- * every other telegram.org request is blocked, and the "login" button is clicked like a user's.
- * Resolves once the staff navigation is visible.
+ * Signs in to the admin app through the real "Sign in with Telegram" flow, nothing stubbed in the
+ * browser: the admin's own button asks the Core API to start (`oidc/start`), the browser navigates
+ * top-level to the fake provider's `/auth` (`fake-telegram-oidc.ts`, which signs in as
+ * `E2E_ADMIN_TELEGRAM_ID` and redirects straight back), the API's callback on the admin origin
+ * exchanges the code server to server (PKCE + client secret), verifies the RS256 `id_token` and
+ * redirects to `/uz` with the session cookie. Every telegram.org request stays blocked. Resolves
+ * once the staff navigation is visible.
  */
 export async function signInToAdmin(page: Page): Promise<void> {
-  const botToken = requireBotToken();
-  const adminId = requireAdminTelegramId();
+  requireAdminTelegramId();
+  const issuer = oidcIssuer();
+  const visited: string[] = [];
+  const onRequest = (request: Request) => {
+    if (!request.isNavigationRequest()) return;
+    const url = new URL(request.url());
+    visited.push(`${url.origin}${url.pathname}`);
+  };
+  page.on('request', onRequest);
 
-  // Routes registered later win, so block everything first, then answer the widget script.
   await page.route(/^https:\/\/([^/]+\.)?telegram\.org\//, (route) => route.abort());
-  await page.route(LOGIN_WIDGET_SCRIPT, (route) => {
-    const fields = buildSignedLoginWidgetFields({
-      botToken,
-      user: { id: adminId, first_name: ADMIN_FIRST_NAME, last_name: ADMIN_LAST_NAME },
-    });
-    return route.fulfill({ contentType: 'application/javascript', body: loginWidgetStub(fields) });
-  });
-
   await page.goto('/uz');
-  await expect(page.getByTestId('telegram-login-widget')).toBeVisible({ timeout: 20_000 });
-  await page.getByTestId('telegram-login-stub').click();
+  const button = page.getByRole('button', { name: 'Telegram orqali kirish' });
+  await expect(button).toBeVisible({ timeout: 20_000 });
+  await button.click();
   await expect(page.getByTestId('nav-products')).toBeVisible({ timeout: 20_000 });
   await expect(page).toHaveURL(/\/uz\/?$/);
+  page.off('request', onRequest);
+
+  // The browser really went app -> provider -> the API callback on the admin origin -> app.
+  expect(visited).toContain(`${issuer}/auth`);
+  expect(visited).toContain(`${adminBaseUrl()}/api/v1/auth/telegram/oidc/callback`);
 }
 
 /**

@@ -20,7 +20,7 @@ describe('buildContentSecurityPolicy', () => {
   const nonce = 'dGVzdC1ub25jZQ==';
   const production = buildContentSecurityPolicy({ nonce });
 
-  it('puts the nonce, strict-dynamic and telegram.org in script-src', () => {
+  it('puts the nonce, strict-dynamic and telegram.org (Mini App script) in script-src', () => {
     expect(directive(production, 'script-src')).toEqual([
       "'self'",
       `'nonce-${nonce}'`,
@@ -47,10 +47,15 @@ describe('buildContentSecurityPolicy', () => {
     expect(directive(production, 'img-src')).toEqual(["'self'", 'data:', 'blob:', 'https:']);
     expect(directive(production, 'font-src')).toEqual(["'self'"]);
     expect(directive(production, 'connect-src')).toEqual(["'self'"]);
-    expect(directive(production, 'frame-src')).toEqual(['https://oauth.telegram.org']);
+    expect(directive(production, 'frame-src')).toEqual(["'none'"]);
     expect(directive(production, 'base-uri')).toEqual(["'none'"]);
     expect(directive(production, 'form-action')).toEqual(["'self'"]);
     expect(directive(production, 'object-src')).toEqual(["'none'"]);
+  });
+
+  it('loads nothing for the browser sign-in: no Telegram OAuth host anywhere', () => {
+    expect(production).not.toContain('oauth.telegram.org');
+    expect(production).not.toContain('telegram-widget');
   });
 
   it('lets Telegram Web frame the app', () => {
@@ -85,7 +90,7 @@ describe('buildContentSecurityPolicy', () => {
       'https://*.maps.yandex.net',
     ]);
     expect(directive(withMaps, 'worker-src')).toEqual(["'self'", 'blob:']);
-    expect(directive(withMaps, 'frame-src')).toEqual(['https://oauth.telegram.org']);
+    expect(directive(withMaps, 'frame-src')).toEqual(["'none'"]);
     expect(directive(withMaps, 'script-src')).not.toContain("'unsafe-inline'");
   });
 });

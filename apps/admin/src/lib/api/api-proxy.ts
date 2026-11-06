@@ -23,6 +23,39 @@ function bodyLimitFor(method: string, segments: readonly string[]): number {
 /** How long we wait for the Core API before answering 504. */
 export const UPSTREAM_TIMEOUT_MS = 15_000;
 
+/**
+ * Which entrance this app is, sent to the Core API as `x-mm-entrance` on every upstream request.
+ * In production the Cloudflare gateway sets the same header; locally (and in E2E) there is no
+ * gateway, so the proxy sets it. A browser-sent `x-mm-entrance` is never forwarded: it is not in
+ * {@link FORWARDED_REQUEST_HEADERS} and is always overwritten here.
+ */
+export const ENTRANCE = 'admin';
+
+/**
+ * The only upstream redirect passed through to the browser: the end of the Telegram OIDC sign-in.
+ * The Core API answers it with `303` and a relative `Location` (the `return_to` page, or the
+ * sign-in failure page), plus the session cookie on success.
+ */
+const OIDC_CALLBACK_PATH = 'auth/telegram/oidc/callback';
+
+/**
+ * `true` for a same-origin, path-absolute `Location` such as `/uz/orders?x=1`: it starts with a
+ * single `/` (not `//`, which is protocol-relative), has no backslash (browsers treat `/\` like
+ * `//`), no control characters or spaces, and still resolves to the same origin.
+ */
+export function isSafeRelativeLocation(location: string): boolean {
+  if (location.length === 0 || location.length > 2048) return false;
+  if (!location.startsWith('/') || location.startsWith('//')) return false;
+  // Control characters (including tab/CR/LF, which URL parsing strips), DEL, space, backslash.
+  if (/[\u0000-\u0020\u007f\\]/.test(location)) return false;
+  try {
+    const base = 'http://same-origin.invalid';
+    return new URL(location, base).origin === base;
+  } catch {
+    return false;
+  }
+}
+
 /** Request headers forwarded to the Core API. Everything else (Host, Connection, ...) is dropped. */
 const FORWARDED_REQUEST_HEADERS = [
   'content-type',
@@ -73,8 +106,8 @@ function hasUnsafeSegment(segments: readonly string[]): boolean {
 }
 
 /**
- * The only Core API routes the admin exposes to a browser: the Login Widget sign-in and the
- * session routes it needs, and the back office (`admin/**`). Everything else answers as if the
+ * The only Core API routes the admin exposes to a browser: the Telegram OIDC sign-in (start and
+ * callback) and the session routes it needs, and the back office (`admin/**`). Everything else answers as if the
  * route did not exist: `/api/v1/internal/**` (Telegram Serverless, service-signed only), the
  * storefront's catalog, cart and checkout routes, and the Mini App sign-in
  * (`auth/telegram/init-data`), whose replayable `initData` must never mint a back-office session.
@@ -85,7 +118,8 @@ export const ALLOWED_AUTH_ROUTES: readonly string[] = [
   'auth/config',
   'auth/session',
   'auth/logout',
-  'auth/telegram/login-widget',
+  'auth/telegram/oidc/start',
+  'auth/telegram/oidc/callback',
 ];
 
 function isAllowedPath(segments: readonly string[]): boolean {
@@ -103,6 +137,7 @@ function buildUpstreamHeaders(request: Request, clientIpHeader: string | null): 
   // rate-limit bucket); see `clientIpFrom`.
   const clientIp = clientIpFrom(request.headers, clientIpHeader);
   if (clientIp !== null) headers.set('x-forwarded-for', clientIp);
+  headers.set('x-mm-entrance', ENTRANCE);
   return headers;
 }
 
@@ -135,6 +170,25 @@ async function readBodyCapped(request: Request, limit: number): Promise<Uint8Arr
     offset += chunk.byteLength;
   }
   return body;
+}
+
+/**
+ * Passes the OIDC callback's `303` through: only `Location` (when it is a safe relative path), the
+ * cookies, and no-store / no-referrer. Anything else (another status, an absolute or odd
+ * `Location`) answers 502 like every other redirect.
+ */
+function oidcCallbackRedirect(upstream: Response): Response {
+  const location = upstream.headers.get('location');
+  if (upstream.status !== 303 || location === null || !isSafeRelativeLocation(location)) {
+    return errorResponse(502, 'service_unavailable', 'Unexpected response from the service');
+  }
+  const headers = new Headers({
+    location,
+    'cache-control': 'no-store',
+    'referrer-policy': 'no-referrer',
+  });
+  for (const cookie of upstream.headers.getSetCookie()) headers.append('set-cookie', cookie);
+  return new Response(null, { status: 303, headers });
 }
 
 /** Creates the Route Handler shared by every HTTP method of the admin's `/api/v1/[...path]`. */
@@ -183,9 +237,12 @@ export function createApiProxy(deps: ProxyDeps) {
       return errorResponse(502, 'service_unavailable', 'The service is unavailable');
     }
 
-    // A redirect would point the browser at the internal API host; the API does not redirect on
-    // purpose, so treat one as a misbehaving upstream.
     if (upstream.status >= 300 && upstream.status < 400) {
+      if (method === 'GET' && path.join('/') === OIDC_CALLBACK_PATH) {
+        return oidcCallbackRedirect(upstream);
+      }
+      // Any other redirect would point the browser at the internal API host; the API does not
+      // redirect on purpose, so treat one as a misbehaving upstream.
       return errorResponse(502, 'service_unavailable', 'Unexpected response from the service');
     }
 
