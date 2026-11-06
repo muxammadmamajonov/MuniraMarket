@@ -9,6 +9,9 @@ import {
   parseSort,
   stockLabel,
   stockState,
+  listingHref,
+  parseInStock,
+  previousPrice,
 } from './catalog';
 
 function node(slug: string, children: CategoryNode[] = []): CategoryNode {
@@ -65,5 +68,33 @@ describe('catalog helpers', () => {
     expect(maxQuantityFor({ stock_quantity: 500 })).toBe(99);
     expect(maxQuantityFor({ stock_quantity: 4 })).toBe(4);
     expect(maxQuantityFor({ stock_quantity: 0 })).toBe(1);
+  });
+});
+
+describe('listing state', () => {
+  it('parses the in-stock flag strictly', () => {
+    expect(parseInStock('1')).toBe(true);
+    expect(parseInStock(['1', '0'])).toBe(true);
+    for (const value of [undefined, '', '0', 'true', 'yes'])
+      expect(parseInStock(value)).toBe(false);
+  });
+
+  it('builds listing URLs with defaults left out and pagination reset', () => {
+    expect(listingHref('/uz/c/fruit', { sort: 'newest', inStock: false })).toBe('/uz/c/fruit');
+    expect(listingHref('/uz/c/fruit', { sort: 'price_asc', inStock: true })).toBe(
+      '/uz/c/fruit?sort=price_asc&stock=1',
+    );
+    expect(
+      listingHref('/ru/search', { sort: 'newest', inStock: true, page: 3 }, { q: 'olma' }),
+    ).toBe('/ru/search?q=olma&stock=1&page=3');
+  });
+});
+
+describe('previousPrice', () => {
+  it('shows an old price only when the data has a higher one', () => {
+    expect(previousPrice({ price_uzs: 10_000, old_price_uzs: 12_000 })).toBe(12_000);
+    expect(previousPrice({ price_uzs: 10_000, old_price_uzs: null })).toBeNull();
+    expect(previousPrice({ price_uzs: 10_000, old_price_uzs: 10_000 })).toBeNull();
+    expect(previousPrice({ price_uzs: 10_000, old_price_uzs: 9_000 })).toBeNull();
   });
 });

@@ -2,20 +2,27 @@ import { isLocale } from '@muniramarket/contracts';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { CartBar } from '@/components/cart-bar';
+import { CatalogToolbar } from '@/components/catalog-toolbar';
 import { CategoryChips } from '@/components/category-chips';
+import { CategoryRail } from '@/components/category-rail';
 import { EmptyPanel } from '@/components/empty-panel';
 import { BasketIcon } from '@/components/icons';
 import { PageContainer } from '@/components/page-container';
 import { Pagination } from '@/components/pagination';
 import { ProductGrid } from '@/components/product-grid';
 import { SessionNotice } from '@/components/session-notice';
-import { SortSelect } from '@/components/sort-select';
 import { LINK_BUTTON_PRIMARY } from '@/components/ui-classes';
 import { getDictionary } from '@/i18n';
-import { formatMessage } from '@/i18n/format';
 import { ApiRequestError } from '@/lib/api/errors';
 import { fetchCategories, fetchProducts } from '@/lib/api/server';
-import { findCategoryPath, localizedName, parsePage, parseSort } from '@/lib/catalog';
+import {
+  findCategoryPath,
+  listingHref,
+  localizedName,
+  parseInStock,
+  parsePage,
+  parseSort,
+} from '@/lib/catalog';
 
 export default async function CategoryPage({
   params,
@@ -27,6 +34,7 @@ export default async function CategoryPage({
   const dict = getDictionary(locale);
   const sort = parseSort(query['sort']);
   const page = parsePage(query['page']);
+  const inStock = parseInStock(query['stock']);
 
   const tree = await fetchCategories();
   const path = findCategoryPath(tree, slug);
@@ -35,24 +43,25 @@ export default async function CategoryPage({
 
   let products;
   try {
-    products = await fetchProducts({ category: slug, sort, page });
+    products = await fetchProducts({ category: slug, sort, page, inStock });
   } catch (error) {
     if (error instanceof ApiRequestError && error.code === 'category_not_found') notFound();
     throw error;
   }
 
   const base = `/${locale}/c/${encodeURIComponent(slug)}`;
-  const hrefFor = (nextPage: number) => {
-    const search = new URLSearchParams();
-    if (sort !== 'newest') search.set('sort', sort);
-    if (nextPage > 1) search.set('page', String(nextPage));
-    const text = search.toString();
-    return text === '' ? base : `${base}?${text}`;
-  };
+  const hrefFor = (nextPage: number) => listingHref(base, { sort, inStock, page: nextPage });
 
   return (
     <main className="flex-1">
       <PageContainer className="flex flex-col gap-5 py-6">
+        {/* Other top-level categories stay one tap away; the current branch is highlighted. */}
+        <CategoryRail
+          categories={tree}
+          locale={locale}
+          label={dict.home.categoriesHeading}
+          activeSlug={path[0]?.slug}
+        />
         <nav aria-label={dict.catalog.categoryLabel}>
           <ol className="flex flex-wrap items-center gap-1 text-sm text-muted-foreground">
             {path.slice(0, -1).map((ancestor) => (
@@ -76,21 +85,25 @@ export default async function CategoryPage({
           label={dict.catalog.subcategories}
         />
 
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <p className="text-sm text-muted-foreground">
-            {formatMessage(dict.catalog.productsCount, { count: products.total })}
-          </p>
-          <SortSelect value={sort} basePath={base} />
-        </div>
+        <CatalogToolbar total={products.total} sort={sort} inStock={inStock} basePath={base} />
 
         {products.items.length === 0 ? (
           <EmptyPanel
             icon={<BasketIcon width={28} height={28} />}
-            title={dict.catalog.emptyCategory}
+            title={inStock ? dict.catalog.noneInStock : dict.catalog.emptyCategory}
             action={
-              <Link href={`/${locale}`} className={LINK_BUTTON_PRIMARY}>
-                {dict.errors.backHome}
-              </Link>
+              inStock ? (
+                <Link
+                  href={listingHref(base, { sort, inStock: false })}
+                  className={LINK_BUTTON_PRIMARY}
+                >
+                  {dict.catalog.clearFilter}
+                </Link>
+              ) : (
+                <Link href={`/${locale}`} className={LINK_BUTTON_PRIMARY}>
+                  {dict.errors.backHome}
+                </Link>
+              )
             }
           />
         ) : (

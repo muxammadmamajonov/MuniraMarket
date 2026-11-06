@@ -6,7 +6,7 @@ name: Core API image
 # the same image is promoted from staging to production, never rebuilt.
 #
 # Pushing is off until an operator sets the repository variable CLOUDFLARE_IMAGE_PUSH=true and
-# the `staging` environment's secrets CLOUDFLARE_API_TOKEN (Containers write only) and
+# the `production` environment's secrets CLOUDFLARE_API_TOKEN (Containers write only) and
 # CLOUDFLARE_ACCOUNT_ID (infra/cloudflare/README.md). Without them this workflow only builds.
 
 on:
@@ -72,7 +72,7 @@ jobs:
     if: vars.CLOUDFLARE_IMAGE_PUSH == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    environment: staging
+    environment: production
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:

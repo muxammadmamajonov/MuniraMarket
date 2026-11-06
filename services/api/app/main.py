@@ -69,15 +69,31 @@ def build_identity_verifier(settings: Settings, clock: Clock) -> TelegramIdentit
     )
 
 
-def build_login_widget_verifier(settings: Settings, clock: Clock) -> LoginWidgetVerifier | None:
-    """``None`` unless the Login Widget is enabled (the settings validator guarantees a token)."""
+def build_login_widget_verifiers(
+    settings: Settings, clock: Clock
+) -> dict[str, LoginWidgetVerifier]:
+    """Build one Login Widget verifier per trusted browser entrance.
+
+    Storefront and admin intentionally use different bots in deployed environments: Telegram's
+    classic widget binds a bot to a website domain, and a staff session must not share the
+    customer Mini App credential.
+    """
     if not settings.telegram_login_widget_enabled or settings.telegram_bot_token is None:
-        return None
-    return LoginWidgetVerifier(
-        bot_token=settings.telegram_bot_token.get_secret_value(),
-        max_age_seconds=settings.telegram_login_max_age_seconds,
-        clock=clock,
-    )
+        return {}
+    verifiers = {
+        "storefront": LoginWidgetVerifier(
+            bot_token=settings.telegram_bot_token.get_secret_value(),
+            max_age_seconds=settings.telegram_login_max_age_seconds,
+            clock=clock,
+        )
+    }
+    if settings.admin_telegram_bot_token is not None:
+        verifiers["admin"] = LoginWidgetVerifier(
+            bot_token=settings.admin_telegram_bot_token.get_secret_value(),
+            max_age_seconds=settings.telegram_login_max_age_seconds,
+            clock=clock,
+        )
+    return verifiers
 
 
 def create_app(
@@ -165,7 +181,7 @@ def create_app(
         rotation_grace_seconds=settings.session_rotation_grace_seconds,
     )
     app.state.rate_limiter = rate_limiter
-    app.state.login_widget_verifier = build_login_widget_verifier(settings, clock)
+    app.state.login_widget_verifiers = build_login_widget_verifiers(settings, clock)
     app.state.image_storage = create_image_storage(settings)
     app.state.neon_auth_verifier = (
         NeonAuthVerifier(base_url=settings.neon_auth_base_url, jwks_url=settings.neon_auth_jwks_url)

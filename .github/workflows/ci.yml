@@ -157,6 +157,7 @@ jobs:
           MM_API_HOSTNAME: api.staging.example.test
           MM_TELEGRAM_BOT_ID: '1234567890'
           MM_TELEGRAM_BOT_USERNAME: muniramarket_ci_bot
+          MM_ADMIN_TELEGRAM_BOT_USERNAME: muniramarket_admin_ci_bot
           MM_CSRF_TRUSTED_ORIGINS: https://shop.staging.example.test,https://admin.staging.example.test
         run: |
           node infra/cloudflare/scripts/validate-deploy-env.mts --mode staging

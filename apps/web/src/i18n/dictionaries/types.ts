@@ -30,6 +30,12 @@ export interface Dictionary {
     orders: string;
     search: string;
     mainNavigation: string;
+    catalog: string;
+    profile: string;
+    /** Accessible name of the mobile bottom navigation. */
+    tabBar: string;
+    /** Cart tab name with the unit count, for screen readers. `{count}` */
+    cartWithCount: string;
   };
   home: {
     title: string;
@@ -41,11 +47,52 @@ export interface Dictionary {
     emptyHint: string;
     /** How ordering works; only what the app really does. */
     info: {
-      deliveryTitle: string;
-      deliveryText: string;
       paymentTitle: string;
       paymentText: string;
     };
+  };
+  /** The storefront's delivery-district chooser. Never claims the location was detected. */
+  delivery: {
+    /** Visible label of the chooser once a district is set (small, above the name). */
+    heading: string;
+    /** Before a choice: the one line on the card, which is itself the button. */
+    choosePrompt: string;
+    change: string;
+    sheetTitle: string;
+    confirm: string;
+    close: string;
+    /** Legend of the district list in the sheet. */
+    districtsLegend: string;
+    /** Zones could not be loaded; catalog browsing still works. */
+    unavailable: string;
+    noZones: string;
+    /** The remembered district is no longer served by any active zone. */
+    previousUnavailable: string;
+    /** Screen-reader announcement after a choice. `{district}` */
+    saved: string;
+  };
+  /** The optional map view (Yandex Maps): orientation only, it selects and saves nothing. */
+  map: {
+    /** Button in the district sheet that opens the picker. */
+    open: string;
+    title: string;
+    close: string;
+    /** Accessible name of the map canvas, including how to pan it by keyboard. */
+    canvasLabel: string;
+    loading: string;
+    unavailableTitle: string;
+    unavailableText: string;
+    backToList: string;
+    errorTitle: string;
+    offlineTitle: string;
+    errorText: string;
+    retry: string;
+    /** Under the map: orientation only; the district is chosen in the list, the address at checkout. */
+    hint: string;
+    myLocation: string;
+    locating: string;
+    locationDenied: string;
+    locationUnavailable: string;
   };
   search: {
     label: string;
@@ -69,6 +116,12 @@ export interface Dictionary {
     /** `{count}` */
     productsCount: string;
     emptyCategory: string;
+    filterLabel: string;
+    /** Toggle: only products that can be added to the cart now. */
+    inStockOnly: string;
+    /** Empty listing while the in-stock filter is on. */
+    noneInStock: string;
+    clearFilter: string;
     pagination: {
       label: string;
       previous: string;
@@ -406,6 +459,25 @@ export interface Dictionary {
     label: string;
     telegram: string;
     browser: string;
+  };
+  profile: {
+    title: string;
+    /** Section with the signed-in account. */
+    accountHeading: string;
+    /** Shown while the session is still being checked. */
+    checking: string;
+    anonymousTitle: string;
+    /** Why to sign in; the sign-in control itself is the shared `SignInPrompt`. */
+    anonymousText: string;
+    ordersLink: string;
+    languageHeading: string;
+  };
+  catalogPage: {
+    title: string;
+    /** Under the title: how many categories. `{count}` */
+    count: string;
+    emptyTitle: string;
+    emptyHint: string;
   };
   language: {
     label: string;

@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { LocaleProvider } from '@/i18n/context';
 import { CartProvider } from '@/lib/cart';
 import { makeCart, makeProduct } from '@/lib/cart/test-fixtures';
+import { zone } from '@/lib/checkout/test-fixtures';
 import { TelegramProvider } from '@/lib/telegram';
 import HomePage from './page';
 
@@ -15,7 +16,11 @@ vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: vi.fn() }),
 }));
 
-const api = vi.hoisted(() => ({ fetchCategories: vi.fn(), fetchProducts: vi.fn() }));
+const api = vi.hoisted(() => ({
+  fetchCategories: vi.fn(),
+  fetchProducts: vi.fn(),
+  fetchDeliveryZones: vi.fn(),
+}));
 vi.mock('@/lib/api/server', () => api);
 
 const session = vi.hoisted(() => ({
@@ -54,10 +59,13 @@ beforeEach(() => {
   session.apiFetch.mockResolvedValue(Response.json(makeCart()));
   api.fetchCategories.mockReset();
   api.fetchProducts.mockReset();
+  api.fetchDeliveryZones.mockReset();
+  api.fetchDeliveryZones.mockResolvedValue([zone()]);
+  window.localStorage.clear();
 });
 
 describe('home page', () => {
-  it('has a search form, category shortcuts, the delivery note and a product grid', async () => {
+  it('has the district chooser, search, category shortcuts, the payment note and a grid', async () => {
     api.fetchCategories.mockResolvedValue([
       category('c1', 'meva', 'Meva'),
       category('c2', 'sabzavot', 'Sabzavot'),
@@ -80,9 +88,10 @@ describe('home page', () => {
         .map((link) => link.getAttribute('href')),
     ).toEqual(['/uz/c/meva', '/uz/c/sabzavot']);
 
-    expect(screen.getByTestId('delivery-info')).toHaveTextContent(
-      'Toshkent bo‘ylab yetkazib berish',
-    );
+    // The district chooser comes first and does not block the catalog below it.
+    const district = screen.getByTestId('delivery-district');
+    expect(district).toHaveAttribute('data-state', 'unset');
+    expect(district.compareDocumentPosition(search)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
     expect(screen.getByTestId('delivery-info')).toHaveTextContent('To‘lov yetkazilganda');
 
     const grid = screen.getByRole('list', { name: 'Yangi mahsulotlar' });
@@ -117,5 +126,15 @@ describe('home page', () => {
     api.fetchProducts.mockResolvedValue(page([]));
     await renderHome('ru');
     expect(screen.getByTestId('empty-panel')).toHaveTextContent('Каталог пока пуст');
+    expect(screen.getByTestId('delivery-district')).toHaveTextContent('Выберите адрес доставки');
+  });
+
+  it('still renders the catalog when the delivery zones cannot be loaded', async () => {
+    api.fetchCategories.mockResolvedValue([]);
+    api.fetchProducts.mockResolvedValue(page([makeProduct()]));
+    api.fetchDeliveryZones.mockResolvedValue(null);
+    await renderHome();
+    expect(screen.getByTestId('delivery-district')).toHaveAttribute('data-state', 'unavailable');
+    expect(screen.getByRole('list', { name: 'Yangi mahsulotlar' })).toBeInTheDocument();
   });
 });

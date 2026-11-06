@@ -52,9 +52,25 @@ def _invalid_telegram_auth(message: str) -> ApiError:
     return ApiError(401, "invalid_telegram_auth", message)
 
 
+def _login_widget_entrance(request: Request) -> str | None:
+    """Return gateway-owned browser entrance metadata, never a client-selected value.
+
+    Unit tests call the ASGI app directly, so they intentionally default to the customer
+    storefront verifier outside deployed environments. A deployed request without the gateway
+    marker fails closed.
+    """
+    entrance = request.headers.get("x-mm-entrance")
+    if entrance in {"storefront", "admin"}:
+        return entrance
+    settings: Settings = request.app.state.settings
+    return "storefront" if settings.app_env in {"development", "test"} else None
+
+
 def get_login_widget_verifier(request: Request) -> LoginWidgetVerifier:
-    """404 ``feature_disabled`` unless ``TELEGRAM_LOGIN_WIDGET_ENABLED`` (checked first)."""
-    verifier: LoginWidgetVerifier | None = request.app.state.login_widget_verifier
+    """Return the verifier matching the trusted entrance, or a 404 when unavailable."""
+    entrance = _login_widget_entrance(request)
+    verifiers: dict[str, LoginWidgetVerifier] = request.app.state.login_widget_verifiers
+    verifier = verifiers.get(entrance) if entrance is not None else None
     if verifier is None:
         raise ApiError(404, "feature_disabled", "Telegram Login Widget is disabled")
     return verifier
@@ -104,11 +120,18 @@ _LOGIN_ERRORS = error_responses(401, 403, 422, 429, 503)
 async def auth_config(request: Request) -> AuthConfigResponse:
     """Which sign-in methods the website may offer."""
     settings: Settings = request.app.state.settings
-    enabled = settings.telegram_login_widget_enabled
+    entrance = _login_widget_entrance(request)
+    verifiers: dict[str, LoginWidgetVerifier] = request.app.state.login_widget_verifiers
+    enabled = entrance in verifiers
+    username = (
+        settings.admin_telegram_bot_username
+        if entrance == "admin"
+        else settings.telegram_bot_username
+    )
     return AuthConfigResponse(
         telegram_login_widget=LoginWidgetConfig(
             enabled=enabled,
-            bot_username=settings.telegram_bot_username if enabled else None,
+            bot_username=username if enabled else None,
         )
     )
 

@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef, useSyncExternalStore } from 'react';
 import { useTelegram } from './provider';
 import type { TelegramImpactStyle, TelegramNotificationType, TelegramWebApp } from './types';
 
@@ -53,13 +53,44 @@ export interface MainButtonConfig {
 }
 
 /**
+ * How many full-screen flows (the map picker) currently hide the MainButton. While it is above
+ * zero every `useMainButton` behaves as if passed `null`, so a "Go to cart" button cannot sit
+ * under a flow that has its own confirm control; when it drops back the owner shows it again.
+ */
+let suppressors = 0;
+const suppressionListeners = new Set<() => void>();
+
+function subscribeSuppression(listener: () => void): () => void {
+  suppressionListeners.add(listener);
+  return () => suppressionListeners.delete(listener);
+}
+
+function isSuppressed(): boolean {
+  return suppressors > 0;
+}
+
+/** Hides Telegram's MainButton (whoever owns it) while `active`. No-op in a browser. */
+export function useSuppressMainButton(active: boolean): void {
+  useEffect(() => {
+    if (!active) return undefined;
+    suppressors += 1;
+    for (const listener of suppressionListeners) listener();
+    return () => {
+      suppressors -= 1;
+      for (const listener of suppressionListeners) listener();
+    };
+  }, [active]);
+}
+
+/**
  * Shows Telegram's native MainButton with `config` while the caller is mounted (pass `null` to
  * keep it hidden). The click listener is removed and the button hidden on cleanup, so every page
  * that does not use the button leaves it hidden. No-op in a browser.
  */
 export function useMainButton(config: MainButtonConfig | null): void {
   const webApp = useWebApp();
-  const active = config !== null;
+  const suppressed = useSyncExternalStore(subscribeSuppression, isSuppressed, () => false);
+  const active = config !== null && !suppressed;
   const handlerRef = useLatest(config?.onClick ?? noop);
   const text = config?.text;
   const disabled = config?.disabled ?? false;

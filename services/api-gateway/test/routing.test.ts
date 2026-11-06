@@ -111,6 +111,7 @@ describe('upstreamHeaders', () => {
     expect(headers.get('x-real-ip')).toBeNull();
     expect(headers.get('x-forwarded-for')).toBe('203.0.113.7');
     expect(headers.get('x-mm-signature')).toBe('sig');
+    expect(headers.get('x-mm-entrance')).toBe('public');
     // A public caller cannot choose the id that ties log lines together.
     expect(headers.get('x-request-id')).toBe('ray-123456789');
   });
@@ -125,6 +126,7 @@ describe('upstreamHeaders', () => {
     expect(headers.get('x-csrf-token')).toBe('csrf');
     expect(headers.get('x-forwarded-for')).toBe('198.51.100.1');
     expect(headers.get('x-mm-signature')).toBeNull();
+    expect(headers.get('x-mm-entrance')).toBe('storefront');
     expect(headers.get('x-request-id')).toBe('req-from-app-0001');
   });
 
@@ -136,6 +138,7 @@ describe('upstreamHeaders', () => {
     });
     expect(headers.get('x-forwarded-for')).toBeNull();
     expect(headers.get('idempotency-key')).toBeNull();
+    expect(headers.get('x-mm-entrance')).toBe('admin');
   });
 });
 

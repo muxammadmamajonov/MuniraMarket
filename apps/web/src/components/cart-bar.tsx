@@ -30,6 +30,10 @@ export function CartBar() {
   // Slide in only if the cart was empty when the page showed up (the customer just added the
   // first item); a bar that is already due on arrival appears without ceremony.
   const [animateIn] = useState(count === 0);
+  // Feedback for every later add/remove: the count badge pops (keyed by the count, so each change
+  // replays it) and the change is announced politely. Not on the first render of a page.
+  const [initialCount] = useState(count);
+  const changed = count !== initialCount;
 
   useMainButton(
     inTelegram && count > 0
@@ -45,7 +49,7 @@ export function CartBar() {
       <div aria-hidden="true" className="h-20" />
       <div
         data-testid="cart-bar"
-        className="pointer-events-none fixed inset-x-0 bottom-0 z-30 pb-[env(safe-area-inset-bottom,0px)]"
+        className="pointer-events-none fixed inset-x-0 bottom-0 z-30 pb-[calc(var(--mm-nav-h)+var(--mm-inset-bottom))] pl-(--mm-inset-left) pr-(--mm-inset-right)"
       >
         <div className="mx-auto w-full max-w-5xl px-4 pb-3 sm:px-6">
           <Link
@@ -56,8 +60,9 @@ export function CartBar() {
               <BagIcon className="shrink-0" />
               <span className="truncate font-semibold">{dict.product.viewCart}</span>
               <span
+                key={count}
                 data-testid="cart-bar-count"
-                className="rounded-full bg-primary-foreground/20 px-2 py-0.5 text-sm font-semibold tabular-nums"
+                className={`${changed ? 'mm-pop ' : ''}rounded-full bg-primary-foreground/20 px-2 py-0.5 text-sm font-semibold tabular-nums`}
               >
                 {count}
               </span>
@@ -66,6 +71,9 @@ export function CartBar() {
               {total}
             </span>
           </Link>
+          <p aria-live="polite" className="sr-only">
+            {changed ? `${dict.product.viewCart}: ${count}, ${total}` : ''}
+          </p>
         </div>
       </div>
     </>

@@ -54,7 +54,23 @@ export type TelegramEventType =
   | 'viewportChanged'
   | 'mainButtonClicked'
   | 'backButtonClicked'
-  | 'settingsButtonClicked';
+  | 'settingsButtonClicked'
+  | 'safeAreaChanged'
+  | 'contentSafeAreaChanged'
+  | 'fullscreenChanged'
+  | 'fullscreenFailed';
+
+/**
+ * Insets in CSS pixels. `safeAreaInset` is the device's own (notch, home indicator, landscape
+ * sides); `contentSafeAreaInset` is what Telegram's own controls cover inside it (the header row
+ * with Close / "…" in fullscreen). Both exist since Bot API 8.0; older clients leave them out.
+ */
+export interface TelegramInsets {
+  top: number;
+  bottom: number;
+  left: number;
+  right: number;
+}
 
 export type TelegramEventHandler = (...args: unknown[]) => void;
 
@@ -126,6 +142,18 @@ export interface TelegramWebApp {
   readonly version: string;
   ready(): void;
   expand(): void;
+  /** Bot API 6.1+. Absent on very old clients, so always optional-call it. */
+  isVersionAtLeast?(version: string): boolean;
+  /** Bot API 8.0+. */
+  readonly safeAreaInset?: TelegramInsets;
+  /** Bot API 8.0+. */
+  readonly contentSafeAreaInset?: TelegramInsets;
+  /** Bot API 8.0+. */
+  readonly isFullscreen?: boolean;
+  /** Bot API 8.0+. Asynchronous: success is `fullscreenChanged`, refusal `fullscreenFailed`. */
+  requestFullscreen?(): void;
+  /** Bot API 8.0+. */
+  exitFullscreen?(): void;
   onEvent(eventType: TelegramEventType, handler: TelegramEventHandler): void;
   offEvent(eventType: TelegramEventType, handler: TelegramEventHandler): void;
   readonly BackButton: TelegramBackButton;

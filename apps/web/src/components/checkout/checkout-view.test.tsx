@@ -175,6 +175,7 @@ beforeEach(() => {
   session.status = 'authenticated';
   session.user = { id: USER_ID, first_name: 'Ali', last_name: 'Valiyev' };
   window.sessionStorage.clear();
+  window.localStorage.clear();
   session.apiFetch.mockReset();
   session.retry.mockReset();
   routes = defaultRoutes();
@@ -271,6 +272,33 @@ describe('CheckoutView: the form', () => {
     expect(phone).toHaveAttribute('enterkeyhint', 'next');
     expect(screen.getByLabelText('Ism')).toHaveAttribute('autocomplete', 'name');
     expect(screen.getByLabelText('Ko‘cha')).toHaveAttribute('autocomplete', 'address-line1');
+  });
+
+  it('preselects the district saved on the storefront and prices it right away', async () => {
+    window.localStorage.setItem('mm.delivery-district.v1', 'yunusobod');
+    renderCheckout();
+    await loaded();
+    await waitFor(() =>
+      expect(screen.getByRole('combobox', { name: 'Tuman' })).toHaveTextContent('Yunusobod'),
+    );
+    const quote = session.apiFetch.mock.calls.find(([path]) => path === '/checkout/quote');
+    expect(JSON.parse(String(quote?.[1]?.body))).toEqual({ district: 'yunusobod' });
+  });
+
+  it('ignores a saved district that no active zone serves', async () => {
+    window.localStorage.setItem('mm.delivery-district.v1', 'bektemir');
+    renderCheckout();
+    await loaded();
+    expect(screen.getByRole('combobox', { name: 'Tuman' })).toHaveTextContent('Tumanni tanlang');
+    expect(session.apiFetch.mock.calls.some(([path]) => path === '/checkout/quote')).toBe(false);
+  });
+
+  it('remembers a district picked at checkout as the storefront district (code only)', async () => {
+    renderCheckout();
+    await loaded();
+    await pickDistrict('mirobod');
+    expect(window.localStorage.getItem('mm.delivery-district.v1')).toBe('mirobod');
+    expect(Object.keys(window.localStorage)).toEqual(['mm.delivery-district.v1']);
   });
 
   it('groups deliverable districts by zone with the fee, and lists no other districts', async () => {
@@ -961,9 +989,9 @@ describe('CheckoutView: submit control', () => {
     const bar = screen.getByTestId('submit-bar');
     expect(bar.className).toContain('fixed');
     expect(bar.className).toContain('bottom-0');
-    expect(bar.className).toContain('pb-[env(safe-area-inset-bottom');
+    expect(bar.className).toContain('pb-(--mm-inset-bottom)');
     expect(screen.getByRole('form', { name: 'Buyurtmani rasmiylashtirish' }).className).toContain(
-      'safe-area-inset-bottom',
+      'var(--mm-inset-bottom)',
     );
     expect(submitButton()).toHaveTextContent('Buyurtma berish');
     expect(within(bar).queryByTestId('bar-total')).toBeNull();

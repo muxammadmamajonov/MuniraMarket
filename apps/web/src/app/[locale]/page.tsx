@@ -2,6 +2,7 @@ import { isLocale } from '@muniramarket/contracts';
 import { notFound } from 'next/navigation';
 import { CartBar } from '@/components/cart-bar';
 import { CategoryRail } from '@/components/category-rail';
+import { DeliveryDistrict } from '@/components/delivery-district';
 import { DeliveryInfo } from '@/components/delivery-info';
 import { EmptyPanel } from '@/components/empty-panel';
 import { BasketIcon } from '@/components/icons';
@@ -10,7 +11,7 @@ import { ProductGrid } from '@/components/product-grid';
 import { SearchForm } from '@/components/search-form';
 import { SessionNotice } from '@/components/session-notice';
 import { getDictionary } from '@/i18n';
-import { fetchCategories, fetchProducts } from '@/lib/api/server';
+import { fetchCategories, fetchDeliveryZones, fetchProducts } from '@/lib/api/server';
 
 const NEWEST_COUNT = 24;
 
@@ -19,9 +20,10 @@ export default async function HomePage({ params }: PageProps<'/[locale]'>) {
   if (!isLocale(locale)) notFound();
   const dict = getDictionary(locale);
 
-  const [categories, newest] = await Promise.all([
+  const [categories, newest, zones] = await Promise.all([
     fetchCategories(),
     fetchProducts({ sort: 'newest', page: 1, pageSize: NEWEST_COUNT }),
+    fetchDeliveryZones(),
   ]);
   const empty = categories.length === 0 && newest.items.length === 0;
 
@@ -31,6 +33,8 @@ export default async function HomePage({ params }: PageProps<'/[locale]'>) {
         {/* The wordmark in the header is the visible name; this keeps one heading per page. */}
         <h1 className="sr-only">{dict.home.title}</h1>
 
+        {/* Delivery first, but never in the way: the catalog below works without a district. */}
+        <DeliveryDistrict zones={zones} />
         <SearchForm locale={locale} dict={dict} />
 
         {empty ? (

@@ -15,13 +15,14 @@ export interface SiteHeaderProps {
 }
 
 /**
- * Compact sticky header. Padded by the top safe-area inset (notch, Telegram fullscreen). At 320px
- * the wordmark, orders, cart and a one-button language toggle share one row; the browser-only
- * account button wraps to a second row instead of ever scrolling the page sideways.
+ * Compact sticky header. Padded by the top and side safe-area insets (notch, Telegram fullscreen,
+ * landscape). On phones the wordmark and the language toggle are all it holds: orders, cart and
+ * the account live in the bottom tab bar (`bottom-nav.tsx`). From `md` up it is the main
+ * navigation: orders, cart, language and, in a browser, the account.
  */
 export function SiteHeader({ locale, dict }: SiteHeaderProps) {
   return (
-    <header className="sticky top-0 z-40 border-b border-border bg-background pt-[env(safe-area-inset-top)]">
+    <header className="sticky top-0 z-40 border-b border-border bg-background pt-(--mm-inset-top) pr-(--mm-inset-right) pl-(--mm-inset-left)">
       <PageContainer className="flex flex-wrap items-center justify-between gap-x-1 gap-y-0 py-1.5">
         <Link
           href={`/${locale}`}
@@ -31,7 +32,10 @@ export function SiteHeader({ locale, dict }: SiteHeaderProps) {
           <Wordmark name={dict.meta.title} />
         </Link>
         <div className="ml-auto flex flex-wrap items-center justify-end gap-x-0.5">
-          <nav aria-label={dict.nav.mainNavigation} className="flex items-center gap-x-0.5">
+          <nav
+            aria-label={dict.nav.mainNavigation}
+            className="flex items-center gap-x-0.5 max-md:hidden"
+          >
             <Link
               href={`/${locale}/orders`}
               aria-label={dict.nav.orders}
@@ -51,7 +55,9 @@ export function SiteHeader({ locale, dict }: SiteHeaderProps) {
             names={{ uz: dict.language.uz, ru: dict.language.ru }}
             shortNames={{ uz: dict.language.uzShort, ru: dict.language.ruShort }}
           />
-          <AccountMenu />
+          <div className="max-md:hidden">
+            <AccountMenu />
+          </div>
         </div>
       </PageContainer>
     </header>

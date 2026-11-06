@@ -152,6 +152,10 @@ export function upstreamHeaders(incoming: Headers, context: UpstreamContext): He
     if (value !== null) headers.set(name, value);
   }
   if (context.clientIp !== null) headers.set('x-forwarded-for', context.clientIp);
+  // This is gateway-owned routing metadata, never a browser header. The Core API selects the
+  // correct Telegram Login Widget verifier from it (customer bot for storefront, staff bot for
+  // admin). Containers are reachable only through this gateway.
+  headers.set('x-mm-entrance', context.entrance);
   const requestId = incoming.get('x-request-id');
   headers.set(
     'x-request-id',

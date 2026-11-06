@@ -122,8 +122,8 @@ describe('DeliverySlotPicker: day chips', () => {
     expect(row.className).toContain('snap-x');
     expect(row.className).toContain('snap-mandatory');
     expect(row.className).toContain('overscroll-x-contain');
-    expect(row.className).toContain('env(safe-area-inset-left');
-    expect(row.className).toContain('env(safe-area-inset-right');
+    expect(row.className).toContain('var(--mm-inset-left)');
+    expect(row.className).toContain('var(--mm-inset-right)');
     // Bleeds to the card's edges so chips scroll out under them, not under the card's padding.
     expect(row.className).toContain('-mx-4');
   });

@@ -399,7 +399,7 @@ export function ListboxSelect({
             data-closing={closing}
             className={
               // Phone: bottom sheet. From 640px: popover under the trigger, growing from its top edge.
-              'fixed inset-x-0 bottom-0 z-50 max-h-[60dvh] overflow-y-auto overscroll-contain rounded-t-2xl border border-border bg-surface pb-[env(safe-area-inset-bottom,0px)] shadow-xl outline-none ' +
+              'fixed inset-x-0 bottom-0 z-50 max-h-[60dvh] overflow-y-auto overscroll-contain rounded-t-2xl border border-border bg-surface pb-(--mm-inset-bottom) shadow-xl outline-none ' +
               'sm:absolute sm:inset-x-0 sm:top-full sm:bottom-auto sm:mt-1 sm:max-h-72 sm:origin-top sm:rounded-xl sm:pb-0 ' +
               'translate-y-0 scale-100 opacity-100 transition-[transform,opacity] duration-160 ease-out-strong ' +
               'starting:translate-y-full starting:opacity-0 sm:starting:translate-y-0 sm:starting:scale-[0.97] ' +

@@ -1,12 +1,18 @@
 'use client';
 
 import type { ProductSummary } from '@muniramarket/contracts';
-import { Price } from '@muniramarket/ui';
+import { MoneyText, Price, formatUZS } from '@muniramarket/ui';
 import Link from 'next/link';
 import { useState } from 'react';
 import { useI18n } from '@/i18n/context';
 import { useCart } from '@/lib/cart';
-import { localizedName, maxQuantityFor, stockLabel, stockState } from '@/lib/catalog';
+import {
+  localizedName,
+  maxQuantityFor,
+  previousPrice,
+  stockLabel,
+  stockState,
+} from '@/lib/catalog';
 import { useSession } from '@/lib/session';
 import { useHaptics } from '@/lib/telegram';
 import { MinusIcon, PlusIcon } from './icons';
@@ -35,6 +41,7 @@ export function ProductTile({ product }: ProductTileProps) {
 
   const name = localizedName(product, locale);
   const state = stockState(product);
+  const old = previousPrice(product);
   const max = maxQuantityFor(product);
   const quantity = cart.quantityOf(product.id);
   const error = cart.errorFor(product.id);
@@ -68,19 +75,27 @@ export function ProductTile({ product }: ProductTileProps) {
         <span data-user-text className="line-clamp-2 min-h-10 text-sm leading-5 font-medium">
           {name}
         </span>
+        {/* Price first and largest, the unit right after it, an old price (only when the data
+            really has a higher one) quieter underneath. */}
         <span className="flex flex-col gap-0.5">
-          <span className="flex flex-col">
+          <span data-testid="tile-price" className="flex flex-wrap items-baseline gap-x-1">
             <Price
               amount={product.price_uzs}
-              {...(product.old_price_uzs === null ? {} : { oldAmount: product.old_price_uzs })}
               locale={locale}
-              currentLabel={dict.product.priceCurrentLabel}
-              oldLabel={dict.product.priceOldLabel}
+              {...(old === null ? {} : { currentLabel: dict.product.priceCurrentLabel })}
               data-money
-              className="text-base tabular-nums"
+              className="text-base leading-6 tabular-nums"
             />
-            <span className="text-xs text-muted-foreground">/ {dict.units[product.unit]}</span>
+            <span className="text-xs whitespace-nowrap text-muted-foreground">
+              / {dict.units[product.unit]}
+            </span>
           </span>
+          {old === null ? null : (
+            <del data-money className="text-xs leading-4 text-muted-foreground tabular-nums">
+              <span className="sr-only">{dict.product.priceOldLabel} </span>
+              <MoneyText text={formatUZS(old, locale)} />
+            </del>
+          )}
           {state.kind === 'low' ? (
             <span className="text-xs font-medium text-warning">{stockLabel(state, dict)}</span>
           ) : null}

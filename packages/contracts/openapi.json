@@ -8519,6 +8519,18 @@
             }
           },
           {
+            "description": "Only products that can be added to the cart now (`in_stock` true).",
+            "in": "query",
+            "name": "in_stock",
+            "required": false,
+            "schema": {
+              "default": false,
+              "description": "Only products that can be added to the cart now (`in_stock` true).",
+              "title": "In Stock",
+              "type": "boolean"
+            }
+          },
+          {
             "in": "query",
             "name": "sort",
             "required": false,

@@ -15,7 +15,7 @@ vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: vi.fn() }),
 }));
 
-const api = vi.hoisted(() => ({ fetchProducts: vi.fn() }));
+const api = vi.hoisted(() => ({ fetchProducts: vi.fn(), fetchCategories: vi.fn() }));
 vi.mock('@/lib/api/server', () => api);
 
 const session = vi.hoisted(() => ({
@@ -33,10 +33,10 @@ function results(items: ProductPage['items']): ProductPage {
   return { items, page: 1, page_size: 20, total: items.length, total_pages: 1 };
 }
 
-async function renderSearch(q: string) {
+async function renderSearch(q: string, extra: Record<string, string> = {}) {
   const ui: ReactNode = await SearchPage({
     params: Promise.resolve({ locale: 'uz' }),
-    searchParams: Promise.resolve({ q }),
+    searchParams: Promise.resolve({ q, ...extra }),
   } as never);
   return render(
     <LocaleProvider locale="uz">
@@ -51,6 +51,18 @@ beforeEach(() => {
   session.apiFetch.mockReset();
   session.apiFetch.mockResolvedValue(Response.json(makeCart()));
   api.fetchProducts.mockReset();
+  api.fetchCategories.mockReset();
+  api.fetchCategories.mockResolvedValue([
+    {
+      id: 'c1',
+      slug: 'meva',
+      name_uz: 'Meva',
+      name_ru: 'Фрукты',
+      image_url: null,
+      sort_order: 0,
+      children: [],
+    },
+  ]);
 });
 
 describe('search page', () => {
@@ -60,6 +72,31 @@ describe('search page', () => {
     expect(screen.getByTestId('empty-panel')).toHaveTextContent('Hech narsa topilmadi');
     expect(screen.getByRole('link', { name: 'Bosh sahifaga' })).toHaveAttribute('href', '/uz');
     expect(screen.getByRole('searchbox')).toHaveValue('zzzz');
+    // A way to keep browsing instead of a dead end.
+    expect(screen.getByRole('navigation', { name: 'Kategoriyalar' })).toBeInTheDocument();
+  });
+
+  it('passes the in-stock filter to the API and offers to clear it when nothing matches', async () => {
+    api.fetchProducts.mockResolvedValue(results([]));
+    await renderSearch('olma', { stock: '1', sort: 'price_asc' });
+    expect(api.fetchProducts).toHaveBeenCalledWith({
+      q: 'olma',
+      sort: 'price_asc',
+      page: 1,
+      inStock: true,
+    });
+    expect(screen.getByRole('switch', { name: 'Faqat mavjudlari' })).toBeChecked();
+    expect(screen.getByTestId('empty-panel')).toHaveTextContent('Hozir mavjud mahsulot yo‘q.');
+    expect(screen.getByRole('link', { name: 'Filtrni olib tashlash' })).toHaveAttribute(
+      'href',
+      '/uz/search?q=olma&sort=price_asc',
+    );
+  });
+
+  it('survives a category fetch failure', async () => {
+    api.fetchCategories.mockRejectedValue(new Error('down'));
+    await renderSearch('a');
+    expect(screen.getByTestId('empty-panel')).toBeInTheDocument();
   });
 
   it('shows matching products as cards with cart controls', async () => {

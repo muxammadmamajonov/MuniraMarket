@@ -7,6 +7,8 @@ export interface RadioCardProps {
   onChange: () => void;
   onBlur?: () => void;
   disabled?: boolean;
+  /** Marks the input as the element a `BottomSheet` focuses when it opens. */
+  autoFocusInSheet?: boolean;
   children: ReactNode;
 }
 
@@ -22,6 +24,7 @@ export function RadioCard({
   onChange,
   onBlur,
   disabled = false,
+  autoFocusInSheet = false,
   children,
 }: RadioCardProps) {
   return (
@@ -41,6 +44,7 @@ export function RadioCard({
         disabled={disabled}
         onChange={onChange}
         {...(onBlur === undefined ? {} : { onBlur })}
+        {...(autoFocusInSheet ? { 'data-autofocus': '' } : {})}
         className="sr-only"
       />
       <span

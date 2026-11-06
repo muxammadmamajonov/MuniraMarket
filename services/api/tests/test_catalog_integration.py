@@ -404,6 +404,22 @@ async def test_stock_flags(api: httpx.AsyncClient, session_factory: SessionFacto
     )
 
 
+async def test_in_stock_filter_keeps_tracked_and_untracked_stock(
+    api: httpx.AsyncClient, session_factory: SessionFactory
+) -> None:
+    category = await add_category(session_factory, "instock-cat")
+    await add_product(session_factory, category, "is-tracked", stock=1)
+    await add_product(session_factory, category, "is-empty", stock=0)
+    await add_product(session_factory, category, "is-untracked", stock=None)
+    response = await api.get(
+        "/api/v1/products", params={"category": "instock-cat", "in_stock": "true"}
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert sorted(item["slug"] for item in body["items"]) == ["is-tracked", "is-untracked"]
+    assert body["total"] == 2
+
+
 async def test_product_detail_404s(api: httpx.AsyncClient, session_factory: SessionFactory) -> None:
     active = await add_category(session_factory, "d-active")
     inactive = await add_category(session_factory, "d-inactive", is_active=False)
