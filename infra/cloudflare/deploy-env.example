@@ -9,6 +9,8 @@ MM_ADMIN_HOSTNAME=admin.staging.example.test
 MM_API_HOSTNAME=api.staging.example.test
 MM_TELEGRAM_BOT_ID=0000000000
 MM_TELEGRAM_BOT_USERNAME=example_staging_bot
+# Separate bot used only by the admin Login Widget. Its token is a gateway Worker secret.
+MM_ADMIN_TELEGRAM_BOT_USERNAME=muniramarket_admin_bot
 MM_CSRF_TRUSTED_ORIGINS=https://shop.staging.example.test,https://admin.staging.example.test
 
 # From the "Core API image" workflow summary. Required in production; staging may build from the

@@ -9,6 +9,7 @@ const staging = {
   MM_API_HOSTNAME: 'api.staging.example.test',
   MM_TELEGRAM_BOT_ID: '1234567890',
   MM_TELEGRAM_BOT_USERNAME: 'muniramarket_staging_bot',
+  MM_ADMIN_TELEGRAM_BOT_USERNAME: 'muniramarket_admin_bot',
   MM_CSRF_TRUSTED_ORIGINS: 'https://shop.staging.example.test,https://admin.staging.example.test',
 };
 const DIGEST = `registry.cloudflare.com/fake-account/muniramarket-core-api@sha256:${'a'.repeat(64)}`;
@@ -28,6 +29,7 @@ describe('validateDeployEnv', () => {
       'MM_API_HOSTNAME',
       'MM_TELEGRAM_BOT_ID',
       'MM_TELEGRAM_BOT_USERNAME',
+      'MM_ADMIN_TELEGRAM_BOT_USERNAME',
       'MM_CSRF_TRUSTED_ORIGINS',
     ]);
   });

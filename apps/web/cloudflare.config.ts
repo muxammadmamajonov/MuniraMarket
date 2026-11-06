@@ -40,6 +40,10 @@ export default defineConfig(({ mode }) => {
             })
           : null,
         API_INTERNAL_URL: bindings.text(apiInternalUrl(target)),
+        // This browser-visible key is still a Worker secret: it must never be committed or
+        // supplied as a deploy-time variable. Its Yandex console restriction is the storefront
+        // HTTPS origin only (see infra/cloudflare/README.md).
+        YANDEX_MAPS_API_KEY: bindings.secret(),
         // Cloudflare overwrites CF-Connecting-IP on every request; a client cannot set it.
         CLIENT_IP_HEADER: bindings.text('cf-connecting-ip'),
       },

@@ -25,6 +25,8 @@ from tests.conftest import NOW, FakeClock, FakeUserRepository
 from tests.test_identity import FAKE_BOT_TOKEN
 
 MAX_AGE = 86400
+ADMIN_BOT_TOKEN = "7654321:admin-fake-token"
+ADMIN_BOT_USERNAME = "muniramarket_admin_test_bot"
 
 
 def sign_widget(fields: dict[str, Any], token: str = FAKE_BOT_TOKEN) -> dict[str, Any]:
@@ -151,6 +153,8 @@ def widget_app(clock: FakeClock, users: FakeUserRepository) -> FastAPI:
         users,
         telegram_login_widget_enabled=True,
         telegram_bot_username=TEST_BOT_USERNAME,
+        admin_telegram_bot_token=ADMIN_BOT_TOKEN,
+        admin_telegram_bot_username=ADMIN_BOT_USERNAME,
     )
 
 
@@ -223,6 +227,27 @@ async def test_config_reports_enabled_widget(api: httpx.AsyncClient) -> None:
     assert response.json() == {
         "telegram_login_widget": {"enabled": True, "bot_username": TEST_BOT_USERNAME}
     }
+
+
+async def test_admin_entrance_uses_its_own_bot(api: httpx.AsyncClient) -> None:
+    response = await api.get(CONFIG_PATH, headers={"X-MM-Entrance": "admin"})
+    assert response.json() == {
+        "telegram_login_widget": {"enabled": True, "bot_username": ADMIN_BOT_USERNAME}
+    }
+
+    signed_by_customer_bot = await api.post(
+        WIDGET_PATH,
+        json=sign_widget(widget_fields()),
+        headers={"X-MM-Entrance": "admin"},
+    )
+    assert signed_by_customer_bot.status_code == 401
+
+    signed_by_admin_bot = await api.post(
+        WIDGET_PATH,
+        json=sign_widget(widget_fields(), token=ADMIN_BOT_TOKEN),
+        headers={"X-MM-Entrance": "admin"},
+    )
+    assert signed_by_admin_bot.status_code == 200, signed_by_admin_bot.text
 
 
 async def test_disabled_widget_is_404(clock: FakeClock, users: FakeUserRepository) -> None:

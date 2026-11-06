@@ -30,8 +30,10 @@ operator's records and the deploy environment, never into this repository.
 ## 2. Workers secrets and variables
 
 - [ ] Gateway secrets set for production: `DATABASE_URL` (mm_app, `?ssl=verify-full`), `REDIS_URL`
-      (`rediss://`), `SERVICE_AUTH_KEYS`, `TELEGRAM_BOT_TOKEN` (infra/cloudflare/README.md).
-- [ ] Web and admin Workers have no secrets.
+      (`rediss://`), `SERVICE_AUTH_KEYS`, customer `TELEGRAM_BOT_TOKEN` and
+      `ADMIN_TELEGRAM_BOT_TOKEN` (infra/cloudflare/README.md).
+- [ ] `YANDEX_MAPS_API_KEY` is a web Worker secret and is restricted in Yandex by the storefront
+      HTTPS Referer; the admin Worker has no secrets.
 - [ ] `node infra/cloudflare/scripts/validate-deploy-env.mts --mode production` passes;
       `CORE_API_IMAGE` is the digest that passed staging; `APP_RELEASE` is its tag.
 - [ ] Workers Logs and Traces visible for all three Workers; container logs visible; an alert on
