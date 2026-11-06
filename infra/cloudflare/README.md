@@ -42,16 +42,17 @@ validate before every deploy:
 node infra/cloudflare/scripts/validate-deploy-env.mts --mode staging
 ```
 
-| Variable                   | Used by       | Notes                                                                                       |
-| -------------------------- | ------------- | ------------------------------------------------------------------------------------------- |
-| `MM_WEB_HOSTNAME`          | web           | storefront + Mini App host                                                                  |
-| `MM_ADMIN_HOSTNAME`        | admin         | separate origin from the storefront                                                         |
-| `MM_API_HOSTNAME`          | gateway       | Telegram Serverless and health checks only                                                  |
-| `MM_TELEGRAM_BOT_ID`       | gateway → API | numeric bot id                                                                              |
-| `MM_TELEGRAM_BOT_USERNAME` | gateway → API | Login Widget                                                                                |
-| `MM_CSRF_TRUSTED_ORIGINS`  | gateway → API | exactly `https://<web>,https://<admin>`                                                     |
-| `CORE_API_IMAGE`           | gateway       | `registry.cloudflare.com/<account>/muniramarket-core-api@sha256:…` (required in production) |
-| `APP_RELEASE`              | gateway → API | the image tag, e.g. `sha-0123456789ab` (required in production)                             |
+| Variable                         | Used by       | Notes                                                                                       |
+| -------------------------------- | ------------- | ------------------------------------------------------------------------------------------- |
+| `MM_WEB_HOSTNAME`                | web           | storefront + Mini App host                                                                  |
+| `MM_ADMIN_HOSTNAME`              | admin         | separate origin from the storefront                                                         |
+| `MM_API_HOSTNAME`                | gateway       | Telegram Serverless and health checks only                                                  |
+| `MM_TELEGRAM_BOT_ID`             | gateway → API | numeric bot id                                                                              |
+| `MM_TELEGRAM_BOT_USERNAME`       | gateway → API | customer Login Widget and Mini App bot username                                             |
+| `MM_ADMIN_TELEGRAM_BOT_USERNAME` | gateway → API | admin Login Widget bot username; it has a separate BotFather domain                         |
+| `MM_CSRF_TRUSTED_ORIGINS`        | gateway → API | exactly `https://<web>,https://<admin>`                                                     |
+| `CORE_API_IMAGE`                 | gateway       | `registry.cloudflare.com/<account>/muniramarket-core-api@sha256:…` (required in production) |
+| `APP_RELEASE`                    | gateway → API | the image tag, e.g. `sha-0123456789ab` (required in production)                             |
 
 ## Secrets: where each one lives
 
@@ -61,12 +62,15 @@ node infra/cloudflare/scripts/validate-deploy-env.mts --mode staging
 | `REDIS_URL` (`rediss://`)                       | Worker secret on the gateway                                                                            | provider ACL password, update secret                         |
 | `SERVICE_AUTH_KEYS`                             | Worker secret on the gateway **and** Telegram Serverless config                                         | two keys at once (ADR 0003), then drop old                   |
 | `TELEGRAM_BOT_TOKEN`                            | Worker secret on the gateway; Telegram Serverless platform                                              | BotFather `/revoke`, update both                             |
+| `ADMIN_TELEGRAM_BOT_TOKEN`                      | Worker secret on the gateway only; verifies admin Login Widget payloads                                 | BotFather `/revoke`, update gateway                          |
 | `MIGRATION_DATABASE_URL` (`mm_migrator`)        | GitHub Environment secret (`staging`/`production`, required reviewers) or the operator's secret manager | per migration window                                         |
 | `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID` | GitHub Environment secrets, scoped tokens only                                                          | per token policy                                             |
 | R2 credentials                                  | none: R2 is used through a Worker binding (r2/README.md)                                                | n/a                                                          |
+| `YANDEX_MAPS_API_KEY`                           | Worker secret on `muniramarket-web[-staging]`; it is intentionally visible to the browser at runtime    | create/restrict a replacement key in Yandex                  |
 
-The web and admin Workers hold **no secrets**. Set gateway secrets per environment with Wrangler
-(cf does not yet set single secrets) or upload them with the version:
+The admin Worker holds **no secrets**. The map key is bound only to the web Worker, and all other
+secrets are gateway-only. Set Worker secrets per environment with Wrangler (cf does not yet set
+single secrets) or upload them with the version:
 
 ```bash
 npx wrangler secret put DATABASE_URL --name muniramarket-api-gateway-staging
@@ -116,7 +120,8 @@ platform's container proxy connects from; after the first staging deploy, narrow
 observed peer range.
 
 The storefront's optional map step reads `YANDEX_MAPS_API_KEY` (a Yandex developer key, UUID)
-at runtime. It is deliberately not bound in `apps/web/cloudflare.config.ts` yet: unset, the map
+at runtime. It is a web Worker secret, but necessarily becomes visible to browsers in Yandex's
+script URL. Restrict it in the Yandex console by HTTP Referer to the storefront HTTPS origin;
+never put it in Git, a deploy env file or the admin/gateway Worker. If missing or malformed, the
 picker shows its own "map unavailable" state, nothing loads from Yandex and the CSP lists no
-Yandex host. Bind it only after the paid-licence and privacy decisions, restricted by HTTP
-Referer to the shop's domains in the Yandex console (the key is visible to browsers by design).
+Yandex host.

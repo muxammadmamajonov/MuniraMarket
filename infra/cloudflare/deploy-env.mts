@@ -70,6 +70,13 @@ export function validateDeployEnv(
   if (botUsername !== '' && !BOT_USERNAME.test(botUsername.replace(/^@/, ''))) {
     problems.push({ variable: 'MM_TELEGRAM_BOT_USERNAME', message: 'is not a bot username' });
   }
+  const adminBotUsername = require('MM_ADMIN_TELEGRAM_BOT_USERNAME');
+  if (adminBotUsername !== '' && !BOT_USERNAME.test(adminBotUsername.replace(/^@/, ''))) {
+    problems.push({
+      variable: 'MM_ADMIN_TELEGRAM_BOT_USERNAME',
+      message: 'is not a bot username',
+    });
+  }
 
   // The Core API must trust exactly the storefront and admin origins (CSRF Origin check).
   const origins = require('MM_CSRF_TRUSTED_ORIGINS');

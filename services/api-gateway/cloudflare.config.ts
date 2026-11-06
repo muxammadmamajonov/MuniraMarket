@@ -61,6 +61,9 @@ export default defineConfig(({ mode }) => {
         REDIS_URL: bindings.secret(),
         SERVICE_AUTH_KEYS: bindings.secret(),
         TELEGRAM_BOT_TOKEN: bindings.secret(),
+        // A separate Login Widget bot is required because the admin is a different origin.
+        // It verifies staff browser sign-ins only; it is never exposed to the Mini App.
+        ADMIN_TELEGRAM_BOT_TOKEN: bindings.secret(),
 
         // --- plain container configuration ---
         APP_ENV: bindings.text(target.appEnv),
@@ -69,9 +72,13 @@ export default defineConfig(({ mode }) => {
         TELEGRAM_ENVIRONMENT: bindings.text('production'),
         TELEGRAM_LOGIN_WIDGET_ENABLED: bindings.text('true'),
         // Set per environment as plain variables at deploy time (not secret, not committed):
-        // TELEGRAM_BOT_ID, TELEGRAM_BOT_USERNAME, CSRF_TRUSTED_ORIGINS.
+        // TELEGRAM_BOT_ID, TELEGRAM_BOT_USERNAME, ADMIN_TELEGRAM_BOT_USERNAME,
+        // CSRF_TRUSTED_ORIGINS.
         TELEGRAM_BOT_ID: bindings.text(process.env['MM_TELEGRAM_BOT_ID']?.trim() ?? ''),
         TELEGRAM_BOT_USERNAME: bindings.text(process.env['MM_TELEGRAM_BOT_USERNAME']?.trim() ?? ''),
+        ADMIN_TELEGRAM_BOT_USERNAME: bindings.text(
+          process.env['MM_ADMIN_TELEGRAM_BOT_USERNAME']?.trim() ?? '',
+        ),
         CSRF_TRUSTED_ORIGINS: bindings.text(process.env['MM_CSRF_TRUSTED_ORIGINS']?.trim() ?? ''),
         // The container's only ingress is its Durable Object, and this gateway rewrites
         // X-Forwarded-For on every request, so trusting the private ranges the platform's

@@ -120,6 +120,10 @@ class Settings(BaseSettings):
     # Telegram Login Widget for the website. Off by default; needs the bot token and username.
     telegram_login_widget_enabled: bool = False
     telegram_bot_username: str | None = None
+    # The admin is deliberately a separate browser origin. In deployed environments it has its
+    # own Login Widget bot, so a customer Mini App credential can never become an admin credential.
+    admin_telegram_bot_token: SecretStr | None = None
+    admin_telegram_bot_username: str | None = None
     # The widget's redirect flow posts the signed payload right after the user authorises, so
     # a short window is enough and limits how long a leaked payload can be replayed.
     telegram_login_max_age_seconds: int = 600
@@ -192,7 +196,7 @@ class Settings(BaseSettings):
                 ) from None
         return value
 
-    @field_validator("telegram_bot_username", mode="before")
+    @field_validator("telegram_bot_username", "admin_telegram_bot_username", mode="before")
     @classmethod
     def _strip_bot_username(cls, value: object) -> object:
         if isinstance(value, str):
@@ -200,7 +204,7 @@ class Settings(BaseSettings):
             return stripped or None
         return value
 
-    @field_validator("telegram_bot_username")
+    @field_validator("telegram_bot_username", "admin_telegram_bot_username")
     @classmethod
     def _check_bot_username(cls, value: str | None) -> str | None:
         if value is not None and not _BOT_USERNAME_RE.fullmatch(value):
@@ -377,6 +381,13 @@ class Settings(BaseSettings):
             raise ValueError(
                 "TELEGRAM_LOGIN_WIDGET_ENABLED=true requires TELEGRAM_BOT_TOKEN and "
                 "TELEGRAM_BOT_USERNAME"
+            )
+        if self.app_env in DEPLOYED_ENVS and (
+            self.admin_telegram_bot_token is None or self.admin_telegram_bot_username is None
+        ):
+            raise ValueError(
+                "TELEGRAM_LOGIN_WIDGET_ENABLED=true requires ADMIN_TELEGRAM_BOT_TOKEN and "
+                "ADMIN_TELEGRAM_BOT_USERNAME outside development and test"
             )
 
     @property

@@ -368,6 +368,24 @@ def test_login_widget_requires_token_and_username() -> None:
     assert settings.telegram_bot_username == "shop_test_bot"
 
 
+def test_deployed_login_widget_requires_separate_admin_bot() -> None:
+    base = {
+        **DEPLOYED,
+        "app_env": "production",
+        "telegram_login_widget_enabled": True,
+        "telegram_bot_token": "1:customer-token",
+        "telegram_bot_username": "customer_test_bot",
+    }
+    with pytest.raises(ValidationError, match="ADMIN_TELEGRAM_BOT"):
+        make_settings(**base)
+    settings = make_settings(
+        **base,
+        admin_telegram_bot_token="2:admin-token",
+        admin_telegram_bot_username="admin_test_bot",
+    )
+    assert settings.admin_telegram_bot_username == "admin_test_bot"
+
+
 @pytest.mark.parametrize("username", ["abc", "has space", "x" * 33, "dash-bot"])
 def test_bot_username_format(username: str) -> None:
     with pytest.raises(ValidationError, match="TELEGRAM_BOT_USERNAME"):
