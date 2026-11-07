@@ -4,7 +4,14 @@ import { usePathname, useRouter } from 'next/navigation';
 import { useEffect } from 'react';
 import { useI18n } from '@/i18n/context';
 import { localeFromPathname } from '@/i18n/switch-locale';
-import { useBackButton, useTelegram, useTelegramSafeArea, useTelegramTheme } from '@/lib/telegram';
+import {
+  armFullscreenOnFirstGesture,
+  disableVerticalSwipes,
+  useBackButton,
+  useTelegram,
+  useTelegramSafeArea,
+  useTelegramTheme,
+} from '@/lib/telegram';
 
 /** True for `/<locale>` (the home page), where there is nothing to go back to. */
 export function isHomePath(pathname: string): boolean {
@@ -28,6 +35,8 @@ export function isCheckoutPath(pathname: string): boolean {
  * - MainButton: hidden by default; pages that use it (product, cart, checkout) claim it
  *   themselves with `useMainButton`.
  * - Theme: mirrors Telegram's theme colours onto the design tokens.
+ * - Fullscreen (phones only): requested once on the first tap, see `armFullscreenOnFirstGesture`;
+ *   a refusal or an old client leaves the expanded mode. Vertical swipes scroll instead of closing.
  * - Safe areas: mirrors `safeAreaInset` / `contentSafeAreaInset` (and their change events) onto
  *   the CSS variables the shell pads by (see `lib/telegram/safe-area.ts`).
  */
@@ -49,6 +58,11 @@ export function TelegramChrome() {
       else router.push(`/${locale}`);
     },
   });
+
+  useEffect(() => {
+    disableVerticalSwipes(webApp);
+    return armFullscreenOnFirstGesture(webApp);
+  }, [webApp]);
 
   // A MainButton left visible by a previous page of the same webview must not leak onto pages
   // that do not use it.

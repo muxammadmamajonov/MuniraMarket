@@ -22,7 +22,9 @@ export interface SiteHeaderProps {
 export function SiteHeader({ locale, dict }: SiteHeaderProps) {
   return (
     <header className="sticky top-0 z-40 border-b border-border bg-background pt-(--mm-inset-top) pr-(--mm-inset-right) pl-(--mm-inset-left)">
-      <PageContainer className="flex flex-wrap items-center justify-between gap-x-1 gap-y-0 py-1.5">
+      {/* Mobile Telegram fullscreen: only the logo is on this row, centred in the content safe
+          area (Telegram's Close / "…" controls sit above it, outside our layout). */}
+      <PageContainer className="flex flex-wrap items-center justify-between gap-x-1 gap-y-0 py-1.5 max-md:[:root[data-tg-fullscreen]_&]:justify-center">
         <Link
           href={`/${locale}`}
           aria-label={`${dict.meta.title}: ${dict.nav.home}`}
@@ -30,7 +32,7 @@ export function SiteHeader({ locale, dict }: SiteHeaderProps) {
         >
           <Wordmark name={dict.meta.title} />
         </Link>
-        <div className="ml-auto flex flex-wrap items-center justify-end gap-x-0.5">
+        <div className="ml-auto flex flex-wrap items-center justify-end gap-x-0.5 max-md:[:root[data-tg-fullscreen]_&]:hidden">
           <nav
             aria-label={dict.nav.mainNavigation}
             className="flex items-center gap-x-0.5 max-md:hidden"
