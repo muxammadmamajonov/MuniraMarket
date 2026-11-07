@@ -1,17 +1,16 @@
 -- One-time ownership adoption for a MuniraMarket database that was migrated before
 -- the dedicated `mm_migrator` role existed.
 --
--- Run ONLY as the Neon project owner, after 01-roles.sql and before the first
--- migration run as mm_migrator:
+-- Run ONLY through ../scripts/adopt-legacy-public-schema.sh as the Neon project
+-- owner, after 01-roles.sql and before the first migration run as mm_migrator:
 --
---   psql "$OWNER_URL" -v ON_ERROR_STOP=1 \
---     -f infra/neon/sql/00-adopt-legacy-public-schema.sql
+--   OWNER_URL="$OWNER_URL" infra/neon/scripts/adopt-legacy-public-schema.sh
 --
 -- This intentionally touches a small, explicit allowlist of objects created by
 -- revisions 0001–0004 in the application's `public` schema. It does not alter
--- Neon Auth, the Data API, buckets, other schemas or database ownership; a
--- temporary role membership needed by PostgreSQL's ownership rule is revoked
--- before the transaction commits.
+-- Neon Auth, the Data API, buckets, other schemas or database ownership. The
+-- wrapper grants the owner temporary membership in mm_migrator in a committed
+-- transaction and removes it with an EXIT trap, including after an error.
 -- It is idempotent: re-running it leaves objects already owned by mm_migrator
 -- unchanged. Update this list only alongside a reviewed migration that creates
 -- an object before the role model is installed.
@@ -22,7 +21,6 @@ DO $$
 DECLARE
   table_name text;
   type_name text;
-  owner_was_member boolean;
   expected_tables constant text[] := ARRAY[
     'alembic_version',
     'audit_log',
@@ -51,13 +49,8 @@ BEGIN
     RAISE EXCEPTION 'mm_migrator is missing; run 01-roles.sql first';
   END IF;
 
-  -- PostgreSQL allows an object owner to hand ownership to a role only when it
-  -- is also a member of that role. The Neon owner created mm_migrator but is
-  -- not inherently its member, so add the membership only for this transaction
-  -- and remove it before commit. Preserve a pre-existing membership unchanged.
-  owner_was_member := pg_has_role(current_user, 'mm_migrator', 'MEMBER');
-  IF NOT owner_was_member THEN
-    EXECUTE format('GRANT %I TO %I', 'mm_migrator', current_user);
+  IF NOT pg_has_role(current_user, 'mm_migrator', 'SET') THEN
+    RAISE EXCEPTION 'run this file through adopt-legacy-public-schema.sh';
   END IF;
 
   -- Refuse to make a broad change if this is not exactly the known pre-role
@@ -126,8 +119,5 @@ BEGIN
     RAISE EXCEPTION 'public sequences exist; review and adopt them explicitly';
   END IF;
 
-  IF NOT owner_was_member THEN
-    EXECUTE format('REVOKE %I FROM %I', 'mm_migrator', current_user);
-  END IF;
 END
 $$;
