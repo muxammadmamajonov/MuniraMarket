@@ -26,6 +26,8 @@ class UserRecord:
     language_confirmed: bool = False
     # Account phone verified (Telegram contact or OTP). The number itself never leaves the API.
     phone_verified: bool = False
+    # Masked verified phone for the owner's own profile (``+998 •• ••• 45 67``), else ``None``.
+    phone_hint: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -46,6 +48,18 @@ def language_from_code(language_code: str | None) -> Language | None:
         return Language(primary)
     except ValueError:
         return None
+
+
+def phone_hint(phone: str | None) -> str | None:
+    """Only the last four digits stay readable; enough for the owner to recognise the number."""
+    if phone is None:
+        return None
+    digits = "".join(ch for ch in phone if ch.isdigit())
+    if len(digits) < 7:
+        return None
+    if digits.startswith("998") and len(digits) == 12:
+        return f"+998 •• ••• {digits[-4:-2]} {digits[-2:]}"
+    return "+" + "•" * (len(digits) - 4) + " " + digits[-4:]
 
 
 _PHONE_DIGITS_MIN = 7
@@ -90,6 +104,7 @@ def _to_record(user: User) -> UserRecord:
         is_blocked=user.is_blocked,
         language_confirmed=user.language_confirmed_at is not None,
         phone_verified=user.phone_verified_at is not None,
+        phone_hint=phone_hint(user.phone) if user.phone_verified_at is not None else None,
     )
 
 

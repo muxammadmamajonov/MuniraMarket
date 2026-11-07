@@ -22,6 +22,8 @@ class UserPublic(BaseModel):
     language_confirmed: bool = False
     # True when the account phone is verified; needed before an order can be placed.
     phone_verified: bool = False
+    # Masked verified number (last four digits) for the owner's profile; never the full number.
+    phone_hint: str | None = None
 
 
 class UserEnvelope(BaseModel):

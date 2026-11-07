@@ -72,7 +72,8 @@ async def test_own_contact_verifies_phone_without_echoing_it(
     assert response.status_code == 200, response.text
     assert response.json()["user"]["phone_verified"] is True
     assert "phone" not in response.json()["user"]
-    assert "998" not in response.text
+    assert response.json()["user"]["phone_hint"] == "+998 •• ••• 45 67"
+    assert "90123" not in response.text
     assert users.phones[ACTOR] == "+998901234567"
 
 

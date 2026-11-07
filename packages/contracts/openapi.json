@@ -3549,6 +3549,17 @@
             ],
             "title": "Last Name"
           },
+          "phone_hint": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Phone Hint"
+          },
           "phone_verified": {
             "default": false,
             "title": "Phone Verified",

@@ -29,6 +29,8 @@ export interface UserRecord {
   language_confirmed: boolean;
   /** The account phone is verified; the number itself never leaves the API. */
   phone_verified: boolean;
+  /** The verified number; read only to build `phone_hint`, never serialised. */
+  phone?: string | null;
 }
 
 export interface SessionData {

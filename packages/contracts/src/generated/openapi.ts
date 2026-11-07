@@ -2416,6 +2416,8 @@ export interface components {
       language_confirmed: boolean;
       /** Last Name */
       last_name: string | null;
+      /** Phone Hint */
+      phone_hint?: string | null;
       /**
        * Phone Verified
        * @default false

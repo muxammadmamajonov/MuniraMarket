@@ -32,12 +32,25 @@ export interface UserPublic {
   role: UserRecord['role'];
   language_confirmed: boolean;
   phone_verified: boolean;
+  phone_hint: string | null;
 }
 
 const COLUMNS = `id::text AS id, telegram_user_id, first_name, last_name, username,
   language::text AS language, role::text AS role, is_blocked,
   language_confirmed_at IS NOT NULL AS language_confirmed,
-  phone_verified_at IS NOT NULL AS phone_verified`;
+  phone_verified_at IS NOT NULL AS phone_verified,
+  CASE WHEN phone_verified_at IS NOT NULL THEN phone END AS phone`;
+
+/** Only the last four digits stay readable; enough for the owner to recognise the number. */
+export function phoneHint(phone: string | null | undefined): string | null {
+  if (phone === null || phone === undefined) return null;
+  const digits = phone.replace(/\D/g, '');
+  if (digits.length < 7) return null;
+  if (digits.startsWith('998') && digits.length === 12) {
+    return `+998 •• ••• ${digits.slice(-4, -2)} ${digits.slice(-2)}`;
+  }
+  return `+${'•'.repeat(digits.length - 4)} ${digits.slice(-4)}`;
+}
 
 /** Map a Telegram `language_code` to a supported language, else `null`. */
 export function languageFromCode(languageCode: string | null | undefined): Language | null {
@@ -57,6 +70,7 @@ export function userPublic(user: UserRecord): UserPublic {
     role: user.role,
     language_confirmed: user.language_confirmed,
     phone_verified: user.phone_verified,
+    phone_hint: user.phone_verified ? phoneHint(user.phone) : null,
   };
 }
 

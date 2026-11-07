@@ -106,7 +106,8 @@ describe.skipIf(!hasDatabase)('user preferences', () => {
     });
     expect(own.status, await own.clone().text()).toBe(200);
     const text = await own.text();
-    expect(text).not.toContain('998');
+    expect(text).not.toContain('90123');
+    expect(JSON.parse(text).user.phone_hint).toBe('+998 •• ••• 45 67');
     expect(JSON.parse(text).user.phone_verified).toBe(true);
     expect(await row()).toMatchObject({
       phone: '+998901234567',

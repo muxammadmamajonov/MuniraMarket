@@ -12,7 +12,7 @@ from app.api.deps import get_user_repository
 from app.core.config import Settings
 from app.main import create_app
 from app.models.enums import Language, UserRole
-from app.repositories.users import TelegramProfile, UserRecord, language_from_code
+from app.repositories.users import TelegramProfile, UserRecord, language_from_code, phone_hint
 from app.security.service_auth import InMemoryNonceStore
 
 # Obviously fake values that are only ever used inside the test process.
@@ -99,7 +99,7 @@ class FakeUserRepository:
         if user is None:
             return None
         self.phones[telegram_user_id] = phone
-        updated = replace(user, phone_verified=True)
+        updated = replace(user, phone_verified=True, phone_hint=phone_hint(phone))
         self.users[telegram_user_id] = updated
         return updated
 
