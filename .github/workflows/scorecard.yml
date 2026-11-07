@@ -1,0 +1,30 @@
+name: OpenSSF Scorecard
+
+on:
+  branch_protection_rule:
+  push:
+    branches: [main]
+  schedule:
+    - cron: '41 3 * * 1'
+
+permissions:
+  contents: read
+  security-events: write
+  id-token: write
+
+jobs:
+  analysis:
+    name: Supply-chain security
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Run OpenSSF Scorecard
+        uses: ossf/scorecard-action@fa7117db83c52d787ae5a89f350999701505d78e # v2.5.0
+        with:
+          results_file: results.sarif
+          results_format: sarif
+          publish_results: true
+      - name: Publish findings to GitHub code scanning
+        uses: github/codeql-action/upload-sarif@b7b84b636b4f90c9b31da1bc5f72bfadd5b31410 # v3
+        with:
+          sarif_file: results.sarif

@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { LocaleProvider } from '@/i18n/context';
 import { autoloadYandexScript, makeYMaps, type FakeYMaps } from '@/lib/maps/test-helpers';
