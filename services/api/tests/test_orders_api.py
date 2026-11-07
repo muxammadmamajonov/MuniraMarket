@@ -1076,3 +1076,28 @@ def test_database_errors_are_logged_without_row_data(caplog: pytest.LogCaptureFi
     for leaked in ("Demo Mijoz", "+998000000000", "Demo ko'cha", "INSERT"):
         assert leaked not in text
     assert record.exc_info is None
+
+
+# --- phone verification gate ----------------------------------------------------------------------
+
+
+async def test_order_needs_a_verified_phone_when_required(
+    app: FastAPI, client: httpx.AsyncClient, orders: FakeOrderRepository
+) -> None:
+    app.state.settings = app.state.settings.model_copy(
+        update={"checkout_require_verified_phone": True}
+    )
+    error_of(await create(client), 409, "phone_verification_required")
+    assert orders.calls == []
+
+
+async def test_verified_phone_passes_the_gate(
+    app: FastAPI, client: httpx.AsyncClient, orders: FakeOrderRepository, user: UserRecord
+) -> None:
+    app.state.settings = app.state.settings.model_copy(
+        update={"checkout_require_verified_phone": True}
+    )
+    verified = dataclasses.replace(user, phone_verified=True)
+    app.dependency_overrides[auth_deps.get_current_user] = lambda: verified
+    response = await create(client)
+    assert response.status_code == 201, response.text

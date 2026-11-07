@@ -18,6 +18,10 @@ class UserPublic(BaseModel):
     username: str | None
     language: Language
     role: UserRole
+    # True once the user explicitly chose ``language``; until then the bot asks on ``/start``.
+    language_confirmed: bool = False
+    # True when the account phone is verified; needed before an order can be placed.
+    phone_verified: bool = False
 
 
 class UserEnvelope(BaseModel):
@@ -40,3 +44,24 @@ class TelegramSessionRequest(BaseModel):
     last_name: Annotated[str | None, Field(max_length=255)] = None
     username: Annotated[str | None, Field(max_length=64)] = None
     language_code: Annotated[str | None, Field(max_length=16)] = None
+
+
+class SetLanguageRequest(BaseModel):
+    """Body of ``PUT /me/language`` and ``PUT /internal/telegram/language``."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    language: Language
+
+
+class TelegramContactRequest(BaseModel):
+    """Body of ``POST /internal/telegram/phone``: the sender's own shared contact.
+
+    The bot sends it only when the platform-verified update has ``contact.user_id == from.id``;
+    the API checks ``contact_user_id`` against the signed actor again.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    contact_user_id: Annotated[int, Field(gt=0)]
+    phone_number: Annotated[str, Field(min_length=7, max_length=32)]

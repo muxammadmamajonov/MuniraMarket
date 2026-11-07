@@ -1,6 +1,7 @@
 import os
 import uuid
 from collections.abc import AsyncIterator, Callable
+from dataclasses import replace
 from typing import Any
 
 import httpx
@@ -39,6 +40,8 @@ def make_settings(**overrides: Any) -> Settings:
         "telegram_environment": "test",
         # Required in staging/production; harmless elsewhere. A private (RFC 1918) address.
         "forwarded_allow_ips": "10.20.0.2",
+        # The phone gate has its own tests; most order tests use unverified fake users.
+        "checkout_require_verified_phone": False,
     }
     if overrides.get("app_env") in ("staging", "production"):
         # Deployed environments require TLS to PostgreSQL and trusted origins; tests
@@ -59,6 +62,7 @@ class FakeUserRepository:
     def __init__(self) -> None:
         self.users: dict[int, UserRecord] = {}
         self.upserts: list[TelegramProfile] = []
+        self.phones: dict[int, str] = {}
 
     async def upsert_from_telegram(self, profile: TelegramProfile) -> UserRecord:
         self.upserts.append(profile)
@@ -76,9 +80,28 @@ class FakeUserRepository:
             ),
             role=existing.role if existing else UserRole.CUSTOMER,
             is_blocked=existing.is_blocked if existing else False,
+            language_confirmed=existing.language_confirmed if existing else False,
+            phone_verified=existing.phone_verified if existing else False,
         )
         self.users[profile.telegram_user_id] = record
         return record
+
+    async def set_language(self, user_id: uuid.UUID, language: Language) -> UserRecord | None:
+        for key, user in self.users.items():
+            if user.id == user_id:
+                updated = replace(user, language=language, language_confirmed=True)
+                self.users[key] = updated
+                return updated
+        return None
+
+    async def record_telegram_phone(self, telegram_user_id: int, phone: str) -> UserRecord | None:
+        user = self.users.get(telegram_user_id)
+        if user is None:
+            return None
+        self.phones[telegram_user_id] = phone
+        updated = replace(user, phone_verified=True)
+        self.users[telegram_user_id] = updated
+        return updated
 
     async def get_by_telegram_id(self, telegram_user_id: int) -> UserRecord | None:
         return self.users.get(telegram_user_id)

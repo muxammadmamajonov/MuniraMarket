@@ -17,6 +17,7 @@ from fastapi import APIRouter, Depends, Header, Query, Request, Response
 
 from app.api.auth_deps import CsrfProtectedUserDep, CurrentUserDep, rate_limit
 from app.api.deps import SessionDep
+from app.core.config import Settings
 from app.core.errors import ApiError, error_responses
 from app.domain.checkout import (
     BelowMinimumOrderError,
@@ -200,6 +201,7 @@ async def quote(
     },
 )
 async def create_order(  # noqa: PLR0917 - FastAPI injects every parameter
+    request: Request,
     payload: CreateOrderRequest,
     response: Response,
     user: CsrfProtectedUserDep,
@@ -219,8 +221,12 @@ async def create_order(  # noqa: PLR0917 - FastAPI injects every parameter
     The same ``Idempotency-Key`` with the same body returns the original order (``200`` and
     ``Idempotent-Replayed: true``); with a different body it is ``409 idempotency_key_conflict``.
     When the zone has delivery slots, ``delivery_slot_id`` is required (``409 slot_required``) and
-    booked atomically (``409 slot_full`` / ``slot_unavailable``).
+    booked atomically (``409 slot_full`` / ``slot_unavailable``). Without a verified account
+    phone it is ``409 phone_verification_required`` (unless disabled by configuration).
     """
+    settings: Settings = request.app.state.settings
+    if settings.checkout_require_verified_phone and not user.phone_verified:
+        raise ApiError(409, "phone_verification_required", "Verify your phone number first")
     new_order = NewOrder(
         district=payload.address.district,
         address=payload.address.model_dump(mode="json"),
