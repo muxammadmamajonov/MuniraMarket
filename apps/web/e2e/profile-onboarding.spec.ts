@@ -35,7 +35,11 @@ async function openMiniApp(page: Page, who: FakeTelegramUser, options: TelegramS
 
 /** A real tap on the page body (the first user gesture). */
 async function tap(page: Page): Promise<void> {
-  await page.getByRole('main').click({ position: { x: 8, y: 8 } });
+  // A real pointer down/up in the left page gutter: nothing interactive or sticky sits there, so
+  // the tap can neither navigate nor be intercepted by the header.
+  await page.mouse.move(2, 320);
+  await page.mouse.down();
+  await page.mouse.up();
 }
 
 function fullscreenRequests(page: Page): Promise<number> {
