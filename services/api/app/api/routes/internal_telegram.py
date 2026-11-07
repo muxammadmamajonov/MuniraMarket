@@ -26,10 +26,13 @@ ActorDep = Annotated[int, Depends(require_actor)]
 
 def _request_body_schema(model: type[BaseModel]) -> dict[str, Any]:
     """OpenAPI request body for a route that validates its body by hand after the signature."""
+    # Nested enums (``Language``) point at the shared component instead of local ``$defs``.
+    schema = model.model_json_schema(ref_template="#/components/schemas/{model}")
+    schema.pop("$defs", None)
     return {
         "requestBody": {
             "required": True,
-            "content": {"application/json": {"schema": model.model_json_schema()}},
+            "content": {"application/json": {"schema": schema}},
         }
     }
 

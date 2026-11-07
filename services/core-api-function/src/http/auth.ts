@@ -42,6 +42,7 @@ export const RULES = {
   ORDERS_IP: rule('orders_ip', 300, 60), // per IP, every /checkout and /orders route
   CHECKOUT_QUOTE: rule('checkout_quote', 60, 60), // per user
   ORDER_CREATE: rule('order_create', 10, 60), // per user
+  PREFERENCES_WRITE: rule('preferences_write', 20, 60), // per user
   ORDER_READ: rule('order_read', 120, 60), // per user
   ORDER_CANCEL: rule('order_cancel', 20, 60), // per user
   ADMIN_IP: rule('admin_ip', 600, 60), // per IP

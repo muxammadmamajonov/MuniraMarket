@@ -47,6 +47,8 @@ describe('api contract', () => {
       username: null,
       language: 'uz',
       role: 'customer',
+      language_confirmed: false,
+      phone_verified: false,
     };
     const request: TelegramInitDataAuthRequest = { init_data: 'query_id=x' };
     const response: TelegramInitDataAuthResponse = { user, csrf_token: 'csrf' };
@@ -77,6 +79,8 @@ describe('api contract', () => {
         username: null,
         language: 'ru',
         role: 'customer',
+        language_confirmed: false,
+        phone_verified: false,
       },
       csrf_token: 'x',
     };

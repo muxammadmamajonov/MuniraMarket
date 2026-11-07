@@ -31,6 +31,8 @@ export function testEnv(overrides: Record<string, string | undefined> = {}) {
     SESSION_COOKIE_SECURE: 'false',
     CSRF_TRUSTED_ORIGINS: `${WEB_ORIGIN},${ADMIN_ORIGIN}`,
     LOG_LEVEL: 'ERROR',
+    // The phone gate has its own tests; most order tests use unverified users.
+    CHECKOUT_REQUIRE_VERIFIED_PHONE: 'false',
     ...overrides,
   };
 }

@@ -5,8 +5,10 @@
  * Four entrances (see README.md):
  *
  * - `public`: the Worker's own hostname, reached from the internet. Only liveness/readiness and
- *   the two service-signed routes Telegram Serverless calls (ADR 0003): user sync
- *   (`internal/telegram/session`) and staff group connect (`internal/telegram/staff-chat/connect`).
+ *   the service-signed routes Telegram Serverless calls (ADR 0003): user sync
+ *   (`internal/telegram/session`), staff group connect (`internal/telegram/staff-chat/connect`),
+ *   the onboarding language (`PUT internal/telegram/language`) and the user's own contact
+ *   (`POST internal/telegram/phone`).
  * - `storefront`: the `StorefrontApi` entrypoint, reachable only through the web Worker's service
  *   binding. Everything the storefront proxy forwards, never `admin/**` or `internal/**`.
  * - `admin`: the `AdminApi` entrypoint, reachable only through the admin Worker's service
@@ -38,10 +40,13 @@ const SCHEDULER_ROUTES: ReadonlySet<string> = new Set([
   'internal/maintenance/cleanup',
 ]);
 
-/** The only routes Telegram Serverless calls through the public hostname (signed POSTs). */
-const TELEGRAM_PUBLIC_ROUTES: ReadonlySet<string> = new Set([
-  'internal/telegram/session',
-  'internal/telegram/staff-chat/connect',
+/** The only routes Telegram Serverless calls through the public hostname, with their method. */
+const TELEGRAM_PUBLIC_ROUTES: ReadonlyMap<string, string> = new Map([
+  ['internal/telegram/session', 'POST'],
+  ['internal/telegram/staff-chat/connect', 'POST'],
+  // Bot onboarding language choice and the user's own shared contact (ADR 0003, signed).
+  ['internal/telegram/language', 'PUT'],
+  ['internal/telegram/phone', 'POST'],
 ]);
 
 const HEALTH_ROUTES: ReadonlySet<string> = new Set(['health', 'health/ready']);
@@ -92,8 +97,8 @@ export function isAllowed(entrance: Entrance, method: string, pathname: string):
 
   switch (entrance) {
     case 'public':
-      // Telegram Serverless calls only these signed POSTs.
-      return upper === 'POST' && TELEGRAM_PUBLIC_ROUTES.has(route);
+      // Telegram Serverless calls only these signed routes, each with one method.
+      return TELEGRAM_PUBLIC_ROUTES.get(route) === upper;
     case 'storefront':
       return segments[0] !== 'admin' && segments[0] !== 'internal';
     case 'admin':

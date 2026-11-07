@@ -30,10 +30,14 @@ export interface UserPublic {
   username: string | null;
   language: Language;
   role: UserRecord['role'];
+  language_confirmed: boolean;
+  phone_verified: boolean;
 }
 
 const COLUMNS = `id::text AS id, telegram_user_id, first_name, last_name, username,
-  language::text AS language, role::text AS role, is_blocked`;
+  language::text AS language, role::text AS role, is_blocked,
+  language_confirmed_at IS NOT NULL AS language_confirmed,
+  phone_verified_at IS NOT NULL AS phone_verified`;
 
 /** Map a Telegram `language_code` to a supported language, else `null`. */
 export function languageFromCode(languageCode: string | null | undefined): Language | null {
@@ -51,6 +55,8 @@ export function userPublic(user: UserRecord): UserPublic {
     username: user.username,
     language: user.language,
     role: user.role,
+    language_confirmed: user.language_confirmed,
+    phone_verified: user.phone_verified,
   };
 }
 
@@ -98,5 +104,50 @@ export async function getUserById(db: SqlRunner, userId: string): Promise<UserRe
   const { rows } = await db.query<UserRecord>(`SELECT ${COLUMNS} FROM users WHERE id = $1::uuid`, [
     userId,
   ]);
+  return rows[0] ?? null;
+}
+
+/**
+ * The one write path for the language preference (bot onboarding and the shop profile). Marks
+ * it confirmed so the bot does not ask again.
+ */
+export async function setLanguage(
+  db: SqlRunner,
+  userId: string,
+  language: Language,
+): Promise<UserRecord | null> {
+  const { rows } = await db.query<UserRecord>(
+    `UPDATE users SET language = $2::language, language_confirmed_at = now(), updated_at = now()
+     WHERE id = $1::uuid RETURNING ${COLUMNS}`,
+    [userId, language],
+  );
+  return rows[0] ?? null;
+}
+
+const PHONE_ALLOWED = /^[0-9+\s()-]+$/;
+
+/** E.164 `+<digits>` from a Telegram contact number (`998901234567`, `+998 90 ...`), else null. */
+export function normalizeContactPhone(raw: string): string | null {
+  const stripped = raw.trim();
+  if (stripped === '' || !PHONE_ALLOWED.test(stripped) || stripped.slice(1).includes('+')) {
+    return null;
+  }
+  const digits = stripped.replace(/\D/g, '');
+  if (digits.length < 7 || digits.length > 15 || digits.startsWith('0')) return null;
+  return `+${digits}`;
+}
+
+/** Store the user's OWN Telegram contact number as their verified account phone. */
+export async function recordTelegramPhone(
+  db: SqlRunner,
+  telegramUserId: number,
+  phone: string,
+): Promise<UserRecord | null> {
+  const { rows } = await db.query<UserRecord>(
+    `UPDATE users SET phone = $2, phone_verified_at = now(),
+       phone_verification_method = 'telegram_contact', updated_at = now()
+     WHERE telegram_user_id = $1 RETURNING ${COLUMNS}`,
+    [telegramUserId, phone],
+  );
   return rows[0] ?? null;
 }

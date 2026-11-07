@@ -748,6 +748,26 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/v1/internal/telegram/language': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    /**
+     * Set Language
+     * @description The language the user picked in the bot's onboarding (same column as the shop profile).
+     */
+    put: operations['set_language_api_v1_internal_telegram_language_put'];
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/v1/internal/telegram/me': {
     parameters: {
       query?: never;
@@ -805,6 +825,28 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/v1/internal/telegram/phone': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Record Phone
+     * @description Store the sender's OWN shared Telegram contact as the verified account phone.
+     *
+     *     The number is never logged or returned.
+     */
+    post: operations['record_phone_api_v1_internal_telegram_phone_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/v1/internal/telegram/session': {
     parameters: {
       query?: never;
@@ -845,6 +887,26 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/v1/me/language': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    /**
+     * Set Language
+     * @description Save the storefront language. The same value the bot uses; the URL locale follows it.
+     */
+    put: operations['set_language_api_v1_me_language_put'];
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/v1/orders': {
     parameters: {
       query?: never;
@@ -865,7 +927,8 @@ export interface paths {
      *     The same ``Idempotency-Key`` with the same body returns the original order (``200`` and
      *     ``Idempotent-Replayed: true``); with a different body it is ``409 idempotency_key_conflict``.
      *     When the zone has delivery slots, ``delivery_slot_id`` is required (``409 slot_required``) and
-     *     booked atomically (``409 slot_full`` / ``slot_unavailable``).
+     *     booked atomically (``409 slot_full`` / ``slot_unavailable``). Without a verified account
+     *     phone it is ``409 phone_verification_required`` (unless disabled by configuration).
      */
     post: operations['create_order_api_v1_orders_post'];
     delete?: never;
@@ -1215,6 +1278,7 @@ export interface components {
         | 'invalid_status_transition'
         | 'order_status_conflict'
         | 'too_many_open_orders'
+        | 'phone_verification_required'
         | 'slug_taken'
         | 'sku_taken'
         | 'category_cycle'
@@ -2262,6 +2326,13 @@ export interface components {
       /** Quantity */
       quantity: number;
     };
+    /**
+     * SetLanguageRequest
+     * @description Body of ``PUT /me/language`` and ``PUT /internal/telegram/language``.
+     */
+    SetLanguageRequest: {
+      language: components['schemas']['Language'];
+    };
     /** SlotCreateRequest */
     SlotCreateRequest: {
       /** Capacity */
@@ -2338,8 +2409,18 @@ export interface components {
        */
       id: string;
       language: components['schemas']['Language'];
+      /**
+       * Language Confirmed
+       * @default false
+       */
+      language_confirmed: boolean;
       /** Last Name */
       last_name: string | null;
+      /**
+       * Phone Verified
+       * @default false
+       */
+      phone_verified: boolean;
       role: components['schemas']['UserRole'];
       /** Telegram User Id */
       telegram_user_id: number;
@@ -5449,6 +5530,32 @@ export interface operations {
       };
     };
   };
+  set_language_api_v1_internal_telegram_language_put: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': {
+          language: components['schemas']['Language'];
+        };
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['UserEnvelope'];
+        };
+      };
+    };
+  };
   get_me_api_v1_internal_telegram_me_get: {
     parameters: {
       query?: never;
@@ -5542,6 +5649,35 @@ export interface operations {
       };
     };
   };
+  record_phone_api_v1_internal_telegram_phone_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': {
+          /** Contact User Id */
+          contact_user_id: number;
+          /** Phone Number */
+          phone_number: string;
+        };
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['UserEnvelope'];
+        };
+      };
+    };
+  };
   create_session_api_v1_internal_telegram_session_post: {
     parameters: {
       query?: never;
@@ -5613,6 +5749,84 @@ export interface operations {
           [name: string]: unknown;
         };
         content?: never;
+      };
+    };
+  };
+  set_language_api_v1_me_language_put: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['SetLanguageRequest'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['UserEnvelope'];
+        };
+      };
+      /** @description Unauthorized */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Forbidden */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Not Found */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Unprocessable Content */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Too Many Requests */
+      429: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Service Unavailable */
+      503: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
       };
     };
   };

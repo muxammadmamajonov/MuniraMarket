@@ -18,7 +18,7 @@ import { registerRoutes } from './routes/index.ts';
  * 4. routes; unknown paths 404, known paths with another method 405, uncaught errors 500.
  */
 
-const NO_STORE_PREFIXES = ['auth', 'cart', 'checkout', 'orders', 'admin', 'internal'].map(
+const NO_STORE_PREFIXES = ['auth', 'me', 'cart', 'checkout', 'orders', 'admin', 'internal'].map(
   (segment) => `${API_PREFIX}/${segment}`,
 );
 const QUIET_PATHS = new Set([`${API_PREFIX}/health`]);
