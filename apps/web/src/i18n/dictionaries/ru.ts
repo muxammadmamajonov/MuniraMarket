@@ -42,8 +42,8 @@ export const ru: Dictionary = {
     saved: 'Выбран район: {district}',
   },
   map: {
-    open: 'Выбрать на карте',
-    title: 'Выбрать на карте',
+    open: 'Указать на карте',
+    title: 'Указать на карте',
     close: 'Назад',
     canvasLabel: 'Карта. Двигайте её клавишами со стрелками.',
     loading: 'Загружаем карту…',

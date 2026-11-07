@@ -75,7 +75,7 @@ describe('AddressPicker: without a key', () => {
   it('shows its own fallback, loads nothing and offers the district list', () => {
     const append = vi.spyOn(document.head, 'append');
     const { onClose } = renderPicker({ apiKey: null });
-    const dialog = screen.getByRole('dialog', { name: 'Xaritada tanlash' });
+    const dialog = screen.getByRole('dialog', { name: 'Xaritada belgilash' });
     expect(within(dialog).getByTestId('map-unavailable')).toHaveTextContent(
       'Xarita bu yerda ishlamaydi',
     );
@@ -88,7 +88,7 @@ describe('AddressPicker: without a key', () => {
 
   it('is localized', () => {
     renderPicker({ apiKey: null, locale: 'ru' });
-    expect(screen.getByRole('dialog', { name: 'Выбрать на карте' })).toHaveTextContent(
+    expect(screen.getByRole('dialog', { name: 'Указать на карте' })).toHaveTextContent(
       'Карта здесь не работает',
     );
   });

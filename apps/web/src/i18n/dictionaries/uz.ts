@@ -43,8 +43,8 @@ export const uz: Dictionary = {
     saved: 'Tanlangan tuman: {district}',
   },
   map: {
-    open: 'Xaritada tanlash',
-    title: 'Xaritada tanlash',
+    open: 'Xaritada belgilash',
+    title: 'Xaritada belgilash',
     close: 'Orqaga',
     canvasLabel: 'Xarita. Strelka tugmalari bilan suring.',
     loading: 'Xarita yuklanmoqda…',

@@ -78,7 +78,7 @@ describe('DeliveryDistrict', () => {
     // One list of districts: zones (pricing tiers) and their fees are not shown.
     expect(within(dialog).getAllByRole('group')).toHaveLength(1);
     expect(dialog.textContent).not.toMatch(/so‘m|сум|bepul|\d{2}:\d{2}/);
-    expect(within(dialog).getByRole('button', { name: 'Xaritada tanlash' })).toBeVisible();
+    expect(within(dialog).getByRole('button', { name: 'Xaritada belgilash' })).toBeVisible();
 
     // Nothing is chosen yet, so "Tanlash" waits for a pick.
     const confirm = within(dialog).getByRole('button', { name: 'Tanlash' });
@@ -161,7 +161,7 @@ describe('DeliveryDistrict: map step', () => {
     fireEvent.click(
       screen.getByRole('button', { name: /Yetkazib berish manzilini tanlang|O‘zgartirish/ }),
     );
-    fireEvent.click(screen.getByRole('button', { name: 'Xaritada tanlash' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Xaritada belgilash' }));
     return screen.getByTestId('address-picker');
   }
 
@@ -248,7 +248,7 @@ describe('DeliveryDistrict: map step', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Yetkazib berish manzilini tanlang' }));
     expect(webApp.requestFullscreen).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByRole('button', { name: 'Xaritada tanlash' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Xaritada belgilash' }));
     expect(webApp.requestFullscreen).toHaveBeenCalledTimes(1);
 
     // The client switched (Telegram reports it); closing the map leaves fullscreen again.
