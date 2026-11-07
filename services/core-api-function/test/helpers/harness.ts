@@ -56,9 +56,16 @@ export async function resetDatabase(db: Database): Promise<void> {
     "SELECT tablename FROM pg_tables WHERE schemaname = 'public' AND tablename <> 'alembic_version'",
   );
   if (rows.length === 0) return;
-  await db.query(
-    `TRUNCATE ${rows.map((r) => `"${r.tablename}"`).join(', ')} RESTART IDENTITY CASCADE`,
-  );
+  // `audit_log` refuses TRUNCATE (append-only trigger); disable it for this one statement only,
+  // like services/api/tests/db_support.py.
+  const hasAudit = rows.some((r) => r.tablename === 'audit_log');
+  await db.tx(async (client) => {
+    if (hasAudit) await client.query('ALTER TABLE audit_log DISABLE TRIGGER audit_log_no_truncate');
+    await client.query(
+      `TRUNCATE ${rows.map((r) => `"${r.tablename}"`).join(', ')} RESTART IDENTITY CASCADE`,
+    );
+    if (hasAudit) await client.query('ALTER TABLE audit_log ENABLE TRIGGER audit_log_no_truncate');
+  });
 }
 
 export interface TestAppOptions {
