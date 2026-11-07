@@ -75,6 +75,7 @@ roles are). Setup, once per environment, as the project owner:
 psql "$OWNER_URL" -v ON_ERROR_STOP=1 -v migrator_password="$MIGRATOR_PASSWORD" \
   -v app_password="$APP_PASSWORD" -f infra/neon/sql/01-roles.sql
 psql "$OWNER_URL" -v ON_ERROR_STOP=1 -f infra/neon/sql/02-database.sql
+psql "$MIGRATOR_URL" -v ON_ERROR_STOP=1 -f infra/neon/sql/03-default-privileges.sql
 ```
 
 If revisions 0001–0004 were applied before the role model was installed, their public-schema
