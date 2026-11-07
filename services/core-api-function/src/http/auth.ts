@@ -51,7 +51,12 @@ export const RULES = {
   ADMIN_CSV_EXPORT: rule('admin_csv_export', 20, 60), // per user
 } as const;
 
-export { currentSession, currentUser, csrfProtectedUser, requireTrustedOrigin } from '../security/sessionDeps.ts';
+export {
+  currentSession,
+  currentUser,
+  csrfProtectedUser,
+  requireTrustedOrigin,
+} from '../security/sessionDeps.ts';
 export { rateLimit } from '../security/rateLimit.ts';
 export {
   backOfficeRouterDeps,

@@ -40,7 +40,9 @@ describe('OpenAPI contract parity', () => {
   it('serves every operation of the contract and nothing undocumented', () => {
     const served = registered.map((r) => `${r.method} ${r.path}`);
     const missing = contractOperations().filter((op) => !served.includes(op));
-    const extra = served.filter((op) => !contractOperations().includes(op) && !FUNCTION_ONLY.has(op));
+    const extra = served.filter(
+      (op) => !contractOperations().includes(op) && !FUNCTION_ONLY.has(op),
+    );
     expect({ missing, extra }).toEqual({ missing: [], extra: [] });
   });
 

@@ -1,7 +1,7 @@
 // Bundles the Function entry (esbuild, ESM, Node 24) into dist/index.mjs (git-ignored). This is
 // what `neon deploy` ships (`bundler: 'none'` in /neon.ts): the shared Telegram modules import
 // `BotApiError` from the bare specifier `sdk`, which only this build aliases to the stand-in.
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, URL } from 'node:url';
 import { build } from 'esbuild';
 
 await build({

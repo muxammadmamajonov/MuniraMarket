@@ -1,6 +1,12 @@
 import { createHash, randomBytes } from 'node:crypto';
 import type { Database } from '../../src/db.ts';
-import type { Language, UserRecord, UserRole, SessionEntrance, AuthMethod } from '../../src/http/context.ts';
+import type {
+  Language,
+  UserRecord,
+  UserRole,
+  SessionEntrance,
+  AuthMethod,
+} from '../../src/http/context.ts';
 import { ADMIN_ORIGIN, WEB_ORIGIN } from './harness.ts';
 
 /**
@@ -13,7 +19,9 @@ let nextTelegramId = 7_000_000_000;
 
 export async function createUser(
   db: Database,
-  overrides: Partial<Pick<UserRecord, 'first_name' | 'role' | 'is_blocked' | 'telegram_user_id'>> & {
+  overrides: Partial<
+    Pick<UserRecord, 'first_name' | 'role' | 'is_blocked' | 'telegram_user_id'>
+  > & {
     language?: Language;
   } = {},
 ): Promise<UserRecord> {

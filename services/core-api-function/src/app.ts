@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
 import { ApiError, apiErrorResponse, errorJson, StoreUnavailableError } from './errors.ts';
-import { API_PREFIX } from './http/body.ts';
+import { API_PREFIX, bodyLimitFor } from './http/body.ts';
 import type { AppBindings, Deps, Entrance } from './http/context.ts';
 import { createGatewaySecretCheck } from './http/gatewaySecret.ts';
 import { errorFields, REQUEST_ID_PATTERN } from './logging.ts';
@@ -72,6 +72,19 @@ export function createApp(deps: Deps): Hono<AppBindings> {
       // Same envelope as every other error; nothing about why is revealed.
       c.res = errorJson(401, 'unauthorized', 'Unauthorized', {
         headers: { 'cache-control': 'no-store' },
+      });
+      return;
+    }
+    // Declared oversize bodies are refused before any route or dependency runs (the reference's
+    // outermost body-limit middleware); streamed bodies are capped again in readRawBody.
+    const declared = c.req.header('content-length');
+    if (
+      declared !== undefined &&
+      /^\d+$/.test(declared) &&
+      Number(declared) > bodyLimitFor(c.req.path)
+    ) {
+      c.res = errorJson(413, 'payload_too_large', 'Request body too large', {
+        headers: isUnder(c.req.path, NO_STORE_PREFIXES) ? { 'cache-control': 'no-store' } : {},
       });
       return;
     }

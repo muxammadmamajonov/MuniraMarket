@@ -167,7 +167,8 @@ export const sessionRequired = (): ApiError =>
   new ApiError(401, 'session_required', 'Sign-in required');
 export const accountBlocked = (): ApiError =>
   new ApiError(403, 'account_blocked', 'Account is blocked');
-export const csrfFailed = (): ApiError => new ApiError(403, 'csrf_failed', 'CSRF validation failed');
+export const csrfFailed = (): ApiError =>
+  new ApiError(403, 'csrf_failed', 'CSRF validation failed');
 export const notFound = (message = 'Not Found'): ApiError =>
   new ApiError(404, 'not_found', message);
 export const forbidden = (message: string): ApiError => new ApiError(403, 'forbidden', message);

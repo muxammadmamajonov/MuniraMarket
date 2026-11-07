@@ -189,7 +189,8 @@ function commaList(env: Env, name: string): string[] {
 }
 
 function range(name: string, value: number, min: number, max: number): number {
-  if (value < min || value > max) throw new ConfigError(`${name} must be between ${min} and ${max}`);
+  if (value < min || value > max)
+    throw new ConfigError(`${name} must be between ${min} and ${max}`);
   return value;
 }
 
