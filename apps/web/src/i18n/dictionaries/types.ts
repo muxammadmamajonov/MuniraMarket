@@ -77,7 +77,11 @@ export interface Dictionary {
     /** Screen-reader announcement after a choice. `{district}` */
     saved: string;
   };
-  /** The optional map view (Yandex Maps): orientation only, it selects and saves nothing. */
+  /**
+   * The map step (Yandex Maps): the customer moves the map under a centre pin, confirms with
+   * "Deliver here", and the point is reverse-geocoded to a district and checked against the live
+   * zones. Only the chosen district is remembered; the point itself is never stored.
+   */
   map: {
     /** Button in the district sheet that opens the picker. */
     open: string;
@@ -86,6 +90,7 @@ export interface Dictionary {
     /** Accessible name of the map canvas, including how to pan it by keyboard. */
     canvasLabel: string;
     loading: string;
+    /** No Maps key configured. */
     unavailableTitle: string;
     unavailableText: string;
     backToList: string;
@@ -93,12 +98,54 @@ export interface Dictionary {
     offlineTitle: string;
     errorText: string;
     retry: string;
-    /** Under the map: orientation only; the district is chosen in the list, the address at checkout. */
+    /** Beside the map before confirming: how the centre pin works. */
     hint: string;
     myLocation: string;
     locating: string;
     locationDenied: string;
     locationUnavailable: string;
+    /** Accessible description of the centre pin. */
+    pinLabel: string;
+    /** The confirm button: reverse-geocode the pin and show the delivery result. */
+    deliverHere: string;
+    /** Opens the district list instead. */
+    pickFromList: string;
+    /** Back from a result to moving the map. */
+    movePin: string;
+    checking: string;
+    /** `{district}` */
+    servedTitle: string;
+    zoneLabel: string;
+    feeLabel: string;
+    minOrderLabel: string;
+    freeLabel: string;
+    hoursLabel: string;
+    /** Fee of 0. */
+    free: string;
+    /** `{amount}`: free delivery from this subtotal. */
+    freeFrom: string;
+    freeNever: string;
+    openNow: string;
+    closedNow: string;
+    /** Badge next to a seeded `demo-` zone name. */
+    demoBadge: string;
+    demoNote: string;
+    /** `{district}`: saves the district (only) and closes the map. */
+    chooseDistrict: string;
+    /** After a served result: the street address is typed at checkout; the point is not kept. */
+    addressLater: string;
+    /** `{district}` */
+    notServedTitle: string;
+    notServedNearby: string;
+    notServedNoNearby: string;
+    outsideTitle: string;
+    outsideText: string;
+    /** Lookup worked but named no district. */
+    unknownTitle: string;
+    unknownText: string;
+    /** Lookup unavailable (key/plan, quota, network). Never implies we deliver. */
+    lookupFailedTitle: string;
+    lookupFailedText: string;
   };
   search: {
     label: string;

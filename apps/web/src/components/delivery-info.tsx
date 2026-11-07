@@ -3,7 +3,8 @@ import { WalletIcon } from './icons';
 
 /**
  * A calm note about how paying works, using only what the app does: payment on delivery. Delivery
- * itself (fee and hours per district) is explained by the district chooser at the top of the page.
+ * itself (fee and hours per district) is explained by the district chooser at the top of the page
+ * and its map step, which shows the real zone rules for a confirmed point.
  * No offers, discounts or promises.
  */
 export function DeliveryInfo({ dict }: { dict: Dictionary }) {

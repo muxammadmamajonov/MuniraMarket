@@ -7,7 +7,7 @@ import {
   DISTRICT_STORAGE_ITEM,
   resetDistrictPreferenceMemory,
 } from '@/lib/delivery/district-preference';
-import { autoloadYandexScript, makeYMaps } from '@/lib/maps/test-helpers';
+import { autoloadYandexScript, makeYMaps, toponym } from '@/lib/maps/test-helpers';
 import { MapsConfigProvider } from '@/lib/maps/use-yandex-maps';
 import { resetYandexMapsLoader } from '@/lib/maps/yandex-loader';
 import { TelegramProvider } from '@/lib/telegram';
@@ -78,7 +78,7 @@ describe('DeliveryDistrict', () => {
     // One list of districts: zones (pricing tiers) and their fees are not shown.
     expect(within(dialog).getAllByRole('group')).toHaveLength(1);
     expect(dialog.textContent).not.toMatch(/so‘m|сум|bepul|\d{2}:\d{2}/);
-    expect(within(dialog).getByRole('button', { name: 'Xaritada ko‘rish' })).toBeVisible();
+    expect(within(dialog).getByRole('button', { name: 'Xaritada tanlash' })).toBeVisible();
 
     // Nothing is chosen yet, so "Tanlash" waits for a pick.
     const confirm = within(dialog).getByRole('button', { name: 'Tanlash' });
@@ -161,7 +161,7 @@ describe('DeliveryDistrict: map step', () => {
     fireEvent.click(
       screen.getByRole('button', { name: /Yetkazib berish manzilini tanlang|O‘zgartirish/ }),
     );
-    fireEvent.click(screen.getByRole('button', { name: 'Xaritada ko‘rish' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Xaritada tanlash' }));
     return screen.getByTestId('address-picker');
   }
 
@@ -169,16 +169,16 @@ describe('DeliveryDistrict: map step', () => {
     renderChooser();
     const picker = openMapFromSheet();
     expect(within(picker).getByTestId('map-unavailable')).toBeInTheDocument();
-    fireEvent.click(within(picker).getByRole('button', { name: 'Ro‘yxatga qaytish' }));
+    fireEvent.click(within(picker).getByRole('button', { name: 'Tumanni ro‘yxatdan tanlash' }));
     expect(screen.getByRole('dialog', { name: 'Yetkazib berish manzili' })).toBeInTheDocument();
   });
 
-  it('panning the map stores, logs and sends nothing, and leads back to the district list', async () => {
+  it('a served result selects its district; only the code is stored, nothing else leaves', async () => {
     window.localStorage.setItem(DISTRICT_STORAGE_ITEM, 'yunusobod');
     const fake = makeYMaps();
+    fake.search.mockResolvedValue([toponym('Chilonzor tumani', 'Toshkent, O‘zbekiston')]);
     autoloadYandexScript('load', fake.api);
     const fetchSpy = vi.spyOn(globalThis, 'fetch');
-    const localSet = vi.spyOn(Storage.prototype, 'setItem');
     const logs = [
       vi.spyOn(console, 'log'),
       vi.spyOn(console, 'info'),
@@ -187,28 +187,52 @@ describe('DeliveryDistrict: map step', () => {
     ];
     const beacon = vi.fn(() => true);
     Object.defineProperty(navigator, 'sendBeacon', { configurable: true, value: beacon });
+    const href = window.location.href;
 
     renderChooser(ZONES, 'uz', KEY);
     openMapFromSheet();
     const canvas = await screen.findByTestId('map-canvas');
     await waitFor(() => expect(fake.maps).toHaveLength(1));
     fireEvent.keyDown(canvas, { key: 'ArrowLeft' });
-    fireEvent.keyDown(canvas, { key: '+' });
-    fireEvent.click(screen.getByRole('button', { name: 'Ro‘yxatga qaytish' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Shu yerga yetkazish' }));
+    const result = await screen.findByTestId('map-result');
+    fireEvent.click(within(result).getByRole('button', { name: 'Chilonzor tumanini tanlash' }));
 
-    // Back in the district list; the summary is unchanged (no "point marked" anywhere).
-    expect(screen.getByRole('dialog', { name: 'Yetkazib berish manzili' })).toBeInTheDocument();
-    expect(screen.getByTestId('delivery-district-name')).toHaveTextContent('Yunusobod');
-    expect(screen.queryByText(/nuqta belgilan|saqlandi/i)).toBeNull();
+    // Back on the storefront with the new district; the sheet does not reopen.
+    await waitFor(() =>
+      expect(screen.getByTestId('delivery-district-name')).toHaveTextContent('Chilonzor'),
+    );
+    await waitFor(() =>
+      expect(screen.queryByRole('dialog', { name: 'Yetkazib berish manzili' })).toBeNull(),
+    );
+    await waitFor(() => expect(screen.queryByTestId('address-picker')).toBeNull());
 
-    expect(fetchSpy).not.toHaveBeenCalled();
-    expect(beacon).not.toHaveBeenCalled();
-    for (const log of logs) expect(log).not.toHaveBeenCalled();
-    expect(localSet).not.toHaveBeenCalled();
+    expect(window.localStorage.getItem(DISTRICT_STORAGE_ITEM)).toBe('chilonzor');
     expect(Object.keys({ ...window.localStorage })).toEqual([DISTRICT_STORAGE_ITEM]);
     expect(window.sessionStorage).toHaveLength(0);
     expect(document.cookie).not.toMatch(/69\.|41\./);
+    expect(window.location.href).toBe(href);
+    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(beacon).not.toHaveBeenCalled();
+    for (const log of logs) expect(log).not.toHaveBeenCalled();
     Reflect.deleteProperty(navigator, 'sendBeacon');
+  });
+
+  it('a failed lookup leads back to the list and changes nothing', async () => {
+    window.localStorage.setItem(DISTRICT_STORAGE_ITEM, 'yunusobod');
+    const fake = makeYMaps();
+    fake.search.mockRejectedValue(new Error('403'));
+    autoloadYandexScript('load', fake.api);
+    renderChooser(ZONES, 'uz', KEY);
+    openMapFromSheet();
+    await screen.findByTestId('map-canvas');
+    fireEvent.click(screen.getByRole('button', { name: 'Shu yerga yetkazish' }));
+    const result = await screen.findByTestId('map-result');
+    expect(result).toHaveAttribute('data-status', 'lookup-failed');
+    fireEvent.click(within(result).getByRole('button', { name: 'Tumanni ro‘yxatdan tanlash' }));
+    expect(screen.getByRole('dialog', { name: 'Yetkazib berish manzili' })).toBeInTheDocument();
+    expect(screen.getByTestId('delivery-district-name')).toHaveTextContent('Yunusobod');
+    expect(window.localStorage.getItem(DISTRICT_STORAGE_ITEM)).toBe('yunusobod');
   });
 
   it('in Telegram, asks for fullscreen only when the map is opened, and leaves it after', async () => {
@@ -224,7 +248,7 @@ describe('DeliveryDistrict: map step', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Yetkazib berish manzilini tanlang' }));
     expect(webApp.requestFullscreen).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByRole('button', { name: 'Xaritada ko‘rish' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Xaritada tanlash' }));
     expect(webApp.requestFullscreen).toHaveBeenCalledTimes(1);
 
     // The client switched (Telegram reports it); closing the map leaves fullscreen again.
