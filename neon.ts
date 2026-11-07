@@ -6,12 +6,10 @@ import { defineConfig } from '@neon/config/v1';
  *
  * SAFETY: this file declares only what this repository owns. The live branch also runs the
  * `catalog` and `hello` Functions, Realtime and the `assets`/`uploads` buckets, whose sources are
- * not in this tree. Ship the Core API with the targeted command, which never applies this file:
- *
- *   pnpm --filter @muniramarket/core-api-function deploy:function   (infra/neon/README.md)
- *
- * Do not run a full `neon deploy` against `production` until `neon config plan` shows no change
- * other than `coreapi`.
+ * not in this tree; `neon config plan` against `production` shows `+ function coreapi` as the only
+ * change (Functions and buckets that are not declared are left alone; Auth and the Data API are
+ * declared below so an apply never disables them). Always run the plan first and stop if it
+ * shows anything else (infra/neon/README.md).
  *
  * Secrets are declared by NAME only; values come from the deploy shell / `--env` file, never from
  * this file. `DATABASE_URL` is injected by Neon at runtime and is deliberately absent.
@@ -45,6 +43,8 @@ export default defineConfig({
         WEB_PUBLIC_ORIGIN: process.env.WEB_PUBLIC_ORIGIN!,
         ADMIN_PUBLIC_ORIGIN: process.env.ADMIN_PUBLIC_ORIGIN!,
         CSRF_TRUSTED_ORIGINS: process.env.CSRF_TRUSTED_ORIGINS!,
+        // Every transaction runs as this role (least privilege; infra/neon/README.md).
+        DB_RUNTIME_ROLE: process.env.DB_RUNTIME_ROLE!,
         ...optional('LOG_LEVEL'),
         ...optional('APP_RELEASE'),
       },

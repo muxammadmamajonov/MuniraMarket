@@ -59,6 +59,8 @@ export interface Settings {
   appRelease: string | null;
   dbStatementTimeoutMs: number;
   dbIdleInTransactionTimeoutMs: number;
+  /** `SET LOCAL ROLE` target for every transaction (least privilege, src/db.ts). */
+  dbRuntimeRole: string | null;
 }
 
 export function sessionCookieName(settings: Pick<Settings, 'sessionCookieSecure'>): string {
@@ -334,6 +336,15 @@ export function loadSettings(env: Env): Settings {
     }
   }
 
+  const dbRuntimeRole = text(env, 'DB_RUNTIME_ROLE') ?? null;
+  if (dbRuntimeRole !== null && !/^[a-z_][a-z0-9_]{0,62}$/.test(dbRuntimeRole)) {
+    throw new ConfigError('DB_RUNTIME_ROLE must be a lower-case PostgreSQL role name');
+  }
+  if (deployed && dbRuntimeRole === null) {
+    // The injected DATABASE_URL uses the branch's default role; never run the API with it.
+    throw new ConfigError('DB_RUNTIME_ROLE (mm_app) is required outside development');
+  }
+
   const appRelease = text(env, 'APP_RELEASE') ?? null;
   if (appRelease !== null && !RELEASE_RE.test(appRelease)) {
     throw new ConfigError("APP_RELEASE must be 1-64 letters, digits, '.', '_' or '-'");
@@ -375,5 +386,6 @@ export function loadSettings(env: Env): Settings {
       0,
       600_000,
     ),
+    dbRuntimeRole,
   };
 }

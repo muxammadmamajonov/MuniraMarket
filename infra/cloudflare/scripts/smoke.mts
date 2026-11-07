@@ -190,18 +190,28 @@ if (!local) {
         expect(health.status === 200, `health: status ${health.status}`);
         expect(health.headers.get('x-request-id'), 'no X-Request-ID on API responses');
         await health.body?.cancel();
-        for (const path of ['products', 'openapi.json', 'docs', 'admin/orders', 'auth/session']) {
+        for (const path of [
+          'products',
+          'openapi.json',
+          'docs',
+          'admin/orders',
+          'auth/session',
+          // Drained inside the Function since the Neon move; never public.
+          'internal/telegram/notifications/claim',
+          'internal/scheduler/notifications/drain',
+          'internal/maintenance/cleanup',
+        ]) {
           const response = await get(`${api}/api/v1/${path}`);
           expect(response.status === 404, `${path}: status ${response.status}`);
           await response.body?.cancel();
         }
-        const claim = await get(`${api}/api/v1/internal/telegram/notifications/claim`, {
+        const sync = await get(`${api}/api/v1/internal/telegram/session`, {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
-          body: '{"limit":1}',
+          body: '{}',
         });
-        expect(claim.status === 401, `unsigned claim: status ${claim.status}`);
-        await claim.body?.cancel();
+        expect(sync.status === 401, `unsigned user sync: status ${sync.status}`);
+        await sync.body?.cancel();
       },
     });
   }

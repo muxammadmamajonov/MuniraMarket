@@ -6,7 +6,7 @@ operator's records and the deploy environment, never into this repository.
 ## 0. Gate
 
 - [ ] `main` CI is green (JS, Core API, Workers, contracts, E2E, secret scan).
-- [ ] The exact commit and image digest ran on the production project before opening to customers
+- [ ] The exact commit (Function deployment + Worker versions) ran on the production project before opening to customers
       (soft launch: staff only) for at least 48 h with the device UAT passed. No staging project
       exists (one Neon project, ADR 0013).
 - [ ] `node infra/cloudflare/scripts/launch-gate.mts` passes with the production variables.
@@ -14,7 +14,8 @@ operator's records and the deploy environment, never into this repository.
 ## 1. Cloudflare account, DNS and domains
 
 - [ ] Account with 2FA for every member; members have the least role they need; API tokens are
-      scoped (Workers Scripts/Containers edit for the deploy token, nothing account-wide).
+      scoped (Workers Scripts edit for the deploy token, nothing account-wide; a Neon API key limited
+      to the project for `neon deploy`).
 - [ ] Zone active on Cloudflare; DNSSEC on; registrar lock on.
 - [ ] Hostnames: storefront `muniramarket.uz` (`MM_WEB_HOSTNAME`), admin `admin.muniramarket.uz`
       (`MM_ADMIN_HOSTNAME`), API (`MM_API_HOSTNAME`, health + service-signed routes only); all
@@ -26,7 +27,7 @@ operator's records and the deploy environment, never into this repository.
 - [ ] WAF managed rules on; a rate-limiting rule for `/api/v1/auth/*` on the storefront and
       admin hostnames as a second layer above the API's own limits.
 - [ ] A rate-limiting rule on the API hostname (`/api/v1/health*` and `/api/v1/internal/*`):
-      every request there wakes a container, and health readiness touches the database.
+      every request there invokes the `coreapi` Function, and health readiness touches the database.
 - [ ] Optional: Cloudflare Access in front of the admin hostname (staff identity before the app's
       own Telegram sign-in).
 
@@ -39,8 +40,9 @@ operator's records and the deploy environment, never into this repository.
 - [ ] `YANDEX_MAPS_API_KEY` is a `muniramarket-web` Worker secret only and is restricted in Yandex
       to `muniramarket.uz`; the admin Worker has no secrets.
 - [ ] `node infra/cloudflare/scripts/validate-deploy-env.mts --mode production` passes;
-      `CORE_API_IMAGE` is the digest that passed staging; `APP_RELEASE` is its tag.
-- [ ] Workers Logs and Traces visible for all three Workers; container logs visible; an alert on
+      `neon config plan` shows only `coreapi`; `APP_RELEASE` names the commit; `GRANT mm_app` to the
+      Function's injected role is done (infra/neon/sql/03-function-runtime-role.sql).
+- [ ] Workers Logs and Traces visible for all three Workers; Neon Function logs visible (`neon logs query --source function`); an alert on
       5xx rate and on `service_unavailable`.
 
 ## 3. Neon
@@ -105,7 +107,7 @@ operator's records and the deploy environment, never into this repository.
 
 ## 9. Rollback readiness
 
-- [ ] Previous Worker versions and the previous image digest are known (none before the first
+- [ ] Previous Worker versions and the previous Function commit are known (none before the first
       launch: rollback = take the storefront offline with a maintenance response).
 - [ ] Who can roll back, and how, is written down: Workers rollback, gateway redeploy with the
       previous digest, Neon restore point (infra/cloudflare/README.md, infra/neon/README.md).

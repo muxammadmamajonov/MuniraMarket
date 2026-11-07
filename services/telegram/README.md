@@ -65,12 +65,14 @@ cron or background trigger, and no traffic-driven drain is used.
 
 **Trigger:** a Cloudflare Cron Trigger on the api-gateway Worker
 ([`services/api-gateway`](../api-gateway/README.md), `src/scheduler.ts`) runs every minute (UTC)
-and calls the SAME modules from `tgcloud/lib/` (bundled into the Worker): `createCoreApiClient`
-(signer), `drainOrderNotifications`, and `createTelegramBotTransport` over a minimal Bot API
-adapter that uses the gateway's `TELEGRAM_BOT_TOKEN` secret. The Core API requests stay inside the
-Worker (internal `scheduler` entrance). Keep `lib/coreApi/` and `lib/notifications/`
-dependency-free plain ESM: the gateway bundles them, and their only `sdk` import (`BotApiError`)
-is aliased there to a stand-in.
+and only signs `POST /api/v1/internal/scheduler/notifications/drain` with `createCoreApiClient`
+(ADR 0016: Workers Free plan, 10 ms CPU). The Core API Neon Function
+([`services/core-api-function`](../core-api-function/README.md)) then runs the SAME modules from
+`tgcloud/lib/`: `drainOrderNotifications` and `createTelegramBotTransport` over a minimal Bot API
+adapter using the Function's `TELEGRAM_BOT_TOKEN`, with the claim/report calls going straight to
+the outbox tables. Keep `lib/coreApi/` and `lib/notifications/` dependency-free plain ESM: the
+gateway bundles the signer and the Function bundles the drain; their only `sdk` import
+(`BotApiError`) is aliased to a stand-in there.
 
 | Piece                                                                     | File                                                | Role                                                                                                                                  |
 | ------------------------------------------------------------------------- | --------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |

@@ -1,13 +1,16 @@
 /**
- * Validation of the deploy-time (non-secret) variables the Cloudflare configurations read
- * (`MM_*`, `CORE_API_IMAGE`, `APP_RELEASE`). Run before every deploy:
+ * Validation of the deploy-time (non-secret) variables: the hostnames the Cloudflare
+ * configurations read (`MM_*_HOSTNAME`) and the values the Core API Neon Function receives
+ * through neon.ts (`MM_TELEGRAM_BOT_ID` -> TELEGRAM_BOT_ID, `MM_CSRF_TRUSTED_ORIGINS` ->
+ * CSRF_TRUSTED_ORIGINS, `APP_RELEASE`). Run before every deploy:
  *
  *   node infra/cloudflare/scripts/validate-deploy-env.mts --mode staging
  *
- * Secrets are not checked here (they live on the Workers; `cf deploy` refuses to deploy while a
- * declared `bindings.secret()` is missing). This catches the configuration that would otherwise
- * only fail at runtime: the Core API refuses to start without these values (fail closed), which
- * would surface as 503s after the deploy.
+ * Secrets are not checked here (Worker secrets: `cf deploy` refuses to deploy while a declared
+ * `bindings.secret()` is missing; Function secrets: `neon deploy` refuses a missing env value).
+ * This catches the configuration that would otherwise only fail at runtime: the Core API refuses
+ * to start without these values (fail closed), which would surface as 503s after the deploy.
+ * There is no container image any more (no Containers on the Workers Free plan).
  */
 
 import { isIP } from 'node:net';
@@ -26,8 +29,6 @@ export const PRODUCTION_WEB_HOSTNAME = 'muniramarket.uz';
 export const PRODUCTION_ADMIN_HOSTNAME = 'admin.muniramarket.uz';
 export const PRODUCTION_TELEGRAM_BOT_ID = '9038491407';
 const RELEASE = /^[A-Za-z0-9._-]{1,64}$/;
-// Durable Object-scheduled Containers only start digest-pinned images from Cloudflare's registry.
-const DIGEST_REF = /^registry\.cloudflare\.com\/[A-Za-z0-9_-]+\/[a-z0-9._/-]+@sha256:[0-9a-f]{64}$/;
 const TEST_TLDS = ['.test', '.example', '.invalid', '.localhost', '.local', '.internal'];
 
 function hostnameProblem(value: string, allowTestTld: boolean): string | null {
@@ -119,22 +120,10 @@ export function validateDeployEnv(
   if (release !== '' && !RELEASE.test(release)) {
     problems.push({ variable: 'APP_RELEASE', message: 'must be 1-64 of [A-Za-z0-9._-]' });
   }
+  // Every production log line carries the release (Function env APP_RELEASE).
+  if (mode === 'production' && release === '') {
+    problems.push({ variable: 'APP_RELEASE', message: 'is required' });
+  }
 
-  const image = value('CORE_API_IMAGE');
-  if (mode === 'production') {
-    if (image === '') {
-      problems.push({
-        variable: 'CORE_API_IMAGE',
-        message: 'production deploys an immutable image reference, never a local Dockerfile build',
-      });
-    }
-    if (release === '') problems.push({ variable: 'APP_RELEASE', message: 'is required' });
-  }
-  if (image !== '' && !DIGEST_REF.test(image)) {
-    problems.push({
-      variable: 'CORE_API_IMAGE',
-      message: 'must be registry.cloudflare.com/<account>/<repository>@sha256:<64 hex>',
-    });
-  }
   return problems;
 }

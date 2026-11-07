@@ -2,11 +2,15 @@ import { describe, expect, it } from 'vitest';
 import {
   apiSegments,
   errorResponse,
-  instanceName,
+  functionOrigin,
+  GATEWAY_SECRET_HEADER,
   isAllowed,
   singleIp,
   upstreamHeaders,
+  upstreamUrl,
 } from '../src/routing';
+
+const SECRET = 'test-only-gateway-secret-0123456789abcdefgh';
 
 describe('apiSegments', () => {
   it('splits paths under /api/v1/', () => {
@@ -39,9 +43,18 @@ describe('isAllowed', () => {
     }
   });
 
-  it('exposes only signed Telegram routes publicly', () => {
-    expect(isAllowed('public', 'POST', '/api/v1/internal/telegram/notifications/claim')).toBe(true);
-    expect(isAllowed('public', 'GET', '/api/v1/internal/telegram/notifications/claim')).toBe(false);
+  it('exposes only the two signed Telegram Serverless routes publicly', () => {
+    expect(isAllowed('public', 'POST', '/api/v1/internal/telegram/session')).toBe(true);
+    expect(isAllowed('public', 'POST', '/api/v1/internal/telegram/staff-chat/connect')).toBe(true);
+    expect(isAllowed('public', 'GET', '/api/v1/internal/telegram/session')).toBe(false);
+    expect(isAllowed('public', 'GET', '/api/v1/internal/telegram/me')).toBe(false);
+    // The outbox is drained inside the Function now; its routes are not public any more.
+    expect(isAllowed('public', 'POST', '/api/v1/internal/telegram/notifications/claim')).toBe(
+      false,
+    );
+    expect(isAllowed('public', 'POST', '/api/v1/internal/scheduler/notifications/drain')).toBe(
+      false,
+    );
     expect(isAllowed('public', 'GET', '/api/v1/products')).toBe(false);
     expect(isAllowed('public', 'POST', '/api/v1/auth/telegram/init-data')).toBe(false);
     expect(isAllowed('public', 'GET', '/api/v1/admin/orders')).toBe(false);
@@ -87,15 +100,12 @@ describe('isAllowed', () => {
 describe('isAllowed: scheduler entrance', () => {
   const ID = '0b6f3f6e-6a8c-4a47-9d0e-3b1f2c4d5e6f';
 
-  it('allows exactly claim, result and cleanup, POST only', () => {
-    expect(isAllowed('scheduler', 'POST', '/api/v1/internal/telegram/notifications/claim')).toBe(
+  it('allows exactly the drain and the cleanup, POST only', () => {
+    expect(isAllowed('scheduler', 'POST', '/api/v1/internal/scheduler/notifications/drain')).toBe(
       true,
     );
-    expect(
-      isAllowed('scheduler', 'POST', `/api/v1/internal/telegram/notifications/${ID}/result`),
-    ).toBe(true);
     expect(isAllowed('scheduler', 'POST', '/api/v1/internal/maintenance/cleanup')).toBe(true);
-    expect(isAllowed('scheduler', 'GET', '/api/v1/internal/telegram/notifications/claim')).toBe(
+    expect(isAllowed('scheduler', 'GET', '/api/v1/internal/scheduler/notifications/drain')).toBe(
       false,
     );
     expect(isAllowed('scheduler', 'GET', '/api/v1/internal/maintenance/cleanup')).toBe(false);
@@ -106,7 +116,10 @@ describe('isAllowed: scheduler entrance', () => {
     '/api/v1/health/ready',
     '/api/v1/internal/telegram/session',
     '/api/v1/internal/telegram/staff-chat/connect',
-    '/api/v1/internal/telegram/notifications/not-a-uuid/result',
+    '/api/v1/internal/telegram/notifications/claim',
+    `/api/v1/internal/telegram/notifications/${ID}/result`,
+    '/api/v1/internal/scheduler/notifications/drain/x',
+    '/api/v1/internal/scheduler/notifications',
     `/api/v1/internal/telegram/notifications/${ID}`,
     `/api/v1/internal/telegram/notifications/${ID}/result/x`,
     '/api/v1/internal/maintenance/cleanup/x',
@@ -159,6 +172,7 @@ describe('upstreamHeaders', () => {
       entrance: 'public',
       clientIp: '203.0.113.7',
       fallbackRequestId: 'ray-123456789',
+      gatewaySecret: SECRET,
     });
     expect(headers.get('cookie')).toBeNull();
     expect(headers.get('x-csrf-token')).toBeNull();
@@ -176,6 +190,7 @@ describe('upstreamHeaders', () => {
       entrance: 'storefront',
       clientIp: '198.51.100.1',
       fallbackRequestId: 'ray-123456789',
+      gatewaySecret: SECRET,
     });
     expect(headers.get('cookie')).toBe('__Host-mm_session=abc');
     expect(headers.get('x-csrf-token')).toBe('csrf');
@@ -190,6 +205,7 @@ describe('upstreamHeaders', () => {
       entrance: 'admin',
       clientIp: null,
       fallbackRequestId: 'ray-123456789',
+      gatewaySecret: SECRET,
     });
     expect(headers.get('x-forwarded-for')).toBeNull();
     expect(headers.get('idempotency-key')).toBeNull();
@@ -214,7 +230,12 @@ describe('upstreamHeaders: scheduler entrance', () => {
         'user-agent': 'x',
         'x-forwarded-for': '6.6.6.6',
       }),
-      { entrance: 'scheduler', clientIp: '203.0.113.7', fallbackRequestId: 'tick-12345678' },
+      {
+        entrance: 'scheduler',
+        clientIp: '203.0.113.7',
+        fallbackRequestId: 'tick-12345678',
+        gatewaySecret: SECRET,
+      },
     );
     expect(Object.fromEntries(headers.entries())).toEqual({
       'content-type': 'application/json',
@@ -225,6 +246,7 @@ describe('upstreamHeaders: scheduler entrance', () => {
       'x-mm-signature': 'sig',
       'x-mm-actor': '',
       'x-mm-entrance': 'scheduler',
+      [GATEWAY_SECRET_HEADER]: SECRET,
       'x-request-id': 'tick-12345678',
     });
   });
@@ -235,24 +257,63 @@ describe('upstreamHeaders: scheduler entrance', () => {
         entrance,
         clientIp: null,
         fallbackRequestId: 'ray-123456789',
+        gatewaySecret: SECRET,
       });
       expect(headers.get('x-mm-entrance')).toBe(entrance);
     }
   });
 });
 
-describe('errorResponse and instanceName', () => {
+describe('gateway secret header', () => {
+  it.each(['public', 'storefront', 'admin', 'scheduler'] as const)(
+    'replaces a spoofed secret with the configured one on the %s entrance',
+    (entrance) => {
+      const headers = upstreamHeaders(
+        new Headers({ [GATEWAY_SECRET_HEADER]: 'spoofed-by-the-caller', 'X-MM-Gateway-Secret': 'x' }),
+        { entrance, clientIp: null, fallbackRequestId: 'ray-123456789', gatewaySecret: SECRET },
+      );
+      expect(headers.get(GATEWAY_SECRET_HEADER)).toBe(SECRET);
+    },
+  );
+});
+
+describe('functionOrigin and upstreamUrl', () => {
+  it('accepts the invocation URL (origin, optional trailing slash)', () => {
+    const url = 'https://br-x-coreapi.compute.c-7.eu-central-1.aws.neon.tech/';
+    expect(functionOrigin(url)).toBe('https://br-x-coreapi.compute.c-7.eu-central-1.aws.neon.tech');
+    expect(functionOrigin(` ${url.slice(0, -1)} `)).toBe(
+      'https://br-x-coreapi.compute.c-7.eu-central-1.aws.neon.tech',
+    );
+  });
+
+  it.each([
+    undefined,
+    '',
+    'not a url',
+    'http://plain.example',
+    'https://user:pass@x.example',
+    'https://x.example/base',
+    'https://x.example/?q=1',
+  ])('refuses %s', (value) => {
+    expect(functionOrigin(value)).toBeNull();
+  });
+
+  it('keeps the authority fixed whatever the request path is', () => {
+    const origin = 'https://fn.example';
+    expect(upstreamUrl(origin, new URL('https://gw.example/api/v1/orders?x=1')).href).toBe(
+      'https://fn.example/api/v1/orders?x=1',
+    );
+    expect(upstreamUrl(origin, new URL('https://gw.example//evil.example/api/v1')).host).toBe(
+      'fn.example',
+    );
+  });
+});
+
+describe('errorResponse', () => {
   it('uses the Core API envelope and no-store', async () => {
     const response = errorResponse(404, 'not_found', 'Not Found');
     expect(response.status).toBe(404);
     expect(response.headers.get('cache-control')).toBe('no-store');
     expect(await response.json()).toEqual({ error: { code: 'not_found', message: 'Not Found' } });
-  });
-
-  it('spreads requests over a bounded pool', () => {
-    expect(instanceName(3, () => 0)).toBe('core-api-0');
-    expect(instanceName(3, () => 0.999)).toBe('core-api-2');
-    expect(instanceName(Number.NaN, () => 0.5)).toBe('core-api-0');
-    expect(instanceName(0, () => 0.5)).toBe('core-api-0');
   });
 });

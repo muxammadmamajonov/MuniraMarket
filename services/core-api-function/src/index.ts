@@ -29,6 +29,7 @@ const app = createApp({
   db: new Database(pool, {
     statementTimeoutMs: settings.dbStatementTimeoutMs,
     idleInTransactionTimeoutMs: settings.dbIdleInTransactionTimeoutMs,
+    runtimeRole: settings.dbRuntimeRole,
   }),
   clock: systemClock,
   logger,
