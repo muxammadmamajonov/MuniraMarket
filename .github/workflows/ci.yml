@@ -329,7 +329,7 @@ jobs:
           WEB_PUBLIC_ORIGIN: http://localhost:3000
           ADMIN_PUBLIC_ORIGIN: http://localhost:3001
         run: |
-          nohup node scripts/dev-server.ts > "$E2E_LOG_DIR/api.log" 2>&1 &
+          nohup pnpm dev > "$E2E_LOG_DIR/api.log" 2>&1 &
           for _ in $(seq 1 60); do
             curl -fsS http://127.0.0.1:8000/api/v1/health/ready && exit 0
             sleep 1
