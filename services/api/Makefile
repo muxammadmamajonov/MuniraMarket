@@ -1,4 +1,4 @@
-.PHONY: install lint format typecheck test run migrate seed set-role build openapi
+.PHONY: install lint format typecheck test run migrate seed set-role build openapi demo-catalog
 
 install:
 	uv sync --locked
@@ -29,6 +29,14 @@ migrate:
 # development or test. Idempotent.
 seed:
 	uv run python -m app.dev.seed
+
+# Operator-run, never automatic: the synthetic demo catalog for an EMPTY staging/production
+# catalog. Reads DEMO_IMPORT_DATABASE_URL (the migrator URL, from the secret store) from the
+# environment and never prints it. ACTION=status|import|remove; import/remove are dry runs unless
+# CONFIRM="IMPORT DEMO CATALOG" / CONFIRM="REMOVE DEMO CATALOG" is given.
+ACTION ?= status
+demo-catalog:
+	uv run python -m app.ops.demo_catalog $(ACTION) $(if $(CONFIRM),--confirm "$(CONFIRM)",)
 
 # Local development only: `make set-role TG=<telegram_user_id> ROLE=operator` (user must exist;
 # add CREATE=1 to create a placeholder user first).
