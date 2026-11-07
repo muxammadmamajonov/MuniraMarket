@@ -9,7 +9,9 @@
 --
 -- This intentionally touches a small, explicit allowlist of objects created by
 -- revisions 0001–0004 in the application's `public` schema. It does not alter
--- Neon Auth, the Data API, buckets, other schemas, roles or database ownership.
+-- Neon Auth, the Data API, buckets, other schemas or database ownership; a
+-- temporary role membership needed by PostgreSQL's ownership rule is revoked
+-- before the transaction commits.
 -- It is idempotent: re-running it leaves objects already owned by mm_migrator
 -- unchanged. Update this list only alongside a reviewed migration that creates
 -- an object before the role model is installed.
