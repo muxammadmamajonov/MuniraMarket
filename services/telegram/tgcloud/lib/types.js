@@ -47,6 +47,8 @@
  * @property {(method: string, path: string, options?: {actorTelegramUserId?: number, json?: unknown}) => Promise<unknown>} request
  * @property {(user: TelegramUser) => Promise<unknown>} syncTelegramUser
  * @property {(telegramUserId: number) => Promise<unknown>} getMe
+ * @property {(telegramUserId: number, language: Locale) => Promise<unknown>} setLanguage
+ * @property {(telegramUserId: number, phoneNumber: string) => Promise<unknown>} recordOwnPhone
  * @property {(input: { actorTelegramUserId: number, chatId: number, chatType: 'group' | 'supergroup' }) => Promise<unknown>} connectStaffChat
  * @property {(options: { limit: number }) => Promise<unknown>} claimNotifications
  * @property {(id: string, result: { attempt: number, outcome: NotificationOutcome, errorCode?: string }) => Promise<null>} reportNotification
