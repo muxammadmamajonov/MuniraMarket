@@ -1,6 +1,7 @@
 import { act, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { installFakeApi, json, renderAdmin, sessionHandler } from '@/test-utils/fake-api';
+import { openOptions } from '@/test-utils/select';
 import { auditEntry, page } from '@/test-utils/fixtures';
 import { setLocation } from '@/test-utils/navigation';
 import { AuditView } from './audit-view';
@@ -72,7 +73,7 @@ describe('AuditView', () => {
     );
     expect(await screen.findByText('По фильтрам записей не найдено.')).toBeInTheDocument();
     // The action list narrows to the chosen entity type.
-    const actions = within(screen.getByTestId('audit-action-filter')).getAllByRole('option');
+    const actions = openOptions('audit-action-filter');
     expect(actions.map((option) => option.textContent)).toEqual([
       'Все действия',
       'Роль изменена',

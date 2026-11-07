@@ -123,6 +123,18 @@
   background-color: var(--mm-scrollbar-thumb-hover);
 }
 
+/* Select lists open with a short fade and 4px drop (transform/opacity only). */
+.mm-popover {
+  transform-origin: top;
+  transition:
+    opacity 140ms var(--mm-ease-out),
+    transform 160ms var(--mm-ease-out);
+  @starting-style {
+    opacity: 0;
+    transform: translateY(-4px) scale(0.98);
+  }
+}
+
 /* Busy indicator in buttons (transform only; stands still under reduced motion, see below). */
 .mm-spin {
   animation: mm-spin 800ms linear infinite;

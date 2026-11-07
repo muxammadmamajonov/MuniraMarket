@@ -29,12 +29,12 @@ export const TEXT_LINK = 'font-medium underline underline-offset-2 ' + FOCUS;
 export const INPUT =
   'min-h-11 w-full rounded-xl border border-border bg-background px-3 text-base ' +
   'placeholder:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-60 ' +
-  'aria-invalid:border-red-600 dark:aria-invalid:border-red-400 ' +
+  'aria-invalid:border-danger ' +
   'focus-visible:outline-2 focus-visible:outline-focus';
 
 export const TEXTAREA = INPUT.replace('min-h-11 ', 'min-h-24 py-2 ');
 
-export const ALERT_TEXT = 'text-sm text-red-700 dark:text-red-300';
+export const ALERT_TEXT = 'text-sm text-danger';
 
 export const CARD = 'flex min-w-0 flex-col gap-3 rounded-xl border border-border bg-surface p-4';
 

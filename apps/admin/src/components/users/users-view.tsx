@@ -4,7 +4,7 @@ import type { AdminUser, AdminUserPage, UserRole } from '@muniramarket/contracts
 import { USER_ROLES } from '@muniramarket/contracts';
 import { Button, EmptyState } from '@muniramarket/ui';
 import Link from 'next/link';
-import { useRef, useState } from 'react';
+import { useId, useRef, useState } from 'react';
 import { useI18n } from '@/i18n/context';
 import { formatMessage } from '@/i18n/format';
 import { writeErrorMessage } from '@/lib/api/error-messages';
@@ -15,7 +15,7 @@ import { useSession } from '@/lib/session';
 import { useApiResource } from '@/lib/use-api-resource';
 import { useUrlParams } from '@/lib/use-url-params';
 import { Alert } from '../ui/alert';
-import { CHIP, CHIP_OFF, CHIP_ON, INPUT } from '../ui/classes';
+import { CHIP, CHIP_OFF, CHIP_ON } from '../ui/classes';
 import { ConfirmDialog } from '../ui/confirm-dialog';
 import { DataTable, type Column } from '../ui/data-table';
 import { Modal } from '../ui/modal';
@@ -23,6 +23,7 @@ import { PageHeader } from '../ui/page-header';
 import { Pagination } from '../ui/pagination';
 import { ResourceView } from '../ui/resource-view';
 import { SearchBox } from '../ui/search-box';
+import { Select } from '../ui/select';
 
 const BLOCKED_CHOICES = ['all', 'blocked', 'active'] as const;
 type BlockedChoice = (typeof BLOCKED_CHOICES)[number];
@@ -51,7 +52,8 @@ function RoleDialog({
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const flying = useRef(false);
-  const select = useRef<HTMLSelectElement>(null);
+  const select = useRef<HTMLButtonElement>(null);
+  const selectLabelId = useId();
   const same = role === user.role;
 
   const submit = async () => {
@@ -81,23 +83,18 @@ function RoleDialog({
       returnFocusTo={opener}
       initialFocusRef={select}
     >
-      <label className="flex flex-col gap-1.5 font-medium">
-        {copy.select}
-        <select
+      <div className="flex flex-col gap-1.5 font-medium">
+        <span id={selectLabelId}>{copy.select}</span>
+        <Select
           ref={select}
+          labelledBy={selectLabelId}
           value={role}
           disabled={pending}
-          data-testid="role-select"
-          onChange={(event) => setRole(event.target.value as UserRole)}
-          className={INPUT}
-        >
-          {USER_ROLES.map((item) => (
-            <option key={item} value={item}>
-              {dict.roles[item]}
-            </option>
-          ))}
-        </select>
-      </label>
+          testId="role-select"
+          onChange={(next) => setRole(next as UserRole)}
+          options={USER_ROLES.map((item) => ({ value: item, label: dict.roles[item] }))}
+        />
+      </div>
       {same ? (
         <p className="text-sm text-muted-foreground">
           {formatMessage(copy.unchanged, { role: dict.roles[user.role] })}
