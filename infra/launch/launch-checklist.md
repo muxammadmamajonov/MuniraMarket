@@ -33,15 +33,18 @@ operator's records and the deploy environment, never into this repository.
 
 ## 2. Workers secrets and variables
 
-- [ ] Gateway secrets set for production: `DATABASE_URL` (mm_app, `?ssl=verify-full`),
-      `SERVICE_AUTH_KEYS` (with a `scheduler:<≥32 bytes>` entry), `TELEGRAM_BOT_TOKEN` and
-      `TELEGRAM_OIDC_CLIENT_SECRET` (infra/cloudflare/README.md). There is no `REDIS_URL` and no
-      second (admin) bot token.
+- [ ] Gateway Worker secrets set for production: `CORE_API_FUNCTION_ORIGIN`,
+      `CORE_API_FUNCTION_SECRET`, `SCHEDULER_SERVICE_SECRET`. Neon Function `coreapi` secrets:
+      `MM_APP_DATABASE_URL` (pooled endpoint, `mm_app`, its own password, `sslmode=require`),
+      `CORE_API_FUNCTION_SECRET`, `SERVICE_AUTH_KEYS` (with a `scheduler:<≥32 bytes>` entry),
+      `TELEGRAM_BOT_TOKEN`, `TELEGRAM_OIDC_CLIENT_SECRET` (infra/cloudflare/README.md). There is
+      no `REDIS_URL`, no hand-set `DATABASE_URL` and no second (admin) bot token.
 - [ ] `YANDEX_MAPS_API_KEY` is a `muniramarket-web` Worker secret only and is restricted in Yandex
       to `muniramarket.uz`; the admin Worker has no secrets.
 - [ ] `node infra/cloudflare/scripts/validate-deploy-env.mts --mode production` passes;
-      `neon config plan` shows only `coreapi`; `APP_RELEASE` names the commit; `GRANT mm_app` to the
-      Function's injected role is done (infra/neon/sql/03-function-runtime-role.sql).
+      `neon config plan` shows only `coreapi`; `APP_RELEASE` names the commit; the Function secret
+      `MM_APP_DATABASE_URL` (pooled endpoint, `mm_app`, its own password, `sslmode=require`) is set
+      in the deploy env file only.
 - [ ] Workers Logs and Traces visible for all three Workers; Neon Function logs visible (`neon logs query --source function`); an alert on
       5xx rate and on `service_unavailable`.
 
@@ -51,7 +54,8 @@ operator's records and the deploy environment, never into this repository.
       region chosen; restore window set to the plan maximum; owner password not in any `.env`.
 - [ ] `01-roles.sql`, `02-database.sql` applied; migrations as `mm_migrator`; `10-runtime-grants.sql`
       and `20-verify-runtime-role.sql` pass.
-- [ ] `DATABASE_URL` uses `mm_app`; the owner role is used by nobody day to day.
+- [ ] `MM_APP_DATABASE_URL` connects as `mm_app`; the owner role (incl. Neon's injected
+      `DATABASE_URL`) is used by nobody day to day.
 - [ ] Migration `0005` applied (security-state tables); readiness is `200` (it probes them).
 - [ ] Restore drill done once (infra/neon/README.md), time-to-restore recorded.
 - [ ] Production contains no seed/demo data (`make seed` refuses outside development/test).

@@ -3,8 +3,10 @@
  * services/api/app/core/config.py). Validation messages never echo a value: several are secrets.
  *
  * Differences from the container era, by design:
- * - `DATABASE_URL` is injected by Neon at runtime (pooled, TLS). It is never set by hand, never
- *   written to `neon.ts` or an example file. `DATABASE_URL_UNPOOLED` is for Alembic only.
+ * - The runtime connection is `MM_APP_DATABASE_URL`: the pooled Neon endpoint as the `mm_app`
+ *   role with its own password (a Function secret). Neon may also inject `DATABASE_URL` /
+ *   `DATABASE_URL_UNPOOLED` (owner role); this code never reads them, so the API can never act
+ *   with owner rights. Migrations stay on Alembic with the direct `mm_migrator` URL.
  * - No CORS and no `FORWARDED_ALLOW_IPS`: browsers never call the Function; the only ingress is
  *   the Cloudflare gateway, authenticated by `CORE_API_FUNCTION_SECRET` (src/http/gatewaySecret.ts),
  *   which also writes `X-Forwarded-For` itself.
@@ -33,6 +35,7 @@ export class ConfigError extends Error {
 
 export interface Settings {
   appEnv: AppEnv;
+  /** `MM_APP_DATABASE_URL`. Secret: never log, echo or put it in an error. */
   databaseUrl: string;
   /** Shared secret the gateway sends on every request (`X-MM-Gateway-Secret`). */
   functionSecret: string;
@@ -59,8 +62,6 @@ export interface Settings {
   appRelease: string | null;
   dbStatementTimeoutMs: number;
   dbIdleInTransactionTimeoutMs: number;
-  /** `SET LOCAL ROLE` target for every transaction (least privilege, src/db.ts). */
-  dbRuntimeRole: string | null;
 }
 
 export function sessionCookieName(settings: Pick<Settings, 'sessionCookieSecure'>): string {
@@ -204,21 +205,55 @@ function publicOriginSetting(env: Env, name: string): string | null {
   return origin;
 }
 
+export const RUNTIME_DB_ROLE = 'mm_app';
+const TLS_MODES: ReadonlySet<string> = new Set(['require', 'verify-ca', 'verify-full']);
+
+/**
+ * `MM_APP_DATABASE_URL`, validated without ever putting any part of it (user, password, host,
+ * database, parameters) into an error message. Outside development it must be TLS, the `mm_app`
+ * role with a password, and Neon's pooled endpoint (`-pooler` host).
+ */
+function runtimeDatabaseUrl(env: Env, deployed: boolean): string {
+  const raw = text(env, 'MM_APP_DATABASE_URL');
+  if (raw === undefined) throw new ConfigError('MM_APP_DATABASE_URL is required');
+  let url: URL;
+  try {
+    url = new URL(raw);
+  } catch {
+    throw new ConfigError('MM_APP_DATABASE_URL is not a valid URL');
+  }
+  if (url.protocol !== 'postgres:' && url.protocol !== 'postgresql:') {
+    throw new ConfigError('MM_APP_DATABASE_URL must be a postgresql:// URL');
+  }
+  if (url.hostname === '' || url.pathname.length <= 1) {
+    throw new ConfigError('MM_APP_DATABASE_URL must name a host and a database');
+  }
+  if (deployed) {
+    if (!TLS_MODES.has(url.searchParams.get('sslmode') ?? '')) {
+      throw new ConfigError(
+        'MM_APP_DATABASE_URL must use TLS (sslmode=require) outside development',
+      );
+    }
+    if (decodeURIComponent(url.username) !== RUNTIME_DB_ROLE || url.password === '') {
+      throw new ConfigError(
+        `MM_APP_DATABASE_URL must connect as ${RUNTIME_DB_ROLE} with its own password outside development`,
+      );
+    }
+    if (!url.hostname.split('.')[0]?.endsWith('-pooler')) {
+      throw new ConfigError(
+        'MM_APP_DATABASE_URL must use the pooled Neon endpoint outside development',
+      );
+    }
+  }
+  return raw;
+}
+
 /** Build and validate settings from `env` (normally `process.env`). Throws `ConfigError`. */
 export function loadSettings(env: Env): Settings {
   const appEnv = oneOf<AppEnv>(env, 'APP_ENV', ['development', 'test', 'staging', 'production']);
   const deployed = DEPLOYED_ENVS.includes(appEnv);
 
-  const databaseUrl = required(env, 'DATABASE_URL');
-  if (!/^postgres(ql)?:\/\//.test(databaseUrl)) {
-    throw new ConfigError('DATABASE_URL must be a postgres:// URL');
-  }
-  if (deployed) {
-    const sslmode = new URL(databaseUrl).searchParams.get('sslmode');
-    if (sslmode !== 'require' && sslmode !== 'verify-full') {
-      throw new ConfigError('DATABASE_URL must use TLS (sslmode=require) outside development');
-    }
-  }
+  const databaseUrl = runtimeDatabaseUrl(env, deployed);
 
   const functionSecret = required(env, 'CORE_API_FUNCTION_SECRET');
   if (Buffer.byteLength(functionSecret, 'utf8') < MIN_SECRET_BYTES) {
@@ -337,15 +372,6 @@ export function loadSettings(env: Env): Settings {
     }
   }
 
-  const dbRuntimeRole = text(env, 'DB_RUNTIME_ROLE') ?? null;
-  if (dbRuntimeRole !== null && !/^[a-z_][a-z0-9_]{0,62}$/.test(dbRuntimeRole)) {
-    throw new ConfigError('DB_RUNTIME_ROLE must be a lower-case PostgreSQL role name');
-  }
-  if (deployed && dbRuntimeRole === null) {
-    // The injected DATABASE_URL uses the branch's default role; never run the API with it.
-    throw new ConfigError('DB_RUNTIME_ROLE (mm_app) is required outside development');
-  }
-
   const appRelease = text(env, 'APP_RELEASE') ?? null;
   if (appRelease !== null && !RELEASE_RE.test(appRelease)) {
     throw new ConfigError("APP_RELEASE must be 1-64 letters, digits, '.', '_' or '-'");
@@ -387,6 +413,5 @@ export function loadSettings(env: Env): Settings {
       0,
       600_000,
     ),
-    dbRuntimeRole,
   };
 }

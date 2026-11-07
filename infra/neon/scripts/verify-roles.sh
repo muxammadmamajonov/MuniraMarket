@@ -19,7 +19,6 @@ repo="$(cd "$here/../.." && pwd)"
 db="mm_roles_check_$RANDOM"
 migrator_pw="$(openssl rand -hex 24)"
 app_pw="$(openssl rand -hex 24)"
-fn_pw="$(openssl rand -hex 24)"
 
 # libpq URL of the same server for another user/database.
 url_for() { # user password database
@@ -41,12 +40,10 @@ PY
 )"
 migrator_url="$(url_for mm_migrator "$migrator_pw" "$db")"
 app_url="$(url_for mm_app "$app_pw" "$db")"
-# Stands in for the role Neon injects into the Function's DATABASE_URL (ADR 0016).
-fn_url="$(url_for mm_fn_default "$fn_pw" "$db")"
 
 cleanup() {
   psql "$ADMIN_URL" -q -v ON_ERROR_STOP=0 -c "DROP DATABASE IF EXISTS $db WITH (FORCE)" \
-    -c "DROP ROLE IF EXISTS mm_fn_default" -c "DROP ROLE IF EXISTS mm_app" \
+    -c "DROP ROLE IF EXISTS mm_app" \
     -c "DROP ROLE IF EXISTS mm_migrator" >/dev/null 2>&1 || true
 }
 trap cleanup EXIT
@@ -100,23 +97,25 @@ psql "$migrator_url" -q -v ON_ERROR_STOP=1 -f "$here/sql/10-runtime-grants.sql"
 as_app "UPDATE future_table SET id = 1" >/dev/null
 echo "ok: grants re-applied after a migration open DML on the new table"
 
-# The Core API Function connects with Neon's injected default role and steps down to mm_app in
-# every transaction (SET LOCAL ROLE). Prove the step-down keeps mm_app's limits and ends with the
-# transaction.
-psql "$admin_db_url" -q -v ON_ERROR_STOP=1 \
-  -c "CREATE ROLE mm_fn_default LOGIN PASSWORD '$fn_pw'" \
-  -c "GRANT CONNECT ON DATABASE $db TO mm_fn_default" >/dev/null
-psql "$admin_db_url" -q -v ON_ERROR_STOP=1 -v function_role=mm_fn_default \
-  -f "$here/sql/03-function-runtime-role.sql" >/dev/null
-as_fn() { psql "$fn_url" -q -t -A -v ON_ERROR_STOP=1 -c "$1"; }
-test "$(as_fn "BEGIN; SET LOCAL ROLE mm_app; SELECT current_user; COMMIT;" | grep -v '^BEGIN\|^COMMIT\|^SET')" = "mm_app"
-as_fn "BEGIN; SET LOCAL ROLE mm_app; SELECT count(*) FROM products; COMMIT;" >/dev/null
-echo "ok: the Function role can step down to mm_app and read application tables"
-if as_fn "BEGIN; SET LOCAL ROLE mm_app; DELETE FROM audit_log; COMMIT;" >/dev/null 2>&1; then
-  echo "FAIL: the Function role deleted audit_log rows as mm_app" >&2
-  exit 1
+# The Core API Function connects AS mm_app (MM_APP_DATABASE_URL, ADR 0016): there must be no way
+# from that connection back to an owner or migrator role.
+must_fail "SET ROLE to the migrator" "SET ROLE mm_migrator"
+must_fail "SET ROLE to the bootstrap/owner role" "SET ROLE $(psql "$admin_db_url" -t -A -c 'SELECT current_user')"
+must_fail "SET SESSION AUTHORIZATION to the migrator" "SET SESSION AUTHORIZATION mm_migrator"
+must_fail "GRANT itself another role" "GRANT mm_migrator TO mm_app"
+must_fail "CREATE ROLE" "CREATE ROLE intruder"
+test "$(as_app "RESET ROLE; SELECT current_user")" = "mm_app"
+test "$(as_app "SET ROLE NONE; SELECT current_user")" = "mm_app"
+echo "ok: RESET ROLE / SET ROLE NONE leave mm_app as mm_app"
+test "$(as_app "SELECT rolsuper OR rolcreaterole OR rolcreatedb OR rolbypassrls OR rolreplication FROM pg_roles WHERE rolname = 'mm_app'")" = "f"
+test "$(as_app "SELECT count(*) FROM pg_auth_members m JOIN pg_roles r ON r.oid = m.member WHERE r.rolname = 'mm_app'")" = "0"
+echo "ok: mm_app has no elevated attributes and is a member of no role"
+if [ "${FUNCTION_ROLE_TEST:-0}" = "1" ]; then
+  # The Function's own Database class over an mm_app connection (test/integration/runtimeRole).
+  (
+    cd "$repo"
+    TEST_MM_APP_DATABASE_URL="$app_url" pnpm --filter @muniramarket/core-api-function exec \
+      vitest run test/integration/runtimeRole.test.ts
+  )
 fi
-echo "ok: as mm_app the Function role cannot DELETE from audit_log"
-test "$(as_fn "SELECT current_user")" = "mm_fn_default"
-echo "ok: SET LOCAL ROLE ends with the transaction"
 echo "role model verified"

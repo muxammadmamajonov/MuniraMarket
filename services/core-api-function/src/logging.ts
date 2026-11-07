@@ -104,20 +104,21 @@ export function createLogger(
 }
 
 /**
- * Database errors: class, SQLSTATE and constraint only. PostgreSQL's `DETAIL: Failing row
- * contains (...)` would otherwise put order data (recipient, phone, address) into the logs.
+ * Error fields that are safe to log: class, SQLSTATE/system code and constraint, never the
+ * message. PostgreSQL's `DETAIL: Failing row contains (...)` would put order data (recipient,
+ * phone, address) into the logs, and driver/network messages can carry the database host.
  */
 export function errorFields(error: unknown): Record<string, unknown> {
   if (error instanceof Error) {
-    const pg = error as Error & { code?: unknown; constraint?: unknown };
-    if (typeof pg.code === 'string' && /^[0-9A-Z]{5}$/.test(pg.code)) {
-      return {
-        error: error.name,
-        sqlstate: pg.code,
-        constraint: typeof pg.constraint === 'string' ? pg.constraint : null,
-      };
+    const fields: Record<string, unknown> = { error: error.name };
+    const extra = error as Error & { code?: unknown; constraint?: unknown };
+    if (typeof extra.code === 'string' && /^[0-9A-Z_]{2,32}$/.test(extra.code)) {
+      fields[/^[0-9A-Z]{5}$/.test(extra.code) ? 'sqlstate' : 'code'] = extra.code;
     }
-    return { error: error.name, error_message: error.message };
+    if (typeof extra.constraint === 'string' && /^[a-z0-9_]{1,63}$/.test(extra.constraint)) {
+      fields['constraint'] = extra.constraint;
+    }
+    return fields;
   }
   return { error: 'non-error thrown' };
 }

@@ -12,7 +12,9 @@ import { defineConfig } from '@neon/config/v1';
  * shows anything else (infra/neon/README.md).
  *
  * Secrets are declared by NAME only; values come from the deploy shell / `--env` file, never from
- * this file. `DATABASE_URL` is injected by Neon at runtime and is deliberately absent.
+ * this file. The Core API connects only with `MM_APP_DATABASE_URL` (pooled endpoint, role
+ * `mm_app`, its own password). `DATABASE_URL`/`DATABASE_URL_UNPOOLED` may be injected by Neon
+ * (owner role); they are never set by hand here and the Core API never reads them.
  */
 
 const optional = (name: string): Record<string, string> => {
@@ -33,6 +35,8 @@ export default defineConfig({
       bundler: 'none',
       env: {
         // --- secrets (values from the deploy environment only) ---
+        // Runtime database: pooled Neon endpoint, user mm_app, mm_app's own password, sslmode=require.
+        MM_APP_DATABASE_URL: process.env.MM_APP_DATABASE_URL!,
         CORE_API_FUNCTION_SECRET: process.env.CORE_API_FUNCTION_SECRET!,
         SERVICE_AUTH_KEYS: process.env.SERVICE_AUTH_KEYS!,
         TELEGRAM_BOT_TOKEN: process.env.TELEGRAM_BOT_TOKEN!,
@@ -46,8 +50,6 @@ export default defineConfig({
         WEB_PUBLIC_ORIGIN: process.env.WEB_PUBLIC_ORIGIN!,
         ADMIN_PUBLIC_ORIGIN: process.env.ADMIN_PUBLIC_ORIGIN!,
         CSRF_TRUSTED_ORIGINS: process.env.CSRF_TRUSTED_ORIGINS!,
-        // Every transaction runs as this role (least privilege; infra/neon/README.md).
-        DB_RUNTIME_ROLE: process.env.DB_RUNTIME_ROLE!,
         ...optional('LOG_LEVEL'),
         ...optional('APP_RELEASE'),
       },

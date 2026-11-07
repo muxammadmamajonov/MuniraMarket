@@ -25,13 +25,17 @@ neon functions get coreapi            # invocation_url -> gateway secret CORE_AP
 neon logs query --branch production --source function --since 15m
 ```
 
-`DATABASE_URL` is injected by Neon at runtime (pooled) and never set by hand. It uses the
-branch's default role, so the Function runs every transaction as `SET LOCAL ROLE mm_app`
-(`DB_RUNTIME_ROLE=mm_app`, required outside development). Grant that once, as the owner:
+The Function connects **only** with the secret `MM_APP_DATABASE_URL`: the pooled endpoint (`-pooler`
+host) as `mm_app` with its own password and `sslmode=require`. Neon may inject `DATABASE_URL` /
+`DATABASE_URL_UNPOOLED` with the owner role; the Core API never reads them and `DATABASE_URL` is
+never set by hand. One-time step per environment, as the project owner (`01-roles.sql` already
+creates `mm_app` with a password you choose; never commit or paste it):
 
 ```bash
-psql "$OWNER_URL" -v ON_ERROR_STOP=1 -v function_role="<role in the injected DATABASE_URL>" \
-  -f infra/neon/sql/03-function-runtime-role.sql
+psql "$OWNER_URL" -v ON_ERROR_STOP=1 -v migrator_password="$MIGRATOR_PASSWORD" \
+  -v app_password="$APP_PASSWORD" -f infra/neon/sql/01-roles.sql
+# then build MM_APP_DATABASE_URL = postgresql://mm_app:<APP_PASSWORD>@<pooled host>/<db>?sslmode=require
+# and put it only in the git-ignored --env file used by `neon deploy`.
 ```
 
 The pool is created once per isolate (`max: 5`) and attached with `attachDatabasePool`.
@@ -58,11 +62,11 @@ Migrations never run in the Function: Alembic uses the direct (`DATABASE_URL_UNP
 
 ## Roles (least privilege)
 
-| Role                    | Created by               | Used by                                  | Rights                                                                               |
-| ----------------------- | ------------------------ | ---------------------------------------- | ------------------------------------------------------------------------------------ |
-| project owner (Console) | Neon                     | break-glass only, MFA operator           | `neon_superuser`                                                                     |
-| `mm_migrator`           | `sql/01-roles.sql` (SQL) | one-off migration job only               | owns the schema objects; `CONNECTION LIMIT 3`                                        |
-| `mm_app`                | `sql/01-roles.sql` (SQL) | the Core API Function (`SET LOCAL ROLE`) | DML on app tables (incl. security state); `audit_log`: `SELECT, INSERT` only; no DDL |
+| Role                    | Created by               | Used by                                       | Rights                                                                               |
+| ----------------------- | ------------------------ | --------------------------------------------- | ------------------------------------------------------------------------------------ |
+| project owner (Console) | Neon                     | break-glass only, MFA operator                | `neon_superuser`                                                                     |
+| `mm_migrator`           | `sql/01-roles.sql` (SQL) | one-off migration job only                    | owns the schema objects; `CONNECTION LIMIT 3`                                        |
+| `mm_app`                | `sql/01-roles.sql` (SQL) | the Core API Function (`MM_APP_DATABASE_URL`) | DML on app tables (incl. security state); `audit_log`: `SELECT, INSERT` only; no DDL |
 
 Roles are created with SQL so they are **not** members of `neon_superuser` (Console/API-created
 roles are). Setup, once per environment, as the project owner:
@@ -86,9 +90,11 @@ read `alembic_version`.
 
 ## Connection strings
 
-- Runtime: **none to manage.** Neon injects `DATABASE_URL` (pooled, TLS) into the Function; the
-  Function steps down to `mm_app` per transaction. It is never a Worker secret, a `.env` value or
-  part of `neon.ts`.
+- Runtime (`MM_APP_DATABASE_URL`, Neon Function secret):
+  `postgresql://mm_app:<password>@<pooled -pooler host>/<db>?sslmode=require`. Transaction-mode
+  pooling suits it: every guard is `SET LOCAL` and no session state is used. `mm_app` cannot
+  `SET ROLE`/`SET SESSION AUTHORIZATION` to any other role (verified in CI).
+- Injected `DATABASE_URL` / `DATABASE_URL_UNPOOLED` (owner role): unused by the Core API.
 - Migrations (`MIGRATION_DATABASE_URL`, GitHub Environment secret): the **direct/unpooled**
   endpoint, `mm_migrator`, `postgresql+asyncpg://…?ssl=verify-full` (Alembic, asyncpg).
 - Workers never connect directly; they reach data only through the gateway and the Function.
@@ -97,16 +103,16 @@ read `alembic_version`.
 
 Per Function isolate: `pg` pool `max: 5` (module scope, reused by every request on the isolate),
 `statement_timeout` 15 s, `idle_in_transaction_session_timeout` 30 s, `lock_timeout` 5 s, all
-`SET LOCAL` per transaction (role defaults do not apply after `SET ROLE`). Total connections scale
-with live isolates; Neon's pooler absorbs them (transaction mode, which is why every guard and the
-role are transaction-local and no session state is used). Keep `mm_migrator` at
+`SET LOCAL` per transaction. Total connections scale with live isolates; Neon's pooler absorbs
+them (transaction mode, which is why every guard is transaction-local and no session state is
+used). Keep `mm_app`'s `CONNECTION LIMIT` above isolates x 5. Keep `mm_migrator` at
 `CONNECTION LIMIT 3`.
 
 ## Backups, restore drill, rollback
 
 Neon keeps a restore window (history retention) per project; set it to the longest your plan
 allows for production and confirm it in the console. Point-in-time restore creates a branch at a
-timestamp; promoting it (or pointing `DATABASE_URL` at it) is the restore.
+timestamp; promoting it (or pointing `MM_APP_DATABASE_URL` at it) is the restore.
 
 **Before every production migration**
 

@@ -81,14 +81,6 @@ jobs:
           uv run alembic check
           make seed
           make seed
-      # infra/neon: SQL-created migrator/runtime roles, migrations as the migrator, runtime grants;
-      # the runtime role must not be able to change or remove audit_log rows or run DDL.
-      - name: Neon role model (least privilege, append-only audit log)
-        env:
-          ADMIN_URL: postgresql://ci:ci-only-password@localhost:5432/postgres
-        run: |
-          command -v psql >/dev/null || (sudo apt-get update && sudo apt-get install -y postgresql-client)
-          ../../infra/neon/scripts/verify-roles.sh
       - run: make build
 
   core-api-function:
@@ -133,6 +125,17 @@ jobs:
           TELEGRAM_BOT_ID: '0'
         run: uv run alembic upgrade head
       - run: pnpm install --frozen-lockfile
+      # infra/neon: SQL-created migrator/runtime roles, migrations as the migrator, runtime grants.
+      # The runtime role must not change or remove audit_log rows, run DDL or reach another role;
+      # FUNCTION_ROLE_TEST=1 also runs the Function's own Database class over an mm_app connection
+      # (the production runtime connects as mm_app via MM_APP_DATABASE_URL, ADR 0016).
+      - name: Neon role model (least privilege, append-only audit log, no escalation)
+        env:
+          ADMIN_URL: postgresql://ci:ci-only-password@localhost:5432/postgres
+          FUNCTION_ROLE_TEST: '1'
+        run: |
+          command -v psql >/dev/null || (sudo apt-get update && sudo apt-get install -y postgresql-client)
+          infra/neon/scripts/verify-roles.sh
       - working-directory: services/core-api-function
         run: |
           pnpm typecheck
@@ -321,6 +324,8 @@ jobs:
       - name: Start the Core API (Neon Function code)
         working-directory: services/core-api-function
         env:
+          # The Function reads only MM_APP_DATABASE_URL (pg URL); DATABASE_URL above is Alembic's.
+          MM_APP_DATABASE_URL: postgresql://ci:ci-only-password@localhost:5432/muniramarket_test
           TELEGRAM_BOT_TOKEN: ${{ env.E2E_TELEGRAM_BOT_TOKEN }}
           TELEGRAM_OIDC_ENABLED: 'true'
           TELEGRAM_OIDC_CLIENT_ID: ${{ env.E2E_OIDC_CLIENT_ID }}

@@ -29,14 +29,17 @@ Cloudflare Cron Trigger ─▶ API gateway `scheduled()` (sign only) ───�
   repository as the behavioural reference, the OpenAPI source and the Alembic migration owner; it
   is not deployed. `packages/contracts/openapi.json` (generated from FastAPI, drift-checked in
   CI) is the contract; a test fails when the Function serves an operation set different from it.
-- **Database.** One module-scope `pg` pool per isolate (`max: 5`) with `attachDatabasePool`.
-  Runtime uses Neon's injected pooled `DATABASE_URL`; migrations stay on Alembic with the
-  direct/unpooled migrator URL. Because the injected URL uses the branch's default role, every
-  transaction starts with `SET LOCAL ROLE mm_app` (`DB_RUNTIME_ROLE`, required outside
-  development) plus `SET LOCAL` statement/idle/lock timeouts, so the `mm_app` grants (DML only,
-  append-only `audit_log`) still bound the API, and nothing leaks across pooled connections.
-  Checkout, stock decrement, idempotency, slot reservation, status history and outbox enqueue are
-  each one transaction with the reference's lock order.
+- **Database.** One module-scope `pg` pool per isolate (`max: 5`) with `attachDatabasePool`,
+  created only from the Function secret `MM_APP_DATABASE_URL`: Neon's pooled endpoint, user
+  `mm_app`, `mm_app`'s own password, TLS. The runtime connection therefore IS `mm_app` (DML only,
+  append-only `audit_log`, no DDL, no role it can switch to). Neon may inject `DATABASE_URL` /
+  `DATABASE_URL_UNPOOLED` with the owner role; the Core API never reads them. (An earlier draft
+  used the injected owner URL with `SET LOCAL ROLE mm_app`; rejected, because an owner session
+  can `RESET ROLE` back to owner rights.) Production startup fails closed without a valid TLS
+  `mm_app` pooled URL, and no part of the URL is ever logged or echoed. Migrations stay on
+  Alembic with the direct `mm_migrator` URL. Every transaction sets `SET LOCAL` statement/idle/
+  lock timeouts. Checkout, stock decrement, idempotency, slot reservation, status history and
+  outbox enqueue are each one transaction with the reference's lock order.
 - **Gateway ↔ Function.** The Function URL is a gateway **secret** (`CORE_API_FUNCTION_ORIGIN`),
   never shipped to a browser. The gateway adds `X-MM-Gateway-Secret: <CORE_API_FUNCTION_SECRET>`
   to every request; its header allow-list drops any caller copy first, so it cannot be spoofed.
@@ -73,5 +76,5 @@ Cloudflare Cron Trigger ─▶ API gateway `scheduled()` (sign only) ───�
   gateway secret still costs a (cheap) Function invocation before it is rejected. Neon's
   account-wide concurrency cap (100) is not DDoS protection: volumetric filtering is Cloudflare's.
 - Secrets are split by owner: the gateway holds only `CORE_API_FUNCTION_ORIGIN`,
-  `CORE_API_FUNCTION_SECRET` and `SCHEDULER_SERVICE_SECRET`; the Function holds the Telegram, OIDC
-  and service-auth secrets.
+  `CORE_API_FUNCTION_SECRET` and `SCHEDULER_SERVICE_SECRET`; the Function holds
+  `MM_APP_DATABASE_URL` and the Telegram, OIDC and service-auth secrets.

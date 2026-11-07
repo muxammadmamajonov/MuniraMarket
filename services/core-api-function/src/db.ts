@@ -4,19 +4,14 @@ import { StoreUnavailableError } from './errors.ts';
 /**
  * PostgreSQL access. One module-scope `pg.Pool` per isolate (src/index.ts, `max: 5`), reused by
  * every request that isolate serves; `attachDatabasePool` keeps an idle disconnect from killing
- * the isolate. Runtime traffic uses Neon's injected pooled `DATABASE_URL`; migrations stay on
- * Alembic with `DATABASE_URL_UNPOOLED`.
+ * the isolate. The pool connects ONLY with `MM_APP_DATABASE_URL` (pooled endpoint, role `mm_app`):
+ * the connection itself has `mm_app`'s grants and nothing more, so no statement can switch back
+ * to an owner role. Neon's injected `DATABASE_URL`/`DATABASE_URL_UNPOOLED` are never used.
  *
  * Every unit of work that writes runs in ONE transaction (`tx`): checkout, stock decrement,
  * idempotency record and order status changes commit or roll back together. Transaction-local
  * guards (`SET LOCAL statement_timeout`, `idle_in_transaction_session_timeout`, `lock_timeout`)
  * bound a runaway query and work through the transaction-mode pooler, unlike startup options.
- *
- * Least privilege: Neon injects `DATABASE_URL` with the branch's default role. When
- * `runtimeRole` is set (`DB_RUNTIME_ROLE=mm_app`, required in staging/production), every
- * statement runs inside a transaction that first does `SET LOCAL ROLE mm_app`, so the Core API
- * keeps exactly the `mm_app` grants (DML only, `audit_log` append-only, no DDL; infra/neon).
- * `SET LOCAL` ends with the transaction, so a pooled server connection never leaks the role.
  */
 
 export type Queryable = Pick<pg.PoolClient, 'query'>;
@@ -44,24 +39,15 @@ export interface TxOptions {
   statementTimeoutMs?: number;
   idleInTransactionTimeoutMs?: number;
   lockTimeoutMs?: number;
-  /** PostgreSQL role every transaction switches to (`SET LOCAL ROLE`); `null` = connection role. */
-  runtimeRole?: string | null;
 }
-
-const ROLE_NAME = /^[a-z_][a-z0-9_]{0,62}$/;
 
 export class Database {
   readonly pool: pg.Pool;
   private readonly prelude: string;
-  private readonly runtimeRole: string | null;
 
   constructor(pool: pg.Pool, options: TxOptions = {}) {
     this.pool = pool;
-    const role = options.runtimeRole ?? null;
-    if (role !== null && !ROLE_NAME.test(role)) throw new Error('invalid runtime role name');
-    this.runtimeRole = role;
     const statements = [
-      ...(role !== null ? [`SET LOCAL ROLE "${role}"`] : []),
       `SET LOCAL statement_timeout = ${Math.trunc(options.statementTimeoutMs ?? 15_000)}`,
       `SET LOCAL idle_in_transaction_session_timeout = ${Math.trunc(options.idleInTransactionTimeoutMs ?? 30_000)}`,
       `SET LOCAL lock_timeout = ${Math.trunc(options.lockTimeoutMs ?? 5_000)}`,
@@ -69,16 +55,12 @@ export class Database {
     this.prelude = statements.join('; ');
   }
 
-  /**
-   * A single read statement. Without a runtime role it runs directly on the pool; with one it
-   * runs in a short transaction so it gets the same role and guards as everything else.
-   */
+  /** A single read statement outside an explicit transaction. */
   query<R extends pg.QueryResultRow = pg.QueryResultRow>(
     sql: string,
     params: readonly unknown[] = [],
   ): Promise<pg.QueryResult<R>> {
-    if (this.runtimeRole === null) return this.pool.query<R>(sql, params as unknown[]);
-    return this.tx((client) => client.query<R>(sql, params as unknown[]));
+    return this.pool.query<R>(sql, params as unknown[]);
   }
 
   /**

@@ -23,7 +23,7 @@ export const TEST_DATABASE_URL = process.env['TEST_DATABASE_URL']?.replace(
 export function testEnv(overrides: Record<string, string | undefined> = {}) {
   return {
     APP_ENV: 'test',
-    DATABASE_URL: TEST_DATABASE_URL ?? 'postgresql://unused:unused@127.0.0.1:1/unused',
+    MM_APP_DATABASE_URL: TEST_DATABASE_URL ?? 'postgresql://unused:unused@127.0.0.1:1/unused',
     CORE_API_FUNCTION_SECRET: TEST_GATEWAY_SECRET,
     SERVICE_AUTH_KEYS: `${TEST_SERVICE_KEY_ID}:${TEST_SERVICE_SECRET},scheduler:${TEST_SCHEDULER_SECRET}`,
     TELEGRAM_BOT_ID: '123456789',

@@ -24,17 +24,12 @@ if (appEnv !== 'development' && appEnv !== 'test') {
 }
 
 const secret = randomBytes(32).toString('base64url');
-const env = {
-  ...process.env,
-  // The FastAPI reference's local URL uses the asyncpg driver name; pg wants plain postgresql.
-  DATABASE_URL: process.env['DATABASE_URL']?.replace(/^postgresql\+asyncpg:/, 'postgresql:'),
-  CORE_API_FUNCTION_SECRET: secret,
-};
+const env = { ...process.env, CORE_API_FUNCTION_SECRET: secret };
 const settings = loadSettings(env);
 const pool = createPool(settings.databaseUrl);
 const app = createApp({
   settings,
-  db: new Database(pool, { runtimeRole: settings.dbRuntimeRole }),
+  db: new Database(pool),
   clock: systemClock,
   logger: createLogger({ level: settings.logLevel, env: settings.appEnv }),
   fetch: (input, init) => fetch(input, init),
