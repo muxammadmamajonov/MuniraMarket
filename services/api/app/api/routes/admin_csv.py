@@ -135,11 +135,5 @@ async def csv_import(
         outcome = await catalog.import_csv(parsed, dry_run=dry_run, actor=actor_of(admin))
     except AdminCatalogError as exc:
         raise to_api_error(exc) from None
-    logger.info(
-        "CSV import: rows=%d applied=%s dry_run=%s errors=%d",
-        outcome.total_rows,
-        outcome.applied,
-        dry_run,
-        len(outcome.errors),
-    )
+    logger.info("Catalog CSV import completed")
     return CsvImportResult.from_outcome(outcome)

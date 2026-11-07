@@ -299,5 +299,5 @@ async def cancel_order(
         record = await orders.cancel_for_user(user.id, order_id, payload.reason)
     except CheckoutError as exc:
         raise to_api_error(exc) from None
-    logger.info("Order cancelled by customer: %s", order_id)
+    logger.info("Customer order cancellation succeeded")
     return OrderDetail.from_record(record)

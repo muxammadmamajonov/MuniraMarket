@@ -1,7 +1,7 @@
 # Core API image. Multi-stage: dependencies are resolved from uv.lock in the builder, the runtime
 # stage only carries the virtualenv and the application code, and runs as an unprivileged user.
 
-FROM python:3.13-slim AS builder
+FROM python:3.13-slim@sha256:09a17cad02668ae61ece136b4fd36ac3849e14f670ebedb637ea3e15580525bc AS builder
 RUN pip install --no-cache-dir uv==0.13.6
 ENV UV_COMPILE_BYTECODE=1 \
     UV_LINK_MODE=copy \
@@ -18,7 +18,7 @@ COPY app ./app
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --locked --no-dev --no-editable
 
-FROM python:3.13-slim AS runtime
+FROM python:3.13-slim@sha256:09a17cad02668ae61ece136b4fd36ac3849e14f670ebedb637ea3e15580525bc AS runtime
 ARG APP_RELEASE=""
 LABEL org.opencontainers.image.title="muniramarket-core-api" \
       org.opencontainers.image.revision="${APP_RELEASE}"

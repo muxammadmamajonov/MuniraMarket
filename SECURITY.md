@@ -8,10 +8,10 @@ Security fixes are applied to the latest code deployed from the `main` branch.
 
 Please do not open a public issue for a potential security vulnerability.
 
-Use this repository's **Private vulnerability reporting** form in GitHub's
-Security tab. Include a clear description, reproduction steps, affected URLs or
-components, and the potential impact. Do not include customer personal data,
-production credentials, access tokens, or database connection strings.
+Use this repository's [private vulnerability reporting form](https://github.com/muxammadmamajonov/MuniraMarket/security/advisories/new).
+Include a clear description, reproduction steps, affected URLs or components,
+and the potential impact. Do not include customer personal data, production
+credentials, access tokens, or database connection strings.
 
 If the private reporting form is unavailable, contact a project owner through
 an established private channel and ask for a secure reporting route.
