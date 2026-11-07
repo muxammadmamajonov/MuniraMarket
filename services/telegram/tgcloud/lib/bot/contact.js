@@ -1,13 +1,14 @@
 // @ts-check
 /**
- * A shared contact in the private chat (the `request_contact` button, or the Mini App's
- * `requestContact()`, which Telegram delivers here as a contact message). Only the sender's OWN
+ * A shared contact in the private chat. The main path is the Mini App profile's "share my number"
+ * (`WebApp.requestContact()`, which Telegram delivers here as a contact message); the
+ * `request_contact` button after `/start phone` is the fallback for browser users. Only the sender's OWN
  * contact (`contact.user_id === from.id`, both from the platform-verified update) is stored, as
  * the verified account phone. The number is never logged or echoed.
  */
 import { messagesFor, pickLocale } from '../i18n.js';
 import { describeError, loadBotContext, readBotUser } from './context.js';
-import { buildOpenShopKeyboard, buildPhoneKeyboard } from './start.js';
+import { buildPhoneKeyboard } from './start.js';
 
 /**
  * @param {any} message Telegram Message
@@ -23,7 +24,7 @@ export async function handleContact(message, deps) {
     return { handled: false };
   }
 
-  const { log, client, bot } = await loadBotContext(deps, 'contact');
+  const { log, client } = await loadBotContext(deps, 'contact');
   let locale = pickLocale(from.language_code);
 
   if (contact.user_id !== from.id || typeof contact.phone_number !== 'string') {
@@ -57,9 +58,7 @@ export async function handleContact(message, deps) {
     text: text.phoneVerified,
     reply_markup: { remove_keyboard: true },
   });
-  const keyboard = buildOpenShopKeyboard(bot, text.continueShopping, null);
-  if (keyboard) {
-    await deps.api.sendMessage({ chat_id: chatId, text: text.openShop, reply_markup: keyboard });
-  }
+  // One short confirmation only: usually the user shared from the Mini App profile and is still
+  // there; the profile picks up the verified number by itself.
   return { handled: true, verified: true };
 }

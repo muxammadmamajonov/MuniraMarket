@@ -25,7 +25,6 @@ export const ORDER_STATUSES = Object.freeze([
  * @property {string} phoneButton
  * @property {string} phoneVerified
  * @property {string} phoneNotOwn
- * @property {string} continueShopping
  * @property {string} genericError
  * @property {string} orderLabel
  * @property {string} totalLabel
@@ -49,7 +48,6 @@ export const MESSAGES = {
     phoneButton: 'Raqamimni yuborish',
     phoneVerified: 'Rahmat! Raqamingiz tasdiqlandi. Endi buyurtma berishingiz mumkin.',
     phoneNotOwn: 'Iltimos, o‘z raqamingizni pastdagi tugma orqali yuboring.',
-    continueShopping: 'Buyurtmani davom ettirish',
     genericError: 'Xatolik yuz berdi. Iltimos, keyinroq qayta urinib ko‘ring.',
     orderLabel: 'Buyurtma',
     totalLabel: 'Jami',
@@ -78,7 +76,6 @@ export const MESSAGES = {
     phoneButton: 'Отправить мой номер',
     phoneVerified: 'Спасибо! Номер подтверждён. Теперь можно оформить заказ.',
     phoneNotOwn: 'Пожалуйста, отправьте свой номер кнопкой ниже.',
-    continueShopping: 'Продолжить заказ',
     genericError: 'Произошла ошибка. Пожалуйста, попробуйте позже.',
     orderLabel: 'Заказ',
     totalLabel: 'Итого',
