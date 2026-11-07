@@ -1,12 +1,13 @@
 'use client';
 
-import { ErrorState, Skeleton } from '@muniramarket/ui';
 import Link from 'next/link';
 import type { ReactNode } from 'react';
 import { useI18n } from '@/i18n/context';
 import { sessionErrorMessage } from '@/lib/api/error-messages';
 import { useSession } from '@/lib/session';
 import { StaffFrame } from './admin-nav';
+import { AuthCard, AuthCardSkeleton, AuthErrorCard } from './auth-card';
+import { BrandLockup } from './brand';
 import { LanguageSwitcher } from './language-switcher';
 import { LogoutButton } from './logout-button';
 import { SignInPanel } from './sign-in-panel';
@@ -14,14 +15,16 @@ import { SignInPanel } from './sign-in-panel';
 function AccessDenied() {
   const { dict } = useI18n();
   return (
-    <section
+    <AuthCard
       role="alert"
-      className="mx-auto flex w-full max-w-md flex-col items-start gap-3 rounded-xl border border-border bg-surface p-6"
+      tone="danger"
+      title={dict.auth.accessDeniedTitle}
+      description={dict.auth.accessDeniedMessage}
     >
-      <h1 className="text-xl font-bold">{dict.auth.accessDeniedTitle}</h1>
-      <p className="text-muted-foreground">{dict.auth.accessDeniedMessage}</p>
-      <LogoutButton />
-    </section>
+      <div>
+        <LogoutButton />
+      </div>
+    </AuthCard>
   );
 }
 
@@ -49,16 +52,13 @@ export function AdminShell({ children }: { children: ReactNode }) {
 
   let content: ReactNode;
   if (status === 'loading') {
-    content = (
-      <div role="status" aria-label={dict.auth.checking}>
-        <Skeleton className="h-40 w-full" />
-      </div>
-    );
+    content = <AuthCardSkeleton label={dict.auth.checking} />;
   } else if (status === 'error') {
     content = (
-      <ErrorState
+      <AuthErrorCard
         title={dict.errors.title}
         description={sessionErrorMessage(dict, error)}
+        supportCode={error?.supportCode ?? null}
         retryLabel={dict.auth.retry}
         onRetry={retry}
       />
@@ -74,8 +74,11 @@ export function AdminShell({ children }: { children: ReactNode }) {
     <div className="flex min-h-dvh flex-col pb-[env(safe-area-inset-bottom)]">
       <header className="border-b border-border bg-surface pt-[env(safe-area-inset-top)]">
         <div className="mx-auto flex w-full max-w-6xl flex-wrap items-center justify-between gap-x-4 gap-y-2 px-4 py-2 sm:px-6">
-          <Link href={`/${locale}`} className="min-h-11 content-center text-lg font-bold">
-            {dict.header.appName}
+          <Link
+            href={`/${locale}`}
+            className="flex min-h-12 items-center rounded-xl focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus"
+          >
+            <BrandLockup appName={dict.header.appName} tag={dict.header.brandTag} />
           </Link>
           <div className="flex flex-wrap items-center gap-2">
             <LanguageSwitcher
@@ -94,7 +97,9 @@ export function AdminShell({ children }: { children: ReactNode }) {
           </div>
         </div>
       </header>
-      <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-6 sm:px-6">{content}</main>
+      <main className="mx-auto flex w-full max-w-6xl flex-1 items-start justify-center px-4 py-8 sm:items-center sm:px-6 sm:py-12">
+        {content}
+      </main>
     </div>
   );
 }

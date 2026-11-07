@@ -3,6 +3,7 @@
 import type { AuditEntry, AuditPage } from '@muniramarket/contracts';
 import { EmptyState } from '@muniramarket/ui';
 import Link from 'next/link';
+import { useId } from 'react';
 import { useI18n } from '@/i18n/context';
 import {
   AUDIT_ACTIONS,
@@ -16,11 +17,11 @@ import { formatCount, formatDateTime } from '@/lib/format';
 import { parseChoice, parsePageParam } from '@/lib/list-params';
 import { useApiResource } from '@/lib/use-api-resource';
 import { useUrlParams } from '@/lib/use-url-params';
-import { INPUT } from '../ui/classes';
 import { DataTable, type Column } from '../ui/data-table';
 import { PageHeader } from '../ui/page-header';
 import { Pagination } from '../ui/pagination';
 import { ResourceView } from '../ui/resource-view';
+import { Select } from '../ui/select';
 
 const AUDIT_PAGE_SIZE = 25;
 
@@ -62,6 +63,8 @@ function Details({ entry }: { entry: AuditEntry }) {
 
 /** Append-only audit log: newest first, filter by object type and action, details as "field: from → to". */
 export function AuditView() {
+  const entityLabelId = useId();
+  const actionLabelId = useId();
   const { dict } = useI18n();
   const copy = dict.audit;
   const { params, replace, hrefWith } = useUrlParams();
@@ -139,38 +142,34 @@ export function AuditView() {
       <PageHeader title={copy.title} />
 
       <div className="grid gap-3 sm:grid-cols-2">
-        <label className="flex min-w-0 flex-col gap-1 text-sm font-medium">
-          {copy.entityFilter}
-          <select
+        <div className="flex min-w-0 flex-col gap-1 text-sm font-medium">
+          <span id={entityLabelId}>{copy.entityFilter}</span>
+          <Select
+            labelledBy={entityLabelId}
             value={entity ?? ''}
-            data-testid="audit-entity-filter"
-            onChange={(event) => replace({ entity_type: event.target.value, action: null })}
-            className={INPUT}
-          >
-            <option value="">{copy.allEntities}</option>
-            {AUDIT_ENTITY_TYPES.map((item: AuditEntityType) => (
-              <option key={item} value={item}>
-                {copy.entities[item]}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="flex min-w-0 flex-col gap-1 text-sm font-medium">
-          {copy.actionFilter}
-          <select
+            testId="audit-entity-filter"
+            onChange={(next) => replace({ entity_type: next, action: null })}
+            placeholder={copy.allEntities}
+            options={AUDIT_ENTITY_TYPES.map((item: AuditEntityType) => ({
+              value: item,
+              label: copy.entities[item],
+            }))}
+          />
+        </div>
+        <div className="flex min-w-0 flex-col gap-1 text-sm font-medium">
+          <span id={actionLabelId}>{copy.actionFilter}</span>
+          <Select
+            labelledBy={actionLabelId}
             value={action ?? ''}
-            data-testid="audit-action-filter"
-            onChange={(event) => replace({ action: event.target.value })}
-            className={INPUT}
-          >
-            <option value="">{copy.allActions}</option>
-            {actionOptions.map((item: AuditAction) => (
-              <option key={item} value={item}>
-                {copy.actions[item]}
-              </option>
-            ))}
-          </select>
-        </label>
+            testId="audit-action-filter"
+            onChange={(next) => replace({ action: next })}
+            placeholder={copy.allActions}
+            options={actionOptions.map((item: AuditAction) => ({
+              value: item,
+              label: copy.actions[item],
+            }))}
+          />
+        </div>
       </div>
       {entityId === null ? null : (
         <p className="flex flex-wrap items-center gap-2 text-sm">

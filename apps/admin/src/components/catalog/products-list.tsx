@@ -8,7 +8,7 @@ import type {
 } from '@muniramarket/contracts';
 import { EmptyState, formatUZS } from '@muniramarket/ui';
 import Link from 'next/link';
-import { useMemo } from 'react';
+import { useId, useMemo } from 'react';
 import { useI18n } from '@/i18n/context';
 import { formatMessage } from '@/i18n/format';
 import type { ProductStatusChoice } from '@/i18n/dictionaries/sections/products';
@@ -17,12 +17,13 @@ import { formatCount } from '@/lib/format';
 import { LIST_PAGE_SIZE, isUuid, parseChoice, parsePageParam, parseText } from '@/lib/list-params';
 import { useApiResource } from '@/lib/use-api-resource';
 import { useUrlParams } from '@/lib/use-url-params';
-import { CHIP, CHIP_OFF, CHIP_ON, LINK_BUTTON_PRIMARY, INPUT } from '../ui/classes';
+import { CHIP, CHIP_OFF, CHIP_ON, LINK_BUTTON_PRIMARY } from '../ui/classes';
 import { DataTable, type Column } from '../ui/data-table';
 import { PageHeader } from '../ui/page-header';
 import { Pagination } from '../ui/pagination';
 import { ResourceView } from '../ui/resource-view';
 import { SearchBox } from '../ui/search-box';
+import { Select } from '../ui/select';
 import { ProductStatusBadge, productState } from './product-status';
 
 const CHOICES: readonly ProductStatusChoice[] = [
@@ -39,6 +40,7 @@ export function productHref(locale: string, id: string): string {
 
 /** Searchable, filterable, paginated product table. Everything but the data lives in the URL. */
 export function ProductsList() {
+  const categoryLabelId = useId();
   const { dict, locale } = useI18n();
   const copy = dict.products;
   const { params, replace, hrefWith } = useUrlParams();
@@ -152,23 +154,21 @@ export function ProductsList() {
           placeholder={copy.searchPlaceholder}
           testId="product-search"
         />
-        <label className="flex min-w-0 flex-col gap-1 text-sm font-medium">
-          {copy.categoryFilterLabel}
-          <select
+        <div className="flex min-w-0 flex-col gap-1 text-sm font-medium sm:w-60">
+          <span id={categoryLabelId}>{copy.categoryFilterLabel}</span>
+          <Select
+            labelledBy={categoryLabelId}
             value={categoryId}
-            onChange={(event) => replace({ category_id: event.target.value })}
+            onChange={(next) => replace({ category_id: next })}
             disabled={categories.status !== 'ready'}
-            data-testid="product-category-filter"
-            className={`${INPUT} sm:w-60`}
-          >
-            <option value="">{copy.allCategories}</option>
-            {options.map(({ category, depth }) => (
-              <option key={category.id} value={category.id}>
-                {indentedLabel(localName(category, locale), depth)}
-              </option>
-            ))}
-          </select>
-        </label>
+            testId="product-category-filter"
+            placeholder={copy.allCategories}
+            options={options.map(({ category, depth }) => ({
+              value: category.id,
+              label: indentedLabel(localName(category, locale), depth),
+            }))}
+          />
+        </div>
       </div>
 
       <nav aria-label={copy.statusFilterLabel}>

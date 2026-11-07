@@ -5,7 +5,7 @@ import { useI18n } from '@/i18n/context';
 import { formatMessage } from '@/i18n/format';
 
 const LINK =
-  'inline-flex min-h-11 items-center rounded-xl border border-border bg-surface px-4 font-medium transition-[background-color,transform] duration-150 ease-out hover:bg-surface-muted active:scale-[0.98] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus';
+  'inline-flex min-h-11 items-center rounded-xl border border-border bg-surface px-4 font-medium transition-transform duration-150 ease-out hover:bg-surface-muted active:scale-[0.98] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus';
 const OFF =
   'inline-flex min-h-11 items-center rounded-xl border border-border px-4 font-medium opacity-50';
 

@@ -10,7 +10,11 @@ const ORDER_ID = '0b1f4c7e-2d4a-4f3b-9a53-6f0f1b8a7c11';
 
 function setup(upstream: () => Response | Promise<Response> = () => Response.json({ ok: true })) {
   const fetchMock = vi.fn<typeof fetch>(async () => upstream());
-  const handle = createApiProxy({ fetch: fetchMock, apiBaseUrl: () => 'http://api.test:8000' });
+  const handle = createApiProxy({
+    fetch: fetchMock,
+    apiBaseUrl: () => 'http://api.test:8000',
+    sleep: async () => {},
+  });
   const call = (path: string[], url: string, init?: RequestInit) =>
     handle(new Request(url, init), { params: Promise.resolve({ path }) });
   return { fetchMock, call };
@@ -34,7 +38,8 @@ describe('admin api proxy: allowlist', () => {
   ])('forwards the OIDC sign-in, session routes and admin/**: %j', async (path) => {
     const { fetchMock, call } = setup();
     const response = await call(path, `http://admin.test/api/v1/${path.join('/')}`);
-    expect(response.status).toBe(200);
+    // The callback is a navigation: a non-redirect answer becomes a redirect to the sign-in page.
+    expect(response.status).toBe(path.at(-1) === 'callback' ? 303 : 200);
     expect(lastCall(fetchMock).url).toBe(`http://api.test:8000/api/v1/${path.join('/')}`);
   });
 
@@ -160,6 +165,8 @@ describe('admin api proxy: forwarding', () => {
       origin: 'http://admin.test',
       'user-agent': 'UA',
       'x-mm-entrance': 'admin',
+      // The proxy's own id (never a browser-supplied one), shared with the gateway and the API.
+      'x-request-id': expect.stringMatching(/^[0-9a-f]{32}$/),
     });
   });
 
@@ -443,27 +450,30 @@ describe('admin api proxy: OIDC callback redirect', () => {
     ['/uz\t/x'],
     ['/uz\u007f'],
     ['/uz orders'],
-  ])('answers 502 for an unsafe Location %j', async (location) => {
+  ])('sends the browser to the sign-in page instead of an unsafe Location %j', async (location) => {
     const { call } = setup(redirect(location, 303, ['__Host-mm_session=s; Path=/']));
     const response = await call(['auth', 'telegram', 'oidc', 'callback'], callbackUrl);
-    expect(response.status).toBe(502);
-    expect(response.headers.get('location')).toBeNull();
+    expect(response.status).toBe(303);
+    expect(response.headers.get('location')).toMatch(
+      /^\/uz\/auth\/telegram\?status=unavailable&ref=[a-z0-9]{8}$/,
+    );
     expect(response.headers.getSetCookie()).toEqual([]);
   });
 
-  it('answers 502 for a callback redirect without Location', async () => {
+  it('sends the browser to the sign-in page for a callback redirect without Location', async () => {
     const { call } = setup(redirect(null));
     const response = await call(['auth', 'telegram', 'oidc', 'callback'], callbackUrl);
-    expect(response.status).toBe(502);
+    expect(response.status).toBe(303);
+    expect(response.headers.get('location')).toMatch(/^\/uz\/auth\/telegram\?status=unavailable/);
   });
 
   it.each([[301], [302], [307], [308]])(
-    'answers 502 for any other redirect status (%i)',
+    'sends the browser to the sign-in page for any other redirect status (%i)',
     async (status) => {
       const { call } = setup(redirect('/uz', status));
       const response = await call(['auth', 'telegram', 'oidc', 'callback'], callbackUrl);
-      expect(response.status).toBe(502);
-      expect(response.headers.get('location')).toBeNull();
+      expect(response.status).toBe(303);
+      expect(response.headers.get('location')).toMatch(/^\/uz\/auth\/telegram\?status=unavailable/);
     },
   );
 
@@ -486,12 +496,13 @@ describe('admin api proxy: OIDC callback redirect', () => {
     },
   );
 
-  it('passes a non-redirect callback answer (e.g. 429) through as usual', async () => {
+  it('turns a non-redirect callback answer (e.g. 429) into the sign-in page, never JSON', async () => {
     const { call } = setup(() =>
       Response.json({ error: { code: 'rate_limited', message: 'x' } }, { status: 429 }),
     );
     const response = await call(['auth', 'telegram', 'oidc', 'callback'], callbackUrl);
-    expect(response.status).toBe(429);
+    expect(response.status).toBe(303);
+    expect(response.headers.get('location')).toMatch(/^\/uz\/auth\/telegram\?status=unavailable/);
   });
 });
 

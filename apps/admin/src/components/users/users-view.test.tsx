@@ -8,6 +8,7 @@ import {
   sessionHandler,
   type FakeHandler,
 } from '@/test-utils/fake-api';
+import { chooseOption } from '@/test-utils/select';
 import { IDS, adminUser, page } from '@/test-utils/fixtures';
 import { setLocation } from '@/test-utils/navigation';
 import { UsersView, userDisplayName } from './users-view';
@@ -64,7 +65,7 @@ describe('UsersView', () => {
     expect(api.calls.filter((call) => call.method === 'PATCH')).toHaveLength(0);
     // Confirm stays disabled until another role is picked.
     expect(within(dialog).getByTestId('confirm-action')).toBeDisabled();
-    fireEvent.change(within(dialog).getByTestId('role-select'), { target: { value: 'operator' } });
+    chooseOption(within(dialog).getByTestId('role-select'), 'operator');
     fireEvent.click(within(dialog).getByTestId('confirm-action'));
 
     expect(

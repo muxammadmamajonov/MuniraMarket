@@ -10,8 +10,8 @@ export function ActivePill({ active }: { active: boolean }) {
       className={cx(
         'inline-flex items-center rounded-full px-2.5 py-0.5 text-sm font-medium whitespace-nowrap',
         active
-          ? 'bg-green-100 text-green-900 dark:bg-green-950 dark:text-green-200'
-          : 'bg-zinc-200 text-zinc-900 dark:bg-zinc-800 dark:text-zinc-200',
+          ? 'bg-success-soft text-success'
+          : 'bg-surface-muted text-muted-foreground ring-1 ring-border ring-inset',
       )}
     >
       {active ? dict.common.active : dict.common.inactive}

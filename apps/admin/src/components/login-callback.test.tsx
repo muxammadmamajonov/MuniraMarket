@@ -33,8 +33,8 @@ function renderPage(locale: 'uz' | 'ru' = 'ru') {
 
 describe('LoginCallback (sign-in failure page)', () => {
   it.each([
-    ['failed', 'Не удалось войти через Telegram'],
-    ['cancelled', 'Вход отменён.'],
+    ['failed', 'Ссылка для входа устарела или не прошла проверку'],
+    ['cancelled', 'Вход в Telegram был отклонён'],
     ['blocked', 'Ваша учётная запись заблокирована.'],
     ['unavailable', 'Сервис временно недоступен'],
   ])('explains status=%s', (status, text) => {
@@ -50,7 +50,7 @@ describe('LoginCallback (sign-in failure page)', () => {
     (search) => {
       mocks.search = search;
       renderPage();
-      expect(screen.getByRole('alert')).toHaveTextContent('Не удалось войти через Telegram');
+      expect(screen.getByRole('alert')).toHaveTextContent('Ссылка для входа устарела');
     },
   );
 
@@ -69,7 +69,7 @@ describe('LoginCallback (sign-in failure page)', () => {
     mocks.search = 'status=failed';
     mocks.startTelegramLogin.mockResolvedValue('https://oauth.telegram.org/auth?x=1');
     renderPage();
-    fireEvent.click(screen.getByRole('button', { name: 'Войти через Telegram' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Попробовать снова' }));
     expect(mocks.startTelegramLogin).toHaveBeenCalledWith('/ru');
     await waitFor(() =>
       expect(mocks.navigateTo).toHaveBeenCalledWith('https://oauth.telegram.org/auth?x=1'),
@@ -80,5 +80,40 @@ describe('LoginCallback (sign-in failure page)', () => {
     mocks.search = 'status=blocked';
     renderPage();
     expect(screen.queryByRole('button')).toBeNull();
+  });
+
+  it('shows the support code from ?ref= so the operator can quote it', () => {
+    mocks.search = 'status=unavailable&ref=01ab23cd';
+    renderPage('uz');
+    expect(screen.getByTestId('support-code')).toHaveTextContent('Yordam kodi: 01ab23cd');
+    expect(screen.getByText(/shu kodni administratorga/)).toBeInTheDocument();
+  });
+
+  it.each([['ref=<b>x</b>'], ['ref=0123'], ['ref=0123456789abcdef'], ['ref=ABCDEFGH']])(
+    'ignores a malformed support code (%s)',
+    (ref) => {
+      mocks.search = `status=unavailable&${ref}`;
+      renderPage();
+      expect(screen.queryByTestId('support-code')).toBeNull();
+    },
+  );
+
+  it('keeps the "try again" usable after a failed restart and shows that failure\'s code', async () => {
+    mocks.search = 'status=unavailable';
+    const { ApiRequestError } = await import('@/lib/api/errors');
+    mocks.startTelegramLogin.mockRejectedValueOnce(
+      new ApiRequestError({
+        status: 503,
+        code: 'service_unavailable',
+        message: 'x',
+        requestId: 'feedbeef00112233',
+      }),
+    );
+    renderPage();
+    fireEvent.click(screen.getByRole('button', { name: 'Попробовать снова' }));
+    expect(await screen.findByTestId('login-error')).toHaveTextContent(
+      'Код для поддержки: feedbeef',
+    );
+    expect(mocks.navigateTo).not.toHaveBeenCalled();
   });
 });

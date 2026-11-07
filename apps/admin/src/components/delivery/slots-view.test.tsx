@@ -8,6 +8,7 @@ import {
   sessionHandler,
   type FakeHandler,
 } from '@/test-utils/fake-api';
+import { chooseOption } from '@/test-utils/select';
 import { IDS, slot, zone } from '@/test-utils/fixtures';
 import { setLocation } from '@/test-utils/navigation';
 import { SlotsView } from './slots-view';
@@ -104,7 +105,7 @@ describe('SlotsView: create form', () => {
     );
     renderAdmin(<SlotsView />);
     await openCreate();
-    type('slot-zone', IDS.zone);
+    chooseOption('slot-zone', IDS.zone);
     type('slot-date', '2026-11-02');
     type('slot-starts-at', '14:00');
     type('slot-ends-at', '16:00');
@@ -147,7 +148,7 @@ describe('SlotsView: create form', () => {
       );
       renderAdmin(<SlotsView />);
       await openCreate();
-      type('slot-zone', IDS.zone);
+      chooseOption('slot-zone', IDS.zone);
       type('slot-date', '2026-11-02');
       fireEvent.click(screen.getByTestId('slot-create'));
       expect(await screen.findByText(text)).toBeInTheDocument();

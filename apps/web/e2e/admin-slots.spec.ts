@@ -104,7 +104,10 @@ test('admin creates a delivery slot and a customer books exactly that window at 
 
     const dialog = admin.getByRole('dialog');
     await expect(dialog).toBeVisible();
-    await dialog.getByTestId('slot-zone').selectOption({ label: ZONE_NAME_UZ });
+    // The admin's select is a custom combobox (button + listbox), not a native <select>.
+    await dialog.getByTestId('slot-zone').click();
+    await dialog.getByRole('option', { name: ZONE_NAME_UZ, exact: true }).click();
+    await expect(dialog.getByTestId('slot-zone')).toContainText(ZONE_NAME_UZ);
     await dialog.getByTestId('slot-date').fill(slotDate);
     await dialog.getByTestId('slot-starts-at').fill(startsAt);
     await dialog.getByTestId('slot-ends-at').fill(endsAt);

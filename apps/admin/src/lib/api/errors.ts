@@ -5,6 +5,7 @@ import {
   type ApiErrorDetail,
 } from '@muniramarket/contracts';
 import type { OrderStatus } from '@muniramarket/contracts';
+import { parseRequestId, REQUEST_ID_HEADER, supportCodeFor } from './request-id';
 
 /** Client-side error codes for failures that never produced an API envelope. */
 export type LocalErrorCode = 'network_error' | 'invalid_response' | 'unknown_error';
@@ -26,6 +27,11 @@ export class ApiRequestError extends Error {
   readonly details: readonly ApiErrorDetail[];
   /** The district code on `district_taken`. */
   readonly district: string | null;
+  /**
+   * `X-Request-ID` of the failed response (set by the admin proxy, the gateway and the Core API),
+   * or `null` when there was no response. Shown shortened as the "support code".
+   */
+  readonly requestId: string | null;
 
   constructor(init: {
     status: number;
@@ -35,6 +41,7 @@ export class ApiRequestError extends Error {
     retryAfter?: number | null | undefined;
     details?: readonly ApiErrorDetail[] | null | undefined;
     district?: string | null | undefined;
+    requestId?: string | null | undefined;
   }) {
     super(init.message);
     this.name = 'ApiRequestError';
@@ -44,6 +51,12 @@ export class ApiRequestError extends Error {
     this.retryAfter = init.retryAfter ?? null;
     this.details = init.details ?? [];
     this.district = init.district ?? null;
+    this.requestId = init.requestId ?? null;
+  }
+
+  /** The short code an operator reads out to whoever checks the logs, or `null`. */
+  get supportCode(): string | null {
+    return supportCodeFor(this.requestId);
   }
 
   /** True when the request never got an HTTP response (offline, DNS, refused, aborted). */
@@ -63,6 +76,7 @@ export class ApiRequestError extends Error {
   static async fromResponse(response: Response): Promise<ApiRequestError> {
     const retryHeader = Number(response.headers.get('retry-after'));
     const retryAfter = Number.isFinite(retryHeader) && retryHeader > 0 ? retryHeader : null;
+    const requestId = parseRequestId(response.headers.get(REQUEST_ID_HEADER));
     let body: unknown = null;
     try {
       body = await response.json();
@@ -78,6 +92,7 @@ export class ApiRequestError extends Error {
         retryAfter,
         details: Array.isArray(body.error.details) ? body.error.details : null,
         district: typeof body.error.district === 'string' ? body.error.district : null,
+        requestId,
       });
     }
     return new ApiRequestError({
@@ -85,6 +100,7 @@ export class ApiRequestError extends Error {
       code: 'unknown_error',
       message: `Request failed with status ${String(response.status)}`,
       retryAfter,
+      requestId,
     });
   }
 }
@@ -98,6 +114,7 @@ export async function readJson<T>(response: Response): Promise<T> {
       status: response.status,
       code: 'invalid_response',
       message: 'Response was not valid JSON',
+      requestId: parseRequestId(response.headers.get(REQUEST_ID_HEADER)),
     });
   }
 }

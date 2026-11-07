@@ -16,6 +16,7 @@ export const ru: Dictionary = {
   },
   header: {
     appName: 'MuniraMarket Admin',
+    brandTag: 'Панель управления',
     logout: 'Выйти',
     language: { label: 'Язык', names: { uz: 'O‘zbekcha', ru: 'Русский' } },
   },
@@ -39,12 +40,16 @@ export const ru: Dictionary = {
     sessionFailed: 'Не удалось проверить сессию.',
     callbackTitle: 'Вход не выполнен',
     callbackStatus: {
-      failed: 'Не удалось войти через Telegram. Попробуйте ещё раз.',
-      cancelled: 'Вход отменён.',
-      blocked: 'Ваша учётная запись заблокирована.',
-      unavailable: 'Сервис временно недоступен. Попробуйте чуть позже.',
+      failed: 'Ссылка для входа устарела или не прошла проверку. Войдите через Telegram заново.',
+      cancelled: 'Вход в Telegram был отклонён. При желании попробуйте ещё раз.',
+      blocked: 'Ваша учётная запись заблокирована. Обратитесь к администратору.',
+      unavailable: 'Сервис временно недоступен. Попробуйте ещё раз через минуту.',
     },
     callbackBack: 'На главную',
+    tryAgain: 'Попробовать снова',
+    supportCode: 'Код для поддержки: {code}',
+    supportCodeHint: 'Если ошибка повторяется, отправьте этот код администратору.',
+    staffOnly: 'Только для сотрудников MuniraMarket.',
   },
   orders: {
     title: 'Заказы',

@@ -1,14 +1,12 @@
 import { cx } from '@muniramarket/ui';
 import type { ReactNode } from 'react';
 
+// Brand tokens only (packages/ui/src/styles/tokens.css): each pair is AA in light and dark.
 const TONES = {
-  error:
-    'border-red-300 bg-red-50 text-red-900 dark:border-red-800 dark:bg-red-950 dark:text-red-100',
-  success:
-    'border-green-300 bg-green-50 text-green-900 dark:border-green-800 dark:bg-green-950 dark:text-green-100',
+  error: 'border-danger/40 bg-danger-soft text-danger',
+  success: 'border-success/40 bg-success-soft text-success',
   info: 'border-border bg-surface-muted text-foreground',
-  warning:
-    'border-amber-300 bg-amber-50 text-amber-900 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-100',
+  warning: 'border-warning/40 bg-warning-soft text-warning',
 } as const;
 
 /**

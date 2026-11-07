@@ -1,7 +1,7 @@
 'use client';
 
 import type { Dashboard } from '@muniramarket/contracts';
-import { Button, Skeleton, formatUZS } from '@muniramarket/ui';
+import { Button, Skeleton, cx, formatUZS } from '@muniramarket/ui';
 import Link from 'next/link';
 import type { ReactNode } from 'react';
 import { useI18n } from '@/i18n/context';
@@ -12,6 +12,7 @@ import { useApiResource } from '@/lib/use-api-resource';
 import { CARD } from './ui/classes';
 import { PageHeader } from './ui/page-header';
 import { ResourceView } from './ui/resource-view';
+import { Spinner } from './ui/spinner';
 
 function Stat({
   label,
@@ -19,28 +20,61 @@ function Stat({
   hint,
   testId,
   href,
+  attention = false,
 }: {
   label: string;
   value: ReactNode;
   hint?: string;
   testId: string;
   href?: string;
+  /** Something is waiting for staff (new orders): brand tint, so it is the first thing seen. */
+  attention?: boolean;
 }) {
   const body = (
     <>
-      <dt className="text-sm text-muted-foreground">{label}</dt>
-      <dd className="text-2xl font-bold tracking-tight break-words tabular" data-testid={testId}>
+      <dt className="flex items-center justify-between gap-2 text-sm text-muted-foreground">
+        <span className="min-w-0 break-words">{label}</span>
+        {href === undefined ? null : (
+          <svg
+            aria-hidden="true"
+            focusable="false"
+            viewBox="0 0 20 20"
+            className="size-4 shrink-0 transition-transform duration-150 ease-out group-hover:translate-x-0.5"
+          >
+            <path
+              d="M7.5 5l5 5-5 5"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.75"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </svg>
+        )}
+      </dt>
+      <dd
+        className={cx(
+          'text-2xl font-bold tracking-tight break-words tabular sm:text-3xl',
+          attention && 'text-brand-ink',
+        )}
+        data-testid={testId}
+      >
         {value}
       </dd>
       {hint === undefined ? null : <p className="text-sm text-muted-foreground">{hint}</p>}
     </>
   );
+  const tone = attention ? 'border-primary/40 bg-brand-soft' : '';
   return href === undefined ? (
-    <div className={CARD}>{body}</div>
+    <div className={cx(CARD, tone)}>{body}</div>
   ) : (
     <Link
       href={href}
-      className={`${CARD} transition-[background-color,transform] duration-150 ease-out hover:bg-surface-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus active:scale-[0.99]`}
+      className={cx(
+        CARD,
+        tone,
+        'group transition-transform duration-150 ease-out hover:border-border-strong focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus active:scale-[0.99]',
+      )}
     >
       {body}
     </Link>
@@ -64,6 +98,7 @@ function Numbers({ data }: { data: Dashboard }) {
         hint={copy.newOrdersHint}
         href={ordersHref(locale, { status: 'NEW', page: 1 })}
         testId="stat-new-orders"
+        attention={data.new_orders > 0}
       />
       <Stat
         label={copy.gmv}
@@ -100,7 +135,13 @@ export function DashboardView() {
             : formatMessage(dict.dashboard.asOf, { date: formatDate(resource.data.date) })
         }
         actions={
-          <Button variant="secondary" onClick={resource.reload} disabled={resource.fetching}>
+          <Button
+            variant="secondary"
+            onClick={resource.reload}
+            disabled={resource.fetching}
+            aria-busy={resource.fetching}
+          >
+            {resource.fetching ? <Spinner className="size-4" /> : null}
             {dict.dashboard.refresh}
           </Button>
         }

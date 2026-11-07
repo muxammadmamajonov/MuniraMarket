@@ -347,6 +347,10 @@ export function ZonesView() {
           </Button>
         }
       />
+      <Alert tone="info" testId="zones-demo-notice">
+        <p className="font-semibold">{copy.demoNotice.title}</p>
+        <p className="text-muted-foreground">{copy.demoNotice.body}</p>
+      </Alert>
       {notice === null ? null : <Alert tone="success">{notice}</Alert>}
 
       <ResourceView resource={resource} loadingLabel={copy.loading}>

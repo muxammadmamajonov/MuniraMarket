@@ -117,7 +117,9 @@ async function signIn(
     });
   } catch (error) {
     if (error instanceof StoreUnavailableError) {
-      logger.error('Session store unavailable during sign-in; failing closed');
+      logger.error('Session store unavailable during sign-in; failing closed', {
+        request_id: c.get('requestId'),
+      });
       throw storeUnavailable();
     }
     throw error;
@@ -280,7 +282,9 @@ export function register(router: Router): void {
       );
     } catch (error) {
       if (!(error instanceof StoreUnavailableError)) throw error;
-      logger.error('OIDC state store unavailable; failing closed');
+      logger.error('OIDC state store unavailable; failing closed', {
+        request_id: c.get('requestId'),
+      });
       throw storeUnavailable();
     }
     queueCookie(c, bindingCookieHeader(c, binding, oidc.stateTtlSeconds));
@@ -313,7 +317,10 @@ export function register(router: Router): void {
     const { logger } = deps(c);
     clearBindingCookie(c);
     if (state === null || !STATE_RE.test(state)) {
-      logger.info('Rejected Telegram OIDC callback', { reason: 'state_malformed' });
+      logger.info('Rejected Telegram OIDC callback', {
+        reason: 'state_malformed',
+        request_id: c.get('requestId'),
+      });
       return redirect(c, failureLocation('/', 'failed'));
     }
     let login: PendingLogin | null;
@@ -321,18 +328,26 @@ export function register(router: Router): void {
       login = await securityServices(deps(c)).oidcStates.take(sha256Hex(state));
     } catch (error) {
       if (!(error instanceof StoreUnavailableError)) throw error;
-      logger.error('OIDC state store unavailable; failing closed');
+      logger.error('OIDC state store unavailable; failing closed', {
+        request_id: c.get('requestId'),
+      });
       return redirect(c, failureLocation('/', 'unavailable'));
     }
     if (login === null) {
-      logger.info('Rejected Telegram OIDC callback', { reason: 'state_unknown' });
+      logger.info('Rejected Telegram OIDC callback', {
+        reason: 'state_unknown',
+        request_id: c.get('requestId'),
+      });
       return redirect(c, failureLocation('/', 'failed'));
     }
     try {
       await completeOidcLogin(c, oidc, login, code);
     } catch (error) {
       if (!(error instanceof CallbackFailed)) throw error;
-      logger.info('Rejected Telegram OIDC callback', { reason: error.reason });
+      logger.info('Rejected Telegram OIDC callback', {
+        reason: error.reason,
+        request_id: c.get('requestId'),
+      });
       return redirect(c, error.location);
     }
     return redirect(c, login.returnTo);
