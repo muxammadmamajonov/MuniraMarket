@@ -3,7 +3,7 @@
 Deployed environments run migrations as a separate, short-lived job with the **migration role**
 (DDL rights), never with the runtime role the API uses (infra/neon/README.md). That job only
 needs ``APP_ENV`` and ``MIGRATION_DATABASE_URL``; it does not get the API's other secrets
-(service keys, bot token, Redis). Locally, when ``MIGRATION_DATABASE_URL`` is unset, Alembic
+(service keys, bot token, OIDC secret). Locally, when ``MIGRATION_DATABASE_URL`` is unset, Alembic
 falls back to the application's ``DATABASE_URL`` exactly as before.
 """
 

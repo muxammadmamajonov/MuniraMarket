@@ -1,7 +1,6 @@
 import logging
-from collections.abc import Awaitable, Callable
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter
 from fastapi.responses import JSONResponse
 from sqlalchemy import text
 
@@ -27,24 +26,29 @@ def _unavailable() -> JSONResponse:
     )
 
 
+# One probe per security-state table (ADR 0013): a missing migration or grant makes the
+# instance unready instead of failing every signed-in request. ``LIMIT 0`` reads no rows.
+_READINESS_PROBES = (
+    "SELECT 1",
+    "SELECT 1 FROM auth_sessions LIMIT 0",
+    "SELECT 1 FROM rate_limit_counters LIMIT 0",
+    "SELECT 1 FROM service_request_nonces LIMIT 0",
+    "SELECT 1 FROM oidc_login_states LIMIT 0",
+)
+
+
 @router.get(
     "/ready",
     response_model=ReadinessResponse,
-    responses={503: {"model": ReadinessResponse, "description": "Database or Redis unavailable"}},
+    responses={503: {"model": ReadinessResponse, "description": "Database unavailable"}},
 )
-async def ready(request: Request, session: SessionDep) -> ReadinessResponse | JSONResponse:
-    """Readiness: the database answers ``SELECT 1`` and, when sessions and rate limits use
-    Redis, Redis answers ``PING``. Failures are logged by class only, never returned."""
+async def ready(session: SessionDep) -> ReadinessResponse | JSONResponse:
+    """Readiness: the database answers and the security-state tables (sessions, rate limits,
+    replay nonces, OIDC states) are reachable. Failures are logged by class only."""
     try:
-        await session.execute(text("SELECT 1"))
+        for probe in _READINESS_PROBES:
+            await session.execute(text(probe))
     except Exception as exc:
         logger.error("Readiness check failed: database (%s)", type(exc).__name__)  # noqa: TRY400
         return _unavailable()
-    ping: Callable[[], Awaitable[object]] | None = getattr(request.app.state, "redis_ping", None)
-    if ping is not None:
-        try:
-            await ping()
-        except Exception as exc:
-            logger.error("Readiness check failed: redis (%s)", type(exc).__name__)  # noqa: TRY400
-            return _unavailable()
     return ReadinessResponse(status="ok")

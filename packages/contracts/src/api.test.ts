@@ -10,6 +10,11 @@ import {
   type TelegramInitDataAuthResponse,
   type UserPublic,
   isApiErrorEnvelope,
+  parseTelegramOidcFailureStatus,
+  TELEGRAM_OIDC_FAILURE_STATUSES,
+  type AuthConfig,
+  type TelegramOidcStartRequest,
+  type TelegramOidcStartResponse,
 } from './index';
 
 describe('api contract', () => {
@@ -84,5 +89,31 @@ describe('api contract', () => {
     };
     expect(session.csrf_token).toBe('x');
     expect(cart.items).toHaveLength(0);
+  });
+
+  it('describes the Telegram OIDC sign-in shapes', () => {
+    const config: AuthConfig = { telegram_oidc: { enabled: true } };
+    const start: TelegramOidcStartRequest = { return_to: '/uz/orders' };
+    const started: TelegramOidcStartResponse = {
+      authorization_url: 'https://oauth.telegram.org/auth',
+    };
+    expect(config.telegram_oidc.enabled).toBe(true);
+    expect(start.return_to).toBe('/uz/orders');
+    expect(started.authorization_url).toMatch(/^https:/);
+  });
+
+  it('parses the sign-in failure status of the callback redirect', () => {
+    expect([...TELEGRAM_OIDC_FAILURE_STATUSES]).toEqual([
+      'failed',
+      'cancelled',
+      'blocked',
+      'unavailable',
+    ]);
+    for (const status of TELEGRAM_OIDC_FAILURE_STATUSES) {
+      expect(parseTelegramOidcFailureStatus(status)).toBe(status);
+    }
+    for (const value of [null, undefined, '', 'FAILED', 'ok', 'toString', '__proto__']) {
+      expect(parseTelegramOidcFailureStatus(value)).toBeNull();
+    }
   });
 });

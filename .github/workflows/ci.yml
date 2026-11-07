@@ -54,17 +54,9 @@ jobs:
         options: >-
           --health-cmd "pg_isready -U ci -d muniramarket_test"
           --health-interval 5s --health-timeout 3s --health-retries 10
-      redis:
-        image: redis:8-alpine
-        ports:
-          - 6379:6379
-        options: >-
-          --health-cmd "redis-cli ping"
-          --health-interval 5s --health-timeout 3s --health-retries 10
     env:
       APP_ENV: test
       TEST_DATABASE_URL: postgresql+asyncpg://ci:ci-only-password@localhost:5432/muniramarket_test
-      TEST_REDIS_URL: redis://localhost:6379/0
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -80,7 +72,6 @@ jobs:
         env:
           APP_ENV: development
           DATABASE_URL: postgresql+asyncpg://ci:ci-only-password@localhost:5432/muniramarket_test
-          REDIS_URL: redis://localhost:6379/0
           SERVICE_AUTH_KEYS: ci:ci-only-service-key-not-a-secret-000000
           TELEGRAM_BOT_ID: '0'
         run: |
@@ -156,8 +147,6 @@ jobs:
           MM_ADMIN_HOSTNAME: admin.staging.example.test
           MM_API_HOSTNAME: api.staging.example.test
           MM_TELEGRAM_BOT_ID: '1234567890'
-          MM_TELEGRAM_BOT_USERNAME: muniramarket_ci_bot
-          MM_ADMIN_TELEGRAM_BOT_USERNAME: muniramarket_admin_ci_bot
           MM_CSRF_TRUSTED_ORIGINS: https://shop.staging.example.test,https://admin.staging.example.test
         run: |
           node infra/cloudflare/scripts/validate-deploy-env.mts --mode staging
@@ -220,19 +209,11 @@ jobs:
         options: >-
           --health-cmd "pg_isready -U ci -d muniramarket_test"
           --health-interval 5s --health-timeout 3s --health-retries 10
-      redis:
-        image: redis:8-alpine
-        ports:
-          - 6379:6379
-        options: >-
-          --health-cmd "redis-cli ping"
-          --health-interval 5s --health-timeout 3s --health-retries 10
     env:
-      # Throw-away, CI-only configuration; nothing here is a secret. The bot token is generated
-      # per run below and never leaves this job.
+      # Throw-away, CI-only configuration; nothing here is a secret. The bot token and the OIDC
+      # client secret are generated per run below and never leave this job.
       APP_ENV: development
       DATABASE_URL: postgresql+asyncpg://ci:ci-only-password@localhost:5432/muniramarket_test
-      REDIS_URL: redis://localhost:6379/0
       SERVICE_AUTH_KEYS: ci:ci-only-service-key-not-a-secret-000000
       TELEGRAM_BOT_ID: '0'
       SESSION_COOKIE_SECURE: 'false'
@@ -240,6 +221,10 @@ jobs:
       API_INTERNAL_URL: http://127.0.0.1:8000
       # Fake Telegram id of the admin the specs sign in as (created below); not a real account.
       E2E_ADMIN_TELEGRAM_ID: '990000001'
+      # Fake Telegram OIDC provider (apps/web/e2e/fake-telegram-oidc.ts) the admin specs sign in
+      # through; a made-up client id, the secret is generated per run.
+      E2E_OIDC_CLIENT_ID: '7000000001'
+      E2E_OIDC_ISSUER: http://127.0.0.1:8899
       NEXT_TELEMETRY_DISABLED: '1'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -253,11 +238,14 @@ jobs:
           cache: pnpm
       - run: uv sync --locked
         working-directory: services/api
-      - name: Prepare log directory and a throw-away Telegram bot token
+      - name: Prepare log directory, a throw-away Telegram bot token and OIDC client secret
         run: |
           token="900000:$(openssl rand -hex 24)"
           echo "::add-mask::$token"
           echo "E2E_TELEGRAM_BOT_TOKEN=$token" >> "$GITHUB_ENV"
+          oidc_secret="$(openssl rand -hex 32)"
+          echo "::add-mask::$oidc_secret"
+          echo "E2E_OIDC_CLIENT_SECRET=$oidc_secret" >> "$GITHUB_ENV"
           echo "E2E_LOG_DIR=$RUNNER_TEMP/e2e-logs" >> "$GITHUB_ENV"
           mkdir -p "$RUNNER_TEMP/e2e-logs"
       - name: Migrate and seed the database
@@ -266,19 +254,37 @@ jobs:
           uv run alembic upgrade head
           make seed
       # Development/test only (the tool refuses elsewhere). Creates the placeholder admin the admin
-      # specs sign in as through the Telegram Login Widget flow.
+      # specs sign in as through the Telegram OIDC flow (fake provider).
       - name: Create the E2E admin user
         working-directory: services/api
         run: uv run python -m app.dev.set_role "$E2E_ADMIN_TELEGRAM_ID" admin --create
+      # Dependency-free Node script (no pnpm install needed); signs every login in as
+      # E2E_ADMIN_TELEGRAM_ID. Its own self-check runs first on a random port.
+      - name: Start the fake Telegram OIDC provider
+        working-directory: apps/web
+        run: |
+          node e2e/fake-telegram-oidc.ts --self-check
+          nohup node e2e/fake-telegram-oidc.ts > "$E2E_LOG_DIR/fake-oidc.log" 2>&1 &
+          for _ in $(seq 1 30); do
+            curl -fsS -o /dev/null "$E2E_OIDC_ISSUER/health" && exit 0
+            sleep 1
+          done
+          echo "Fake OIDC provider did not start" >&2
+          exit 1
       - name: Start the Core API
         working-directory: services/api
-        # The Login Widget flag is set here, next to the token it requires: Settings refuses to
-        # load with the flag on and no token, which would break the migrate/seed/set_role steps
-        # above (they run before the token is handed to any process).
+        # The OIDC settings are set here only, next to the secret they require: Settings refuses
+        # to load with OIDC enabled and no secret, which would break the migrate/seed/set_role
+        # steps above (they run before the secret is handed to any process). The bot token is
+        # still needed for the storefront's Mini App initData.
         env:
           TELEGRAM_BOT_TOKEN: ${{ env.E2E_TELEGRAM_BOT_TOKEN }}
-          TELEGRAM_LOGIN_WIDGET_ENABLED: 'true'
-          TELEGRAM_BOT_USERNAME: muniramarket_e2e_bot
+          TELEGRAM_OIDC_ENABLED: 'true'
+          TELEGRAM_OIDC_CLIENT_ID: ${{ env.E2E_OIDC_CLIENT_ID }}
+          TELEGRAM_OIDC_CLIENT_SECRET: ${{ env.E2E_OIDC_CLIENT_SECRET }}
+          TELEGRAM_OIDC_ISSUER: ${{ env.E2E_OIDC_ISSUER }}
+          WEB_PUBLIC_ORIGIN: http://localhost:3000
+          ADMIN_PUBLIC_ORIGIN: http://localhost:3001
         run: |
           nohup uv run uvicorn app.main:create_app --factory --host 127.0.0.1 --port 8000 \
             > "$E2E_LOG_DIR/api.log" 2>&1 &
@@ -310,11 +316,22 @@ jobs:
           done
           echo "Admin app did not become ready" >&2
           exit 1
-      - name: Playwright E2E tests (storefront and admin)
+      # Two groups, each within the Core API's 10 logins per minute per IP (fixed windows): the
+      # storefront specs first, then the admin specs (2 logins per OIDC sign-in) once the next
+      # minute window has started. See apps/web/playwright.config.ts.
+      - name: Playwright E2E tests (storefront)
         env:
           E2E_BASE_URL: http://localhost:3000
           E2E_ADMIN_URL: http://localhost:3001
+          E2E_SKIP_ADMIN: '1'
         run: pnpm --filter @muniramarket/web test:e2e
+      - name: Playwright E2E tests (admin)
+        env:
+          E2E_BASE_URL: http://localhost:3000
+          E2E_ADMIN_URL: http://localhost:3001
+        run: |
+          sleep $((61 - $(date +%s) % 60))
+          pnpm --filter @muniramarket/web test:e2e admin-
       - name: Upload Playwright report and server logs
         if: failure()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2

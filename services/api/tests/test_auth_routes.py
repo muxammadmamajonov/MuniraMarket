@@ -2,18 +2,17 @@
 
 import dataclasses
 from collections.abc import AsyncIterator
-from typing import Any, cast
+from typing import Any
 
 import httpx
 import pytest
 from fastapi import FastAPI
-from redis.asyncio import Redis
 
 from app.api.auth_deps import CsrfProtectedUserDep, CurrentUserDep
-from app.security.rate_limit import InMemoryRateLimiter, RedisRateLimiter
+from app.security.rate_limit import InMemoryRateLimiter, PostgresRateLimiter
 from app.security.session import (
     InMemorySessionStore,
-    RedisSessionStore,
+    PostgresSessionStore,
     SessionData,
     SwapResult,
     hash_token,
@@ -26,9 +25,9 @@ from tests.auth_helpers import (
     SECURE_COOKIE,
     SESSION_PATH,
     TELEGRAM_USER_ID,
-    FakeRedis,
     build_app,
     cookie_header,
+    failing_factory,
     http_client,
     init_data,
     login,
@@ -504,20 +503,18 @@ async def test_logout_rejects_untrusted_origin(api: httpx.AsyncClient) -> None:
 # --- config ------------------------------------------------------------------------------------
 
 
-async def test_auth_config_defaults_to_widget_disabled(api: httpx.AsyncClient) -> None:
+async def test_auth_config_defaults_to_oidc_disabled(api: httpx.AsyncClient) -> None:
     response = await api.get(CONFIG_PATH)
     assert response.status_code == 200
-    assert response.json() == {"telegram_login_widget": {"enabled": False, "bot_username": None}}
+    assert response.json() == {"telegram_oidc": {"enabled": False}}
     assert response.headers["cache-control"] == "no-store"
 
 
-# --- fail closed on Redis errors ---------------------------------------------------------------
+# --- fail closed on security-store (PostgreSQL) errors ---------------------------------------
 
 
 async def test_session_store_outage_is_503(clock: FakeClock, users: FakeUserRepository) -> None:
-    app = build_app(
-        clock, users, session_store=RedisSessionStore(cast("Redis", FakeRedis(fail=True)))
-    )
+    app = build_app(clock, users, session_store=PostgresSessionStore(failing_factory(), clock))
     async with http_client(app) as http:
         login_response = await http.post(INIT_DATA_PATH, json={"init_data": init_data(clock)})
         lookup = await http.get(SESSION_PATH, headers=cookie_header("A" * 43))
@@ -529,30 +526,13 @@ async def test_session_store_outage_is_503(clock: FakeClock, users: FakeUserRepo
 
 
 async def test_rate_limiter_outage_is_503(clock: FakeClock, users: FakeUserRepository) -> None:
-    limiter = RedisRateLimiter(cast("Redis", FakeRedis(fail=True)), clock)
+    limiter = PostgresRateLimiter(failing_factory(), clock)
     app = build_app(clock, users, rate_limiter=limiter)
     async with http_client(app) as http:
         response = await http.post(INIT_DATA_PATH, json={"init_data": init_data(clock)})
     assert response.status_code == 503
     assert response.json()["error"]["code"] == "service_unavailable"
     assert users.upserts == []
-
-
-async def test_redis_backed_app_end_to_end(clock: FakeClock, users: FakeUserRepository) -> None:
-    fake = FakeRedis()
-    app = build_app(
-        clock,
-        users,
-        session_store=RedisSessionStore(cast("Redis", fake)),
-        rate_limiter=RedisRateLimiter(cast("Redis", fake), clock),
-    )
-    async with http_client(app) as http:
-        session = await login(http, clock)
-        response = await http.get(SESSION_PATH, headers=cookie_header(session.token))
-    assert response.status_code == 200
-    assert f"mm:sess:{hash_token(session.token)}" in fake.data
-    assert f"mm:rl:auth_login:127.0.0.1:{int(NOW)}" in fake.data
-    assert all(session.token not in str(command) for command in fake.commands)
 
 
 def test_in_memory_defaults_in_test_env(auth_app: FastAPI) -> None:

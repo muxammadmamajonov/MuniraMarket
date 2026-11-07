@@ -1,7 +1,7 @@
 import { Suspense } from 'react';
 import { LoginCallback } from '@/components/login-callback';
 
-/** Landing page of the Telegram Login Widget redirect (`data-auth-url`). Never indexed. */
+/** Where the API sends the browser when Telegram sign-in did not complete. Never indexed. */
 export const metadata = { robots: { index: false, follow: false } };
 
 export default function TelegramLoginCallbackPage() {

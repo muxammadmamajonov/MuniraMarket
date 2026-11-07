@@ -3,6 +3,8 @@
 - Status: accepted
 - Supersedes: [0005](0005-order-notifications-delivery.md)
 
+> **Trigger decided** in [ADR 0015](0015-staff-group-and-notification-drain.md): a Cloudflare Cron Trigger runs `drainOrderNotifications()` every minute; staff group alerts use the same outbox.
+
 ## Context
 
 Customers must hear about every order status change in Telegram. Status changes happen in Core

@@ -13,6 +13,10 @@ const securityHeaders = [
   { key: 'X-Content-Type-Options', value: 'nosniff' },
   { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
   { key: 'Permissions-Policy', value: 'camera=(), microphone=(), payment=(), geolocation=(self)' },
+  // Isolates the browsing context group from cross-origin openers. `same-origin-allow-popups`,
+  // not `same-origin`: it is the value Telegram documents as compatible with its sign-in, and it
+  // keeps links we open in a new window (e.g. Telegram, maps) working.
+  { key: 'Cross-Origin-Opener-Policy', value: 'same-origin-allow-popups' },
 ];
 
 const nextConfig: NextConfig = {

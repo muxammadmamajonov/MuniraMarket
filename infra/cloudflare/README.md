@@ -13,7 +13,11 @@ test. Design: [ADR 0011](../../architecture/0011-cloudflare-neon-deployment.md).
 | `muniramarket-api-gateway` | `services/api-gateway` | `MM_API_HOSTNAME`   | `CoreApiContainer` → FastAPI container |
 
 Staging names end in `-staging`. Deployed Workers have **no `workers.dev` and no preview URLs**:
-every extra origin would need to be in `CSRF_TRUSTED_ORIGINS` and the Login Widget domain.
+every extra origin would need to be in `CSRF_TRUSTED_ORIGINS` and registered as a Telegram OIDC
+redirect URL. Production hostnames are fixed: storefront `muniramarket.uz`, admin
+`admin.muniramarket.uz` (their `/api/v1/auth/telegram/oidc/callback` URLs are registered with
+BotFather); `munira-market.uz` is not canonical. The API hostname serves only health checks and the
+service-signed Telegram routes.
 Logs and traces are enabled everywhere, query strings are redacted, production traces are sampled
 at 10%.
 
@@ -42,31 +46,28 @@ validate before every deploy:
 node infra/cloudflare/scripts/validate-deploy-env.mts --mode staging
 ```
 
-| Variable                         | Used by       | Notes                                                                                       |
-| -------------------------------- | ------------- | ------------------------------------------------------------------------------------------- |
-| `MM_WEB_HOSTNAME`                | web           | storefront + Mini App host                                                                  |
-| `MM_ADMIN_HOSTNAME`              | admin         | separate origin from the storefront                                                         |
-| `MM_API_HOSTNAME`                | gateway       | Telegram Serverless and health checks only                                                  |
-| `MM_TELEGRAM_BOT_ID`             | gateway → API | numeric bot id                                                                              |
-| `MM_TELEGRAM_BOT_USERNAME`       | gateway → API | customer Login Widget and Mini App bot username                                             |
-| `MM_ADMIN_TELEGRAM_BOT_USERNAME` | gateway → API | admin Login Widget bot username; it has a separate BotFather domain                         |
-| `MM_CSRF_TRUSTED_ORIGINS`        | gateway → API | exactly `https://<web>,https://<admin>`                                                     |
-| `CORE_API_IMAGE`                 | gateway       | `registry.cloudflare.com/<account>/muniramarket-core-api@sha256:…` (required in production) |
-| `APP_RELEASE`                    | gateway → API | the image tag, e.g. `sha-0123456789ab` (required in production)                             |
+| Variable                  | Used by       | Notes                                                                                       |
+| ------------------------- | ------------- | ------------------------------------------------------------------------------------------- |
+| `MM_WEB_HOSTNAME`         | web           | storefront + Mini App host                                                                  |
+| `MM_ADMIN_HOSTNAME`       | admin         | separate origin from the storefront                                                         |
+| `MM_API_HOSTNAME`         | gateway       | Telegram Serverless and health checks only                                                  |
+| `MM_TELEGRAM_BOT_ID`      | gateway → API | numeric id of the one bot (production: `9038491407`, also the OIDC client id)               |
+| `MM_CSRF_TRUSTED_ORIGINS` | gateway → API | exactly `https://<web>,https://<admin>`                                                     |
+| `CORE_API_IMAGE`          | gateway       | `registry.cloudflare.com/<account>/muniramarket-core-api@sha256:…` (required in production) |
+| `APP_RELEASE`             | gateway → API | the image tag, e.g. `sha-0123456789ab` (required in production)                             |
 
 ## Secrets: where each one lives
 
-| Secret                                          | Stored as                                                                                               | Rotation                                                     |
-| ----------------------------------------------- | ------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------ |
-| `DATABASE_URL` (`mm_app`, `?ssl=verify-full`)   | Worker secret on `muniramarket-api-gateway[-staging]`                                                   | new password in Neon (`ALTER ROLE`), update secret, redeploy |
-| `REDIS_URL` (`rediss://`)                       | Worker secret on the gateway                                                                            | provider ACL password, update secret                         |
-| `SERVICE_AUTH_KEYS`                             | Worker secret on the gateway **and** Telegram Serverless config                                         | two keys at once (ADR 0003), then drop old                   |
-| `TELEGRAM_BOT_TOKEN`                            | Worker secret on the gateway; Telegram Serverless platform                                              | BotFather `/revoke`, update both                             |
-| `ADMIN_TELEGRAM_BOT_TOKEN`                      | Worker secret on the gateway only; verifies admin Login Widget payloads                                 | BotFather `/revoke`, update gateway                          |
-| `MIGRATION_DATABASE_URL` (`mm_migrator`)        | GitHub Environment secret (`staging`/`production`, required reviewers) or the operator's secret manager | per migration window                                         |
-| `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID` | GitHub Environment secrets, scoped tokens only                                                          | per token policy                                             |
-| R2 credentials                                  | none: R2 is used through a Worker binding (r2/README.md)                                                | n/a                                                          |
-| `YANDEX_MAPS_API_KEY`                           | Worker secret on `muniramarket-web[-staging]`; it is intentionally visible to the browser at runtime    | create/restrict a replacement key in Yandex                  |
+| Secret                                          | Stored as                                                                                                          | Rotation                                                     |
+| ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------ |
+| `DATABASE_URL` (`mm_app`, `?ssl=verify-full`)   | Worker secret on `muniramarket-api-gateway[-staging]`                                                              | new password in Neon (`ALTER ROLE`), update secret, redeploy |
+| `SERVICE_AUTH_KEYS`                             | Worker secret on the gateway (incl. the `scheduler` entry, ADR 0015); Telegram Serverless config has its own entry | two keys at once (ADR 0003), then drop old                   |
+| `TELEGRAM_BOT_TOKEN`                            | Worker secret on the gateway; Telegram Serverless platform                                                         | BotFather `/revoke`, update both                             |
+| `TELEGRAM_OIDC_CLIENT_SECRET`                   | Worker secret on the gateway only; server-side OIDC code exchange (ADR 0014)                                       | BotFather → Login Widget, regenerate, update gateway         |
+| `MIGRATION_DATABASE_URL` (`mm_migrator`)        | GitHub Environment secret (`staging`/`production`, required reviewers) or the operator's secret manager            | per migration window                                         |
+| `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID` | GitHub Environment secrets, scoped tokens only                                                                     | per token policy                                             |
+| R2 credentials                                  | none: R2 is used through a Worker binding (r2/README.md)                                                           | n/a                                                          |
+| `YANDEX_MAPS_API_KEY`                           | Worker secret on `muniramarket-web[-staging]`; it is intentionally visible to the browser at runtime               | create/restrict a replacement key in Yandex                  |
 
 The admin Worker holds **no secrets**. The map key is bound only to the web Worker, and all other
 secrets are gateway-only. Set Worker secrets per environment with Wrangler (cf does not yet set
@@ -107,9 +108,19 @@ Production is deployed from the same commit and the same image digest that passe
   replace instances with `SIGTERM` (graceful) and a rolling start.
 - **Database**: never roll back a migration in production by hand. Prefer a forward fix. If data
   is damaged, restore from the pre-migration restore point (neon/README.md) and redeploy the
-  matching image. Rollback does not restore data in R2, Redis or Neon by itself.
-- Redis holds only sessions, rate-limit windows and nonces: flushing it signs everyone out and is
-  otherwise safe.
+  matching image. Rollback does not restore data in R2 or Neon by itself.
+- Sessions, rate-limit windows, nonces and OIDC states are rows in Neon (ADR 0013); a database
+  restore therefore also restores (or drops) sign-ins. Deleting `auth_sessions` signs everyone out
+  and is otherwise safe.
+
+## Scheduler (Cron Trigger)
+
+The gateway has a Cron Trigger `* * * * *` in deployed modes (ADR 0015). Each tick drains the
+notification outbox (customer messages and staff group alerts) through the internal `scheduler`
+entrance and the Bot API; every 15th minute it also deletes expired security state. It signs with
+the `SERVICE_AUTH_KEYS` entry named by `SCHEDULER_SERVICE_KEY_ID` (default `scheduler`), so that
+entry must exist in the gateway secret (the Core API reads the same secret). Without it every tick
+logs `signing key unavailable` and nothing is delivered.
 
 ## Client IP and proxy trust
 

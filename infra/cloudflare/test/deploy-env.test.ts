@@ -8,8 +8,6 @@ const staging = {
   MM_ADMIN_HOSTNAME: 'admin.staging.example.test',
   MM_API_HOSTNAME: 'api.staging.example.test',
   MM_TELEGRAM_BOT_ID: '1234567890',
-  MM_TELEGRAM_BOT_USERNAME: 'muniramarket_staging_bot',
-  MM_ADMIN_TELEGRAM_BOT_USERNAME: 'muniramarket_admin_bot',
   MM_CSRF_TRUSTED_ORIGINS: 'https://shop.staging.example.test,https://admin.staging.example.test',
 };
 const DIGEST = `registry.cloudflare.com/fake-account/muniramarket-core-api@sha256:${'a'.repeat(64)}`;
@@ -28,8 +26,6 @@ describe('validateDeployEnv', () => {
       'MM_ADMIN_HOSTNAME',
       'MM_API_HOSTNAME',
       'MM_TELEGRAM_BOT_ID',
-      'MM_TELEGRAM_BOT_USERNAME',
-      'MM_ADMIN_TELEGRAM_BOT_USERNAME',
       'MM_CSRF_TRUSTED_ORIGINS',
     ]);
   });
@@ -78,6 +74,33 @@ describe('validateDeployEnv', () => {
     expect(
       variables({ ...staging, CORE_API_IMAGE: DIGEST, APP_RELEASE: 'sha-0123abc' }, 'staging'),
     ).toEqual([]);
+  });
+
+  it('pins production to the registered OIDC hostnames and the single bot', () => {
+    // The real production values are public facts (domains, bot id), not secrets.
+    const production = {
+      MM_WEB_HOSTNAME: 'muniramarket.uz',
+      MM_ADMIN_HOSTNAME: 'admin.muniramarket.uz',
+      MM_API_HOSTNAME: 'api.muniramarket.uz',
+      MM_TELEGRAM_BOT_ID: '9038491407',
+      MM_CSRF_TRUSTED_ORIGINS: 'https://muniramarket.uz,https://admin.muniramarket.uz',
+      CORE_API_IMAGE: DIGEST,
+      APP_RELEASE: 'sha-0123abc',
+    };
+    expect(validateDeployEnv('production', production)).toEqual([]);
+    expect(variables({ ...production, MM_TELEGRAM_BOT_ID: '1234567890' }, 'production')).toEqual([
+      'MM_TELEGRAM_BOT_ID',
+    ]);
+    expect(
+      variables(
+        {
+          ...production,
+          MM_WEB_HOSTNAME: 'munira-market.uz',
+          MM_CSRF_TRUSTED_ORIGINS: 'https://munira-market.uz,https://admin.muniramarket.uz',
+        },
+        'production',
+      ),
+    ).toEqual(['MM_WEB_HOSTNAME']);
   });
 });
 

@@ -19,8 +19,6 @@ LogLevel = Literal["DEBUG", "INFO", "WARNING", "ERROR"]
 DEPLOYED_ENVS: Final = ("staging", "production")
 
 _KEY_ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,32}$")
-# Telegram bot usernames: 5-32 characters, letters, digits and underscores.
-_BOT_USERNAME_RE = re.compile(r"^[A-Za-z0-9_]{5,32}$")
 MIN_SERVICE_SECRET_BYTES = 32
 _ASYNCPG_SCHEME = "postgresql+asyncpg"
 _DEFAULT_PORTS = {"http": 80, "https": 443}
@@ -34,6 +32,8 @@ DEPLOYED_SSL_MODE: Final = "verify-full"
 _RELEASE_RE = re.compile(r"^[A-Za-z0-9._-]{1,64}$")
 
 DAY_SECONDS = 24 * 60 * 60
+# https://oauth.telegram.org/.well-known/openid-configuration (ADR 0014).
+TELEGRAM_OIDC_ISSUER: Final = "https://oauth.telegram.org"
 # A rotated-away token stays usable this long at most; it only has to cover in-flight requests.
 MAX_ROTATION_GRACE_SECONDS = 300
 
@@ -96,7 +96,6 @@ class Settings(BaseSettings):
 
     app_env: AppEnv  # required: no default, so a missing APP_ENV fails fast
     database_url: SecretStr
-    redis_url: SecretStr
     cors_allowed_origins: Annotated[list[str], NoDecode] = []
     service_auth_keys: SecretStr
     telegram_bot_id: int
@@ -117,16 +116,20 @@ class Settings(BaseSettings):
     # ``scheme://host[:port]``.
     csrf_trusted_origins: Annotated[list[str], NoDecode] = []
 
-    # Telegram Login Widget for the website. Off by default; needs the bot token and username.
-    telegram_login_widget_enabled: bool = False
-    telegram_bot_username: str | None = None
-    # The admin is deliberately a separate browser origin. In deployed environments it has its
-    # own Login Widget bot, so a customer Mini App credential can never become an admin credential.
-    admin_telegram_bot_token: SecretStr | None = None
-    admin_telegram_bot_username: str | None = None
-    # The widget's redirect flow posts the signed payload right after the user authorises, so
-    # a short window is enough and limits how long a leaked payload can be replayed.
-    telegram_login_max_age_seconds: int = 600
+    # Telegram OIDC browser sign-in (ADR 0014): one bot, two registered redirect URIs (storefront
+    # and admin origins). Off by default. The client secret is a gateway Worker secret only; it is
+    # used for the server-side code exchange and never reaches a browser.
+    telegram_oidc_enabled: bool = False
+    telegram_oidc_client_id: int | None = None
+    telegram_oidc_client_secret: SecretStr | None = None
+    # Overridable in development/test only (the E2E run points it at a local fake provider).
+    telegram_oidc_issuer: str = TELEGRAM_OIDC_ISSUER
+    # Public browser origins whose ``/api/v1/auth/telegram/oidc/callback`` is registered with
+    # BotFather. Each must also be a CSRF trusted origin.
+    web_public_origin: str | None = None
+    admin_public_origin: str | None = None
+    # How long a started login may take before its state is refused.
+    telegram_oidc_state_ttl_seconds: int = 600
 
     # Peers whose X-Forwarded-For uvicorn trusts (``--proxy-headers``): the web proxy only, as
     # comma-separated IPs/CIDRs. uvicorn reads this same FORWARDED_ALLOW_IPS variable; the API
@@ -196,26 +199,37 @@ class Settings(BaseSettings):
                 ) from None
         return value
 
-    @field_validator("telegram_bot_username", "admin_telegram_bot_username", mode="before")
+    @field_validator("web_public_origin", "admin_public_origin", mode="before")
     @classmethod
-    def _strip_bot_username(cls, value: object) -> object:
-        if isinstance(value, str):
-            stripped = value.strip().removeprefix("@")
-            return stripped or None
+    def _blank_origin_is_none(cls, value: object) -> object:
+        if isinstance(value, str) and not value.strip():
+            return None
         return value
 
-    @field_validator("telegram_bot_username", "admin_telegram_bot_username")
+    @field_validator("web_public_origin", "admin_public_origin")
     @classmethod
-    def _check_bot_username(cls, value: str | None) -> str | None:
-        if value is not None and not _BOT_USERNAME_RE.fullmatch(value):
-            raise ValueError("TELEGRAM_BOT_USERNAME must be 5-32 letters, digits or underscores")
-        return value
+    def _normalize_public_origin(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        parts = urlsplit(value)
+        origin = normalize_origin(value)
+        if origin is None or parts.path not in ("", "/") or parts.query or parts.fragment:
+            raise ValueError("WEB_PUBLIC_ORIGIN/ADMIN_PUBLIC_ORIGIN must look like scheme://host")
+        return origin
+
+    @field_validator("telegram_oidc_issuer")
+    @classmethod
+    def _normalize_issuer(cls, value: str) -> str:
+        origin = normalize_origin(value)
+        if origin is None or urlsplit(value).path not in ("", "/"):
+            raise ValueError("TELEGRAM_OIDC_ISSUER must be an origin (scheme://host[:port])")
+        return origin
 
     @field_validator(
         "session_idle_ttl_seconds",
         "session_absolute_ttl_seconds",
         "session_rotate_after_seconds",
-        "telegram_login_max_age_seconds",
+        "telegram_oidc_state_ttl_seconds",
     )
     @classmethod
     def _check_positive_durations(cls, value: int) -> int:
@@ -241,13 +255,6 @@ class Settings(BaseSettings):
             raise ValueError("DATABASE_URL is not a valid SQLAlchemy URL") from None
         if url.drivername != _ASYNCPG_SCHEME:
             raise ValueError(f"DATABASE_URL must use the {_ASYNCPG_SCHEME}:// scheme")
-        return value
-
-    @field_validator("redis_url")
-    @classmethod
-    def _check_redis_url(cls, value: SecretStr) -> SecretStr:
-        if not value.get_secret_value().startswith(("redis://", "rediss://", "unix://")):
-            raise ValueError("REDIS_URL must start with redis://, rediss:// or unix://")
         return value
 
     @field_validator("service_auth_keys")
@@ -320,13 +327,13 @@ class Settings(BaseSettings):
         if self.app_env in ("staging", "production") and self.telegram_bot_id <= 0:
             raise ValueError("TELEGRAM_BOT_ID must be a positive integer outside development")
         self._check_session_rules()
-        self._check_login_widget_rules()
+        self._check_oidc_rules()
         self._check_proxy_rules()
         self._check_transport_security()
         return self
 
     def _check_transport_security(self) -> None:
-        """Deployed environments only talk to PostgreSQL and Redis over TLS (fail closed)."""
+        """Deployed environments only talk to PostgreSQL over TLS (fail closed)."""
         url = make_url(self.database_url.get_secret_value())
         if "sslmode" in url.query:
             raise ValueError(
@@ -336,8 +343,6 @@ class Settings(BaseSettings):
             return
         if url.query.get("ssl") != DEPLOYED_SSL_MODE:
             raise ValueError("DATABASE_URL must set ssl=verify-full outside development")
-        if not self.redis_url.get_secret_value().startswith("rediss://"):
-            raise ValueError("REDIS_URL must use rediss:// (TLS) outside development")
         if not self.csrf_trusted_origins:
             raise ValueError("CSRF_TRUSTED_ORIGINS must list the web and admin origins")
         if self.log_format != "json":
@@ -374,21 +379,36 @@ class Settings(BaseSettings):
                 "SESSION_ROTATE_AFTER_SECONDS must not exceed SESSION_ABSOLUTE_TTL_SECONDS"
             )
 
-    def _check_login_widget_rules(self) -> None:
-        if not self.telegram_login_widget_enabled:
+    def _check_oidc_rules(self) -> None:
+        deployed = self.app_env in DEPLOYED_ENVS
+        if deployed and self.telegram_oidc_issuer != TELEGRAM_OIDC_ISSUER:
+            raise ValueError("TELEGRAM_OIDC_ISSUER can only be changed in development and test")
+        if not self.telegram_oidc_enabled:
             return
-        if self.telegram_bot_token is None or self.telegram_bot_username is None:
+        if self.telegram_oidc_client_id is None or self.telegram_oidc_client_id <= 0:
+            raise ValueError("TELEGRAM_OIDC_ENABLED=true requires TELEGRAM_OIDC_CLIENT_ID")
+        secret = self.telegram_oidc_client_secret
+        if secret is None or not secret.get_secret_value().strip():
+            raise ValueError("TELEGRAM_OIDC_ENABLED=true requires TELEGRAM_OIDC_CLIENT_SECRET")
+        if self.web_public_origin is None or self.admin_public_origin is None:
             raise ValueError(
-                "TELEGRAM_LOGIN_WIDGET_ENABLED=true requires TELEGRAM_BOT_TOKEN and "
-                "TELEGRAM_BOT_USERNAME"
+                "TELEGRAM_OIDC_ENABLED=true requires WEB_PUBLIC_ORIGIN and ADMIN_PUBLIC_ORIGIN"
             )
-        if self.app_env in DEPLOYED_ENVS and (
-            self.admin_telegram_bot_token is None or self.admin_telegram_bot_username is None
-        ):
-            raise ValueError(
-                "TELEGRAM_LOGIN_WIDGET_ENABLED=true requires ADMIN_TELEGRAM_BOT_TOKEN and "
-                "ADMIN_TELEGRAM_BOT_USERNAME outside development and test"
-            )
+        if self.web_public_origin == self.admin_public_origin:
+            raise ValueError("WEB_PUBLIC_ORIGIN and ADMIN_PUBLIC_ORIGIN must differ")
+        for origin in (self.web_public_origin, self.admin_public_origin):
+            if origin not in self.csrf_trusted_origins:
+                raise ValueError("WEB/ADMIN_PUBLIC_ORIGIN must be listed in CSRF_TRUSTED_ORIGINS")
+            if deployed and not origin.startswith("https://"):
+                raise ValueError("WEB/ADMIN_PUBLIC_ORIGIN must be https:// outside development")
+
+    def public_origin(self, entrance: str) -> str | None:
+        """The browser origin of a gateway entrance (``storefront`` or ``admin``)."""
+        if entrance == "admin":
+            return self.admin_public_origin
+        if entrance == "storefront":
+            return self.web_public_origin
+        return None
 
     @property
     def session_cookie_name(self) -> str:

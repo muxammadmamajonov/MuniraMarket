@@ -16,32 +16,22 @@ class SessionResponse(BaseModel):
     csrf_token: str
 
 
-class LoginWidgetConfig(BaseModel):
+class OidcConfig(BaseModel):
     enabled: bool
-    bot_username: str | None
 
 
 class AuthConfigResponse(BaseModel):
-    telegram_login_widget: LoginWidgetConfig
+    telegram_oidc: OidcConfig
 
 
-class LoginWidgetRequest(BaseModel):
-    """Fields of the Telegram Login Widget callback, passed through unchanged.
-
-    Unknown fields are rejected: they would otherwise be silently included in (or excluded from)
-    the signed data-check-string.
-    """
-
+class OidcStartRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    id: Annotated[int, Field(gt=0)]
-    first_name: Annotated[str, Field(min_length=1, max_length=255)]
-    last_name: Annotated[str | None, Field(max_length=255)] = None
-    username: Annotated[str | None, Field(max_length=64)] = None
-    photo_url: Annotated[str | None, Field(max_length=2048)] = None
-    auth_date: Annotated[int, Field(gt=0)]
-    hash: Annotated[str, Field(min_length=64, max_length=64)]
+    # Same-origin path to land on after signing in (e.g. ``/uz/orders``). Anything else is
+    # replaced by ``/`` on the server.
+    return_to: Annotated[str | None, Field(max_length=512)] = None
 
-    def signed_fields(self) -> dict[str, str]:
-        """The fields as Telegram signed them (absent optional fields are omitted)."""
-        return {key: str(value) for key, value in self.model_dump().items() if value is not None}
+
+class OidcStartResponse(BaseModel):
+    # Navigate the browser here (top-level navigation, not a popup or fetch).
+    authorization_url: str

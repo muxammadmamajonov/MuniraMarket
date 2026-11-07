@@ -31,8 +31,11 @@ async def test_health_needs_no_database(client: httpx.AsyncClient) -> None:
 
 
 class _OkSession:
+    def __init__(self) -> None:
+        self.statements: list[str] = []
+
     async def execute(self, statement: object) -> None:
-        assert str(statement) == "SELECT 1"
+        self.statements.append(str(statement))
 
 
 class _BrokenSession:
@@ -41,13 +44,23 @@ class _BrokenSession:
 
 
 async def test_ready_ok(app: FastAPI, client: httpx.AsyncClient) -> None:
+    ok = _OkSession()
+
     async def session() -> _OkSession:
-        return _OkSession()
+        return ok
 
     app.dependency_overrides[get_session] = session
     response = await client.get("/api/v1/health/ready")
     assert response.status_code == 200
     assert response.json() == {"status": "ok"}
+    # The database plus every security-state table (ADR 0013); nothing else (no Redis).
+    assert ok.statements == [
+        "SELECT 1",
+        "SELECT 1 FROM auth_sessions LIMIT 0",
+        "SELECT 1 FROM rate_limit_counters LIMIT 0",
+        "SELECT 1 FROM service_request_nonces LIMIT 0",
+        "SELECT 1 FROM oidc_login_states LIMIT 0",
+    ]
 
 
 async def test_ready_reports_503_without_leaking_details(

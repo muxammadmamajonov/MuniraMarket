@@ -1,4 +1,10 @@
-import type { OrderStatus, PaymentMethod, ProductSort, ProductUnit } from '@muniramarket/contracts';
+import type {
+  OrderStatus,
+  PaymentMethod,
+  ProductSort,
+  ProductUnit,
+  TelegramOidcFailureStatus,
+} from '@muniramarket/contracts';
 
 /**
  * Noun forms by CLDR plural category. Russian needs `one` / `few` / `many`; Uzbek uses the same
@@ -432,15 +438,25 @@ export interface Dictionary {
     miniAppFailed: string;
     retry: string;
     loginHeading: string;
-    loginWidgetHint: string;
+    loginHint: string;
+    /** The "Sign in with Telegram" button. */
+    loginButton: string;
+    /** Button label while the sign-in is starting (before the browser leaves for Telegram). */
+    loginStarting: string;
+    /** Inline error: the sign-in could not be started (generic). */
+    loginStartFailed: string;
+    /** Inline error: Telegram sign-in is turned off for this site. */
+    loginDisabled: string;
     accountBlocked: string;
     rateLimited: string;
     serviceUnavailable: string;
     logout: string;
     /** `{name}` */
     signedInAs: string;
-    callbackSigningIn: string;
-    callbackFailed: string;
+    /** `/<locale>/auth/telegram`: heading when Telegram sign-in did not complete. */
+    callbackTitle: string;
+    /** Message per `?status=` of the sign-in failure page (unknown values use `failed`). */
+    callbackStatus: Record<TelegramOidcFailureStatus, string>;
     callbackBack: string;
   };
   units: Record<ProductUnit, string>;

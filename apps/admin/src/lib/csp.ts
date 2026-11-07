@@ -2,10 +2,11 @@
  * Content Security Policy for HTML pages, built per request in `src/proxy.ts`.
  *
  * Scripts are restricted to same-origin files plus the per-request nonce (Next applies it to its
- * own inline/bootstrap scripts and to scripts it injects) and `'strict-dynamic'`, so a script that
- * a trusted script loads (the Telegram Login Widget) is allowed without a host allow-list.
- * `https://telegram.org` is listed for browsers that ignore `'strict-dynamic'`. There is no
- * `'unsafe-inline'` in `script-src`.
+ * own inline/bootstrap scripts and to scripts it injects) and `'strict-dynamic'`. Nothing is
+ * loaded from Telegram: "Sign in with Telegram" is an OIDC redirect run by the Core API (a
+ * top-level `location.assign`, which `form-action` does not govern), so there is no Telegram host
+ * in `script-src` and nothing may be framed (`frame-src 'none'`). There is no `'unsafe-inline'` in
+ * `script-src`.
  *
  * Unlike the storefront, the admin is never embedded (not even by Telegram Web), so
  * `frame-ancestors` is `'none'`; `next.config.ts` also sends `X-Frame-Options: DENY`.
@@ -35,7 +36,6 @@ export function buildContentSecurityPolicy({ nonce, isDevelopment = false }: Csp
     "'self'",
     `'nonce-${nonce}'`,
     "'strict-dynamic'",
-    'https://telegram.org',
     ...(isDevelopment ? ["'unsafe-eval'"] : []),
   ];
 
@@ -43,15 +43,13 @@ export function buildContentSecurityPolicy({ nonce, isDevelopment = false }: Csp
     ['default-src', ["'self'"]],
     ['script-src', scriptSrc],
     // Inline styles are allowed because a nonce cannot cover `style=""` attributes (React `style`
-    // props, and the Telegram widget sets inline styles on its iframe). Style injection can't run
-    // script, and scripts stay locked down above.
+    // props). Style injection can't run script, and scripts stay locked down above.
     ['style-src', ["'self'", "'unsafe-inline'"]],
     ['img-src', ["'self'", 'data:']],
     ['font-src', ["'self'"]],
     // The browser only talks to this origin: the API is reached through the same-origin proxy.
     ['connect-src', ["'self'"]],
-    // Telegram Login Widget iframe.
-    ['frame-src', ['https://oauth.telegram.org']],
+    ['frame-src', ["'none'"]],
     ['frame-ancestors', ["'none'"]],
     ['base-uri', ["'none'"]],
     ['form-action', ["'self'"]],

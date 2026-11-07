@@ -57,14 +57,69 @@ describe('isAllowed', () => {
     expect(isAllowed('storefront', 'GET', '/api/v1/%61dmin/orders')).toBe(false);
   });
 
-  it('gives the admin only back-office and Login Widget routes', () => {
+  it('never exposes the maintenance routes publicly or to the apps', () => {
+    for (const entrance of ['public', 'storefront', 'admin'] as const) {
+      expect(isAllowed(entrance, 'POST', '/api/v1/internal/maintenance/cleanup')).toBe(false);
+    }
+  });
+
+  it('lets both apps reach the Telegram OIDC sign-in routes', () => {
+    for (const entrance of ['storefront', 'admin'] as const) {
+      expect(isAllowed(entrance, 'POST', '/api/v1/auth/telegram/oidc/start')).toBe(true);
+      expect(isAllowed(entrance, 'GET', '/api/v1/auth/telegram/oidc/callback')).toBe(true);
+    }
+    expect(isAllowed('public', 'POST', '/api/v1/auth/telegram/oidc/start')).toBe(false);
+    expect(isAllowed('public', 'GET', '/api/v1/auth/telegram/oidc/callback')).toBe(false);
+  });
+
+  it('gives the admin only back-office and OIDC sign-in routes', () => {
     expect(isAllowed('admin', 'GET', '/api/v1/admin/orders')).toBe(true);
-    expect(isAllowed('admin', 'POST', '/api/v1/auth/telegram/login-widget')).toBe(true);
+    expect(isAllowed('admin', 'POST', '/api/v1/auth/telegram/login-widget')).toBe(false);
+    expect(isAllowed('admin', 'GET', '/api/v1/auth/telegram/oidc/other')).toBe(false);
     expect(isAllowed('admin', 'GET', '/api/v1/auth/session')).toBe(true);
     expect(isAllowed('admin', 'POST', '/api/v1/auth/telegram/init-data')).toBe(false);
     expect(isAllowed('admin', 'GET', '/api/v1/cart')).toBe(false);
     expect(isAllowed('admin', 'POST', '/api/v1/internal/telegram/notifications/claim')).toBe(false);
     expect(isAllowed('admin', 'GET', '/api/v1/Admin/orders')).toBe(false);
+  });
+});
+
+describe('isAllowed: scheduler entrance', () => {
+  const ID = '0b6f3f6e-6a8c-4a47-9d0e-3b1f2c4d5e6f';
+
+  it('allows exactly claim, result and cleanup, POST only', () => {
+    expect(isAllowed('scheduler', 'POST', '/api/v1/internal/telegram/notifications/claim')).toBe(
+      true,
+    );
+    expect(
+      isAllowed('scheduler', 'POST', `/api/v1/internal/telegram/notifications/${ID}/result`),
+    ).toBe(true);
+    expect(isAllowed('scheduler', 'POST', '/api/v1/internal/maintenance/cleanup')).toBe(true);
+    expect(isAllowed('scheduler', 'GET', '/api/v1/internal/telegram/notifications/claim')).toBe(
+      false,
+    );
+    expect(isAllowed('scheduler', 'GET', '/api/v1/internal/maintenance/cleanup')).toBe(false);
+  });
+
+  it.each([
+    '/api/v1/health',
+    '/api/v1/health/ready',
+    '/api/v1/internal/telegram/session',
+    '/api/v1/internal/telegram/staff-chat/connect',
+    '/api/v1/internal/telegram/notifications/not-a-uuid/result',
+    `/api/v1/internal/telegram/notifications/${ID}`,
+    `/api/v1/internal/telegram/notifications/${ID}/result/x`,
+    '/api/v1/internal/maintenance/cleanup/x',
+    '/api/v1/internal/maintenance',
+    '/api/v1/admin/orders',
+    '/api/v1/orders',
+    '/api/v1/internal/%6daintenance/cleanup/..',
+  ])('refuses POST %s', (path) => {
+    expect(isAllowed('scheduler', 'POST', path)).toBe(false);
+  });
+
+  it('refuses GET on the health checks too', () => {
+    expect(isAllowed('scheduler', 'GET', '/api/v1/health')).toBe(false);
   });
 });
 
@@ -139,6 +194,50 @@ describe('upstreamHeaders', () => {
     expect(headers.get('x-forwarded-for')).toBeNull();
     expect(headers.get('idempotency-key')).toBeNull();
     expect(headers.get('x-mm-entrance')).toBe('admin');
+  });
+});
+
+describe('upstreamHeaders: scheduler entrance', () => {
+  it('forwards only the signature headers and body type, never a client IP or request id', () => {
+    const headers = upstreamHeaders(
+      new Headers({
+        'content-type': 'application/json',
+        accept: 'application/json',
+        'x-mm-key-id': 'scheduler',
+        'x-mm-timestamp': '1767225600',
+        'x-mm-nonce': 'n0nce-abc123-0001',
+        'x-mm-signature': 'sig',
+        'x-mm-actor': '',
+        'x-mm-entrance': 'admin',
+        'x-request-id': 'req-from-somewhere-01',
+        cookie: 'a=b',
+        'user-agent': 'x',
+        'x-forwarded-for': '6.6.6.6',
+      }),
+      { entrance: 'scheduler', clientIp: '203.0.113.7', fallbackRequestId: 'tick-12345678' },
+    );
+    expect(Object.fromEntries(headers.entries())).toEqual({
+      'content-type': 'application/json',
+      accept: 'application/json',
+      'x-mm-key-id': 'scheduler',
+      'x-mm-timestamp': '1767225600',
+      'x-mm-nonce': 'n0nce-abc123-0001',
+      'x-mm-signature': 'sig',
+      'x-mm-actor': '',
+      'x-mm-entrance': 'scheduler',
+      'x-request-id': 'tick-12345678',
+    });
+  });
+
+  it('always overwrites a caller-sent x-mm-entrance', () => {
+    for (const entrance of ['public', 'storefront', 'admin'] as const) {
+      const headers = upstreamHeaders(new Headers({ 'x-mm-entrance': 'scheduler' }), {
+        entrance,
+        clientIp: null,
+        fallbackRequestId: 'ray-123456789',
+      });
+      expect(headers.get('x-mm-entrance')).toBe(entrance);
+    }
   });
 });
 

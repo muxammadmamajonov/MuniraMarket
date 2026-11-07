@@ -3,7 +3,7 @@
 Usage: ``python -m app.dev.export_openapi <output.json>`` (or ``-`` for stdout).
 
 The settings below are fixed placeholders so the output never depends on the local environment;
-no database, Redis or network connection is opened.
+no database or network connection is opened.
 """
 
 import json
@@ -17,7 +17,6 @@ from app.main import create_app
 _PLACEHOLDER_SETTINGS: dict[str, Any] = {
     "app_env": "test",
     "database_url": "postgresql+asyncpg://openapi:openapi@127.0.0.1:1/openapi",
-    "redis_url": "redis://127.0.0.1:1/0",
     "cors_allowed_origins": [],
     "service_auth_keys": "openapi:openapi-export-placeholder-not-a-secret",
     "telegram_bot_id": 1,

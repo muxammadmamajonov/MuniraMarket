@@ -2,21 +2,24 @@
  * Pure request policy of the Core API gateway: which paths each entrance may reach and which
  * headers reach the container. No Workers APIs here, so it runs under plain Vitest.
  *
- * Three entrances (see README.md):
+ * Four entrances (see README.md):
  *
  * - `public`: the Worker's own hostname, reached from the internet. Only liveness/readiness and
  *   the service-signed Telegram Serverless routes (`/api/v1/internal/telegram/**`, ADR 0003).
  * - `storefront`: the `StorefrontApi` entrypoint, reachable only through the web Worker's service
  *   binding. Everything the storefront proxy forwards, never `admin/**` or `internal/**`.
  * - `admin`: the `AdminApi` entrypoint, reachable only through the admin Worker's service
- *   binding. `admin/**` plus the Login Widget sign-in and session routes, mirroring
+ *   binding. `admin/**` plus the Telegram OIDC sign-in and session routes, mirroring
  *   `apps/admin/src/lib/api/api-proxy.ts`.
+ * - `scheduler`: never reachable from outside. Used only by this Worker's own Cron Trigger
+ *   (`scheduled()` in index.ts) to drain the notification outbox and run housekeeping: exactly
+ *   the claim/result routes and `internal/maintenance/cleanup`, POST only.
  *
  * Each app proxy already enforces its own list; this is the second, independent fence, so a bug
  * in one app cannot widen what reaches the API.
  */
 
-export type Entrance = 'public' | 'storefront' | 'admin';
+export type Entrance = 'public' | 'storefront' | 'admin' | 'scheduler';
 
 export const API_PREFIX = '/api/v1';
 
@@ -24,8 +27,26 @@ const ADMIN_AUTH_ROUTES: ReadonlySet<string> = new Set([
   'auth/config',
   'auth/session',
   'auth/logout',
-  'auth/telegram/login-widget',
+  'auth/telegram/oidc/start',
+  'auth/telegram/oidc/callback',
 ]);
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** The only routes the Cron Trigger calls (signed, empty actor). */
+function isSchedulerRoute(segments: readonly string[]): boolean {
+  const route = segments.join('/');
+  if (route === 'internal/telegram/notifications/claim') return true;
+  if (route === 'internal/maintenance/cleanup') return true;
+  return (
+    segments.length === 5 &&
+    segments[0] === 'internal' &&
+    segments[1] === 'telegram' &&
+    segments[2] === 'notifications' &&
+    UUID.test(segments[3] ?? '') &&
+    segments[4] === 'result'
+  );
+}
 
 const HEALTH_ROUTES: ReadonlySet<string> = new Set(['health', 'health/ready']);
 
@@ -66,6 +87,9 @@ export function isAllowed(entrance: Entrance, method: string, pathname: string):
   if (segments === null) return false;
   const route = segments.join('/');
   const upper = method.toUpperCase();
+
+  // Exactly three POST routes; not even the health checks.
+  if (entrance === 'scheduler') return upper === 'POST' && isSchedulerRoute(segments);
 
   // GET only: the API's health routes do not answer HEAD.
   if (HEALTH_ROUTES.has(route)) return upper === 'GET';
@@ -115,6 +139,16 @@ const FORWARDED_HEADERS: Readonly<Record<Entrance, readonly string[]>> = {
     'referer',
     'user-agent',
   ],
+  // Built by this Worker itself: the signature headers and the body type, nothing else.
+  scheduler: [
+    'content-type',
+    'accept',
+    'x-mm-key-id',
+    'x-mm-timestamp',
+    'x-mm-nonce',
+    'x-mm-signature',
+    'x-mm-actor',
+  ],
 };
 
 const IPV4 = /^(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)){3}$/;
@@ -134,7 +168,8 @@ export interface UpstreamContext {
   entrance: Entrance;
   /**
    * The visitor's IP: `CF-Connecting-IP` on the public entrance; on a service-binding entrance,
-   * the `X-Forwarded-For` the calling app set from its own `CF-Connecting-IP`.
+   * the `X-Forwarded-For` the calling app set from its own `CF-Connecting-IP`; always `null` on
+   * the scheduler entrance (there is no client).
    */
   clientIp: string | null;
   /** Fallback request id when the caller sent none (the Cloudflare ray id, or a UUID). */
@@ -151,15 +186,20 @@ export function upstreamHeaders(incoming: Headers, context: UpstreamContext): He
     const value = incoming.get(name);
     if (value !== null) headers.set(name, value);
   }
-  if (context.clientIp !== null) headers.set('x-forwarded-for', context.clientIp);
-  // This is gateway-owned routing metadata, never a browser header. The Core API selects the
-  // correct Telegram Login Widget verifier from it (customer bot for storefront, staff bot for
-  // admin). Containers are reachable only through this gateway.
+  if (context.clientIp !== null && context.entrance !== 'scheduler') {
+    headers.set('x-forwarded-for', context.clientIp);
+  }
+  // Gateway-owned routing metadata, never a browser header, set on EVERY upstream request
+  // (whatever the caller sent is dropped above). The Core API uses it to pick the Telegram OIDC
+  // redirect origin (storefront vs admin public origin) and to bind browser sessions to the
+  // entrance they were created on, so a storefront session cannot be replayed on the admin.
+  // Containers are reachable only through this gateway.
   headers.set('x-mm-entrance', context.entrance);
   const requestId = incoming.get('x-request-id');
+  const callerMayChooseId = context.entrance === 'storefront' || context.entrance === 'admin';
   headers.set(
     'x-request-id',
-    requestId !== null && REQUEST_ID.test(requestId) && context.entrance !== 'public'
+    requestId !== null && REQUEST_ID.test(requestId) && callerMayChooseId
       ? requestId
       : context.fallbackRequestId,
   );

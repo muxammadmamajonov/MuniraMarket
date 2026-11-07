@@ -101,7 +101,12 @@ APP_TABLES = (
     "delivery_zone_districts",
     "delivery_slots",
     "delivery_zones",
+    "staff_notification_chat",
     "users",
+    "auth_sessions",
+    "rate_limit_counters",
+    "service_request_nonces",
+    "oidc_login_states",
 )
 
 

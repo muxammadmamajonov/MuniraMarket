@@ -24,7 +24,6 @@ def test_valid_settings_parse() -> None:
 def test_settings_load_from_environment(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("APP_ENV", "development")
     monkeypatch.setenv("DATABASE_URL", "postgresql+asyncpg://u:p@localhost/db")
-    monkeypatch.setenv("REDIS_URL", "redis://localhost:6379/1")
     monkeypatch.setenv("CORS_ALLOWED_ORIGINS", "http://localhost:3000,http://localhost:3001")
     monkeypatch.setenv("SERVICE_AUTH_KEYS", f"local:{GOOD_SECRET}")
     monkeypatch.setenv("TELEGRAM_BOT_ID", "42")
@@ -34,13 +33,12 @@ def test_settings_load_from_environment(monkeypatch: pytest.MonkeyPatch) -> None
 
 
 def test_missing_required_variables_fail_fast(monkeypatch: pytest.MonkeyPatch) -> None:
-    for name in ("DATABASE_URL", "REDIS_URL", "SERVICE_AUTH_KEYS", "TELEGRAM_BOT_ID"):
+    for name in ("DATABASE_URL", "SERVICE_AUTH_KEYS", "TELEGRAM_BOT_ID"):
         monkeypatch.delenv(name, raising=False)
     with pytest.raises(ValidationError) as excinfo:
         Settings(_env_file=None)
     assert {error["loc"][0] for error in excinfo.value.errors()} >= {
         "database_url",
-        "redis_url",
         "service_auth_keys",
         "telegram_bot_id",
     }
@@ -60,9 +58,10 @@ def test_database_url_must_use_asyncpg(url: str) -> None:
         make_settings(database_url=url)
 
 
-def test_redis_url_scheme_is_checked() -> None:
-    with pytest.raises(ValidationError):
-        make_settings(redis_url="http://localhost:6379")
+def test_redis_is_no_longer_configured() -> None:
+    """Security state moved to PostgreSQL (ADR 0013): a leftover REDIS_URL is ignored."""
+    settings = make_settings(redis_url="rediss://cache.example.test:6379/0")
+    assert not hasattr(settings, "redis_url")
 
 
 @pytest.mark.parametrize(
@@ -136,7 +135,6 @@ def test_http_origins_allowed_in_development_and_test(app_env: str) -> None:
 def test_app_env_is_required(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("APP_ENV", raising=False)
     monkeypatch.setenv("DATABASE_URL", "postgresql+asyncpg://u:p@localhost/db")
-    monkeypatch.setenv("REDIS_URL", "redis://localhost:6379/1")
     monkeypatch.setenv("SERVICE_AUTH_KEYS", f"local:{GOOD_SECRET}")
     monkeypatch.setenv("TELEGRAM_BOT_ID", "42")
     with pytest.raises(ValidationError) as excinfo:
@@ -200,8 +198,9 @@ def test_session_defaults() -> None:
     assert settings.session_absolute_ttl_seconds == 30 * 86400
     assert settings.session_rotate_after_seconds == 86400
     assert settings.csrf_trusted_origins == []
-    assert settings.telegram_login_widget_enabled is False
-    assert settings.telegram_login_max_age_seconds == 600
+    assert settings.telegram_oidc_enabled is False
+    assert settings.telegram_oidc_issuer == "https://oauth.telegram.org"
+    assert settings.telegram_oidc_state_ttl_seconds == 600
     assert settings.session_rotation_grace_seconds == 60
 
 
@@ -258,7 +257,6 @@ def test_forwarded_allow_ips_reads_the_uvicorn_variable(monkeypatch: pytest.Monk
     values = {
         "app_env": "test",
         "database_url": "postgresql+asyncpg://fake:fake-password@127.0.0.1:1/fake",
-        "redis_url": "redis://localhost:6379/0",
         "service_auth_keys": f"k:{'x' * 40}",
         "telegram_bot_id": 1,
     }
@@ -283,7 +281,6 @@ def test_secure_cookie_required_when_deployed(app_env: str) -> None:
 def test_session_settings_from_environment(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("APP_ENV", "development")
     monkeypatch.setenv("DATABASE_URL", "postgresql+asyncpg://u:p@localhost/db")
-    monkeypatch.setenv("REDIS_URL", "redis://localhost:6379/1")
     monkeypatch.setenv("SERVICE_AUTH_KEYS", f"local:{GOOD_SECRET}")
     monkeypatch.setenv("TELEGRAM_BOT_ID", "42")
     monkeypatch.setenv("SESSION_COOKIE_SECURE", "false")
@@ -299,7 +296,7 @@ def test_session_settings_from_environment(monkeypatch: pytest.MonkeyPatch) -> N
         "session_idle_ttl_seconds",
         "session_absolute_ttl_seconds",
         "session_rotate_after_seconds",
-        "telegram_login_max_age_seconds",
+        "telegram_oidc_state_ttl_seconds",
     ],
 )
 def test_durations_must_be_positive(field: str) -> None:
@@ -353,43 +350,77 @@ def test_https_csrf_origins_required_when_deployed(app_env: str) -> None:
     make_settings(app_env=app_env, csrf_trusted_origins="https://shop.example", **DEPLOYED)
 
 
-def test_login_widget_requires_token_and_username() -> None:
-    with pytest.raises(ValidationError, match="TELEGRAM_LOGIN_WIDGET_ENABLED"):
-        make_settings(telegram_login_widget_enabled=True)
-    with pytest.raises(ValidationError, match="TELEGRAM_LOGIN_WIDGET_ENABLED"):
-        make_settings(telegram_login_widget_enabled=True, telegram_bot_token="1:fake-token")
-    with pytest.raises(ValidationError, match="TELEGRAM_LOGIN_WIDGET_ENABLED"):
-        make_settings(telegram_login_widget_enabled=True, telegram_bot_username="shop_test_bot")
-    settings = make_settings(
-        telegram_login_widget_enabled=True,
-        telegram_bot_token="1:fake-token",
-        telegram_bot_username="@shop_test_bot",
-    )
-    assert settings.telegram_bot_username == "shop_test_bot"
+_OIDC = {
+    "telegram_oidc_enabled": True,
+    "telegram_oidc_client_id": 9038491407,
+    "telegram_oidc_client_secret": "test-only-oidc-client-secret",
+    "web_public_origin": "https://shop.example.test",
+    "admin_public_origin": "https://admin.example.test",
+    "csrf_trusted_origins": "https://shop.example.test,https://admin.example.test",
+}
 
 
-def test_deployed_login_widget_requires_separate_admin_bot() -> None:
-    base = {
+@pytest.mark.parametrize(
+    ("missing", "message"),
+    [
+        ("telegram_oidc_client_id", "TELEGRAM_OIDC_CLIENT_ID"),
+        ("telegram_oidc_client_secret", "TELEGRAM_OIDC_CLIENT_SECRET"),
+        ("web_public_origin", "WEB_PUBLIC_ORIGIN"),
+        ("admin_public_origin", "ADMIN_PUBLIC_ORIGIN"),
+    ],
+)
+def test_oidc_requires_credentials_and_both_origins(missing: str, message: str) -> None:
+    values = {key: value for key, value in _OIDC.items() if key != missing}
+    with pytest.raises(ValidationError, match=message):
+        make_settings(**values)
+
+
+def test_oidc_settings_accepted_and_normalised() -> None:
+    settings = make_settings(**{**_OIDC, "admin_public_origin": "https://Admin.Example.test/"})
+    assert settings.admin_public_origin == "https://admin.example.test"
+    assert settings.public_origin("admin") == "https://admin.example.test"
+    assert settings.public_origin("storefront") == "https://shop.example.test"
+    assert settings.public_origin("public") is None
+    # The secret never shows up in the settings' repr.
+    assert "test-only-oidc-client-secret" not in repr(settings)
+
+
+def test_oidc_origins_must_be_trusted_and_distinct() -> None:
+    with pytest.raises(ValidationError, match="CSRF_TRUSTED_ORIGINS"):
+        make_settings(**{**_OIDC, "csrf_trusted_origins": "https://shop.example.test"})
+    with pytest.raises(ValidationError, match="must differ"):
+        make_settings(**{**_OIDC, "admin_public_origin": "https://shop.example.test"})
+    with pytest.raises(ValidationError, match="scheme://host"):
+        make_settings(**{**_OIDC, "web_public_origin": "https://shop.example.test/path"})
+
+
+@pytest.mark.parametrize("app_env", ["staging", "production"])
+def test_oidc_issuer_is_fixed_when_deployed(app_env: str) -> None:
+    with pytest.raises(ValidationError, match="TELEGRAM_OIDC_ISSUER"):
+        make_settings(app_env=app_env, telegram_oidc_issuer="http://127.0.0.1:8899", **DEPLOYED)
+    deployed = make_settings(app_env=app_env, **{**DEPLOYED, **_OIDC})
+    assert deployed.telegram_oidc_issuer == "https://oauth.telegram.org"
+    local = make_settings(telegram_oidc_issuer="http://127.0.0.1:8899/")
+    assert local.telegram_oidc_issuer == "http://127.0.0.1:8899"
+
+
+@pytest.mark.parametrize("app_env", ["staging", "production"])
+def test_deployed_oidc_origins_must_be_https(app_env: str) -> None:
+    values = {
         **DEPLOYED,
-        "app_env": "production",
-        "telegram_login_widget_enabled": True,
-        "telegram_bot_token": "1:customer-token",
-        "telegram_bot_username": "customer_test_bot",
+        **_OIDC,
+        "web_public_origin": "http://shop.example.test",
+        "csrf_trusted_origins": "http://shop.example.test,https://admin.example.test",
     }
-    with pytest.raises(ValidationError, match="ADMIN_TELEGRAM_BOT"):
-        make_settings(**base)
-    settings = make_settings(
-        **base,
-        admin_telegram_bot_token="2:admin-token",
-        admin_telegram_bot_username="admin_test_bot",
-    )
-    assert settings.admin_telegram_bot_username == "admin_test_bot"
+    with pytest.raises(ValidationError):
+        make_settings(app_env=app_env, **values)
 
 
-@pytest.mark.parametrize("username", ["abc", "has space", "x" * 33, "dash-bot"])
-def test_bot_username_format(username: str) -> None:
-    with pytest.raises(ValidationError, match="TELEGRAM_BOT_USERNAME"):
-        make_settings(telegram_bot_username=username)
+def test_second_admin_bot_settings_are_gone() -> None:
+    """One bot only: the PR #12 admin-bot variables no longer exist (and are ignored)."""
+    settings = make_settings(admin_telegram_bot_token="2:x", admin_telegram_bot_username="a_bot")
+    assert not hasattr(settings, "admin_telegram_bot_token")
+    assert not hasattr(settings, "admin_telegram_bot_username")
 
 
 # --- transport security, logging and pool limits (cloud launch readiness) -------------------
@@ -415,12 +446,6 @@ def test_libpq_sslmode_is_rejected_everywhere(app_env: str) -> None:
 
 
 @pytest.mark.parametrize("app_env", ["staging", "production"])
-def test_deployed_redis_requires_tls(app_env: str) -> None:
-    with pytest.raises(ValidationError, match="rediss://"):
-        make_settings(app_env=app_env, redis_url="redis://cache.example.test:6379/0")
-
-
-@pytest.mark.parametrize("app_env", ["staging", "production"])
 def test_deployed_requires_trusted_origins(app_env: str) -> None:
     with pytest.raises(ValidationError, match="CSRF_TRUSTED_ORIGINS"):
         make_settings(app_env=app_env, csrf_trusted_origins="")
@@ -434,8 +459,8 @@ def test_deployed_requires_json_logs(app_env: str) -> None:
 
 
 def test_plain_urls_still_work_locally() -> None:
-    settings = make_settings(app_env="development", redis_url="redis://localhost:6379/0")
-    assert settings.redis_url.get_secret_value().startswith("redis://")
+    settings = make_settings(app_env="development")
+    assert "ssl=" not in settings.database_url.get_secret_value()
 
 
 @pytest.mark.parametrize(

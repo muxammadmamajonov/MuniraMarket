@@ -1,86 +1,36 @@
 'use client';
 
-import type { TelegramLoginWidgetPayload } from '@muniramarket/contracts';
+import { parseTelegramOidcFailureStatus } from '@muniramarket/contracts';
 import Link from 'next/link';
-import { useRouter, useSearchParams } from 'next/navigation';
-import { useEffect, useRef, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { useI18n } from '@/i18n/context';
-import { consumeLoginState } from '@/lib/auth/login-state';
-import { useSession } from '@/lib/session';
 import { PageContainer } from './page-container';
+import { TelegramLoginButton } from './telegram-login-button';
 
 /**
- * Builds the login payload from the redirect query. Only the documented widget fields are taken,
- * and numeric ones must be integers; anything else is ignored. The server verifies the HMAC.
- */
-export function payloadFromSearchParams(
-  params: URLSearchParams,
-): TelegramLoginWidgetPayload | null {
-  const id = Number(params.get('id'));
-  const authDate = Number(params.get('auth_date'));
-  const firstName = params.get('first_name');
-  const hash = params.get('hash');
-  if (!Number.isSafeInteger(id) || !Number.isSafeInteger(authDate)) return null;
-  if (firstName === null || hash === null || hash === '') return null;
-
-  const payload: TelegramLoginWidgetPayload = {
-    id,
-    first_name: firstName,
-    auth_date: authDate,
-    hash,
-  };
-  const lastName = params.get('last_name');
-  const username = params.get('username');
-  const photoUrl = params.get('photo_url');
-  if (lastName !== null) payload.last_name = lastName;
-  if (username !== null) payload.username = username;
-  if (photoUrl !== null) payload.photo_url = photoUrl;
-  return payload;
-}
-
-/**
- * Landing page of the Telegram Login Widget redirect: posts the signed fields to the API once,
- * then continues to the cart. The redirect must carry the `state` this tab issued when it showed
- * the widget; otherwise nothing is sent (login CSRF, see `lib/auth/login-state.ts`).
+ * `/<locale>/auth/telegram`: where the Core API's OIDC callback sends the browser when "Sign in
+ * with Telegram" did not complete (`?status=failed|cancelled|blocked|unavailable`). A successful
+ * sign-in never lands here: the API redirects straight back to the page the user started from.
+ *
+ * Shows why, a link home and (unless the account is blocked) a new attempt that returns to the
+ * cart. Unknown or missing statuses read as `failed`. The query is only used to pick a message.
  */
 export function LoginCallback() {
   const { dict, locale } = useI18n();
   const params = useSearchParams();
-  const router = useRouter();
-  const { loginWithWidget } = useSession();
-  const [failed, setFailed] = useState(false);
-  const started = useRef(false);
-
-  useEffect(() => {
-    if (started.current) return;
-    started.current = true;
-    const stateOk = consumeLoginState(params.get('state'));
-    const payload = payloadFromSearchParams(params);
-    if (!stateOk || payload === null) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      setFailed(true);
-      return;
-    }
-    loginWithWidget(payload)
-      .then(() => router.replace(`/${locale}/cart`))
-      .catch(() => setFailed(true));
-  }, [params, loginWithWidget, router, locale]);
+  const status = parseTelegramOidcFailureStatus(params.get('status')) ?? 'failed';
 
   return (
     <PageContainer className="flex flex-col items-start gap-4 py-8">
-      {failed ? (
-        <>
-          <p role="alert">{dict.auth.callbackFailed}</p>
-          <Link
-            href={`/${locale}`}
-            className="inline-flex min-h-11 items-center rounded-xl border border-border bg-surface px-4 font-semibold hover:bg-surface-muted"
-          >
-            {dict.auth.callbackBack}
-          </Link>
-        </>
-      ) : (
-        <p role="status">{dict.auth.callbackSigningIn}</p>
-      )}
+      <h1 className="text-xl font-bold">{dict.auth.callbackTitle}</h1>
+      <p role="alert">{dict.auth.callbackStatus[status]}</p>
+      {status === 'blocked' ? null : <TelegramLoginButton returnTo={`/${locale}/cart`} />}
+      <Link
+        href={`/${locale}`}
+        className="inline-flex min-h-11 items-center rounded-xl border border-border bg-surface px-4 font-semibold hover:bg-surface-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus"
+      >
+        {dict.auth.callbackBack}
+      </Link>
     </PageContainer>
   );
 }

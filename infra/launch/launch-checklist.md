@@ -6,7 +6,9 @@ operator's records and the deploy environment, never into this repository.
 ## 0. Gate
 
 - [ ] `main` CI is green (JS, Core API, Workers, contracts, E2E, secret scan).
-- [ ] Staging ran the exact commit and image digest for at least 48 h with the device UAT passed.
+- [ ] The exact commit and image digest ran on the production project before opening to customers
+      (soft launch: staff only) for at least 48 h with the device UAT passed. No staging project
+      exists (one Neon project, ADR 0013).
 - [ ] `node infra/cloudflare/scripts/launch-gate.mts` passes with the production variables.
 
 ## 1. Cloudflare account, DNS and domains
@@ -14,8 +16,9 @@ operator's records and the deploy environment, never into this repository.
 - [ ] Account with 2FA for every member; members have the least role they need; API tokens are
       scoped (Workers Scripts/Containers edit for the deploy token, nothing account-wide).
 - [ ] Zone active on Cloudflare; DNSSEC on; registrar lock on.
-- [ ] Three hostnames chosen and recorded: storefront (`MM_WEB_HOSTNAME`), admin
-      (`MM_ADMIN_HOSTNAME`), API (`MM_API_HOSTNAME`); all different origins.
+- [ ] Hostnames: storefront `muniramarket.uz` (`MM_WEB_HOSTNAME`), admin `admin.muniramarket.uz`
+      (`MM_ADMIN_HOSTNAME`), API (`MM_API_HOSTNAME`, health + service-signed routes only); all
+      different origins. `munira-market.uz` is not canonical (a redirect is a separate decision).
 - [ ] Custom domains attached by deploy (`domains` in `cloudflare.config.ts`); certificates issued;
       SSL/TLS mode Full (strict); Always Use HTTPS; minimum TLS 1.2; HSTS enabled after the first
       successful smoke test (start with a short max-age, no preload until stable).
@@ -23,17 +26,18 @@ operator's records and the deploy environment, never into this repository.
 - [ ] WAF managed rules on; a rate-limiting rule for `/api/v1/auth/*` on the storefront and
       admin hostnames as a second layer above the API's own limits.
 - [ ] A rate-limiting rule on the API hostname (`/api/v1/health*` and `/api/v1/internal/*`):
-      every request there wakes a container, and health readiness touches the database and Redis.
+      every request there wakes a container, and health readiness touches the database.
 - [ ] Optional: Cloudflare Access in front of the admin hostname (staff identity before the app's
       own Telegram sign-in).
 
 ## 2. Workers secrets and variables
 
-- [ ] Gateway secrets set for production: `DATABASE_URL` (mm_app, `?ssl=verify-full`), `REDIS_URL`
-      (`rediss://`), `SERVICE_AUTH_KEYS`, customer `TELEGRAM_BOT_TOKEN` and
-      `ADMIN_TELEGRAM_BOT_TOKEN` (infra/cloudflare/README.md).
-- [ ] `YANDEX_MAPS_API_KEY` is a web Worker secret and is restricted in Yandex by the storefront
-      HTTPS Referer; the admin Worker has no secrets.
+- [ ] Gateway secrets set for production: `DATABASE_URL` (mm_app, `?ssl=verify-full`),
+      `SERVICE_AUTH_KEYS` (with a `scheduler:<≥32 bytes>` entry), `TELEGRAM_BOT_TOKEN` and
+      `TELEGRAM_OIDC_CLIENT_SECRET` (infra/cloudflare/README.md). There is no `REDIS_URL` and no
+      second (admin) bot token.
+- [ ] `YANDEX_MAPS_API_KEY` is a `muniramarket-web` Worker secret only and is restricted in Yandex
+      to `muniramarket.uz`; the admin Worker has no secrets.
 - [ ] `node infra/cloudflare/scripts/validate-deploy-env.mts --mode production` passes;
       `CORE_API_IMAGE` is the digest that passed staging; `APP_RELEASE` is its tag.
 - [ ] Workers Logs and Traces visible for all three Workers; container logs visible; an alert on
@@ -41,39 +45,49 @@ operator's records and the deploy environment, never into this repository.
 
 ## 3. Neon
 
-- [ ] Separate production project, region chosen, restore window set to the plan maximum.
+- [ ] The existing `munira-market` project, production branch (no new project, no staging);
+      region chosen; restore window set to the plan maximum; owner password not in any `.env`.
 - [ ] `01-roles.sql`, `02-database.sql` applied; migrations as `mm_migrator`; `10-runtime-grants.sql`
       and `20-verify-runtime-role.sql` pass.
 - [ ] `DATABASE_URL` uses `mm_app`; the owner role is used by nobody day to day.
+- [ ] Migration `0005` applied (security-state tables); readiness is `200` (it probes them).
 - [ ] Restore drill done once (infra/neon/README.md), time-to-restore recorded.
 - [ ] Production contains no seed/demo data (`make seed` refuses outside development/test).
 
-## 4. Redis
+## 4. Security state (no Redis)
 
-- [ ] Production instance (not shared with staging), TLS, ACL user per infra/redis/README.md,
-      `noeviction`, memory alert.
+- [ ] Sessions, rate limits, replay nonces and OIDC states are in Neon (ADR 0013); no Redis
+      instance, secret or provider account exists for production.
+- [ ] Cleanup runs (gateway cron, every 15 min): `auth_sessions`/`rate_limit_counters` stay small.
 
 ## 5. R2
 
 - [ ] Either still disabled (admin preview placeholder, pasted `https` image URLs) **or** the
       enablement checklist in infra/r2/README.md is complete. Not half-enabled.
 
-## 6. Telegram
+## 6. Telegram (one bot: `9038491407`)
 
-- [ ] BotFather: production bot token issued; staging uses a different bot.
-- [ ] BotFather `/setdomain`: the **admin** hostname for the Login Widget (the storefront website
-      sign-in too, if enabled there; the widget allows one domain per bot, so decide which origin
-      uses it and record it).
-- [ ] Mini App: main app / menu button URL set to `https://<storefront host>/uz` (or the chosen
-      locale entry); opened from the bot in Telegram iOS, Android and Desktop.
-- [ ] Telegram Serverless: Core API base URL is `https://<API host>`; `SERVICE_AUTH_KEYS` entry
-      matches the gateway's; the order-notification drain trigger is configured in BotFather /
-      the Serverless project and delivers a test notification on staging.
+- [ ] BotFather → Login Widget: Client ID `9038491407`; the Client Secret is stored only as the
+      gateway secret `TELEGRAM_OIDC_CLIENT_SECRET`; signing algorithm left at RS256; redirect URLs
+      `https://muniramarket.uz/api/v1/auth/telegram/oidc/callback` and
+      `https://admin.muniramarket.uz/api/v1/auth/telegram/oidc/callback`; trusted origins
+      `muniramarket.uz`, `admin.muniramarket.uz`.
+- [ ] Browser sign-in works on both hostnames; cancelling on Telegram returns to the sign-in page.
+- [ ] Mini App: main app / menu button URL set to `https://muniramarket.uz/uz` (or the chosen
+      locale entry); opened from the bot in Telegram iOS, Android and Desktop (initData sign-in).
+- [ ] Telegram Serverless (already linked to the bot locally): `npx tgcloud push`, then
+      `npx tgcloud webhook` shows the `message` handler in sync; `service_config` holds the Core API
+      base URL `https://<API host>` and its own `SERVICE_AUTH_KEYS` entry.
+- [ ] The bot is added to the staff group; an admin sends `/connect_orders` (or
+      `/connect_orders@<bot>`) there and gets the success reply; a non-admin gets the refusal.
+- [ ] Gateway cron is active (Workers → Triggers); a test order produces the customer message and
+      the staff group alert within about a minute.
 - [ ] `TELEGRAM_ENVIRONMENT=production`, `TELEGRAM_BOT_ID` matches the bot.
 
 ## 7. Admin and staff
 
-- [ ] Admin origin is in `MM_CSRF_TRUSTED_ORIGINS`; sign-in works only on the admin hostname.
+- [ ] Admin origin is in `MM_CSRF_TRUSTED_ORIGINS`; back-office access needs an OIDC sign-in on the
+      admin hostname (a storefront or Mini App session gets `403`).
 - [ ] First admin promoted with a reviewed one-off `set_role` run against production (development
       tool refuses outside development/test, so use a reviewed SQL `UPDATE users SET role = 'admin'`
       by the owner role, recorded in the incident/change log); a second admin exists (`last_admin`).

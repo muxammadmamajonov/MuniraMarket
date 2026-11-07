@@ -4,7 +4,11 @@
     "noEmit": true,
     "lib": ["ES2024"],
     "types": ["node"],
-    "allowImportingTsExtensions": true
+    "allowImportingTsExtensions": true,
+    // The Cron Trigger reuses the Telegram service's plain-JS modules (JSDoc-typed, `// @ts-check`)
+    // from ../telegram/tgcloud/lib/. Their single `sdk` import resolves to our stand-in.
+    "allowJs": true,
+    "paths": { "sdk": ["./src/telegramSdk.ts"] }
   },
   "include": ["src/**/*.ts", "test/**/*.ts", "cloudflare.config.ts", ".cloudflare/types/**/*.d.ts"]
 }

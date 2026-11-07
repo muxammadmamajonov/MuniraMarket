@@ -64,8 +64,10 @@ describe('openapi.json', () => {
     'UserPublic',
     'SessionResponse',
     'InitDataRequest',
-    'LoginWidgetRequest',
     'AuthConfigResponse',
+    'OidcConfig',
+    'OidcStartRequest',
+    'OidcStartResponse',
   ])('declares the %s schema', (name) => {
     expect(Object.keys(schemas)).toContain(name);
   });

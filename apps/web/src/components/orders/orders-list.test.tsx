@@ -12,7 +12,7 @@ const session = vi.hoisted(() => ({
   error: null as unknown,
   apiFetch: vi.fn<(path: string, init?: RequestInit) => Promise<Response>>(),
   retry: vi.fn(),
-  loginWithWidget: vi.fn(),
+  startTelegramLogin: vi.fn(),
   logout: vi.fn(),
 }));
 vi.mock('@/lib/session', () => ({ useSession: () => session }));
@@ -164,9 +164,7 @@ describe('OrdersList', () => {
 
     session.status = 'anonymous';
     session.apiFetch.mockReset();
-    session.apiFetch.mockResolvedValue(
-      respond({ telegram_login_widget: { enabled: false, bot_username: null } }),
-    );
+    session.apiFetch.mockResolvedValue(respond({ telegram_oidc: { enabled: false } }));
     const second = renderList();
     expect(screen.getByRole('status')).toHaveTextContent('Telegram orqali oching');
     expect(session.apiFetch).not.toHaveBeenCalledWith(

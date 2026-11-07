@@ -15,7 +15,7 @@ const session = vi.hoisted(() => ({
   error: null as unknown,
   apiFetch: vi.fn<(path: string, init?: RequestInit) => Promise<Response>>(),
   retry: vi.fn(),
-  loginWithWidget: vi.fn(),
+  startTelegramLogin: vi.fn(),
   logout: vi.fn(),
 }));
 
@@ -316,9 +316,7 @@ describe('CartView', () => {
 
   it('shows the sign-in prompt instead of the cart when anonymous', () => {
     session.status = 'anonymous';
-    session.apiFetch.mockResolvedValue(
-      respond({ telegram_login_widget: { enabled: false, bot_username: null } }),
-    );
+    session.apiFetch.mockResolvedValue(respond({ telegram_oidc: { enabled: false } }));
     renderCart();
     expect(screen.getByRole('status')).toHaveTextContent(
       'Savatdan foydalanish uchun saytni Telegram orqali oching.',

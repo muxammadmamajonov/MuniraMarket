@@ -32,11 +32,45 @@ export type TelegramInitDataAuthRequest = Schemas['InitDataRequest'];
 /** `POST /auth/telegram/init-data` response. */
 export type TelegramInitDataAuthResponse = SessionResponse;
 
-/** `GET /api/v1/auth/config`. */
+/** `GET /api/v1/auth/config`: which browser sign-in methods this entrance offers. */
 export type AuthConfig = Schemas['AuthConfigResponse'];
 
-/** `POST /auth/telegram/login-widget` body: the fields Telegram's Login Widget passes to onauth. */
-export type TelegramLoginWidgetPayload = Schemas['LoginWidgetRequest'];
+/** `AuthConfig.telegram_oidc`: whether "Sign in with Telegram" (OIDC) is available. */
+export type TelegramOidcConfig = Schemas['OidcConfig'];
+
+/**
+ * `POST /auth/telegram/oidc/start` body. `return_to` is a same-origin, locale-prefixed path
+ * (e.g. `/uz/orders`) the API redirects back to after a successful sign-in.
+ */
+export type TelegramOidcStartRequest = Schemas['OidcStartRequest'];
+
+/**
+ * `POST /auth/telegram/oidc/start` response. The browser must navigate to `authorization_url`
+ * top-level (`window.location.assign`), never in a popup or with `fetch`.
+ */
+export type TelegramOidcStartResponse = Schemas['OidcStartResponse'];
+
+/**
+ * Values of `?status=` on `/<locale>/auth/telegram`, where the API's OIDC callback sends the
+ * browser when sign-in did not complete.
+ */
+export const TELEGRAM_OIDC_FAILURE_STATUSES = [
+  'failed',
+  'cancelled',
+  'blocked',
+  'unavailable',
+] as const;
+
+export type TelegramOidcFailureStatus = (typeof TELEGRAM_OIDC_FAILURE_STATUSES)[number];
+
+/** Narrows a `?status=` value; anything unknown (or missing) is `null`. */
+export function parseTelegramOidcFailureStatus(
+  value: string | null | undefined,
+): TelegramOidcFailureStatus | null {
+  return (TELEGRAM_OIDC_FAILURE_STATUSES as readonly string[]).includes(value ?? '')
+    ? (value as TelegramOidcFailureStatus)
+    : null;
+}
 
 // -- Errors -----------------------------------------------------------------------------------
 

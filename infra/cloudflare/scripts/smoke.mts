@@ -169,8 +169,8 @@ if (!local) {
       run: async () => {
         const response = await get(`${admin}/api/v1/auth/config`);
         expect(response.status === 200, `status ${response.status}`);
-        const body = (await response.json()) as { telegram_login_widget?: { enabled?: boolean } };
-        expect(body.telegram_login_widget?.enabled === true, 'Login Widget is not enabled');
+        const body = (await response.json()) as { telegram_oidc?: { enabled?: boolean } };
+        expect(body.telegram_oidc?.enabled === true, 'Telegram OIDC sign-in is not enabled');
       },
     },
   );

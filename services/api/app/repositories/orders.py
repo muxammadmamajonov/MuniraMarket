@@ -81,8 +81,19 @@ from app.repositories.delivery import (
     ZoneRecord,
     bookable_slot,
 )
+from app.repositories.staff_chat import staff_chat_id
 
 ORDER_STATUS_EVENT = "order.status_changed"
+# Staff group alert (ADR 0015): new orders and the statuses the shop floor must react to.
+STAFF_ALERT_EVENT = "order.staff_alert"
+STAFF_ALERT_STATUSES: frozenset[OrderStatus] = frozenset(
+    {
+        OrderStatus.NEW,
+        OrderStatus.CANCELLED,
+        OrderStatus.OUT_FOR_DELIVERY,
+        OrderStatus.DELIVERED,
+    }
+)
 AUDIT_STATUS_CHANGE = "order.status_change"
 IDEMPOTENCY_CONSTRAINT = "uq_orders_user_id_idempotency_key"
 NUMBER_CONSTRAINT = "uq_orders_number"
@@ -724,6 +735,31 @@ class SqlAlchemyOrderRepository:
         self._session.add(
             NotificationOutbox(event_type=ORDER_STATUS_EVENT, order_id=order_id, payload=payload)
         )
+        if to_status in STAFF_ALERT_STATUSES:
+            group_chat_id = await staff_chat_id(self._session)
+            if group_chat_id is not None:
+                # Same transaction as the change: an alert exists iff the change committed.
+                # No customer name, address or phone: staff open the order in the admin.
+                self._session.add(
+                    NotificationOutbox(
+                        event_type=STAFF_ALERT_EVENT,
+                        order_id=order_id,
+                        payload={
+                            "order_id": str(order_id),
+                            "order_number": row.number,
+                            "status": to_status.value,
+                            "previous_status": (
+                                from_status.value if from_status is not None else None
+                            ),
+                            "total_uzs": row.total_uzs,
+                            "chat_id": group_chat_id,
+                            "cancelled_by_customer": (
+                                to_status is OrderStatus.CANCELLED
+                                and actor.role is UserRole.CUSTOMER
+                            ),
+                        },
+                    )
+                )
         await self._session.flush()
 
     async def _page(self, condition: Any, *, page: int, page_size: int) -> OrderPageRecord:

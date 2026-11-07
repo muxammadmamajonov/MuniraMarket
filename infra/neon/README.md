@@ -1,28 +1,34 @@
 # Neon PostgreSQL
 
-Runbook for the staging and production databases. No connection string, host, project id or
-password belongs in this repository. Design: [ADR 0011](../../architecture/0011-cloudflare-neon-deployment.md).
+Runbook for the production database. No connection string, host, project id or password belongs
+in this repository. Design: [ADR 0011](../../architecture/0011-cloudflare-neon-deployment.md),
+[ADR 0013](../../architecture/0013-security-state-in-postgres.md).
 
-## Projects and branches
+## Project and branches
 
-- **One Neon project per environment**: `staging` and `production`. Separate projects mean
-  separate credentials and that no staging (or preview) build can ever reach production data.
+- **Exactly one Neon project: `munira-market`, production branch.** No staging project and no new
+  project is created for launch. Sessions, rate-limit windows, replay nonces and OIDC login states
+  live in this database too (ADR 0013); there is no Redis.
 - Region: close to the Cloudflare location that runs the containers (Europe for Uzbekistan
-  traffic); keep Redis in the same region. Measure p95 latency from a staging container before
-  launch (launch checklist).
-- Production project: the default branch is **protected**; no developer connects to it from a
-  laptop. Staging project: the default branch is the staging database; short-lived child branches
-  are used to rehearse migrations (`rehearse-<release>`), then deleted.
-- Never create a branch of production for development or testing: it would copy customer data.
-  Test data comes from `make seed` (synthetic) in staging and locally.
+  traffic): every authenticated or rate-limited request now writes to it. Measure p95 latency
+  from a container before launch (launch checklist).
+- The production branch is **protected**; no developer connects to it from a laptop. The only
+  extra branches are restore points (`pre-migration-<release>`), which nobody connects to except a
+  restore.
+- Migrations are rehearsed in CI (upgrade → downgrade → upgrade on a disposable PostgreSQL, plus
+  the role model below) and locally, never on a copy of production data.
+- Never create a branch of production for development or testing: it would copy customer data
+  and live session hashes. Test data comes from `make seed` (synthetic) locally.
+- The Neon **owner** password is break-glass only: it is never pulled into a `.env`, a Worker
+  secret or CI. The runtime uses `mm_app`, migrations use `mm_migrator`.
 
 ## Roles (least privilege)
 
-| Role                    | Created by               | Used by                        | Rights                                                        |
-| ----------------------- | ------------------------ | ------------------------------ | ------------------------------------------------------------- |
-| project owner (Console) | Neon                     | break-glass only, MFA operator | `neon_superuser`                                              |
-| `mm_migrator`           | `sql/01-roles.sql` (SQL) | one-off migration job only     | owns the schema objects; `CONNECTION LIMIT 3`                 |
-| `mm_app`                | `sql/01-roles.sql` (SQL) | the Core API container         | DML on app tables; `audit_log`: `SELECT, INSERT` only; no DDL |
+| Role                    | Created by               | Used by                        | Rights                                                                               |
+| ----------------------- | ------------------------ | ------------------------------ | ------------------------------------------------------------------------------------ |
+| project owner (Console) | Neon                     | break-glass only, MFA operator | `neon_superuser`                                                                     |
+| `mm_migrator`           | `sql/01-roles.sql` (SQL) | one-off migration job only     | owns the schema objects; `CONNECTION LIMIT 3`                                        |
+| `mm_app`                | `sql/01-roles.sql` (SQL) | the Core API container         | DML on app tables (incl. security state); `audit_log`: `SELECT, INSERT` only; no DDL |
 
 Roles are created with SQL so they are **not** members of `neon_superuser` (Console/API-created
 roles are). Setup, once per environment, as the project owner:
@@ -66,7 +72,7 @@ Per container: `DB_POOL_SIZE=5`, `DB_MAX_OVERFLOW=5` (max 10 connections), `DB_P
 default). Budget:
 
 ```
-instances x (pool + overflow)  =  3 x 10 = 30  (production; staging 2 x 10 = 20)
+instances x (pool + overflow)  =  3 x 10 = 30  (production)
 + rollout overlap (old + new)  ->  up to 60     = mm_app CONNECTION LIMIT
 + migration job                    3            = mm_migrator CONNECTION LIMIT
 ```
@@ -83,8 +89,7 @@ timestamp; promoting it (or pointing `DATABASE_URL` at it) is the restore.
 **Before every production migration**
 
 - [ ] Note the UTC time and create a branch `pre-migration-<release>` from production `main`.
-- [ ] The release's migrations ran on staging (and on a `rehearse-<release>` branch) without errors,
-      including `alembic downgrade -1` and `upgrade head` again on the rehearsal branch.
+- [ ] The release's migrations passed CI (upgrade / downgrade / upgrade, role model) without errors.
 - [ ] Migrations are backward compatible with the release currently running (expand first;
       drop/rename only in a later release).
 - [ ] Run the job, then `10-runtime-grants.sql` and `20-verify-runtime-role.sql`.
@@ -101,8 +106,10 @@ timestamp; promoting it (or pointing `DATABASE_URL` at it) is the restore.
 
 **Restore drill (before launch, then quarterly)**
 
-- [ ] Create a branch from production at "now minus 1 hour" (or from staging before launch).
-- [ ] Point a staging gateway at it (temporary secret), run the smoke test, count orders/products.
+- [ ] Create a branch from production at "now minus 1 hour" (before launch: from the empty,
+      freshly migrated production branch).
+- [ ] Point a local Core API at it (`APP_ENV=development`, temporary `mm_app` URL, never committed),
+      check readiness, count orders/products, then remove the URL.
 - [ ] Record time-to-restore and any manual step; delete the branch afterwards.
 - [ ] Confirm no restored data left the Neon project (no dumps on laptops).
 

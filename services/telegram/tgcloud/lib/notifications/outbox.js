@@ -5,8 +5,10 @@
  * Flow: `claimNotifications` leases a batch; each message is validated, handed to a transport, and
  * its outcome is reported back. Delivery is AT LEAST ONCE: a message whose result is not reported
  * before the lease expires (60 s) is redelivered, and a crash between "sent" and "reported" sends
- * it twice. Nothing in this module runs on its own: a handler/endpoint/trigger must call
- * `drainOrderNotifications`, and none does yet (see services/telegram/README.md).
+ * it twice. Nothing in this module runs on its own: the api-gateway Worker's Cloudflare Cron
+ * Trigger calls `drainOrderNotifications` every minute (Telegram Serverless has no scheduler; see
+ * services/telegram/README.md). Two event types are delivered: `order.status_changed` (to the
+ * customer) and `order.staff_alert` (to the connected staff group).
  *
  * Everything is injected (Core API client, transport, clock); there are no globals, and nothing
  * from a payload (names, order numbers, chat ids) is ever logged or put into an error code.
@@ -14,6 +16,7 @@
 import { isOrderStatus } from '../i18n.js';
 
 export const ORDER_STATUS_CHANGED = 'order.status_changed';
+export const ORDER_STAFF_ALERT = 'order.staff_alert';
 /** Lease length the Core API grants per claim. */
 export const LEASE_MS = 60_000;
 /** Stop delivering when less than this much of the lease is left, so reports still fit in. */
@@ -23,6 +26,8 @@ export const DEFAULT_LIMIT = 20;
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const MAX_ORDER_NUMBER_CHARS = 32;
 const MAX_TELEGRAM_ID = 2 ** 52;
+/** Group and supergroup chat ids are negative; same bound as the Core API's staff-chat route. */
+const MIN_GROUP_CHAT_ID = -(10 ** 15);
 const ERROR_CODE_RE = /^[a-z0-9_.-]{1,64}$/;
 const OUTCOMES = Object.freeze(['delivered', 'recipient_blocked', 'retry', 'failed']);
 
@@ -97,9 +102,69 @@ export function parseOrderStatusPayload(payload) {
 }
 
 /**
+ * Strictly validates an `order.staff_alert` payload. `chat_id` must be a group/supergroup id
+ * (negative); `previous_status` is null for a new order. Unknown extra keys are ignored.
+ * @param {unknown} payload
+ * @returns {import('./transport.js').StaffAlertNotification | null} null when malformed
+ */
+export function parseStaffAlertPayload(payload) {
+  if (!isPlainObject(payload)) return null;
+  const {
+    order_id: orderId,
+    order_number: orderNumber,
+    status,
+    previous_status: previousStatus,
+    total_uzs: totalUzs,
+    chat_id: chatId,
+    cancelled_by_customer: cancelledByCustomer,
+  } = payload;
+  if (typeof orderId !== 'string' || !UUID_RE.test(orderId)) return null;
+  if (
+    typeof orderNumber !== 'string' ||
+    orderNumber === '' ||
+    Array.from(orderNumber).length > MAX_ORDER_NUMBER_CHARS
+  ) {
+    return null;
+  }
+  if (!isOrderStatus(status)) return null;
+  if (previousStatus !== null && !isOrderStatus(previousStatus)) return null;
+  if (typeof totalUzs !== 'number' || !Number.isSafeInteger(totalUzs) || totalUzs < 0) return null;
+  if (
+    typeof chatId !== 'number' ||
+    !Number.isSafeInteger(chatId) ||
+    chatId >= 0 ||
+    chatId < MIN_GROUP_CHAT_ID
+  ) {
+    return null;
+  }
+  if (typeof cancelledByCustomer !== 'boolean') return null;
+  return {
+    kind: 'staff_alert',
+    chatId,
+    orderNumber,
+    status,
+    previousStatus,
+    totalUzs,
+    cancelledByCustomer,
+  };
+}
+
+/**
+ * Parses the payload of a known event type; `undefined` for an unknown event type.
+ * @param {unknown} eventType
+ * @param {unknown} payload
+ * @returns {import('./transport.js').Notification | null | undefined}
+ */
+function parseEvent(eventType, payload) {
+  if (eventType === ORDER_STATUS_CHANGED) return parseOrderStatusPayload(payload);
+  if (eventType === ORDER_STAFF_ALERT) return parseStaffAlertPayload(payload);
+  return undefined;
+}
+
+/**
  * Asks the transport to deliver; a throwing or misbehaving transport counts as a transient error.
  * @param {import('./transport.js').NotificationTransport} transport
- * @param {import('./transport.js').OrderNotification} notification
+ * @param {import('./transport.js').Notification} notification
  * @returns {Promise<{ outcome: import('../types.js').NotificationOutcome, errorCode?: string }>}
  */
 async function deliverSafely(transport, notification) {
@@ -140,6 +205,7 @@ function parseClaimResponse(response) {
  * `maxBatches * limit` sequential deliveries.
  *
  * Behaviour:
+ * - `order.status_changed` and `order.staff_alert` are delivered through the transport.
  * - unknown `event_type` -> reported `failed` / `unknown_event`; malformed payload -> `failed` /
  *   `invalid_payload`. Neither reaches the transport.
  * - Delivery is sequential. Before each delivery the remaining lease is checked; with less than
@@ -240,13 +306,14 @@ export async function drainOrderNotifications({
         summary.skipped += 1;
         continue;
       }
-      if (/** @type {Record<string, unknown>} */ (item).event_type !== ORDER_STATUS_CHANGED) {
+      const notification = parseEvent(
+        /** @type {Record<string, unknown>} */ (item).event_type,
+        /** @type {Record<string, unknown>} */ (item).payload,
+      );
+      if (notification === undefined) {
         await report(id, attempt, 'failed', 'unknown_event');
         continue;
       }
-      const notification = parseOrderStatusPayload(
-        /** @type {Record<string, unknown>} */ (item).payload,
-      );
       if (notification === null) {
         await report(id, attempt, 'failed', 'invalid_payload');
         continue;

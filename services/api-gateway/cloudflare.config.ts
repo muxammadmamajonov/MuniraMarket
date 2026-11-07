@@ -1,4 +1,4 @@
-import { bindings, defineConfig, defineContainer, exports } from 'cf/config';
+import { bindings, defineConfig, defineContainer, exports, triggers } from 'cf/config';
 import { deploymentTarget } from '../../infra/cloudflare/environments.mts';
 import * as entrypoint from './src/index.ts' with { type: 'cf-worker' };
 
@@ -26,6 +26,11 @@ export default defineConfig(({ mode }) => {
   });
 
   const hostname = process.env['MM_API_HOSTNAME']?.trim();
+  // Public browser origins whose /api/v1/auth/telegram/oidc/callback is registered with BotFather.
+  const origin = (name: string) => {
+    const host = process.env[name]?.trim();
+    return host ? `https://${host}` : '';
+  };
 
   return {
     containers: [coreApi],
@@ -39,6 +44,9 @@ export default defineConfig(({ mode }) => {
       workersDev: false,
       previewUrls: false,
       ...(target.deployed && hostname ? { domains: [hostname] } : {}),
+      // Drains the notification outbox every minute and cleans expired security state every 15
+      // minutes (src/scheduler.ts). Deployed modes only: local `cf dev` stays quiet.
+      ...(target.deployed ? { triggers: [triggers.scheduled({ schedule: '* * * * *' })] } : {}),
       observability: {
         enabled: true,
         logs: { enabled: true, headSamplingRate: 1, invocationLogs: true },
@@ -58,27 +66,29 @@ export default defineConfig(({ mode }) => {
 
         // --- secrets passed to the container (never in this file) ---
         DATABASE_URL: bindings.secret(),
-        REDIS_URL: bindings.secret(),
+        // Also read by the Cron Trigger: its signing key is the SCHEDULER_SERVICE_KEY_ID entry.
         SERVICE_AUTH_KEYS: bindings.secret(),
+        // Also used by the Cron Trigger to send order notifications through the Bot API.
         TELEGRAM_BOT_TOKEN: bindings.secret(),
-        // A separate Login Widget bot is required because the admin is a different origin.
-        // It verifies staff browser sign-ins only; it is never exposed to the Mini App.
-        ADMIN_TELEGRAM_BOT_TOKEN: bindings.secret(),
+        // Telegram OIDC (one bot) client secret: server-side code exchange only.
+        TELEGRAM_OIDC_CLIENT_SECRET: bindings.secret(),
+
+        // --- gateway Cron Trigger (not passed to the container) ---
+        SCHEDULER_SERVICE_KEY_ID: bindings.text('scheduler'),
 
         // --- plain container configuration ---
         APP_ENV: bindings.text(target.appEnv),
         APP_RELEASE: bindings.text(process.env['APP_RELEASE']?.trim() ?? ''),
         LOG_LEVEL: bindings.text('INFO'),
         TELEGRAM_ENVIRONMENT: bindings.text('production'),
-        TELEGRAM_LOGIN_WIDGET_ENABLED: bindings.text('true'),
-        // Set per environment as plain variables at deploy time (not secret, not committed):
-        // TELEGRAM_BOT_ID, TELEGRAM_BOT_USERNAME, ADMIN_TELEGRAM_BOT_USERNAME,
-        // CSRF_TRUSTED_ORIGINS.
+        TELEGRAM_OIDC_ENABLED: bindings.text('true'),
+        // Public OIDC client id of the bot (not a secret).
+        TELEGRAM_OIDC_CLIENT_ID: bindings.text('9038491407'),
+        // Set per environment from deploy-time variables (not secret, not committed):
+        // MM_TELEGRAM_BOT_ID, MM_WEB_HOSTNAME, MM_ADMIN_HOSTNAME, MM_CSRF_TRUSTED_ORIGINS.
         TELEGRAM_BOT_ID: bindings.text(process.env['MM_TELEGRAM_BOT_ID']?.trim() ?? ''),
-        TELEGRAM_BOT_USERNAME: bindings.text(process.env['MM_TELEGRAM_BOT_USERNAME']?.trim() ?? ''),
-        ADMIN_TELEGRAM_BOT_USERNAME: bindings.text(
-          process.env['MM_ADMIN_TELEGRAM_BOT_USERNAME']?.trim() ?? '',
-        ),
+        WEB_PUBLIC_ORIGIN: bindings.text(origin('MM_WEB_HOSTNAME')),
+        ADMIN_PUBLIC_ORIGIN: bindings.text(origin('MM_ADMIN_HOSTNAME')),
         CSRF_TRUSTED_ORIGINS: bindings.text(process.env['MM_CSRF_TRUSTED_ORIGINS']?.trim() ?? ''),
         // The container's only ingress is its Durable Object, and this gateway rewrites
         // X-Forwarded-For on every request, so trusting the private ranges the platform's

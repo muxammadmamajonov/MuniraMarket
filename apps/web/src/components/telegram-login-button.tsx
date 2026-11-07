@@ -1,61 +1,114 @@
 'use client';
 
-import { useEffect, useRef } from 'react';
+import type { Locale } from '@muniramarket/contracts';
+import { Button } from '@muniramarket/ui';
+import { useEffect, useId, useState } from 'react';
 import { useI18n } from '@/i18n/context';
-import { beginLoginState } from '@/lib/auth/login-state';
+import type { Dictionary } from '@/i18n/dictionaries/types';
+import { ApiRequestError } from '@/lib/api/errors';
+import { navigateTo } from '@/lib/auth/navigate';
+import { useSession } from '@/lib/session';
 
-/** Official Telegram Login Widget script. Loaded only when the API says the widget is enabled. */
-export const TELEGRAM_LOGIN_WIDGET_SCRIPT_URL = 'https://telegram.org/js/telegram-widget.js?22';
-
-/** Bot usernames are 5-32 chars of [A-Za-z0-9_]; refuse anything else before using it in the DOM. */
-const BOT_USERNAME = /^[A-Za-z0-9_]{3,64}$/;
-
-/** Path (below the locale) that finishes the login; see `app/[locale]/auth/telegram/page.tsx`. */
+/** Path (below the locale) the API sends the browser to when sign-in did not complete. */
 export const LOGIN_CALLBACK_PATH = 'auth/telegram';
 
 export interface TelegramLoginButtonProps {
-  botUsername: string;
+  /**
+   * Where to come back to after a successful sign-in: a path of this origin under the current
+   * locale. Defaults to the page the button is on.
+   */
+  returnTo?: string;
 }
 
 /**
- * Renders the official Telegram Login Widget.
- *
- * Deliberate deviation from the widget's documented `data-onauth="callback(user)"` mode: the
- * script runs that attribute through `eval`, which our CSP forbids (no `'unsafe-eval'`). We use
- * the redirect mode (`data-auth-url`) instead: after login Telegram sends the browser to
- * `/<locale>/auth/telegram?id=...&hash=...`, whose page POSTs those fields to
- * `/api/v1/auth/telegram/login-widget`. The script is injected by our own nonce'd bundle, which
- * `'strict-dynamic'` allows, and the widget iframe is covered by `frame-src`.
- *
- * The redirect URL carries a one-time `state` (see `lib/auth/login-state.ts`) so the callback only
- * completes logins started in this tab.
+ * The current page as a `return_to` value: locale-prefixed path plus query. Falls back to the
+ * locale's home page for anything that is not under `/<locale>` (or is the failure page itself).
  */
-export function TelegramLoginButton({ botUsername }: TelegramLoginButtonProps) {
-  const { locale } = useI18n();
-  const container = useRef<HTMLDivElement>(null);
+export function currentReturnTo(locale: Locale, location: Pick<Location, 'pathname' | 'search'>) {
+  const home = `/${locale}`;
+  const { pathname, search } = location;
+  if (pathname !== home && !pathname.startsWith(`${home}/`)) return home;
+  if (pathname === `${home}/${LOGIN_CALLBACK_PATH}`) return home;
+  return `${pathname}${search}`;
+}
 
+function startErrorMessage(dict: Dictionary, error: unknown): string {
+  if (!(error instanceof ApiRequestError)) return dict.auth.loginStartFailed;
+  if (error.code === 'rate_limited') return dict.auth.rateLimited;
+  if (error.code === 'feature_disabled') return dict.auth.loginDisabled;
+  if (error.isNetworkError || error.status >= 500) return dict.auth.serviceUnavailable;
+  return dict.auth.loginStartFailed;
+}
+
+/**
+ * "Sign in with Telegram". The whole OIDC flow runs on the Core API: this button asks it to start
+ * (`POST /auth/telegram/oidc/start`, which also sets a short-lived binding cookie) and then sends
+ * the browser to Telegram with a full top-level navigation, never a popup or `fetch`. Telegram
+ * returns to the API's callback, which redirects back to `returnTo` signed in, or to
+ * `/<locale>/auth/telegram?status=...` when it did not work.
+ *
+ * Nothing from Telegram is loaded into our pages (no script, no iframe).
+ */
+export function TelegramLoginButton({ returnTo }: TelegramLoginButtonProps) {
+  const { dict, locale } = useI18n();
+  const { startTelegramLogin } = useSession();
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const errorId = useId();
+
+  // Coming back from Telegram with the Back button can restore this page from the bfcache with
+  // the button still busy; make it usable again.
   useEffect(() => {
-    const element = container.current;
-    if (element === null || !BOT_USERNAME.test(botUsername)) return undefined;
-    const state = beginLoginState();
-    if (state === null) return undefined; // no sessionStorage: the callback could not verify it
-
-    const script = document.createElement('script');
-    script.async = true;
-    script.src = TELEGRAM_LOGIN_WIDGET_SCRIPT_URL;
-    script.setAttribute('data-telegram-login', botUsername);
-    script.setAttribute('data-size', 'large');
-    script.setAttribute('data-userpic', 'false');
-    script.setAttribute(
-      'data-auth-url',
-      `${window.location.origin}/${locale}/${LOGIN_CALLBACK_PATH}?state=${state}`,
-    );
-    element.appendChild(script);
-
-    return () => {
-      element.replaceChildren();
+    const onPageShow = (event: PageTransitionEvent) => {
+      if (event.persisted) setBusy(false);
     };
-  }, [botUsername, locale]);
+    window.addEventListener('pageshow', onPageShow);
+    return () => window.removeEventListener('pageshow', onPageShow);
+  }, []);
 
-  return <div ref={container} data-testid="telegram-login-widget" className="min-h-12" />;
+  async function start() {
+    if (busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const url = await startTelegramLogin(returnTo ?? currentReturnTo(locale, window.location));
+      // Stay busy: the page is about to be replaced by Telegram's.
+      navigateTo(url);
+    } catch (cause) {
+      setBusy(false);
+      setError(startErrorMessage(dict, cause));
+    }
+  }
+
+  return (
+    <div className="flex flex-col items-start gap-2">
+      <Button
+        size="lg"
+        onClick={() => void start()}
+        aria-busy={busy}
+        aria-disabled={busy}
+        aria-describedby={error === null ? undefined : errorId}
+        data-testid="telegram-login-button"
+      >
+        <TelegramIcon />
+        {busy ? dict.auth.loginStarting : dict.auth.loginButton}
+      </Button>
+      {error === null ? null : (
+        <p id={errorId} role="alert" className="text-sm text-danger">
+          {error}
+        </p>
+      )}
+    </div>
+  );
+}
+
+function TelegramIcon() {
+  return (
+    <svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" className="size-5 shrink-0">
+      <path
+        fill="currentColor"
+        d="M21.94 4.3a1.1 1.1 0 0 0-1.5-1.18L2.7 10.03c-.98.38-.97 1.77.02 2.13l4.48 1.63 1.7 5.4c.24.77 1.2 1.03 1.79.47l2.5-2.38 4.6 3.4c.66.48 1.6.11 1.77-.69l2.38-15.69ZM9.6 14.07l8.08-7.2-6.47 8.2-.3 2.94-1.31-3.94Z"
+      />
+    </svg>
+  );
 }

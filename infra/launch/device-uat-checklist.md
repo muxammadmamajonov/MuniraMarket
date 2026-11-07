@@ -19,7 +19,7 @@ customer's phone number or address: use a staff test account and a test address.
 - [ ] uz/ru switch keeps the page; all text translated; long Russian words do not overflow at 320 px.
 - [ ] Catalog, category, search (2-letter query), product page, empty states, out-of-stock.
 - [ ] Add to cart, change quantity, remove; tapping fast does not create duplicates; 99 cap.
-- [ ] Sign in with the Login Widget (if enabled for the storefront); sign out.
+- [ ] Sign in with "Telegram orqali kirish" (OIDC redirect); return to the same page; sign out.
 - [ ] Checkout: district, address, phone `+998` formatting, slot day chips scroll horizontally
       only, keyboard does not hide the submit button, safe areas respected (notch, home bar).
 - [ ] Slot taken by someone else meanwhile → clear notice, new choice, order succeeds.
@@ -32,7 +32,7 @@ customer's phone number or address: use a staff test account and a test address.
 ## Telegram Mini App
 
 - [ ] Opens from the bot's menu button and from `/start`; theme (light/dark) follows Telegram.
-- [ ] Signed in automatically (initData); no Login Widget shown inside Telegram.
+- [ ] Signed in automatically (initData); no browser Telegram sign-in button shown inside Telegram.
 - [ ] Telegram MainButton / BackButton behave on checkout; the bottom bar is not covered.
 - [ ] Expand/collapse the sheet, rotate, switch apps and come back mid-checkout: state kept.
 - [ ] Place an order; the status notification arrives in the chat in the chosen language.
@@ -41,7 +41,7 @@ customer's phone number or address: use a staff test account and a test address.
 
 ## Admin (desktop and one phone)
 
-- [ ] Sign in with the Login Widget on the admin hostname only; a customer account gets no access.
+- [ ] Sign in with Telegram (OIDC) on the admin hostname; a customer account gets no access.
 - [ ] Orders: list, filter, move through statuses, cancel with reason; second tab shows a conflict.
 - [ ] Catalog: create/edit/archive/restore a product; image preview shows the placeholder (R2 off).
 - [ ] CSV export, dry-run import, import; stale-row protection.
