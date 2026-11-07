@@ -306,7 +306,7 @@ function CapacityBar({ slot }: { slot: DeliverySlotAdmin }) {
     <div className="flex min-w-0 flex-col gap-1">
       <div aria-hidden="true" className="h-2 w-full overflow-hidden rounded-full bg-surface-muted">
         <div
-          className={`h-full rounded-full ${full ? 'bg-red-700 dark:bg-red-500' : 'bg-primary'}`}
+          className={`h-full rounded-full ${full ? 'bg-danger' : 'bg-primary'}`}
           style={{ width: `${share}%` }}
         />
       </div>

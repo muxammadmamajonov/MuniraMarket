@@ -28,6 +28,19 @@ const type = (testId: string, value: string) =>
   fireEvent.change(screen.getByTestId(testId), { target: { value } });
 
 describe('ZonesView', () => {
+  it.each([
+    ['ru', 'Демонстрационные данные', /должен задать администратор/],
+    ['uz', 'Namuna ma’lumotlar', /administrator shu yerda belgilashi kerak/],
+  ] as const)('always says the demo zones are synthetic (%s)', async (locale, title, body) => {
+    installFakeApi(sessionHandler('admin'), list(zone()));
+    renderAdmin(<ZonesView />, locale);
+    const notice = await screen.findByTestId('zones-demo-notice');
+    expect(notice).toHaveTextContent(title);
+    expect(notice).toHaveTextContent(body);
+    // Shown even before the list arrives and with an empty list: it is about the setup.
+    expect(await screen.findAllByTestId('zone-card')).toHaveLength(1);
+  });
+
   it('lists zones with fee, free threshold, hours and district names in the UI language', async () => {
     installFakeApi(
       sessionHandler('admin'),

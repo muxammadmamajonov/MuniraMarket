@@ -40,7 +40,7 @@ function Stat({
   ) : (
     <Link
       href={href}
-      className={`${CARD} transition-[background-color,transform] duration-150 ease-out hover:bg-surface-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus active:scale-[0.99]`}
+      className={`${CARD} transition-transform duration-150 ease-out hover:bg-surface-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus active:scale-[0.99]`}
     >
       {body}
     </Link>

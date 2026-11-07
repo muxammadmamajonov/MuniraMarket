@@ -1,6 +1,6 @@
 'use client';
 
-import { EmptyState, ErrorState, Skeleton } from '@muniramarket/ui';
+import { Button, EmptyState, Skeleton } from '@muniramarket/ui';
 import Link from 'next/link';
 import type { ReactNode } from 'react';
 import { useI18n } from '@/i18n/context';
@@ -8,6 +8,7 @@ import { readErrorMessage } from '@/lib/api/error-messages';
 import { useSession } from '@/lib/session';
 import type { ApiResource } from '@/lib/use-api-resource';
 import { LINK_BUTTON } from './classes';
+import { SupportCode } from './support-code';
 import { cx } from '@muniramarket/ui';
 
 /** "You are not allowed here": shown for admin-only pages to operators, and on any API 403. */
@@ -76,17 +77,23 @@ export function ResourceView<T>({
   if (resource.status === 'error' && resource.error !== null) {
     if (resource.error.code === 'forbidden') return <PermissionDenied />;
     return (
-      <ErrorState
-        title={dict.errors.title}
-        description={readErrorMessage(dict, resource.error)}
-        retryLabel={dict.errors.retry}
-        onRetry={resource.reload}
-      />
+      <div
+        role="alert"
+        data-testid="resource-error"
+        className="mm-enter mx-auto flex w-full max-w-md flex-col items-center gap-3 rounded-2xl border border-border bg-surface px-6 py-10 text-center"
+      >
+        <h2 className="text-lg font-semibold">{dict.errors.title}</h2>
+        <p className="text-muted-foreground">{readErrorMessage(dict, resource.error)}</p>
+        <SupportCode code={resource.error.supportCode} className="items-center" />
+        <Button variant="secondary" onClick={resource.reload}>
+          {dict.errors.retry}
+        </Button>
+      </div>
     );
   }
 
   return (
-    <div aria-busy={resource.fetching} className={cx(resource.fetching && 'mm-busy')}>
+    <div aria-busy={resource.fetching} className={cx('mm-enter', resource.fetching && 'mm-busy')}>
       {resource.data === null ? null : children(resource.data)}
     </div>
   );

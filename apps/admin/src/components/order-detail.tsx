@@ -25,7 +25,7 @@ type Loaded =
 type Notice = { kind: 'conflict' | 'updated'; status: OrderStatus };
 
 const JSON_HEADERS = { 'content-type': 'application/json' } as const;
-const ALERT = 'text-sm text-red-700 dark:text-red-300';
+const ALERT = 'text-sm text-danger';
 
 function Card({ title, children }: { title: string; children: ReactNode }) {
   return (

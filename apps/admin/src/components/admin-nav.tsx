@@ -20,7 +20,7 @@ import { NavIcon } from './nav-icon';
 import { Modal } from './ui/modal';
 
 const ROW =
-  'flex min-h-11 items-center gap-3 rounded-xl px-3 text-base transition-[background-color,transform] ' +
+  'flex min-h-11 items-center gap-3 rounded-xl px-3 text-base transition-transform ' +
   'duration-150 ease-out active:scale-[0.98] focus-visible:outline-2 focus-visible:outline-offset-2 ' +
   'focus-visible:outline-focus';
 const ROW_ON = 'bg-surface-muted font-semibold';

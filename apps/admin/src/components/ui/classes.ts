@@ -5,7 +5,7 @@ const FOCUS = 'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visi
 /** Filter chip / segmented link. */
 export const CHIP =
   'inline-flex min-h-11 items-center rounded-xl border px-3 text-sm font-medium ' +
-  'transition-[background-color,transform] duration-150 ease-out active:scale-[0.97] ' +
+  'transition-transform duration-150 ease-out active:scale-[0.97] ' +
   FOCUS;
 export const CHIP_ON = 'border-primary bg-primary text-primary-foreground';
 export const CHIP_OFF = 'border-border bg-surface text-foreground hover:bg-surface-muted';
@@ -13,13 +13,13 @@ export const CHIP_OFF = 'border-border bg-surface text-foreground hover:bg-surfa
 /** A link that looks like a secondary button. */
 export const LINK_BUTTON =
   'inline-flex min-h-11 items-center justify-center rounded-xl border border-border bg-surface px-4 ' +
-  'font-semibold text-foreground transition-[background-color,transform] duration-150 ease-out ' +
+  'font-semibold text-foreground transition-transform duration-150 ease-out ' +
   'hover:bg-surface-muted active:scale-[0.98] ' +
   FOCUS;
 
 export const LINK_BUTTON_PRIMARY =
   'inline-flex min-h-11 items-center justify-center rounded-xl bg-primary px-4 font-semibold ' +
-  'text-primary-foreground transition-[background-color,transform] duration-150 ease-out ' +
+  'text-primary-foreground transition-transform duration-150 ease-out ' +
   'hover:bg-primary-hover active:scale-[0.98] ' +
   FOCUS;
 

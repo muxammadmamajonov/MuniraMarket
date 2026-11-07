@@ -181,9 +181,7 @@ export function UsersView() {
         <span
           data-blocked={user.is_blocked}
           className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-sm font-medium whitespace-nowrap ${
-            user.is_blocked
-              ? 'bg-red-100 text-red-900 dark:bg-red-950 dark:text-red-200'
-              : 'bg-green-100 text-green-900 dark:bg-green-950 dark:text-green-200'
+            user.is_blocked ? 'bg-danger-soft text-danger' : 'bg-success-soft text-success'
           }`}
         >
           {user.is_blocked ? copy.blockedBadge : copy.activeBadge}
