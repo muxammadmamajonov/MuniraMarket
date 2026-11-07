@@ -52,6 +52,8 @@ export function userWithRole(role: UserRole): UserPublic {
     username: null,
     language: 'uz',
     role,
+    language_confirmed: true,
+    phone_verified: false,
   };
 }
 
