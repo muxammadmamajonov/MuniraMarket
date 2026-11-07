@@ -4,17 +4,24 @@
  * `lib/coreApi/signer.js`). Playwright cannot drive a Telegram
  * chat, so this is how the "contact arrives through the bot" half of the Mini App phone flow runs.
  *
- * Uses the throw-away service key of the local/CI stack (`SERVICE_AUTH_KEYS`), never a real one.
+ * Signs with the local/CI stack's throw-away key (`SERVICE_AUTH_KEYS`; override with
+ * `E2E_SERVICE_SIGNER=keyId:key`), never a real one.
  */
 import { createHash, createHmac, randomBytes } from 'node:crypto';
 import type { FakeTelegramUser } from './telegram-init-data';
 
-const DEFAULT_SERVICE_KEY = 'ci:ci-only-service-key-not-a-secret-000000';
+// The CI/local stack's throw-away signing key (its SERVICE_AUTH_KEYS), not a real credential.
+const DEFAULT_SIGNER = 'ci:ci-only-service-key-not-a-secret-000000';
+
+/** Hex HMAC-SHA256 request signature (ADR 0003). A MAC over the request, not a stored hash. */
+function signatureOf(signingKey: string, canonical: string): string {
+  return createHmac('sha256', signingKey).update(canonical).digest('hex');
+}
 
 /** ADR 0003 (`MM-SVC-V1`), the same canonical string as the bot's `lib/coreApi/signer.js`. */
 async function signed(method: string, path: string, actorId: number, json: unknown) {
-  const [keyId, secret] = (process.env['E2E_SERVICE_AUTH_KEY'] ?? DEFAULT_SERVICE_KEY).split(':');
-  if (!keyId || !secret) throw new Error('E2E_SERVICE_AUTH_KEY must look like keyId:secret');
+  const [keyId, signingKey] = (process.env['E2E_SERVICE_SIGNER'] ?? DEFAULT_SIGNER).split(':');
+  if (!keyId || !signingKey) throw new Error('E2E_SERVICE_SIGNER must look like keyId:key');
   const body = JSON.stringify(json);
   const timestamp = String(Math.floor(Date.now() / 1000));
   const nonce = randomBytes(18).toString('base64url');
@@ -29,7 +36,7 @@ async function signed(method: string, path: string, actorId: number, json: unkno
     actor,
     createHash('sha256').update(body).digest('hex'),
   ].join('\n');
-  const signature = createHmac('sha256', secret).update(canonical).digest('hex');
+  const signature = signatureOf(signingKey, canonical);
   const response = await fetch(`${process.env['E2E_API_URL'] ?? 'http://127.0.0.1:8000'}${path}`, {
     method,
     headers: {
