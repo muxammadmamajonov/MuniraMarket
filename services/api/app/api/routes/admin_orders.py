@@ -93,5 +93,5 @@ async def change_status(
         )
     except CheckoutError as exc:
         raise to_api_error(exc) from None
-    logger.info("Order %s moved to %s by %s", order_id, payload.status.value, staff.role.value)
+    logger.info("Staff order status change succeeded")
     return AdminOrderDetail.from_admin_record(record)
