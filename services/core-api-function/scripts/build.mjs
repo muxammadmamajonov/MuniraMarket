@@ -1,5 +1,7 @@
-// Bundles the Function entry exactly as `neon deploy` does (esbuild, ESM, Node 24) to prove it
-// builds without the Python/Docker toolchain. Output: dist/index.mjs (git-ignored).
+// Bundles the Function entry (esbuild, ESM, Node 24) into dist/index.mjs (git-ignored). This is
+// what `neon deploy` ships (`bundler: 'none'` in /neon.ts): the shared Telegram modules import
+// `BotApiError` from the bare specifier `sdk`, which only this build aliases to the stand-in.
+import { fileURLToPath } from 'node:url';
 import { build } from 'esbuild';
 
 await build({
@@ -11,6 +13,7 @@ await build({
   format: 'esm',
   sourcemap: true,
   logLevel: 'info',
+  alias: { sdk: fileURLToPath(new URL('../src/scheduler/telegramSdk.ts', import.meta.url)) },
   // pg's optional native binding is never installed.
   external: ['pg-native'],
   banner: {

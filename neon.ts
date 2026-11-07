@@ -27,7 +27,10 @@ export default defineConfig({
   functions: {
     coreapi: {
       name: 'MuniraMarket Core API',
-      source: './services/core-api-function/src/index.ts',
+      // Prebuilt bundle: run `pnpm --filter @muniramarket/core-api-function build` first
+      // (scripts/build.mjs aliases the shared Telegram modules' `sdk` import).
+      source: './services/core-api-function/dist',
+      bundler: 'none',
       env: {
         // --- secrets (values from the deploy environment only) ---
         CORE_API_FUNCTION_SECRET: process.env.CORE_API_FUNCTION_SECRET!,

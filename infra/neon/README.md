@@ -15,9 +15,11 @@ declares only `coreapi` (plus Auth and the Data API, so an apply never disables 
 
 ```bash
 # 1. A git-ignored env file with the Function's values (names: services/core-api-function/README.md)
-# 2. Dry run. It must list `+ function coreapi` (or `~ function coreapi`) and NOTHING else:
+# 2. Build the bundle neon.ts ships (bundler: 'none'):
+pnpm --filter @muniramarket/core-api-function build
+# 3. Dry run. It must list `+ function coreapi` (or `~ function coreapi`) and NOTHING else:
 neon config plan --env <file>
-# 3. Apply (creates or updates the coreapi deployment):
+# 4. Apply (creates or updates the coreapi deployment):
 neon deploy --env <file>
 neon functions get coreapi            # invocation_url -> gateway secret CORE_API_FUNCTION_ORIGIN
 neon logs query --branch production --source function --since 15m
