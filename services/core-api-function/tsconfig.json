@@ -1,0 +1,14 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "lib": ["ES2024"],
+    "types": ["node"],
+    "allowImportingTsExtensions": true,
+    // Reuses the Telegram service's plain-JS outbox drain and Bot API transport
+    // (../telegram/tgcloud/lib, JSDoc-typed, `// @ts-check`).
+    "allowJs": true,
+    "paths": { "sdk": ["./src/scheduler/telegramSdk.ts"] }
+  },
+  "include": ["src/**/*.ts", "test/**/*.ts", "scripts/**/*.ts"]
+}

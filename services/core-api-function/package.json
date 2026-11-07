@@ -1,0 +1,29 @@
+{
+  "name": "@muniramarket/core-api-function",
+  "private": true,
+  "type": "module",
+  "description": "MuniraMarket Core API as a Neon Function (slug: coreapi). Reached only through the Cloudflare API gateway.",
+  "scripts": {
+    "dev": "node --experimental-strip-types scripts/dev-server.ts",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "lint": "eslint .",
+    "test": "vitest run",
+    "build": "node scripts/build.mjs"
+  },
+  "dependencies": {
+    "@neon/functions": "0.11.0",
+    "hono": "4.13.17",
+    "pg": "8.23.1",
+    "zod": "4.6.7"
+  },
+  "devDependencies": {
+    "@eslint/js": "9.39.5",
+    "@types/node": "26.6.6",
+    "@types/pg": "8.23.1",
+    "esbuild": "0.28.2",
+    "eslint": "9.39.5",
+    "typescript": "5.9.3",
+    "typescript-eslint": "8.72.1",
+    "vitest": "5.0.5"
+  }
+}
