@@ -69,7 +69,12 @@ function tabBar(page: Page) {
 /** Placeholder signed-in session and a cart, answered at the network boundary. */
 async function fakeSignedIn(
   page: Page,
-  { firstName, lastName, units }: { firstName: string; lastName: string | null; units: number },
+  {
+    firstName,
+    lastName,
+    units,
+    language = 'uz',
+  }: { firstName: string; lastName: string | null; units: number; language?: 'uz' | 'ru' },
 ): Promise<void> {
   await page.route('**/api/v1/auth/session', (route) =>
     route.fulfill({
@@ -79,7 +84,8 @@ async function fakeSignedIn(
           id: '00000000-0000-4000-8000-0000000000e2',
           first_name: firstName,
           last_name: lastName,
-          language: 'uz',
+          // The saved account language: the storefront URL follows it.
+          language,
           role: 'customer',
           language_confirmed: true,
           phone_verified: true,
@@ -157,7 +163,7 @@ test.describe('bottom navigation', () => {
 
     await bar.getByRole('link', { name: 'Profil' }).click();
     await expect(page).toHaveURL(/\/uz\/profile$/);
-    await expect(page.getByTestId('profile-anonymous')).toContainText('Hisobingizga kiring');
+    await expect(page.getByTestId('sign-in-screen')).toContainText('Telegram orqali kiring');
     await expectNoHorizontalScroll(page);
     await shot(page, 'p9-uz-390-profile-anonymous');
 
@@ -220,6 +226,7 @@ test.describe('break-ui: worst realistic data', () => {
       firstName: 'Aleksandra-Wiśniewska-Kowalczyk-Abdurakhmonova',
       lastName: 'Bartholomew-Fitzgerald-Northwind-Industries-Holdings',
       units: 12_345,
+      language: 'ru',
     });
     await page.setViewportSize({ width: 320, height: 640 });
     await page.goto('/ru/profile');

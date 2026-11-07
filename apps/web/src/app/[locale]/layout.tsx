@@ -15,7 +15,8 @@ import { readYandexMapsApiKey } from '@/lib/maps/config';
 import { MapsConfigProvider } from '@/lib/maps/use-yandex-maps';
 import { SessionProvider } from '@/lib/session';
 import { TELEGRAM_WEB_APP_SCRIPT_URL, TelegramProvider } from '@/lib/telegram';
-import { BotUsernameProvider, readTelegramBotUsername } from '@/lib/telegram/bot-link';
+import { BotUsernameProvider } from '@/lib/telegram/bot-link';
+import { readTelegramBotUsername } from '@/lib/telegram/bot-username';
 import '../globals.css';
 
 // Only the supported locales exist; anything else is a 404 without rendering.

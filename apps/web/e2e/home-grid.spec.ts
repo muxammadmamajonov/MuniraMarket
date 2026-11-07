@@ -176,13 +176,8 @@ test('the home page fits a 320px phone: no sideways scroll, two equal columns', 
     expect(box?.width ?? 0).toBeGreaterThanOrEqual(44);
     expect(box?.height ?? 0).toBeGreaterThanOrEqual(44);
   }
-  // The header keeps the wordmark and the language toggle on one row, the toggle 44px square.
-  const language = await page
-    .getByRole('banner')
-    .getByRole('link', { name: 'Русский' })
-    .boundingBox();
-  expect(language?.width ?? 0).toBeGreaterThanOrEqual(44);
-  expect(language?.height ?? 0).toBeGreaterThanOrEqual(44);
+  // The header holds only the wordmark on phones: the language lives in Profile alone.
+  await expect(page.getByRole('banner').getByRole('link', { name: 'Русский' })).toHaveCount(0);
   const wordmark = await page.getByRole('link', { name: /^MuniraMarket/ }).boundingBox();
-  expect(Math.abs((wordmark?.y ?? 0) - (language?.y ?? 100))).toBeLessThan(8);
+  expect(wordmark?.height ?? 0).toBeGreaterThanOrEqual(44);
 });
