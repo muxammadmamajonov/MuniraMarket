@@ -71,7 +71,7 @@ describe('createCoreApiClient', () => {
       const client = createCoreApiClient({ fetch, config: config(base), ...fixed });
       await client.request('GET', '/api/v1/internal/telegram/me?x=1', { actorTelegramUserId: 7 });
       const [call] = fetch.calls;
-      expect(call.url.startsWith('https://core.example.test')).toBe(true);
+      expect(new URL(call.url).origin).toBe('https://core.example.test');
       expect(call.url).not.toMatch(/\/\/api/);
       expect(verifyWire(call)).toBe(true);
       expect(call.init.body).toBeUndefined();

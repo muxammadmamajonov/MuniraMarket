@@ -53,6 +53,14 @@ function directives(csp: string | null): Map<string, string[]> {
   return map;
 }
 
+function isTelegramWebOrigin(value: string): boolean {
+  try {
+    return new URL(value).origin === 'https://web.telegram.org';
+  } catch {
+    return false;
+  }
+}
+
 async function errorCode(response: Response): Promise<string | undefined> {
   try {
     const body = (await response.json()) as { error?: { code?: string } };
@@ -77,7 +85,7 @@ const checks: Check[] = [
       expect(!script.includes("'unsafe-inline'"), "script-src allows 'unsafe-inline'");
       expect(local || !script.includes("'unsafe-eval'"), "script-src allows 'unsafe-eval'");
       const ancestors = csp.get('frame-ancestors') ?? [];
-      expect(ancestors.includes('https://web.telegram.org'), 'Telegram Web cannot frame the app');
+      expect(ancestors.some(isTelegramWebOrigin), 'Telegram Web cannot frame the app');
       expect(!ancestors.includes('*'), 'frame-ancestors allows everyone');
       expect(csp.get('object-src')?.includes("'none'"), "object-src is not 'none'");
       expect(response.headers.get('x-content-type-options') === 'nosniff', 'no nosniff');
