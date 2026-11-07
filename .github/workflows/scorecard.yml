@@ -25,6 +25,6 @@ jobs:
           results_format: sarif
           publish_results: true
       - name: Publish findings to GitHub code scanning
-        uses: github/codeql-action/upload-sarif@b7b84b636b4f90c9b31da1bc5f72bfadd5b31410 # v3
+        uses: github/codeql-action/upload-sarif@5895b2c9be147bc7f1c75ce72c5cb577febb1907 # v4
         with:
           sarif_file: results.sarif
