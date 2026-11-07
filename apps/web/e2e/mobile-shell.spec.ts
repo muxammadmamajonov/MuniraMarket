@@ -80,6 +80,8 @@ async function fakeSignedIn(
           last_name: lastName,
           language: 'uz',
           role: 'customer',
+          language_confirmed: true,
+          phone_verified: true,
           telegram_user_id: 900_000_099,
           username: null,
         },

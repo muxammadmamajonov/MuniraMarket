@@ -123,7 +123,11 @@ export function CartView() {
   );
 
   if (status !== 'authenticated') {
-    return status === 'loading' ? <CartSkeleton label={dict.cart.loading} /> : <SignInPrompt />;
+    return status === 'loading' ? (
+      <CartSkeleton label={dict.cart.loading} />
+    ) : (
+      <SignInPrompt variant="screen" />
+    );
   }
   if (load.kind === 'loading') return <CartSkeleton label={dict.cart.loading} />;
   if (load.kind === 'failed') {

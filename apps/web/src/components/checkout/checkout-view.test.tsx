@@ -29,16 +29,19 @@ vi.mock('next/navigation', () => ({ useRouter: () => ({ replace: nav.replace }) 
 const USER_ID = vi.hoisted(() => '7c1e4b2a-9d3f-4e5a-8b6c-1d2e3f4a5b6c');
 const session = vi.hoisted(() => ({
   status: 'authenticated' as 'loading' | 'authenticated' | 'anonymous' | 'error',
-  user: { id: USER_ID, first_name: 'Ali', last_name: 'Valiyev' } as {
+  user: { id: USER_ID, first_name: 'Ali', last_name: 'Valiyev', phone_verified: true } as {
     id: string;
     first_name: string;
     last_name: string | null;
+    phone_verified: boolean;
   } | null,
   error: null as unknown,
   apiFetch: vi.fn<(path: string, init?: RequestInit) => Promise<Response>>(),
   retry: vi.fn(),
   startTelegramLogin: vi.fn(),
   logout: vi.fn(),
+  refresh: vi.fn(),
+  applyUser: vi.fn(),
 }));
 vi.mock('@/lib/session', () => ({ useSession: () => session }));
 
@@ -173,7 +176,7 @@ const submitButton = () => within(screen.getByTestId('submit-bar')).getByRole('b
 beforeEach(() => {
   nav.replace.mockReset();
   session.status = 'authenticated';
-  session.user = { id: USER_ID, first_name: 'Ali', last_name: 'Valiyev' };
+  session.user = { id: USER_ID, first_name: 'Ali', last_name: 'Valiyev', phone_verified: true };
   window.sessionStorage.clear();
   window.localStorage.clear();
   session.apiFetch.mockReset();
@@ -192,7 +195,7 @@ afterEach(() => {
 });
 
 describe('CheckoutView: states', () => {
-  it('shows a skeleton while the session loads and the sign-in prompt when anonymous', () => {
+  it('shows a skeleton while the session loads and the sign-in prompt when anonymous', async () => {
     session.status = 'loading';
     const { unmount } = renderCheckout();
     expect(screen.getByRole('status', { name: 'Buyurtma tayyorlanmoqda…' })).toBeInTheDocument();
@@ -201,9 +204,10 @@ describe('CheckoutView: states', () => {
     session.status = 'anonymous';
     routes['GET /auth/config'] = () => respond({ telegram_oidc: { enabled: false } });
     renderCheckout();
-    expect(screen.getByRole('status')).toHaveTextContent(
-      'Savatdan foydalanish uchun saytni Telegram orqali oching.',
-    );
+    expect(
+      await screen.findByText('Savatdan foydalanish uchun saytni Telegram orqali oching.'),
+    ).toBeInTheDocument();
+    expect(screen.getByTestId('sign-in-screen')).toBeInTheDocument();
     expect(calls('GET', '/cart')).toHaveLength(0);
   });
 
@@ -913,6 +917,7 @@ describe('CheckoutView: an attempt that outlives a reload (sessionStorage)', () 
       id: 'b0b0b0b0-0000-4000-8000-000000000000',
       first_name: 'Ali',
       last_name: 'Valiyev',
+      phone_verified: true,
     };
     routes['POST /orders'] = () => respond(order(), 201);
     renderCheckout();
@@ -1192,6 +1197,7 @@ describe('CheckoutView: worst-case data (break-ui)', () => {
       id: USER_ID,
       first_name: WORST.recipientName.split(' ')[0] ?? '',
       last_name: WORST.recipientName.split(' ').slice(1).join(' '),
+      phone_verified: true,
     };
     renderCheckout();
     await loaded();
@@ -1950,5 +1956,13 @@ describe('CheckoutView: a quote that could not be fetched', () => {
     failing = false;
     fireEvent.click(retryInside(quoteError()));
     await waitFor(() => expect(state.disabled).toBe(false));
+  });
+});
+
+describe('phone verification gate', () => {
+  it('asks for the phone and keeps the order button disabled until it is verified', async () => {
+    session.user = { id: USER_ID, first_name: 'Ali', last_name: 'Valiyev', phone_verified: false };
+    renderCheckout();
+    expect(await screen.findByTestId('phone-card-checkout')).toBeInTheDocument();
   });
 });

@@ -223,7 +223,7 @@ describe('OrderDetailView: content', () => {
     session.status = 'anonymous';
     routes['GET /auth/config'] = () => respond({ telegram_oidc: { enabled: false } });
     const second = renderDetail();
-    expect(screen.getByRole('status')).toHaveTextContent('Telegram orqali oching');
+    expect(await screen.findByText(/Telegram orqali oching/)).toBeInTheDocument();
     second.unmount();
 
     session.status = 'authenticated';

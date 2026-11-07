@@ -15,6 +15,8 @@ export type CheckoutFailure =
   | { kind: 'district_not_served' }
   /** The customer already has the maximum number of unconfirmed (NEW) orders. */
   | { kind: 'too_many_open_orders' }
+  /** The account phone is not verified yet (shared from Telegram in the phone card). */
+  | { kind: 'phone_verification_required' }
   | { kind: 'validation'; fields: FormErrors; unmapped: number }
   /** Wait `seconds`, then the same request (and key) may be sent again. */
   | { kind: 'rate_limited'; seconds: number }
@@ -63,6 +65,8 @@ export function classifyCheckoutError(error: unknown): CheckoutFailure {
       return { kind: 'district_not_served' };
     case 'too_many_open_orders':
       return { kind: 'too_many_open_orders' };
+    case 'phone_verification_required':
+      return { kind: 'phone_verification_required' };
     case 'validation_error': {
       const { fields, unmapped } = serverFieldErrors(error.details);
       return { kind: 'validation', fields, unmapped };

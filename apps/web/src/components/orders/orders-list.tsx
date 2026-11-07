@@ -86,7 +86,11 @@ export function OrdersList({ page }: { page: number }) {
   }, [status, fetchOrders]);
 
   if (status !== 'authenticated') {
-    return status === 'loading' ? <OrdersSkeleton label={dict.orders.loading} /> : <SignInPrompt />;
+    return status === 'loading' ? (
+      <OrdersSkeleton label={dict.orders.loading} />
+    ) : (
+      <SignInPrompt variant="screen" />
+    );
   }
   if (load.kind === 'loading') return <OrdersSkeleton label={dict.orders.loading} />;
   if (load.kind === 'failed') {

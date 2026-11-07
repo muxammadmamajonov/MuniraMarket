@@ -4,6 +4,7 @@ import { notFound } from 'next/navigation';
 import { connection } from 'next/server';
 import Script from 'next/script';
 import { BottomNav } from '@/components/bottom-nav';
+import { LocaleSync } from '@/components/locale-sync';
 import { OfflineBanner } from '@/components/offline-banner';
 import { SiteHeader } from '@/components/site-header';
 import { TelegramChrome } from '@/components/telegram-chrome';
@@ -14,6 +15,7 @@ import { readYandexMapsApiKey } from '@/lib/maps/config';
 import { MapsConfigProvider } from '@/lib/maps/use-yandex-maps';
 import { SessionProvider } from '@/lib/session';
 import { TELEGRAM_WEB_APP_SCRIPT_URL, TelegramProvider } from '@/lib/telegram';
+import { BotUsernameProvider, readTelegramBotUsername } from '@/lib/telegram/bot-link';
 import '../globals.css';
 
 // Only the supported locales exist; anything else is a 404 without rendering.
@@ -78,26 +80,29 @@ export default async function RootLayout({ children, params }: LayoutProps<'/[lo
       </head>
       <body>
         <LocaleProvider locale={locale}>
-          <TelegramProvider>
-            <SessionProvider>
-              <TelegramChrome />
-              <CartProvider>
-                <MapsConfigProvider apiKey={mapsApiKey}>
-                  {/* Bottom padding: the home indicator / Telegram's bottom inset, plus the mobile
+          <BotUsernameProvider username={readTelegramBotUsername()}>
+            <TelegramProvider>
+              <SessionProvider>
+                <TelegramChrome />
+                <LocaleSync />
+                <CartProvider>
+                  <MapsConfigProvider apiKey={mapsApiKey}>
+                    {/* Bottom padding: the home indicator / Telegram's bottom inset, plus the mobile
                       tab bar while it is shown (`--mm-nav-h`, see globals.css). */}
-                  <div className="flex min-h-dvh flex-col pb-[calc(var(--mm-inset-bottom)+var(--mm-nav-h))]">
-                    {/* Below the header: the header pads itself by the top safe-area inset, so a
+                    <div className="flex min-h-dvh flex-col pb-[calc(var(--mm-inset-bottom)+var(--mm-nav-h))]">
+                      {/* Below the header: the header pads itself by the top safe-area inset, so a
                         banner above it would sit under the notch / status bar in fullscreen and
                         installed modes. */}
-                    <SiteHeader locale={locale} dict={dict} />
-                    <OfflineBanner />
-                    {children}
-                  </div>
-                  <BottomNav />
-                </MapsConfigProvider>
-              </CartProvider>
-            </SessionProvider>
-          </TelegramProvider>
+                      <SiteHeader locale={locale} dict={dict} />
+                      <OfflineBanner />
+                      {children}
+                    </div>
+                    <BottomNav />
+                  </MapsConfigProvider>
+                </CartProvider>
+              </SessionProvider>
+            </TelegramProvider>
+          </BotUsernameProvider>
         </LocaleProvider>
       </body>
     </html>

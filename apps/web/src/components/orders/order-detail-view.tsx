@@ -172,7 +172,7 @@ export function OrderDetailView({ id, placed, found = false }: OrderDetailViewPr
     return status === 'loading' ? (
       <DetailSkeleton label={dict.orders.detail.loadingLabel} />
     ) : (
-      <SignInPrompt />
+      <SignInPrompt variant="screen" />
     );
   }
   if (load.kind === 'loading') return <DetailSkeleton label={dict.orders.detail.loadingLabel} />;

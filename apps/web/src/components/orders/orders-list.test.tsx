@@ -166,7 +166,7 @@ describe('OrdersList', () => {
     session.apiFetch.mockReset();
     session.apiFetch.mockResolvedValue(respond({ telegram_oidc: { enabled: false } }));
     const second = renderList();
-    expect(screen.getByRole('status')).toHaveTextContent('Telegram orqali oching');
+    expect(await screen.findByText(/Telegram orqali oching/)).toBeInTheDocument();
     expect(session.apiFetch).not.toHaveBeenCalledWith(
       '/orders?page=1&page_size=10',
       expect.anything(),

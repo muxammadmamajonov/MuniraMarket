@@ -131,7 +131,10 @@ describe('SignInPrompt', () => {
     renderPrompt();
     await waitFor(() => expect(session.apiFetch).toHaveBeenCalled());
     expect(screen.queryByTestId('telegram-login-button')).toBeNull();
-    expect(screen.getByRole('status')).toHaveTextContent('Telegram orqali oching');
+    expect(await screen.findByRole('status')).toHaveTextContent(
+      'Kirish usullarini yuklab bo‘lmadi.',
+    );
+    expect(screen.getByRole('button', { name: 'Qayta urinish' })).toBeInTheDocument();
   });
 
   it('inside the Mini App shows a retry instead of the sign-in button and does not fetch the config', () => {
