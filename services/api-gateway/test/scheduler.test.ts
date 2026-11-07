@@ -19,7 +19,11 @@ const T0 = Date.parse('2026-11-06T10:01:00Z'); // minute 1: no cleanup
 const T15 = Date.parse('2026-11-06T10:15:00Z'); // minute 15: cleanup
 
 function recorder() {
-  const lines: Array<{ level: string; message: string; fields?: Record<string, unknown> | undefined }> = [];
+  const lines: Array<{
+    level: string;
+    message: string;
+    fields?: Record<string, unknown> | undefined;
+  }> = [];
   const log: LogFn = (level, message, fields) => lines.push({ level, message, fields });
   return { lines, log };
 }

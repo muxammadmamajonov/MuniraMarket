@@ -18,7 +18,11 @@ export const UPSTREAM_TIMEOUT_MS = 20_000;
 // The scheduler entrance waits for a whole outbox drain (bounded in the Function).
 export const SCHEDULER_TIMEOUT_MS = 60_000;
 
-export function log(level: 'info' | 'error', message: string, fields: Record<string, unknown> = {}) {
+export function log(
+  level: 'info' | 'error',
+  message: string,
+  fields: Record<string, unknown> = {},
+) {
   const line = JSON.stringify({ level, msg: message, service: 'api-gateway', ...fields });
   if (level === 'error') console.error(line);
   else console.log(line);
@@ -103,4 +107,3 @@ export async function forward(
       : errorResponse(502, 'service_unavailable', 'The service is unavailable');
   }
 }
-

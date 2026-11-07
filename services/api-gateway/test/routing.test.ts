@@ -269,7 +269,10 @@ describe('gateway secret header', () => {
     'replaces a spoofed secret with the configured one on the %s entrance',
     (entrance) => {
       const headers = upstreamHeaders(
-        new Headers({ [GATEWAY_SECRET_HEADER]: 'spoofed-by-the-caller', 'X-MM-Gateway-Secret': 'x' }),
+        new Headers({
+          [GATEWAY_SECRET_HEADER]: 'spoofed-by-the-caller',
+          'X-MM-Gateway-Secret': 'x',
+        }),
         { entrance, clientIp: null, fallbackRequestId: 'ray-123456789', gatewaySecret: SECRET },
       );
       expect(headers.get(GATEWAY_SECRET_HEADER)).toBe(SECRET);
