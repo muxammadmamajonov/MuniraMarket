@@ -18,6 +18,11 @@ export function MapsConfigProvider({
   return <MapsKeyContext.Provider value={apiKey}>{children}</MapsKeyContext.Provider>;
 }
 
+/** The configured key (or `null`), for the picker's reverse-geocoding request. */
+export function useYandexMapsApiKey(): string | null {
+  return useContext(MapsKeyContext);
+}
+
 export type YandexMapsState =
   | { status: 'missing-key' }
   | { status: 'idle' }
