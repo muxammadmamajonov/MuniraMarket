@@ -19,4 +19,5 @@ outside this repository.
 | [0012](0012-warehouse-integration-boundary.md)     | Warehouse integration boundary (no vendor yet) | accepted           |
 | [0013](0013-security-state-in-postgres.md)         | Sessions, rate limits, nonces in PostgreSQL    | accepted           |
 | [0014](0014-telegram-oidc-browser-sign-in.md)      | One bot, Telegram OIDC browser sign-in         | accepted           |
-| [0015](0015-staff-group-and-notification-drain.md) | Staff group alerts, cron drain trigger         | accepted           |
+| [0015](0015-staff-group-and-notification-drain.md) | Staff group alerts, cron drain trigger         | updated by 0016    |
+| [0016](0016-core-api-on-neon-functions.md)         | Core API on Neon Functions, no Containers      | accepted           |

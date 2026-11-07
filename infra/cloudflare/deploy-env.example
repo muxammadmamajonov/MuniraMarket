@@ -3,15 +3,15 @@
 # (e.g. infra/cloudflare/.env.staging, ignored by the root .gitignore), fill in, then:
 #   set -a; . infra/cloudflare/.env.staging; set +a
 #   node infra/cloudflare/scripts/validate-deploy-env.mts --mode staging
-# None of these are secrets; secrets are Worker secrets (README.md). Placeholders only below.
+# None of these are secrets; secrets are Worker / Neon Function secrets (README.md). Placeholders only below.
 
 MM_WEB_HOSTNAME=shop.staging.example.test
 MM_ADMIN_HOSTNAME=admin.staging.example.test
 MM_API_HOSTNAME=api.staging.example.test
+# Also the Function's TELEGRAM_BOT_ID / TELEGRAM_OIDC_CLIENT_ID (neon.ts).
 MM_TELEGRAM_BOT_ID=0000000000
+# Also the Function's CSRF_TRUSTED_ORIGINS (neon.ts).
 MM_CSRF_TRUSTED_ORIGINS=https://shop.staging.example.test,https://admin.staging.example.test
 
-# From the "Core API image" workflow summary. Required in production; staging may build from the
-# Dockerfile when unset.
-CORE_API_IMAGE=
+# Release label stamped on every Core API log line (the Function's APP_RELEASE). Required in production.
 APP_RELEASE=

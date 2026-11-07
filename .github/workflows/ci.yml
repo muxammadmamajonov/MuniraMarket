@@ -81,23 +81,67 @@ jobs:
           uv run alembic check
           make seed
           make seed
-      # infra/neon: SQL-created migrator/runtime roles, migrations as the migrator, runtime grants;
-      # the runtime role must not be able to change or remove audit_log rows or run DDL.
-      - name: Neon role model (least privilege, append-only audit log)
+      - run: make build
+
+  core-api-function:
+    # The production Core API: the `coreapi` Neon Function (Hono + pg). Unit tests also run in the
+    # `js` job; here the integration suite runs against a real PostgreSQL migrated by the same
+    # Alembic migrations production uses.
+    name: Core API Function (Neon)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: muniramarket_test
+          POSTGRES_USER: ci
+          POSTGRES_PASSWORD: ci-only-password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U ci -d muniramarket_test"
+          --health-interval 5s --health-timeout 3s --health-retries 10
+    env:
+      TEST_DATABASE_URL: postgresql://ci:ci-only-password@localhost:5432/muniramarket_test
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: uv sync --locked
+        working-directory: services/api
+      - name: Migrate the test database (Alembic, as in production)
+        working-directory: services/api
+        env:
+          APP_ENV: test
+          DATABASE_URL: postgresql+asyncpg://ci:ci-only-password@localhost:5432/muniramarket_test
+          SERVICE_AUTH_KEYS: ci:ci-only-service-key-not-a-secret-000000
+          TELEGRAM_BOT_ID: '0'
+        run: uv run alembic upgrade head
+      - run: pnpm install --frozen-lockfile
+      # infra/neon: SQL-created migrator/runtime roles, migrations as the migrator, runtime grants.
+      # The runtime role must not change or remove audit_log rows, run DDL or reach another role;
+      # FUNCTION_ROLE_TEST=1 also runs the Function's own Database class over an mm_app connection
+      # (the production runtime connects as mm_app via MM_APP_DATABASE_URL, ADR 0016).
+      - name: Neon role model (least privilege, append-only audit log, no escalation)
         env:
           ADMIN_URL: postgresql://ci:ci-only-password@localhost:5432/postgres
+          FUNCTION_ROLE_TEST: '1'
         run: |
           command -v psql >/dev/null || (sudo apt-get update && sudo apt-get install -y postgresql-client)
-          ../../infra/neon/scripts/verify-roles.sh
-      - run: make build
-      - name: Build API container image
-        run: docker build --build-arg "APP_RELEASE=ci-${GITHUB_SHA::12}" --tag muniramarket-core-api:ci .
-      - name: Smoke-test API container image
-        run: >-
-          docker run --rm --entrypoint python muniramarket-core-api:ci
-          -c "from app.main import create_app; print('container import ok')"
-      - name: Container startup, readiness, logs and graceful shutdown
-        run: scripts/check-container.sh muniramarket-core-api:ci
+          infra/neon/scripts/verify-roles.sh
+      - working-directory: services/core-api-function
+        run: |
+          pnpm typecheck
+          pnpm lint
+          pnpm test
+          pnpm build
 
   workers:
     name: Cloudflare Workers (vinext) and launch config
@@ -127,7 +171,7 @@ jobs:
             pnpm --filter "@muniramarket/$app" build:worker
             pnpm --filter "@muniramarket/$app" build:worker:production
           done
-      - name: Core API gateway build (Worker bundle + container image)
+      - name: Core API gateway build (Worker bundle, no container)
         working-directory: services/api-gateway
         run: pnpm exec cf build --mode staging
       - name: Security headers on the Workers runtime (local previews)
@@ -150,7 +194,7 @@ jobs:
           MM_CSRF_TRUSTED_ORIGINS: https://shop.staging.example.test,https://admin.staging.example.test
         run: |
           node infra/cloudflare/scripts/validate-deploy-env.mts --mode staging
-          # Production must refuse fixture hostnames and a missing image digest (fail closed).
+          # Production must refuse fixture hostnames and a missing release (fail closed).
           if node infra/cloudflare/scripts/validate-deploy-env.mts --mode production; then
             echo "production accepted an incomplete configuration" >&2
             exit 1
@@ -271,13 +315,17 @@ jobs:
           done
           echo "Fake OIDC provider did not start" >&2
           exit 1
-      - name: Start the Core API
-        working-directory: services/api
-        # The OIDC settings are set here only, next to the secret they require: Settings refuses
-        # to load with OIDC enabled and no secret, which would break the migrate/seed/set_role
-        # steps above (they run before the secret is handed to any process). The bot token is
-        # still needed for the storefront's Mini App initData.
+      - run: pnpm install --frozen-lockfile
+      # The production Core API code (the `coreapi` Neon Function) behind its local gateway
+      # stand-in (services/core-api-function/scripts/dev-server.ts: development/test only, a
+      # per-process gateway secret). The OIDC settings are set here only, next to the secret they
+      # require: Settings refuse OIDC without a secret, which would break the migrate/seed/set_role
+      # steps above. The bot token is still needed for the storefront's Mini App initData.
+      - name: Start the Core API (Neon Function code)
+        working-directory: services/core-api-function
         env:
+          # The Function reads only MM_APP_DATABASE_URL (pg URL); DATABASE_URL above is Alembic's.
+          MM_APP_DATABASE_URL: postgresql://ci:ci-only-password@localhost:5432/muniramarket_test
           TELEGRAM_BOT_TOKEN: ${{ env.E2E_TELEGRAM_BOT_TOKEN }}
           TELEGRAM_OIDC_ENABLED: 'true'
           TELEGRAM_OIDC_CLIENT_ID: ${{ env.E2E_OIDC_CLIENT_ID }}
@@ -286,15 +334,13 @@ jobs:
           WEB_PUBLIC_ORIGIN: http://localhost:3000
           ADMIN_PUBLIC_ORIGIN: http://localhost:3001
         run: |
-          nohup uv run uvicorn app.main:create_app --factory --host 127.0.0.1 --port 8000 \
-            > "$E2E_LOG_DIR/api.log" 2>&1 &
+          nohup pnpm dev > "$E2E_LOG_DIR/api.log" 2>&1 &
           for _ in $(seq 1 60); do
-            curl -fsS http://127.0.0.1:8000/api/v1/health && exit 0
+            curl -fsS http://127.0.0.1:8000/api/v1/health/ready && exit 0
             sleep 1
           done
           echo "Core API did not become healthy" >&2
           exit 1
-      - run: pnpm install --frozen-lockfile
       - run: pnpm --filter @muniramarket/web build
       - run: pnpm --filter @muniramarket/admin build
       - run: pnpm --filter @muniramarket/web exec playwright install --with-deps chromium

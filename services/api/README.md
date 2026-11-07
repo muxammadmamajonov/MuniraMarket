@@ -1,8 +1,13 @@
 # MuniraMarket Core API
 
-FastAPI service behind the MuniraMarket web storefront and Telegram Mini App. Python 3.13,
-managed with [uv](https://docs.astral.sh/uv/). This document is for local development only; it
-contains no credentials, and none belong in this repository.
+FastAPI **reference implementation** of the MuniraMarket Core API. Python 3.13, managed with
+[uv](https://docs.astral.sh/uv/). Production runs the TypeScript port as the Neon Function
+`coreapi` ([services/core-api-function](../core-api-function/README.md),
+[ADR 0016](../../architecture/0016-core-api-on-neon-functions.md)); this app is kept as the
+behavioural reference and regression suite, the source of `packages/contracts/openapi.json`, and
+the owner of the Alembic migrations. It is not deployed and has no container image anymore. Notes
+below about uvicorn, proxy headers, `SIGTERM` or the image describe the reference only. This
+document contains no credentials, and none belong in this repository.
 
 ## Quick start
 
@@ -490,11 +495,8 @@ between the models and the migrated schema, the `stock_quantity >= 0` constraint
 extension and indexes. The migration leaves `pg_trgm` installed on downgrade (extensions are
 database-wide).
 
-## Docker
+## Deployment
 
-```bash
-docker build -t muniramarket-core-api services/api
-```
-
-The image is multi-stage, runs as a non-root user and carries no configuration; pass settings as
-environment variables at runtime.
+None: the Core API is deployed as the Neon Function `coreapi` (ADR 0016). The container image and
+its Dockerfile were removed with the move off Cloudflare Containers. Alembic migrations still run
+from this directory against the direct (unpooled) migrator URL (infra/neon/README.md).

@@ -43,7 +43,8 @@ app_url="$(url_for mm_app "$app_pw" "$db")"
 
 cleanup() {
   psql "$ADMIN_URL" -q -v ON_ERROR_STOP=0 -c "DROP DATABASE IF EXISTS $db WITH (FORCE)" \
-    -c "DROP ROLE IF EXISTS mm_app" -c "DROP ROLE IF EXISTS mm_migrator" >/dev/null 2>&1 || true
+    -c "DROP ROLE IF EXISTS mm_app" \
+    -c "DROP ROLE IF EXISTS mm_migrator" >/dev/null 2>&1 || true
 }
 trap cleanup EXIT
 cleanup
@@ -95,4 +96,26 @@ must_fail "UPDATE a new table before the grants run" "UPDATE future_table SET id
 psql "$migrator_url" -q -v ON_ERROR_STOP=1 -f "$here/sql/10-runtime-grants.sql"
 as_app "UPDATE future_table SET id = 1" >/dev/null
 echo "ok: grants re-applied after a migration open DML on the new table"
+
+# The Core API Function connects AS mm_app (MM_APP_DATABASE_URL, ADR 0016): there must be no way
+# from that connection back to an owner or migrator role.
+must_fail "SET ROLE to the migrator" "SET ROLE mm_migrator"
+must_fail "SET ROLE to the bootstrap/owner role" "SET ROLE $(psql "$admin_db_url" -t -A -c 'SELECT current_user')"
+must_fail "SET SESSION AUTHORIZATION to the migrator" "SET SESSION AUTHORIZATION mm_migrator"
+must_fail "GRANT itself another role" "GRANT mm_migrator TO mm_app"
+must_fail "CREATE ROLE" "CREATE ROLE intruder"
+test "$(as_app "RESET ROLE; SELECT current_user")" = "mm_app"
+test "$(as_app "SET ROLE NONE; SELECT current_user")" = "mm_app"
+echo "ok: RESET ROLE / SET ROLE NONE leave mm_app as mm_app"
+test "$(as_app "SELECT rolsuper OR rolcreaterole OR rolcreatedb OR rolbypassrls OR rolreplication FROM pg_roles WHERE rolname = 'mm_app'")" = "f"
+test "$(as_app "SELECT count(*) FROM pg_auth_members m JOIN pg_roles r ON r.oid = m.member WHERE r.rolname = 'mm_app'")" = "0"
+echo "ok: mm_app has no elevated attributes and is a member of no role"
+if [ "${FUNCTION_ROLE_TEST:-0}" = "1" ]; then
+  # The Function's own Database class over an mm_app connection (test/integration/runtimeRole).
+  (
+    cd "$repo"
+    TEST_MM_APP_DATABASE_URL="$app_url" pnpm --filter @muniramarket/core-api-function exec \
+      vitest run test/integration/runtimeRole.test.ts
+  )
+fi
 echo "role model verified"

@@ -9,14 +9,16 @@ trust a Telegram user ID sent by the client.
 
 ## What is in this repository
 
-| Part                 | Stack                 | Purpose                                       |
-| -------------------- | --------------------- | --------------------------------------------- |
-| `apps/web`           | Next.js, Tailwind CSS | Storefront website and Telegram Mini App UI   |
-| `apps/admin`         | Next.js               | Catalog, delivery and order administration    |
-| `services/api`       | FastAPI, PostgreSQL   | Core API: catalog, cart, checkout, orders     |
-| `services/telegram`  | Telegram Serverless   | Bot handlers and Mini App endpoints           |
-| `packages/ui`        | React                 | Shared components, design tokens, so‘m format |
-| `packages/contracts` | TypeScript            | API types generated from the OpenAPI document |
+| Part                         | Stack                      | Purpose                                                                 |
+| ---------------------------- | -------------------------- | ----------------------------------------------------------------------- |
+| `apps/web`                   | Next.js, Tailwind CSS      | Storefront website and Telegram Mini App UI                             |
+| `apps/admin`                 | Next.js                    | Catalog, delivery and order administration                              |
+| `services/core-api-function` | Neon Function (Hono, `pg`) | Production Core API (`coreapi`): catalog, cart, checkout, orders, admin |
+| `services/api-gateway`       | Cloudflare Worker          | Only entrance to the Function; Cron Trigger                             |
+| `services/api`               | FastAPI, PostgreSQL        | Reference Core API, OpenAPI source, Alembic migrations                  |
+| `services/telegram`          | Telegram Serverless        | Bot handlers and Mini App endpoints                                     |
+| `packages/ui`                | React                      | Shared components, design tokens, so‘m format                           |
+| `packages/contracts`         | TypeScript                 | API types generated from the OpenAPI document                           |
 
 Design decisions are recorded in [architecture/](architecture/README.md).
 
@@ -39,7 +41,12 @@ cp .env.example .env                        # local placeholders; never commit .
 make install
 make migrate                                # local database only
 make seed                                   # synthetic demo catalog, zones and slots
-make run                                    # http://localhost:8000/api/v1/health
+cd ../..
+# The production Core API code (Neon Function) on http://127.0.0.1:8000, with the same
+# development settings (reads services/api/.env values from your shell):
+set -a; . services/api/.env; set +a
+pnpm --filter @muniramarket/core-api-function dev
+# (the FastAPI reference still runs with `make -C services/api run` on the same port)
 ```
 
 Start the storefront and the admin panel:
@@ -67,7 +74,7 @@ changes nothing.
 
 ```bash
 pnpm format:check && pnpm lint && pnpm typecheck && pnpm test && pnpm build
-cd services/api && make lint typecheck test build
+cd services/api && make lint typecheck test build        # reference API + migrations
 ```
 
 API integration tests run when `TEST_DATABASE_URL` points at a throw-away local database;
