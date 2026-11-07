@@ -5,6 +5,12 @@ packages:
   - services/api-gateway
   - infra/cloudflare
 
+# Patches for transitive development dependencies reported by `pnpm audit`.
+# These apply workspace-wide and are covered by the full CI suite.
+overrides:
+  fflate: 0.7.5
+  minimatch@10.2.6: 11.0.1
+
 # Dependency build scripts are denied unless listed here explicitly.
 allowBuilds:
   # Optional native resolver used by eslint-config-next; prebuilt bindings work without its script.
