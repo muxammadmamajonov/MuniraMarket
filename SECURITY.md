@@ -1,21 +1,33 @@
 # Security Policy
 
-## Supported Versions
+## Supported versions
 
-Use this section to tell people about which versions of your project are
-currently being supported with security updates.
+Security fixes are applied to the latest code deployed from the `main` branch.
 
-| Version | Supported          |
-| ------- | ------------------ |
-| 5.1.x   | :white_check_mark: |
-| 5.0.x   | :x:                |
-| 4.0.x   | :white_check_mark: |
-| < 4.0   | :x:                |
+## Reporting a vulnerability
 
-## Reporting a Vulnerability
+Please do not open a public issue for a potential security vulnerability.
 
-Use this section to tell people how to report a vulnerability.
+Use this repository's **Private vulnerability reporting** form in GitHub's
+Security tab. Include a clear description, reproduction steps, affected URLs or
+components, and the potential impact. Do not include customer personal data,
+production credentials, access tokens, or database connection strings.
 
-Tell them where to go, how often they can expect to get an update on a
-reported vulnerability, what to expect if the vulnerability is accepted or
-declined, etc.
+If the private reporting form is unavailable, contact a project owner through
+an established private channel and ask for a secure reporting route.
+
+We aim to acknowledge reports within two business days and will share status
+updates while the issue is investigated and fixed.
+
+## Scope
+
+The following are in scope:
+
+- MuniraMarket web, admin, API, Telegram bot, and Cloudflare Worker code in
+  this repository;
+- infrastructure configuration maintained in this repository; and
+- vulnerabilities affecting the confidentiality, integrity, or availability of
+  customer, order, or staff data.
+
+Please give us a reasonable opportunity to investigate before disclosing a
+vulnerability publicly.
