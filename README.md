@@ -70,6 +70,37 @@ later; the demo never links to external images.
 The seed refuses to run unless `APP_ENV` is `development` or `test`, and running it twice
 changes nothing.
 
+### Demo catalog on a production or staging database
+
+An operator can load the same synthetic catalog (without the seed's test-only edge cases) into a
+deployed database whose catalog is still empty. Nothing does this automatically. You need:
+
+- the database migrated to the latest revision (the usual migration job);
+- the migration role's direct URL (`postgresql+asyncpg://…?ssl=verify-full`) from the secret
+  store, in the `DEMO_IMPORT_DATABASE_URL` environment variable of your shell only. Paste it at
+  the hidden prompt below so it stays out of your shell history and files.
+
+Then, from `services/api` (after `make install`):
+
+```bash
+read -rs DEMO_IMPORT_DATABASE_URL && export DEMO_IMPORT_DATABASE_URL
+uv run python -m app.ops.demo_catalog import --confirm "IMPORT DEMO CATALOG"
+```
+
+Without `--confirm` the command is a dry run that prints what it would create. It refuses to run
+when the catalog already contains real (non-demo) categories or products. Running it again
+changes nothing. The tool never prints the database URL.
+
+- **Check:** `uv run python -m app.ops.demo_catalog status` counts demo and real rows.
+- **Remove:** `uv run python -m app.ops.demo_catalog remove --confirm "REMOVE DEMO CATALOG"` (dry
+  run without `--confirm`). It changes demo rows only. Demo products that orders reference are
+  archived instead of deleted.
+- **Delivery:** if the database has no delivery zones yet, the import adds zones named
+  "Demo …"/"Демо …" with made-up fees and hours, and no time slots. They are placeholders.
+  Replace them with the real delivery rules in the admin panel before taking real orders.
+
+Run `unset DEMO_IMPORT_DATABASE_URL` when you are done.
+
 ## Tests and quality checks
 
 ```bash
@@ -96,7 +127,8 @@ Every pull request runs these checks, a secret scan and the end-to-end tests.
 
 - Never commit `.env` files, tokens, database URLs, customer data or catalog exports. Use the
   `.env.example` files, which contain placeholders only.
-- Demo data and dev scripts run only against local development or test databases.
+- Dev scripts and the dev seed run only against local development or test databases. The only
+  demo data that may reach a deployed database is the operator-run demo catalog import above.
 - Telegram identity is verified on the server; sessions use HTTP-only cookies with CSRF checks.
 - Credentials, deployment settings and operational runbooks are kept outside this repository.
 - Report security issues privately to the maintainers rather than in public issues.
