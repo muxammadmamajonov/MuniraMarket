@@ -5,8 +5,9 @@ import { expect, test, type Page } from '@playwright/test';
  *
  * - Bottom tab bar (Home, Catalog, Cart, Profile) on phones only, with real routes, the current
  *   tab marked, an accessible cart badge, and no bar on checkout.
- * - The optional map step of the address chooser: without a Maps key (as in CI) it shows its own
- *   fallback and nothing is ever requested from Yandex. CI never talks to Yandex at all.
+ * - The map step of the address chooser: without a Maps key (this server) it shows its own
+ *   fallback and nothing is requested from Yandex. The keyed map flow (stub SDK) is in
+ *   `delivery-map.spec.ts`. CI never talks to Yandex at all.
  * - Telegram fullscreen and landscape safe areas, through a stubbed `Telegram.WebApp`.
  * - 320px, 390px, desktop, dark mode, long Uzbek/Russian labels, a huge cart count, a long
  *   profile name, offline and a keyboard-sized viewport: never a sideways scroll.
@@ -271,7 +272,7 @@ test.describe('break-ui: worst realistic data', () => {
       .filter({ visible: true })
       .getByRole('button', { name: 'Yetkazib berish manzilini tanlang' })
       .click();
-    await page.getByRole('button', { name: 'Xaritada ko‘rish' }).click();
+    await page.getByRole('button', { name: 'Xaritada belgilash' }).click();
     await expect(page.getByTestId('address-picker').getByRole('dialog')).toBeVisible();
     await expectNoHorizontalScroll(page);
     await context.setOffline(false);
@@ -299,11 +300,11 @@ test.describe('map step without a Maps key (CI)', () => {
 
       await card.getByRole('button', { name: /O‘zgartirish/ }).click();
       const sheet = page.getByRole('dialog', { name: 'Yetkazib berish manzili' });
-      await sheet.getByRole('button', { name: 'Xaritada ko‘rish' }).click();
-      const picker = page.getByRole('dialog', { name: 'Xaritada ko‘rish' });
+      await sheet.getByRole('button', { name: 'Xaritada belgilash' }).click();
+      const picker = page.getByRole('dialog', { name: 'Xaritada belgilash' });
       await expect(picker).toBeVisible();
       await expect(picker.getByTestId('map-unavailable')).toContainText(
-        'Xarita hozircha mavjud emas',
+        'Xarita bu yerda ishlamaydi',
       );
       await expect(picker.getByRole('button', { name: 'Orqaga' })).toBeFocused();
       await expectNoHorizontalScroll(page);
@@ -314,7 +315,7 @@ test.describe('map step without a Maps key (CI)', () => {
       await page.keyboard.press('Escape');
       await expect(picker).toBeHidden();
       await expect(sheet).toBeVisible();
-      // The map selects nothing: no "point marked" or "saved" wording anywhere.
+      // Without a key nothing was checked: no "point marked" or "saved" wording anywhere.
       await expect(page.getByText(/nuqta belgilan|saqlandi/i)).toHaveCount(0);
       expect(yandex).toEqual([]);
       // Still only the district code is remembered.
@@ -330,13 +331,13 @@ test.describe('map step without a Maps key (CI)', () => {
       .filter({ visible: true })
       .getByRole('button', { name: 'Выберите адрес доставки' })
       .click();
-    await page.getByRole('button', { name: 'Посмотреть на карте' }).click();
-    const picker = page.getByRole('dialog', { name: 'Посмотреть на карте' });
-    await expect(picker).toContainText('Карта пока недоступна');
+    await page.getByRole('button', { name: 'Указать на карте' }).click();
+    const picker = page.getByRole('dialog', { name: 'Указать на карте' });
+    await expect(picker).toContainText('Карта здесь не работает');
     // Wait out the 200ms entrance before measuring and capturing.
     await expect(picker).toHaveCSS('opacity', '1');
     const box = await picker.boundingBox();
-    expect(box !== null && box.width <= 768 && box.x > 0).toBe(true);
+    expect(box !== null && box.width <= 896 && box.x > 0).toBe(true);
     await settled(page);
     await shot(page, 'p9-desktop-map-fallback');
   });
@@ -409,7 +410,7 @@ test.describe('Telegram fullscreen safe areas', () => {
       .filter({ visible: true })
       .getByRole('button', { name: 'Yetkazib berish manzilini tanlang' })
       .click();
-    await page.getByRole('button', { name: 'Xaritada ko‘rish' }).click();
+    await page.getByRole('button', { name: 'Xaritada belgilash' }).click();
     const back = page.getByRole('button', { name: 'Orqaga' });
     const backBox = await back.boundingBox();
     expect(backBox !== null && backBox.y >= 93).toBe(true);
