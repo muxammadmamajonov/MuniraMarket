@@ -78,6 +78,16 @@ BEGIN
     IF to_regclass(format('public.%I', table_name)) IS NULL THEN
       RAISE EXCEPTION 'expected legacy table public.% is missing', table_name;
     END IF;
+    IF EXISTS (
+      SELECT
+      FROM pg_class c
+      JOIN pg_namespace n ON n.oid = c.relnamespace
+      WHERE n.nspname = 'public'
+        AND c.relname = table_name
+        AND c.relowner = 'mm_migrator'::regrole
+    ) THEN
+      CONTINUE;
+    END IF;
     EXECUTE format('ALTER TABLE public.%I OWNER TO mm_migrator', table_name);
   END LOOP;
 
@@ -89,6 +99,17 @@ BEGIN
       WHERE n.nspname = 'public' AND t.typname = type_name AND t.typtype = 'e'
     ) THEN
       RAISE EXCEPTION 'expected legacy enum public.% is missing', type_name;
+    END IF;
+    IF EXISTS (
+      SELECT
+      FROM pg_type t
+      JOIN pg_namespace n ON n.oid = t.typnamespace
+      WHERE n.nspname = 'public'
+        AND t.typname = type_name
+        AND t.typtype = 'e'
+        AND t.typowner = 'mm_migrator'::regrole
+    ) THEN
+      CONTINUE;
     END IF;
     EXECUTE format('ALTER TYPE public.%I OWNER TO mm_migrator', type_name);
   END LOOP;
