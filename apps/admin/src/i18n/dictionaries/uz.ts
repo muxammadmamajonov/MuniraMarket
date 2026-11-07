@@ -16,6 +16,7 @@ export const uz: Dictionary = {
   },
   header: {
     appName: 'MuniraMarket Admin',
+    brandTag: 'Boshqaruv paneli',
     logout: 'Chiqish',
     language: { label: 'Til', names: { uz: 'O‘zbekcha', ru: 'Русский' } },
   },
@@ -39,12 +40,17 @@ export const uz: Dictionary = {
     sessionFailed: 'Sessiyani tekshirib bo‘lmadi.',
     callbackTitle: 'Kirish amalga oshmadi',
     callbackStatus: {
-      failed: 'Telegram orqali kirib bo‘lmadi. Qayta urinib ko‘ring.',
-      cancelled: 'Kirish bekor qilindi.',
-      blocked: 'Hisobingiz bloklangan.',
-      unavailable: 'Xizmat vaqtincha ishlamayapti. Birozdan keyin qayta urinib ko‘ring.',
+      failed:
+        'Kirish havolasi eskirgan yoki tasdiqlanmadi. Telegram orqali qaytadan kirib ko‘ring.',
+      cancelled: 'Telegram’da kirish rad etildi. Xohlasangiz, qayta urinib ko‘ring.',
+      blocked: 'Hisobingiz bloklangan. Administratorga murojaat qiling.',
+      unavailable: 'Xizmat vaqtincha ishlamayapti. Bir daqiqadan so‘ng qayta urinib ko‘ring.',
     },
     callbackBack: 'Bosh sahifaga qaytish',
+    tryAgain: 'Qayta urinish',
+    supportCode: 'Yordam kodi: {code}',
+    supportCodeHint: 'Xato takrorlansa, shu kodni administratorga yuboring.',
+    staffOnly: 'Faqat MuniraMarket xodimlari uchun.',
   },
   orders: {
     title: 'Buyurtmalar',

@@ -15,6 +15,8 @@
 @layer base {
   html {
     -webkit-text-size-adjust: 100%;
+    /* The page never shifts sideways when a list grows a scrollbar (filters, pagination). */
+    scrollbar-gutter: stable;
     /* The grey/blue flash on tap fights the `:active` press feedback every control has. */
     -webkit-tap-highlight-color: transparent;
   }
@@ -87,6 +89,63 @@
   }
 }
 
+/*
+ * Thin brand scrollbar (page, sidebar, tables, sheets): a quiet warm track and a deep-red thumb
+ * that only gets stronger on hover. Standard properties first; WebKit fallbacks for Safari.
+ */
+:root {
+  --mm-scrollbar-thumb: color-mix(in srgb, var(--mm-color-primary) 45%, transparent);
+  --mm-scrollbar-thumb-hover: color-mix(in srgb, var(--mm-color-primary) 75%, transparent);
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--mm-scrollbar-thumb) transparent;
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  border: 2px solid transparent;
+  border-radius: 999px;
+  background-clip: padding-box;
+  background-color: var(--mm-scrollbar-thumb);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background-color: var(--mm-scrollbar-thumb-hover);
+}
+
+/* Busy indicator in buttons (transform only; stands still under reduced motion, see below). */
+.mm-spin {
+  animation: mm-spin 800ms linear infinite;
+}
+
+@keyframes mm-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* A screen's content fades in once it has data: opacity and a 4px rise, nothing else. */
+.mm-enter {
+  animation: mm-enter 220ms var(--mm-ease-out) backwards;
+}
+
+@keyframes mm-enter {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+}
+
 /* Content that changed because of a filter or a refresh dims instead of being replaced by a skeleton. */
 .mm-busy {
   opacity: 0.6;
@@ -105,5 +164,9 @@
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
+  }
+
+  .mm-spin {
+    animation: none;
   }
 }
