@@ -13,7 +13,7 @@ const session = vi.hoisted(() => ({
   error: null as unknown,
   apiFetch: vi.fn<(path: string, init?: RequestInit) => Promise<Response>>(),
   retry: vi.fn(),
-  loginWithWidget: vi.fn(),
+  startTelegramLogin: vi.fn(),
   logout: vi.fn(),
 }));
 

@@ -101,3 +101,73 @@ export function isOrderStatus(status) {
     typeof status === 'string' && /** @type {readonly string[]} */ (ORDER_STATUSES).includes(status)
   );
 }
+
+/**
+ * Staff-facing texts. The staff group is shared by uz- and ru-speaking staff, so every staff
+ * message carries both languages: Uzbek first, then Russian, separated by a blank line.
+ */
+export const STAFF_MESSAGES = Object.freeze({
+  connectOrders: Object.freeze({
+    connected:
+      'Guruh ulandi: yangi buyurtmalar va muhim holat o‘zgarishlari shu guruhga yuboriladi.\n\n' +
+      'Группа подключена: новые заказы и важные изменения статуса будут приходить в эту группу.',
+    forbidden:
+      'Guruhni faqat MuniraMarket administratori ulay oladi.\n\n' +
+      'Подключить группу может только администратор MuniraMarket.',
+    failed:
+      'Hozir guruhni ulab bo‘lmadi. Iltimos, keyinroq qayta urinib ko‘ring.\n\n' +
+      'Сейчас не удалось подключить группу. Пожалуйста, попробуйте позже.',
+    groupOnly:
+      'Bu buyruq faqat xodimlar guruhida ishlaydi: botni guruhga qo‘shing va buyruqni o‘sha yerda yuboring.\n\n' +
+      'Эта команда работает только в группе сотрудников: добавьте бота в группу и отправьте команду там.',
+    anonymous:
+      'Buyruqni shaxsiy hisobingizdan yuboring: guruhdagi administrator sozlamalarida “Anonim qolish”ni o‘chiring.\n\n' +
+      'Отправьте команду от своего личного аккаунта: отключите «Оставаться анонимным» в настройках администратора группы.',
+  }),
+  staffAlert: Object.freeze({
+    uz: Object.freeze({
+      headline: Object.freeze({
+        NEW: 'Yangi buyurtma',
+        CANCELLED: 'Buyurtma bekor qilindi',
+        OUT_FOR_DELIVERY: 'Buyurtma yetkazishga chiqdi',
+        DELIVERED: 'Buyurtma yetkazildi',
+        other: 'Buyurtma holati o‘zgardi',
+      }),
+      statusLabel: 'Holat',
+      totalLabel: 'Jami',
+      currency: 'so‘m',
+      cancelledByCustomer: 'Mijoz tomonidan bekor qilindi',
+      status: Object.freeze({
+        NEW: 'Yangi',
+        CONFIRMED: 'Tasdiqlangan',
+        PICKING: 'Yig‘ilmoqda',
+        READY_FOR_DELIVERY: 'Yetkazishga tayyor',
+        OUT_FOR_DELIVERY: 'Yo‘lda',
+        DELIVERED: 'Yetkazildi',
+        CANCELLED: 'Bekor qilingan',
+      }),
+    }),
+    ru: Object.freeze({
+      headline: Object.freeze({
+        NEW: 'Новый заказ',
+        CANCELLED: 'Заказ отменён',
+        OUT_FOR_DELIVERY: 'Заказ передан в доставку',
+        DELIVERED: 'Заказ доставлен',
+        other: 'Статус заказа изменён',
+      }),
+      statusLabel: 'Статус',
+      totalLabel: 'Итого',
+      currency: 'сум',
+      cancelledByCustomer: 'Отменён клиентом',
+      status: Object.freeze({
+        NEW: 'Новый',
+        CONFIRMED: 'Подтверждён',
+        PICKING: 'Собирается',
+        READY_FOR_DELIVERY: 'Готов к доставке',
+        OUT_FOR_DELIVERY: 'В пути',
+        DELIVERED: 'Доставлен',
+        CANCELLED: 'Отменён',
+      }),
+    }),
+  }),
+});

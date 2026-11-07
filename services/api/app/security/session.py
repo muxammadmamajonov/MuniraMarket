@@ -1,10 +1,11 @@
 """Server-side browser sessions (ADR 0007).
 
 The browser holds an opaque random token in an HTTP-only cookie. Only ``sha256(token)`` is used
-as the storage key, so a leaked Redis dump does not contain usable session tokens. Session
+as the storage key, so a leaked database dump does not contain usable session tokens. Session
 records carry their own CSRF token and the timestamps needed for idle expiry, absolute expiry
 and periodic rotation; the policy lives in :class:`SessionManager`, storage behind the small
-:class:`SessionStore` protocol (Redis in deployed environments, in-memory in tests).
+:class:`SessionStore` protocol (PostgreSQL ``auth_sessions`` in deployed environments, ADR 0013;
+in-memory in unit tests).
 
 Rotation leaves a short-lived tombstone ``{"rotated_to": "<new hash>"}`` under the old key, so
 requests the browser sent in parallel with the old cookie still resolve to the session during
@@ -19,12 +20,20 @@ import re
 import secrets
 import uuid
 from dataclasses import dataclass, replace
-from typing import Final, Literal, Protocol
+from datetime import datetime
+from typing import Any, Final, Literal, Protocol
 
-from redis.asyncio import Redis
-from redis.exceptions import RedisError
+from sqlalchemy import delete, select, update
+from sqlalchemy.dialects.postgresql import insert as pg_insert
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.clock import Clock
+from app.models.security_state import AuthSession
+from app.security.errors import StoreUnavailableError
+from app.security.pg import SessionFactory, as_datetime, in_transaction
+
+# Re-exported: routes and dependencies import the store error from here.
+__all__ = ["StoreUnavailableError"]
 
 logger = logging.getLogger("app.security.session")
 
@@ -34,11 +43,10 @@ TOKEN_BYTES: Final = 32
 _TOKEN_RE = re.compile(r"[A-Za-z0-9_-]{43}")
 _HASH_RE = re.compile(r"[0-9a-f]{64}")
 
-AuthMethod = Literal["telegram_init_data", "telegram_login_widget"]
-
-
-class StoreUnavailableError(Exception):
-    """The backing store (Redis) failed. Callers fail closed with 503."""
+AuthMethod = Literal["telegram_init_data", "telegram_oidc"]
+# Which browser origin minted the session (gateway-owned entrance, ADR 0014). Back-office routes
+# accept only ``admin`` sessions created through Telegram OIDC.
+Entrance = Literal["storefront", "admin"]
 
 
 class SessionGoneError(Exception):
@@ -46,37 +54,11 @@ class SessionGoneError(Exception):
 
 
 class SwapResult(enum.IntEnum):
-    """Outcome of :meth:`SessionStore.replace` (the value is what the Lua script returns)."""
+    """Outcome of :meth:`SessionStore.replace`."""
 
     GONE = 0  # the old key no longer exists: logged out / blocked concurrently
     SWAPPED = 1  # new record written, old key turned into a tombstone (or deleted)
     ALREADY_ROTATED = 2  # a parallel request rotated first: the old key is a tombstone
-
-
-# Rotation must never resurrect a session that a concurrent logout/block just deleted, so the
-# swap is conditional on the old key still existing, in one atomic script. The old key is not
-# deleted but rewritten into a tombstone pointing at the new key for the grace period (a grace of
-# 0 deletes it). An old key that already is a tombstone is left alone: a parallel request
-# rotated first, and rotating again would fork the session into two live records.
-# KEYS[1] = old key, KEYS[2] = new key, ARGV[1] = record JSON, ARGV[2] = TTL seconds,
-# ARGV[3] = tombstone JSON, ARGV[4] = grace seconds.
-ROTATE_SESSION_LUA: Final = """\
-local current = redis.call('GET', KEYS[1])
-if not current then
-  return 0
-end
-local ok, record = pcall(cjson.decode, current)
-if ok and type(record) == 'table' and record['rotated_to'] ~= nil then
-  return 2
-end
-redis.call('SET', KEYS[2], ARGV[1], 'EX', ARGV[2])
-if tonumber(ARGV[4]) > 0 then
-  redis.call('SET', KEYS[1], ARGV[3], 'EX', ARGV[4])
-else
-  redis.call('DEL', KEYS[1])
-end
-return 1
-"""
 
 
 def new_token() -> str:
@@ -99,6 +81,7 @@ class SessionData:
     auth_method: AuthMethod
     created_at: int
     last_rotated_at: int
+    entrance: Entrance = "storefront"
 
     def to_json(self) -> str:
         return json.dumps(
@@ -109,6 +92,7 @@ class SessionData:
                 "auth_method": self.auth_method,
                 "created_at": self.created_at,
                 "last_rotated_at": self.last_rotated_at,
+                "entrance": self.entrance,
             },
             separators=(",", ":"),
         )
@@ -122,10 +106,17 @@ class SessionData:
         auth_method = payload.get("auth_method")
         if auth_method == "telegram_init_data":
             method: AuthMethod = "telegram_init_data"
-        elif auth_method == "telegram_login_widget":
-            method = "telegram_login_widget"
+        elif auth_method == "telegram_oidc":
+            method = "telegram_oidc"
         else:
             raise ValueError("unknown auth method")
+        entrance_value = payload.get("entrance")
+        if entrance_value == "storefront":
+            entrance: Entrance = "storefront"
+        elif entrance_value == "admin":
+            entrance = "admin"
+        else:
+            raise ValueError("unknown entrance")
         ints = [payload.get(k) for k in ("telegram_user_id", "created_at", "last_rotated_at")]
         if any(isinstance(v, bool) or not isinstance(v, int) for v in ints):
             raise ValueError("session record has invalid integers")
@@ -139,6 +130,7 @@ class SessionData:
             auth_method=method,
             created_at=payload["created_at"],
             last_rotated_at=payload["last_rotated_at"],
+            entrance=entrance,
         )
 
 
@@ -199,7 +191,7 @@ def _decode(raw: str | bytes | None) -> StoredRecord | None:
 
 
 class InMemorySessionStore:
-    """Process-local store for tests. Mirrors Redis TTL semantics with an injectable clock."""
+    """Process-local store for unit tests. Mirrors the TTL semantics with an injectable clock."""
 
     def __init__(self, clock: Clock) -> None:
         self._clock = clock
@@ -247,8 +239,8 @@ class InMemorySessionStore:
         ttl_seconds: int,
         grace_seconds: int,
     ) -> SwapResult:
-        # Mirrors ROTATE_SESSION_LUA. No await between the check and the writes, so this is
-        # atomic on the event loop.
+        # Mirrors PostgresSessionStore.replace. No await between the check and the writes, so
+        # this is atomic on the event loop.
         raw = self._live(old_hash)
         if raw is None:
             return SwapResult.GONE
@@ -263,44 +255,92 @@ class InMemorySessionStore:
         return SwapResult.SWAPPED
 
 
-class RedisSessionStore:
-    """``mm:sess:<sha256-hex(token)>`` -> JSON record, expiring with ``EX``/``EXPIRE``."""
+class PostgresSessionStore:
+    """``auth_sessions`` rows keyed by ``sha256(token)`` hex, expiring via ``expires_at``.
 
-    def __init__(self, client: Redis, prefix: str = SESSION_KEY_PREFIX) -> None:
-        self._client = client
-        self._prefix = prefix
+    Rows past ``expires_at`` are invisible to every operation (the cleanup job only reclaims
+    their space), so expiry is exact without any background process.
+    """
 
-    def _key(self, token_hash: str) -> str:
-        return f"{self._prefix}:{token_hash}"
+    def __init__(self, factory: SessionFactory, clock: Clock) -> None:
+        self._factory = factory
+        self._clock = clock
+
+    def _now(self) -> datetime:
+        return as_datetime(self._clock())
+
+    def _expires(self, ttl_seconds: int) -> datetime:
+        return as_datetime(self._clock() + ttl_seconds)
 
     async def get(self, token_hash: str) -> StoredRecord | None:
-        try:
-            raw = await self._client.get(self._key(token_hash))
-        except RedisError:
-            raise StoreUnavailableError from None
-        record = _decode(raw)
-        if raw is not None and record is None:
+        now = self._now()
+
+        async def work(db: AsyncSession) -> dict[str, Any] | None:
+            row: dict[str, Any] | None = (
+                await db.execute(
+                    select(AuthSession.record).where(
+                        AuthSession.token_hash == token_hash, AuthSession.expires_at > now
+                    )
+                )
+            ).scalar_one_or_none()
+            return row
+
+        raw = await in_transaction(self._factory, work)
+        if raw is None:
+            return None
+        record = _decode(json.dumps(raw))
+        if record is None:
             await self.delete(token_hash)
         return record
 
     async def set(self, token_hash: str, data: SessionData, ttl_seconds: int) -> None:
-        try:
-            await self._client.set(self._key(token_hash), data.to_json(), ex=ttl_seconds)
-        except RedisError:
-            raise StoreUnavailableError from None
+        values = {
+            "token_hash": token_hash,
+            "record": json.loads(data.to_json()),
+            "user_id": data.user_id,
+            "expires_at": self._expires(ttl_seconds),
+        }
+
+        async def work(db: AsyncSession) -> None:
+            statement = pg_insert(AuthSession).values(**values)
+            await db.execute(
+                statement.on_conflict_do_update(
+                    index_elements=[AuthSession.token_hash],
+                    set_={
+                        "record": statement.excluded.record,
+                        "user_id": statement.excluded.user_id,
+                        "expires_at": statement.excluded.expires_at,
+                    },
+                )
+            )
+
+        await in_transaction(self._factory, work)
 
     async def expire(self, token_hash: str, ttl_seconds: int) -> bool:
-        # EXPIRE on a missing key is a no-op returning 0: it never recreates a deleted session.
-        try:
-            return bool(await self._client.expire(self._key(token_hash), ttl_seconds))
-        except RedisError:
-            raise StoreUnavailableError from None
+        # Only an unexpired row is touched: an expired or deleted session is never revived.
+        now, expires_at = self._now(), self._expires(ttl_seconds)
+
+        async def work(db: AsyncSession) -> bool:
+            result = await db.execute(
+                update(AuthSession)
+                .where(AuthSession.token_hash == token_hash, AuthSession.expires_at > now)
+                .values(expires_at=expires_at)
+                .returning(AuthSession.token_hash)
+            )
+            return result.first() is not None
+
+        return await in_transaction(self._factory, work)
 
     async def delete(self, *token_hashes: str) -> None:
-        try:
-            await self._client.delete(*(self._key(token_hash) for token_hash in token_hashes))
-        except RedisError:
-            raise StoreUnavailableError from None
+        if not token_hashes:
+            return
+
+        async def work(db: AsyncSession) -> None:
+            await db.execute(
+                delete(AuthSession).where(AuthSession.token_hash.in_(list(token_hashes)))
+            )
+
+        await in_transaction(self._factory, work)
 
     async def replace(
         self,
@@ -310,20 +350,57 @@ class RedisSessionStore:
         ttl_seconds: int,
         grace_seconds: int,
     ) -> SwapResult:
-        try:
-            result = await self._client.eval(
-                ROTATE_SESSION_LUA,
-                2,
-                self._key(old_hash),
-                self._key(new_hash),
-                data.to_json(),
-                str(ttl_seconds),
-                RotatedTombstone(new_hash).to_json(),
-                str(grace_seconds),
+        """One transaction holding the old row's lock (``SELECT ... FOR UPDATE``).
+
+        Under READ COMMITTED a waiter re-reads the row once the lock is released, so a parallel
+        rotation that won sees the tombstone (``ALREADY_ROTATED``) and a concurrent logout or
+        block that deleted the row sees nothing (``GONE``). Nothing is written in either case.
+        """
+        now = self._now()
+        record = json.loads(data.to_json())
+        new_expiry = self._expires(ttl_seconds)
+        tombstone = json.loads(RotatedTombstone(new_hash).to_json())
+        grace_expiry = self._expires(grace_seconds)
+
+        async def work(db: AsyncSession) -> SwapResult:
+            current = (
+                await db.execute(
+                    select(AuthSession.record)
+                    .where(AuthSession.token_hash == old_hash, AuthSession.expires_at > now)
+                    .with_for_update()
+                )
+            ).scalar_one_or_none()
+            if current is None:
+                return SwapResult.GONE
+            if isinstance(current, dict) and "rotated_to" in current:
+                return SwapResult.ALREADY_ROTATED
+            await db.execute(
+                pg_insert(AuthSession).values(
+                    token_hash=new_hash,
+                    record=record,
+                    user_id=data.user_id,
+                    expires_at=new_expiry,
+                )
             )
-        except RedisError:
-            raise StoreUnavailableError from None
-        return SwapResult(int(result))
+            if grace_seconds > 0:
+                await db.execute(
+                    update(AuthSession)
+                    .where(AuthSession.token_hash == old_hash)
+                    .values(record=tombstone, user_id=None, expires_at=grace_expiry)
+                )
+            else:
+                await db.execute(delete(AuthSession).where(AuthSession.token_hash == old_hash))
+            return SwapResult.SWAPPED
+
+        return await in_transaction(self._factory, work)
+
+    async def revoke_user(self, user_id: uuid.UUID) -> None:
+        """Delete every live session of ``user_id`` (their tombstones resolve to nothing)."""
+
+        async def work(db: AsyncSession) -> None:
+            await db.execute(delete(AuthSession).where(AuthSession.user_id == user_id))
+
+        await in_transaction(self._factory, work)
 
 
 @dataclass(frozen=True, slots=True)
@@ -381,6 +458,7 @@ class SessionManager:
         user_id: uuid.UUID,
         telegram_user_id: int,
         auth_method: AuthMethod,
+        entrance: Entrance = "storefront",
         previous_token: str | None = None,
     ) -> IssuedSession:
         """Mint a new session. The session presented with the login request is always
@@ -395,6 +473,7 @@ class SessionManager:
             auth_method=auth_method,
             created_at=now,
             last_rotated_at=now,
+            entrance=entrance,
         )
         token = new_token()
         await self._store.set(hash_token(token), data, min(self._idle_ttl, self._absolute_ttl))

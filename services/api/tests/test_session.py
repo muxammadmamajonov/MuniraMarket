@@ -2,30 +2,22 @@
 
 import hashlib
 import json
-import os
 import uuid
-from collections.abc import AsyncIterator
-from typing import cast
 
 import pytest
-from redis.asyncio import Redis
 
 from app.security import session as session_module
 from app.security.session import (
-    ROTATE_SESSION_LUA,
     InMemorySessionStore,
-    RedisSessionStore,
     RotatedTombstone,
     SessionData,
     SessionGoneError,
     SessionManager,
-    StoreUnavailableError,
-    SwapResult,
+    SessionStore,
     hash_token,
     is_well_formed_token,
     new_token,
 )
-from tests.auth_helpers import FakeRedis
 from tests.conftest import NOW, FakeClock
 
 DAY = 86400
@@ -35,7 +27,7 @@ ROTATE = DAY
 USER_ID = uuid.UUID("00000000-0000-4000-8000-000000000001")
 
 
-def _manager(store: InMemorySessionStore | RedisSessionStore, clock: FakeClock) -> SessionManager:
+def _manager(store: SessionStore, clock: FakeClock) -> SessionManager:
     return SessionManager(
         store=store,
         clock=clock,
@@ -83,21 +75,25 @@ def test_tokens_are_random_and_hashed_with_sha256() -> None:
 
 
 def test_session_data_round_trips_and_rejects_garbage() -> None:
-    data = SessionData(USER_ID, 42, "csrf", "telegram_login_widget", 10, 20)
+    data = SessionData(USER_ID, 42, "csrf", "telegram_oidc", 10, 20, "admin")
     assert SessionData.from_json(data.to_json()) == data
     assert json.loads(data.to_json()) == {
         "user_id": str(USER_ID),
         "telegram_user_id": 42,
         "csrf_token": "csrf",
-        "auth_method": "telegram_login_widget",
+        "auth_method": "telegram_oidc",
         "created_at": 10,
         "last_rotated_at": 20,
+        "entrance": "admin",
     }
     good = json.loads(data.to_json())
     for broken in (
         "[]",
         "not json",
         json.dumps({**good, "auth_method": "password"}),
+        json.dumps({**good, "auth_method": "telegram_login_widget"}),
+        json.dumps({**good, "entrance": "internal"}),
+        json.dumps({k: v for k, v in good.items() if k != "entrance"}),
         json.dumps({**good, "created_at": "10"}),
         json.dumps({**good, "telegram_user_id": True}),
         json.dumps({**good, "csrf_token": ""}),
@@ -170,14 +166,8 @@ async def test_rotation_after_threshold(manager: SessionManager, clock: FakeCloc
     assert await manager.load(rotated.token) is not None
 
 
-@pytest.mark.parametrize("backend", ["memory", "redis"])
-async def test_rotation_never_resurrects_a_revoked_session(clock: FakeClock, backend: str) -> None:
-    fake = FakeRedis()
-    store = (
-        InMemorySessionStore(clock)
-        if backend == "memory"
-        else RedisSessionStore(cast("Redis", fake))
-    )
+async def test_rotation_never_resurrects_a_revoked_session(clock: FakeClock) -> None:
+    store = InMemorySessionStore(clock)
     manager = _manager(store, clock)
     token, _ = await _create(manager)
     clock.now += ROTATE
@@ -186,10 +176,7 @@ async def test_rotation_never_resurrects_a_revoked_session(clock: FakeClock, bac
     await manager.revoke(token)  # concurrent logout / block between load and rotation
     with pytest.raises(SessionGoneError):
         await manager.rotate_if_due(loaded)
-    if isinstance(store, InMemorySessionStore):
-        assert len(store) == 0
-    else:
-        assert fake.data == {}
+    assert len(store) == 0
 
 
 async def test_touch_never_recreates_a_deleted_session(
@@ -199,9 +186,6 @@ async def test_touch_never_recreates_a_deleted_session(
     await manager.revoke(token)
     assert await store.expire(hash_token(token), IDLE) is False
     assert len(store) == 0
-    fake = FakeRedis()
-    assert await RedisSessionStore(cast("Redis", fake)).expire("gone", IDLE) is False
-    assert fake.data == {}
 
 
 async def test_create_revokes_the_previous_session(manager: SessionManager) -> None:
@@ -233,15 +217,7 @@ async def test_in_memory_store_drops_malformed_records(
 GRACE = 60
 
 
-def _store(
-    backend: str, clock: FakeClock, fake: FakeRedis
-) -> InMemorySessionStore | RedisSessionStore:
-    if backend == "memory":
-        return InMemorySessionStore(clock)
-    return RedisSessionStore(cast("Redis", fake))
-
-
-def _graceful(store: InMemorySessionStore | RedisSessionStore, clock: FakeClock) -> SessionManager:
+def _graceful(store: SessionStore, clock: FakeClock) -> SessionManager:
     return SessionManager(
         store=store,
         clock=clock,
@@ -261,20 +237,13 @@ async def _rotate(manager: SessionManager, token: str, clock: FakeClock) -> str:
     return rotated.token
 
 
-@pytest.mark.parametrize("backend", ["memory", "redis"])
-async def test_rotated_token_resolves_during_grace_without_rotating_again(
-    clock: FakeClock, backend: str
-) -> None:
-    fake = FakeRedis()
-    store = _store(backend, clock, fake)
+async def test_rotated_token_resolves_during_grace_without_rotating_again(clock: FakeClock) -> None:
+    store = InMemorySessionStore(clock)
     manager = _graceful(store, clock)
     old, data = await _create(manager)
     new = await _rotate(manager, old, clock)
     tombstone = RotatedTombstone(hash_token(new))
     assert await store.get(hash_token(old)) == tombstone
-    if isinstance(store, RedisSessionStore):
-        assert fake.data[f"mm:sess:{hash_token(old)}"] == tombstone.to_json()
-        assert fake.ttls[f"mm:sess:{hash_token(old)}"] == GRACE
 
     clock.now += GRACE - 1
     loaded = await manager.load(old)
@@ -285,18 +254,13 @@ async def test_rotated_token_resolves_during_grace_without_rotating_again(
     assert await manager.peek(old) == loaded.data
     assert await manager.load(new) is not None
 
-    if isinstance(store, InMemorySessionStore):
-        clock.now += 1
-        assert await manager.load(old) is None  # grace over
-        assert await manager.load(new) is not None
+    clock.now += 1
+    assert await manager.load(old) is None  # grace over
+    assert await manager.load(new) is not None
 
 
-@pytest.mark.parametrize("backend", ["memory", "redis"])
-async def test_parallel_rotation_of_the_same_token_does_not_fork(
-    clock: FakeClock, backend: str
-) -> None:
-    fake = FakeRedis()
-    store = _store(backend, clock, fake)
+async def test_parallel_rotation_of_the_same_token_does_not_fork(clock: FakeClock) -> None:
+    store = InMemorySessionStore(clock)
     manager = _graceful(store, clock)
     old, _ = await _create(manager)
     clock.now += ROTATE
@@ -308,17 +272,12 @@ async def test_parallel_rotation_of_the_same_token_does_not_fork(
     assert rotated is not None
     assert await manager.rotate_if_due(second) is None  # served, no second live record
     assert await store.get(hash_token(old)) == RotatedTombstone(hash_token(rotated.token))
-    if isinstance(store, InMemorySessionStore):
-        assert len(store) == 2  # tombstone + one live record
+    assert len(store) == 2  # tombstone + one live record
 
 
-@pytest.mark.parametrize("backend", ["memory", "redis"])
 @pytest.mark.parametrize("revoke_with", ["old", "new"])
-async def test_revoking_either_token_kills_both(
-    clock: FakeClock, backend: str, revoke_with: str
-) -> None:
-    fake = FakeRedis()
-    store = _store(backend, clock, fake)
+async def test_revoking_either_token_kills_both(clock: FakeClock, revoke_with: str) -> None:
+    store = InMemorySessionStore(clock)
     manager = _graceful(store, clock)
     old, _ = await _create(manager)
     new = await _rotate(manager, old, clock)
@@ -365,156 +324,3 @@ def test_malformed_tombstones_are_discarded() -> None:
         assert session_module._decode(raw) is None
     good = RotatedTombstone("a" * 64)
     assert session_module._decode(good.to_json()) == good
-
-
-# --- Redis store: command shapes against a fake client -----------------------------------------
-
-
-async def test_redis_store_commands(clock: FakeClock) -> None:
-    fake = FakeRedis()
-    manager = _manager(RedisSessionStore(cast("Redis", fake)), clock)
-    token, data = await _create(manager)
-    key = f"mm:sess:{hashlib.sha256(token.encode()).hexdigest()}"
-    assert fake.commands == [("SET", key, data.to_json(), "EX", IDLE)]
-    assert token not in json.dumps(fake.commands)  # only the hash is stored
-
-    fake.commands.clear()
-    clock.now += 10
-    assert await manager.load(token) is not None
-    assert fake.commands == [("GET", key), ("EXPIRE", key, IDLE)]
-
-    fake.commands.clear()
-    clock.now += ROTATE
-    loaded = await manager.load(token)
-    assert loaded is not None
-    rotated = await manager.rotate_if_due(loaded)
-    assert rotated is not None
-    new_key = f"mm:sess:{hash_token(rotated.token)}"
-    assert fake.commands[2:] == [
-        (
-            "EVAL",
-            ROTATE_SESSION_LUA,
-            2,
-            key,
-            new_key,
-            rotated.data.to_json(),
-            str(IDLE),
-            json.dumps({"rotated_to": hash_token(rotated.token)}, separators=(",", ":")),
-            "0",
-        ),
-    ]
-    assert key not in fake.data  # no grace configured: the old key is deleted
-    assert fake.ttls[new_key] == IDLE
-
-    fake.commands.clear()
-    await manager.revoke(rotated.token)
-    assert fake.commands == [("GET", new_key), ("DEL", new_key)]
-
-
-async def test_redis_store_discards_malformed_records(clock: FakeClock) -> None:
-    fake = FakeRedis()
-    store = RedisSessionStore(cast("Redis", fake))
-    fake.data["mm:sess:abc"] = "{broken"
-    assert await store.get("abc") is None
-    assert "mm:sess:abc" not in fake.data
-
-
-async def test_redis_errors_become_store_unavailable(clock: FakeClock) -> None:
-    store = RedisSessionStore(cast("Redis", FakeRedis(fail=True)))
-    data = SessionData(USER_ID, 42, "csrf", "telegram_init_data", 1, 1)
-    with pytest.raises(StoreUnavailableError):
-        await store.get("abc")
-    with pytest.raises(StoreUnavailableError):
-        await store.set("abc", data, 10)
-    with pytest.raises(StoreUnavailableError):
-        await store.expire("abc", 10)
-    with pytest.raises(StoreUnavailableError):
-        await store.delete("abc")
-    with pytest.raises(StoreUnavailableError):
-        await store.replace("abc", "def", data, 10, 0)
-
-
-# --- optional: real Redis -------------------------------------------------------------------
-
-
-@pytest.fixture
-async def real_redis() -> AsyncIterator[Redis]:
-    client = Redis.from_url(os.environ["TEST_REDIS_URL"], decode_responses=True)
-    try:
-        yield client
-    finally:
-        await client.aclose()
-
-
-@pytest.mark.integration
-@pytest.mark.redis
-async def test_real_redis_session_lifecycle(real_redis: Redis, clock: FakeClock) -> None:
-    prefix = f"mm:test:{uuid.uuid4().hex}:sess"
-    manager = _manager(RedisSessionStore(real_redis, prefix=prefix), clock)
-    token, data = await _create(manager)
-    key = f"{prefix}:{hash_token(token)}"
-    try:
-        assert 0 < await real_redis.ttl(key) <= IDLE
-        loaded = await manager.load(token)
-        assert loaded is not None
-        assert loaded.data == data
-        clock.now += ROTATE
-        loaded = await manager.load(token)
-        assert loaded is not None
-        rotated = await manager.rotate_if_due(loaded)
-        assert rotated is not None
-        assert await real_redis.exists(key) == 0
-        await manager.revoke(rotated.token)
-        assert await manager.load(rotated.token) is None
-    finally:
-        await real_redis.delete(key)
-
-
-@pytest.mark.integration
-@pytest.mark.redis
-async def test_real_redis_rotation_script(real_redis: Redis, clock: FakeClock) -> None:
-    """ROTATE_SESSION_LUA itself (cjson tombstone detection, grace TTL, grace 0 deletes)."""
-    prefix = f"mm:test:{uuid.uuid4().hex}:sess"
-    store = RedisSessionStore(real_redis, prefix=prefix)
-    manager = _graceful(store, clock)
-    try:
-        old, _ = await _create(manager)
-        clock.now += ROTATE
-        first = await manager.load(old)
-        second = await manager.load(old)
-        assert first is not None
-        assert second is not None
-        rotated = await manager.rotate_if_due(first)
-        assert rotated is not None
-        old_key = f"{prefix}:{hash_token(old)}"
-        new_key = f"{prefix}:{hash_token(rotated.token)}"
-        assert json.loads(await real_redis.get(old_key) or "null") == {
-            "rotated_to": hash_token(rotated.token)
-        }
-        assert 0 < await real_redis.ttl(old_key) <= GRACE
-        assert 0 < await real_redis.ttl(new_key) <= IDLE
-        assert await manager.rotate_if_due(second) is None  # script returned ALREADY_ROTATED
-        assert len(await real_redis.keys(f"{prefix}:*")) == 2
-
-        via_old = await manager.load(old)
-        assert via_old is not None
-        assert via_old.via_tombstone
-
-        await manager.revoke(old)  # kills the tombstone and the live successor
-        assert await real_redis.exists(old_key, new_key) == 0
-
-        # Gone: the swap writes nothing.
-        data = SessionData(USER_ID, 42, "csrf", "telegram_init_data", 1, 1)
-        missing = await store.replace("a" * 64, "b" * 64, data, 10, GRACE)
-        assert missing is SwapResult.GONE
-        assert await real_redis.exists(f"{prefix}:{'b' * 64}") == 0
-
-        # Grace 0 deletes the old key outright.
-        await store.set("c" * 64, data, 100)
-        assert await store.replace("c" * 64, "d" * 64, data, 100, 0) is SwapResult.SWAPPED
-        assert await real_redis.exists(f"{prefix}:{'c' * 64}") == 0
-        assert await store.get("d" * 64) == data
-    finally:
-        keys = await real_redis.keys(f"{prefix}:*")
-        if keys:
-            await real_redis.delete(*keys)

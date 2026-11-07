@@ -3,7 +3,8 @@
 import type {
   SessionResponse,
   TelegramInitDataAuthRequest,
-  TelegramLoginWidgetPayload,
+  TelegramOidcStartRequest,
+  TelegramOidcStartResponse,
   UserPublic,
 } from '@muniramarket/contracts';
 import {
@@ -36,8 +37,14 @@ export interface SessionContextValue {
   apiFetch: (path: string, init?: RequestInit) => Promise<Response>;
   /** Re-runs session establishment (cookie check, then Mini App init-data login). */
   retry: () => void;
-  /** Completes a Telegram Login Widget login. Rejects with {@link ApiRequestError}. */
-  loginWithWidget: (payload: TelegramLoginWidgetPayload) => Promise<void>;
+  /**
+   * Starts "Sign in with Telegram" (OIDC, run by the Core API): `POST /auth/telegram/oidc/start`
+   * with `returnTo` (a locale-prefixed path of this origin) and resolves with the Telegram
+   * authorization URL the caller must navigate to top-level (`window.location.assign`). After the
+   * login Telegram sends the browser to the API's callback, which redirects back to `returnTo` with
+   * the session cookie set. Rejects with {@link ApiRequestError}.
+   */
+  startTelegramLogin: (returnTo: string) => Promise<string>;
   /** Ends the session on the server and forgets the CSRF token. */
   logout: () => Promise<void>;
 }
@@ -59,6 +66,17 @@ type Outcome =
 
 const JSON_HEADERS = { accept: 'application/json', 'content-type': 'application/json' } as const;
 const UNSAFE_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
+
+/** The authorization URL must be an absolute http(s) URL (Telegram's, or a local fake in E2E). */
+function isNavigableUrl(value: unknown): value is string {
+  if (typeof value !== 'string') return false;
+  try {
+    const url = new URL(value);
+    return url.protocol === 'https:' || url.protocol === 'http:';
+  } catch {
+    return false;
+  }
+}
 
 /** `fetch` against the same-origin API, reporting reachability to the offline banner. */
 async function sameOriginFetch(path: string, init: RequestInit): Promise<Response> {
@@ -194,18 +212,25 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     setAttempt((value) => value + 1);
   }, []);
 
-  const loginWithWidget = useCallback(
-    async (payload: TelegramLoginWidgetPayload): Promise<void> => {
-      const response = await sameOriginFetch('/auth/telegram/login-widget', {
-        method: 'POST',
-        headers: JSON_HEADERS,
-        body: JSON.stringify(payload),
+  const startTelegramLogin = useCallback(async (returnTo: string): Promise<string> => {
+    // No CSRF token yet (there is no session); the API checks the trusted `Origin` instead.
+    const body: TelegramOidcStartRequest = { return_to: returnTo };
+    const response = await sameOriginFetch('/auth/telegram/oidc/start', {
+      method: 'POST',
+      headers: JSON_HEADERS,
+      body: JSON.stringify(body),
+    });
+    if (!response.ok) throw await ApiRequestError.fromResponse(response);
+    const { authorization_url: url } = await readJson<TelegramOidcStartResponse>(response);
+    if (!isNavigableUrl(url)) {
+      throw new ApiRequestError({
+        status: response.status,
+        code: 'invalid_response',
+        message: 'Unexpected sign-in response',
       });
-      if (!response.ok) throw await ApiRequestError.fromResponse(response);
-      apply({ kind: 'ok', session: await readJson<SessionResponse>(response) });
-    },
-    [apply],
-  );
+    }
+    return url;
+  }, []);
 
   const logout = useCallback(async (): Promise<void> => {
     const response = await apiFetch('/auth/logout', { method: 'POST' });
@@ -215,8 +240,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   }, [apiFetch, apply]);
 
   const value = useMemo<SessionContextValue>(
-    () => ({ ...state, apiFetch, retry, loginWithWidget, logout }),
-    [state, apiFetch, retry, loginWithWidget, logout],
+    () => ({ ...state, apiFetch, retry, startTelegramLogin, logout }),
+    [state, apiFetch, retry, startTelegramLogin, logout],
   );
 
   return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>;

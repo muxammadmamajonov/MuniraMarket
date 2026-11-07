@@ -11,8 +11,8 @@ import {
 /**
  * Admin login -> product update -> storefront.
  *
- * An admin signs in to the admin app through the Telegram Login Widget redirect (see
- * `signInToAdmin` in `support.ts`), finds a seeded product in Catalog -> Products, changes its
+ * An admin signs in to the admin app through the real "Sign in with Telegram" OIDC redirect,
+ * against the fake provider (see `signInToAdmin` in `support.ts`), finds a seeded product in Catalog -> Products, changes its
  * price and stock, saves, and the storefront product page then shows the new price. The original
  * values are restored through the UI at the end (and, as a safety net, through the API if the test
  * fails halfway), so the other specs keep seeing the seed data.
@@ -38,7 +38,7 @@ function integerOf(text: string): number {
   return Number(text.replace(/\D/g, ''));
 }
 
-test('admin signs in with the Login Widget, changes a product price, and the storefront shows it', async ({
+test('admin signs in with Telegram (OIDC), changes a product price, and the storefront shows it', async ({
   page: storefront,
   browser,
 }) => {
@@ -58,7 +58,7 @@ test('admin signs in with the Login Widget, changes a product price, and the sto
 
   try {
     await signInToAdmin(page);
-    // The signed-in account is shown in the navigation (fake name from the Login Widget fields).
+    // The signed-in account is shown in the navigation (fake name from the fake provider's id_token).
     await expect(page.getByText('E2E', { exact: false }).first()).toBeVisible();
 
     // Catalog -> Products: search for the seeded product and open it.

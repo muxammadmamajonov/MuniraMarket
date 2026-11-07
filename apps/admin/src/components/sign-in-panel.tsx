@@ -37,8 +37,8 @@ function useAuthConfig(attempt: number): ConfigState | null {
 }
 
 /**
- * Shown to a visitor without a session: the Telegram Login Widget when the API enables it, a clear
- * "not configured" screen when it does not. Nothing here touches order data.
+ * Shown to a visitor without a session: the "Sign in with Telegram" button when the API enables
+ * it, a clear "not configured" screen when it does not. Nothing here touches order data.
  */
 export function SignInPanel() {
   const { dict } = useI18n();
@@ -64,8 +64,7 @@ export function SignInPanel() {
     );
   }
 
-  const widget = config.config.telegram_login_widget;
-  if (!widget.enabled || widget.bot_username === null) {
+  if (!config.config.telegram_oidc.enabled) {
     return (
       <section
         role="status"
@@ -81,7 +80,7 @@ export function SignInPanel() {
     <section className="mx-auto flex w-full max-w-md flex-col gap-3 rounded-xl border border-border bg-surface p-6">
       <h1 className="text-xl font-bold">{dict.auth.signInTitle}</h1>
       <p className="text-muted-foreground">{dict.auth.signInHint}</p>
-      <TelegramLoginButton botUsername={widget.bot_username} />
+      <TelegramLoginButton />
     </section>
   );
 }

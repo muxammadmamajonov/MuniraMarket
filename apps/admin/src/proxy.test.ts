@@ -55,7 +55,7 @@ describe('admin proxy: headers on pages', () => {
   const nonceOf = (response: Response) =>
     /'nonce-([^']+)'/.exec(response.headers.get('content-security-policy') ?? '')?.[1];
 
-  it('sets a CSP with a fresh nonce, the Telegram widget allowances and frame-ancestors none', () => {
+  it('sets a CSP with a fresh nonce, no Telegram host and frame-ancestors none', () => {
     const first = proxy(request('/uz'));
     const second = proxy(request('/uz'));
     expect(nonceOf(first)).toBeDefined();
@@ -63,7 +63,8 @@ describe('admin proxy: headers on pages', () => {
     const csp = first.headers.get('content-security-policy') ?? '';
     expect(csp).toContain("script-src 'self' 'nonce-");
     expect(csp).toContain("'strict-dynamic'");
-    expect(csp).toContain('frame-src https://oauth.telegram.org');
+    expect(csp).toContain("frame-src 'none'");
+    expect(csp).not.toContain('telegram');
     expect(csp).toContain("frame-ancestors 'none'");
     expect(csp).not.toContain("'unsafe-eval'");
   });

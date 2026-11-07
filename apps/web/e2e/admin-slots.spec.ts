@@ -15,7 +15,7 @@ import { buildSignedInitData, type FakeTelegramUser } from './telegram-init-data
 /**
  * Zone/slot setup -> checkout slot selection.
  *
- * An admin signs in to the admin app (Telegram Login Widget redirect, see `signInToAdmin`), opens
+ * An admin signs in to the admin app (Telegram OIDC redirect, see `signInToAdmin`), opens
  * Delivery -> Slots and creates a delivery slot for the active seed zone `demo-chekka`
  * (districts chilonzor, olmazor, uchtepa, yashnobod). A customer (Mini App stub) then adds
  * products to the cart, checks out to a district of that zone, picks exactly that slot, places the
@@ -88,7 +88,7 @@ test('admin creates a delivery slot and a customer books exactly that window at 
   const expectedWhen = `${day}.${month}.${year}, ${windowText}`;
   const capacity = 5;
 
-  // --- Admin: sign in with the Login Widget and create the slot -------------------------------
+  // --- Admin: sign in with Telegram (OIDC) and create the slot ---------------------------------
   const adminContext = await newAdminContext(browser);
   const admin = await adminContext.newPage();
   const adminCsp = await trackCspViolations(admin);

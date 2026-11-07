@@ -4,7 +4,7 @@
  *
  * `--mode staging` and `--mode production` select a deployed environment; any other mode
  * (`development`, `undefined`, Vite's defaults) is local development. Each deployed environment
- * is a separate set of Workers (name suffix), with its own secrets, Neon database, Redis and R2
+ * is a separate set of Workers (name suffix), with its own secrets, Neon database and R2
  * bucket. A Preview build never targets production resources.
  */
 

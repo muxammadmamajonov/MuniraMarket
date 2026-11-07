@@ -25,8 +25,10 @@ make run                     # http://127.0.0.1:8000/api/v1/docs (non-production
 
 Database-backed tests are marked `@pytest.mark.integration` and are skipped unless
 `TEST_DATABASE_URL` is set to a disposable PostgreSQL. They create and drop their own schema.
-Real-Redis tests are additionally marked `@pytest.mark.redis` and run only when `TEST_REDIS_URL`
-points at a disposable Redis (7+); they use unique key prefixes and delete what they create.
+`tests/test_security_state_integration.py` runs the PostgreSQL-backed sessions, rate limits,
+replay nonces and OIDC states (ADR 0013) against such a database, including concurrent rotation,
+concurrent hits and one-time nonces/states. Do not point tests at a database with a stale local
+`.env`: run them like CI (`APP_ENV=test`, `TEST_DATABASE_URL` only).
 
 ## Layout
 
@@ -42,7 +44,7 @@ app/
   audit.py           append-only audit writer with the PII allow/deny lists (ADR 0010)
   repositories/      persistence behind small interfaces (faked in tests)
   security/          service request signing (ADR 0003), sessions, CSRF, rate limits (ADR 0007)
-  telegram/          initData and Login Widget verification
+  telegram/          initData verification and Telegram OIDC (code + PKCE, id_token checks)
   api/               routers mounted under /api/v1
 alembic/             async migrations; the URL comes from settings, not alembic.ini
 tests/
@@ -62,21 +64,22 @@ bad value). See `.env.example` for the full list. Highlights:
 - OpenAPI/Swagger is served only when `APP_ENV` is `development` or `test`.
 - `TELEGRAM_INIT_DATA_MAX_AGE_SECONDS` defaults to 3600; `TELEGRAM_ENVIRONMENT=test` is rejected
   in production.
-- Request bodies are capped at 64 KiB (8 KiB for `/auth/telegram/init-data`, 4 KiB for
-  `/auth/telegram/login-widget`); larger requests get 413.
+- Request bodies are capped at 64 KiB (8 KiB for `/auth/telegram/init-data`, 2 KiB for
+  `/auth/telegram/oidc/start`); larger requests get 413.
 - `SESSION_COOKIE_SECURE` defaults to `true`; `false` is refused outside development/test.
 - `CSRF_TRUSTED_ORIGINS` is a comma-separated list of `scheme://host[:port]` origins; `*` is
   rejected and staging/production require `https://`.
-- `TELEGRAM_LOGIN_WIDGET_ENABLED=true` requires `TELEGRAM_BOT_TOKEN` and `TELEGRAM_BOT_USERNAME`.
-  `TELEGRAM_LOGIN_MAX_AGE_SECONDS` (widget `auth_date` max age) defaults to 600: the redirect flow
-  posts the payload right after the user authorises, so a short window suffices and bounds replay.
+- `TELEGRAM_OIDC_ENABLED=true` requires `TELEGRAM_OIDC_CLIENT_ID` (the bot id),
+  `TELEGRAM_OIDC_CLIENT_SECRET` (gateway Worker secret only) and `WEB_PUBLIC_ORIGIN` /
+  `ADMIN_PUBLIC_ORIGIN` (both in `CSRF_TRUSTED_ORIGINS`, `https://` when deployed).
+  `TELEGRAM_OIDC_ISSUER` can only be changed in development/test (E2E fake provider).
 - `SESSION_ROTATION_GRACE_SECONDS` must be 0..300 (default 60).
 - `FORWARDED_ALLOW_IPS` (comma-separated IPs/CIDRs, validated) is required in staging/production
   and may not be `*` there. See "Client IP behind the proxy".
 - **Fail closed outside development** (staging/production refuse to start otherwise):
   `DATABASE_URL` must carry `?ssl=verify-full` (asyncpg's `ssl=`, never libpq's `sslmode=`, which
   is refused everywhere; `require` encrypts without authenticating the server, and the image sets
-  `PGSSLROOTCERT` to the system CA bundle so `verify-full` checks the certificate and hostname), `REDIS_URL` must be `rediss://`,
+  `PGSSLROOTCERT` to the system CA bundle so `verify-full` checks the certificate and hostname),
   `CSRF_TRUSTED_ORIGINS` must be set and `LOG_FORMAT` must be `json`.
 - Pool limits per process: `DB_POOL_SIZE` (1-50, default 5), `DB_MAX_OVERFLOW` (0-50, default 5),
   `DB_POOL_TIMEOUT_SECONDS`, `DB_CONNECT_TIMEOUT_SECONDS`. Every connection sets
@@ -98,11 +101,11 @@ bad value). See `.env.example` for the full list. Highlights:
   template (`/api/v1/orders/{order_id}`), status and duration; never the client IP, query string,
   headers or body. Liveness probes are not access-logged unless they fail.
 - **Health**: `GET /api/v1/health` (liveness, no dependencies) and `GET /api/v1/health/ready`
-  (`SELECT 1` and, when Redis-backed stores are used, `PING`; `503` on failure, logged by
-  exception class only).
+  (`SELECT 1` plus a `LIMIT 0` probe of every security-state table, so a missing migration or
+  grant takes the instance out of service; `503` on failure, logged by exception class only).
 - **Shutdown**: the image runs uvicorn with `--timeout-graceful-shutdown 25`. On `SIGTERM` (sent by
   Cloudflare Containers before a rollout or host stop, up to 15 minutes before `SIGKILL`) it stops
-  accepting connections, finishes in-flight requests, then closes the pool and Redis.
+  accepting connections, finishes in-flight requests, then closes the database pool.
 
 ## Telegram identity (Mini App)
 
@@ -123,18 +126,19 @@ Both reject duplicate fields, stale (`TELEGRAM_INIT_DATA_MAX_AGE_SECONDS`) and f
 Design and rationale: `architecture/0007-browser-sessions-csrf.md`. Browsers reach these routes
 through the web app's same-origin proxy (`/api/v1/[...path]` in `apps/web`), never cross-origin.
 
-| Route                                     | Purpose                                                   |
-| ----------------------------------------- | --------------------------------------------------------- |
-| `GET /api/v1/auth/config`                 | whether the Login Widget is enabled, and the bot username |
-| `POST /api/v1/auth/telegram/init-data`    | Mini App sign-in; `{user, csrf_token}` + session cookie   |
-| `POST /api/v1/auth/telegram/login-widget` | website sign-in (404 `feature_disabled` unless enabled)   |
-| `GET /api/v1/auth/session`                | current user and CSRF token; `401 session_required`       |
-| `POST /api/v1/auth/logout`                | deletes the session, expires the cookie (`204`)           |
+| Route                                      | Purpose                                                        |
+| ------------------------------------------ | -------------------------------------------------------------- |
+| `GET /api/v1/auth/config`                  | whether Telegram OIDC sign-in is available on this origin      |
+| `POST /api/v1/auth/telegram/init-data`     | Mini App sign-in; `{user, csrf_token}` + session cookie        |
+| `POST /api/v1/auth/telegram/oidc/start`    | website/admin sign-in: `{authorization_url}` + binding cookie  |
+| `GET /api/v1/auth/telegram/oidc/callback`  | Telegram's redirect target; `303` to the app (ADR 0014)        |
+| `GET /api/v1/auth/session`                 | current user and CSRF token; `401 session_required`            |
+| `POST /api/v1/auth/logout`                 | deletes the session, expires the cookie (`204`)                |
 
 - **Session cookie**: opaque `secrets.token_urlsafe(32)` in `__Host-mm_session` (`mm_session` when
   `SESSION_COOKIE_SECURE=false` in development), `HttpOnly; SameSite=Lax; Path=/; Secure`, no
-  `Domain`, `Max-Age` = remaining absolute lifetime. Redis stores only `sha256(token)` under
-  `mm:sess:<hash>`. Idle expiry `SESSION_IDLE_TTL_SECONDS` (7 days, sliding), absolute lifetime
+  `Domain`, `Max-Age` = remaining absolute lifetime. PostgreSQL (`auth_sessions`, ADR 0013) stores only
+  `sha256(token)`. Idle expiry `SESSION_IDLE_TTL_SECONDS` (7 days, sliding), absolute lifetime
   `SESSION_ABSOLUTE_TTL_SECONDS` (30 days), rotation after `SESSION_ROTATE_AFTER_SECONDS`
   (24 h, CSRF token kept). Every login replaces the session presented with it.
 - **Rotation grace**: rotation turns the old key into a tombstone `{"rotated_to": "<new hash>"}`
@@ -150,12 +154,13 @@ through the web app's same-origin proxy (`/api/v1/[...path]` in `apps/web`), nev
   `403 csrf_failed`.
 - **Blocking**: the user is re-read on every authenticated request; blocked users get
   `403 account_blocked` and lose the session.
-- **Rate limits** (fixed window, `mm:rl:<scope>:<subject>:<window_start>`): sign-in 10/min per IP,
+- **Rate limits** (fixed window, `rate_limit_counters` row `<scope>:<subject>:<window_start>`,
+  one atomic `INSERT ... ON CONFLICT DO UPDATE ... RETURNING`): sign-in 10/min per IP,
   session lookup and logout 60/min per IP, cart reads 120/min and writes 60/min per user. Per-IP
   ceilings that run **before** any session lookup or database work: `cart_ip` 300/min on every
   `/cart` route and `catalog_ip` 300/min on the catalog reads. `429 rate_limited` carries
   `Retry-After` and is always `Cache-Control: no-store`.
-- **Fail closed**: Redis errors on sessions or rate limits return `503 service_unavailable` (this
+- **Fail closed**: database errors on sessions or rate limits return `503 service_unavailable` (this
   includes the catalog, through `catalog_ip`).
 - All `/api/v1/auth/*` and `/api/v1/cart/*` responses (errors included) and any response that sets
   the session cookie are `Cache-Control: no-store`. An unhandled exception becomes the generic
@@ -197,8 +202,10 @@ when CSRF is not under test) and optionally `get_rate_limiter` through
 `/api/v1/internal/telegram/*` accepts only requests signed per
 `architecture/0003-service-auth-contract.md`. The acting Telegram user is part of the signed
 material and is required on these routes. Every authentication failure returns the same generic
-`401`. The replay store is Redis in deployed environments (`APP_ENV=test` uses an in-memory
-store).
+`401`. The replay store is the `service_request_nonces` table (`APP_ENV=test` uses an in-memory
+store). `POST /api/v1/internal/telegram/staff-chat/connect` (actor required, admin only) backs the
+bot's `/connect_orders`; `POST /api/v1/internal/maintenance/cleanup` (empty actor) deletes expired
+security state and is called by the gateway's scheduler (ADR 0015).
 
 ## Error format
 
@@ -337,10 +344,10 @@ Design: `architecture/0010-admin-content-ops.md`. Shared dependencies: `app/api/
 - **Who**: `operator` works orders and reads the dashboard; `admin` also gets catalog, CSV, zones,
   slots, users and the audit log. The role is re-read from the database on every request and is
   checked **before** any entity is read, so a wrong role gets `403 forbidden` for existing and
-  unknown ids alike. Back-office routes accept only Telegram **Login Widget** sessions (the admin
-  app's sign-in): a Mini App (`initData`) session is a storefront session and gets `403` here even
-  for staff. The storefront proxy answers `404` for `/api/v1/admin/**`; the admin proxy forwards
-  only `admin/**` and the Login Widget/session routes.
+  unknown ids alike. Back-office routes accept only Telegram **OIDC** sessions created on the admin
+  origin (same bot, same Telegram user as the storefront; ADR 0014): a Mini App (`initData`) or
+  storefront session gets `403` here even for staff. The storefront proxy answers `404` for
+  `/api/v1/admin/**`; the admin proxy forwards only `admin/**` and the OIDC/session routes.
 - **Limits**: `admin_ip` 600/min per IP, reads 300/min and writes 120/min per user, CSV import
   10/min and export 20/min per user. Every write needs the CSRF token. Every response is
   `no-store`. The admin app signs in on its own origin: add it to `CSRF_TRUSTED_ORIGINS`.

@@ -10,9 +10,9 @@ dependencies = [
     "boto3>=1.43,<1.44",
     "cryptography>=50,<51",
     "fastapi==0.162.0",
+    "httpx>=0.28,<0.29",
     "pydantic>=2.14,<2.15",
     "pydantic-settings>=2.16,<2.17",
-    "redis>=8.1,<8.2",
     "sqlalchemy[asyncio]>=2.1,<2.2",
     "uvicorn>=0.54,<0.55",
 ]
@@ -27,7 +27,6 @@ packages = ["app"]
 [dependency-groups]
 dev = [
     "boto3-stubs[s3]>=1.43,<1.44",
-    "httpx>=0.28,<0.29",
     "mypy>=2.4,<2.5",
     "pytest>=9,<10",
     "pytest-asyncio>=1.4.1",

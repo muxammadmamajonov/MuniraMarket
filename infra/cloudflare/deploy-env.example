@@ -1,4 +1,5 @@
-# Deploy-time variables for ONE environment (staging or production). Copy to a git-ignored file
+# Deploy-time variables for ONE environment (production; staging only if one is ever created).
+# Production is pinned to muniramarket.uz / admin.muniramarket.uz and bot id 9038491407. Copy to a git-ignored file
 # (e.g. infra/cloudflare/.env.staging, ignored by the root .gitignore), fill in, then:
 #   set -a; . infra/cloudflare/.env.staging; set +a
 #   node infra/cloudflare/scripts/validate-deploy-env.mts --mode staging
@@ -8,9 +9,6 @@ MM_WEB_HOSTNAME=shop.staging.example.test
 MM_ADMIN_HOSTNAME=admin.staging.example.test
 MM_API_HOSTNAME=api.staging.example.test
 MM_TELEGRAM_BOT_ID=0000000000
-MM_TELEGRAM_BOT_USERNAME=example_staging_bot
-# Separate bot used only by the admin Login Widget. Its token is a gateway Worker secret.
-MM_ADMIN_TELEGRAM_BOT_USERNAME=muniramarket_admin_bot
 MM_CSRF_TRUSTED_ORIGINS=https://shop.staging.example.test,https://admin.staging.example.test
 
 # From the "Core API image" workflow summary. Required in production; staging may build from the

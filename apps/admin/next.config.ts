@@ -13,6 +13,10 @@ const securityHeaders = [
   { key: 'Referrer-Policy', value: 'no-referrer' },
   { key: 'Permissions-Policy', value: 'camera=(), microphone=(), payment=(), geolocation=()' },
   { key: 'X-Frame-Options', value: 'DENY' },
+  // Isolates the browsing context group from cross-origin openers. `same-origin-allow-popups`,
+  // not `same-origin`: it is the value Telegram documents as compatible with its sign-in, and it
+  // keeps links we open in a new window (e.g. Telegram, maps) working.
+  { key: 'Cross-Origin-Opener-Policy', value: 'same-origin-allow-popups' },
   { key: 'Content-Security-Policy', value: "frame-ancestors 'none'" },
   // Defence in depth next to the `robots` metadata and robots.txt: keep the admin out of indexes.
   { key: 'X-Robots-Tag', value: 'noindex, nofollow, noarchive' },

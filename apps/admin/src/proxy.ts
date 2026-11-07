@@ -14,7 +14,7 @@ import { buildContentSecurityPolicy, generateNonce } from './lib/csp';
  *    dynamic (no static prerendering), and they are sent `Cache-Control: private, no-store`.
  *
  * What this proxy is NOT: an authentication layer. It never looks at the session cookie and it
- * cannot, since the session lives in Core API's Redis. Access control is enforced in two places:
+ * cannot, since the session lives in Core API's database. Access control is enforced in two places:
  *
  * - Core API (the security boundary): every `/api/v1/admin/**` request re-reads the user's role
  *   from the database and answers 401/403 unless the user is an operator or admin.

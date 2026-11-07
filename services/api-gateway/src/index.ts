@@ -7,6 +7,7 @@ import {
   singleIp,
   upstreamHeaders,
 } from './routing';
+import { runScheduledTick } from './scheduler';
 
 /**
  * Core API gateway: the only way into the FastAPI container (README.md).
@@ -15,6 +16,8 @@ import {
  * - `StorefrontApi` / `AdminApi`: named entrypoints, reachable only through the web and admin
  *   Workers' service bindings (they have no route of their own).
  * - `CoreApiContainer`: the Durable Object that starts the container image and forwards to it.
+ * - `default.scheduled`: the Cron Trigger (deployed modes, every minute). Drains the notification
+ *   outbox and runs housekeeping through the internal `scheduler` entrance (src/scheduler.ts).
  */
 
 const CONTAINER_PORT = 8000;
@@ -26,19 +29,19 @@ const UPSTREAM_TIMEOUT_MS = 20_000;
 const CONTAINER_ENV_KEYS = [
   // secrets
   'DATABASE_URL',
-  'REDIS_URL',
   'SERVICE_AUTH_KEYS',
   'TELEGRAM_BOT_TOKEN',
-  'ADMIN_TELEGRAM_BOT_TOKEN',
+  'TELEGRAM_OIDC_CLIENT_SECRET',
   // plain configuration
   'APP_ENV',
   'APP_RELEASE',
   'LOG_LEVEL',
   'TELEGRAM_BOT_ID',
   'TELEGRAM_ENVIRONMENT',
-  'TELEGRAM_BOT_USERNAME',
-  'ADMIN_TELEGRAM_BOT_USERNAME',
-  'TELEGRAM_LOGIN_WIDGET_ENABLED',
+  'TELEGRAM_OIDC_ENABLED',
+  'TELEGRAM_OIDC_CLIENT_ID',
+  'WEB_PUBLIC_ORIGIN',
+  'ADMIN_PUBLIC_ORIGIN',
   'CSRF_TRUSTED_ORIGINS',
   'FORWARDED_ALLOW_IPS',
   'DB_POOL_SIZE',
@@ -113,7 +116,7 @@ export class CoreApiContainer extends DurableObject<Env> {
     try {
       container.start({
         image,
-        // Needs egress to Neon (PostgreSQL over TLS) and the managed Redis.
+        // Needs egress to Neon (PostgreSQL over TLS) and Telegram (OIDC code exchange, JWKS).
         enableInternet: true,
         env: containerEnv(this.env),
       });
@@ -178,7 +181,9 @@ async function forward(
   const clientIp =
     entrance === 'public'
       ? singleIp(request.headers.get('cf-connecting-ip'))
-      : singleIp(request.headers.get('x-forwarded-for'));
+      : entrance === 'scheduler'
+        ? null
+        : singleIp(request.headers.get('x-forwarded-for'));
   const headers = upstreamHeaders(request.headers, {
     entrance,
     clientIp,
@@ -226,5 +231,25 @@ export class AdminApi extends WorkerEntrypoint<Env> {
 export default {
   fetch(request, env, ctx) {
     return forward(request, env, ctx.exports, 'public');
+  },
+
+  /**
+   * Cron Trigger (every minute, deployed modes only; cloudflare.config.ts). Drains the outbox and,
+   * every 15th minute, cleans expired security state. The requests stay inside this Worker
+   * (`forward(..., 'scheduler')`), never via the public hostname. `runScheduledTick` never
+   * rejects, so a failed tick cannot poison the next one. The per-minute cron keeps a container
+   * instance awake (see src/scheduler.ts for that cost trade-off and why overlapping ticks are
+   * safe).
+   */
+  async scheduled(controller, env, ctx) {
+    const tick = runScheduledTick({
+      env,
+      scheduledTime: controller.scheduledTime,
+      forward: (request) => forward(request, env, ctx.exports, 'scheduler'),
+      fetch: (input, init) => fetch(input, init),
+      log,
+    });
+    ctx.waitUntil(tick);
+    await tick;
   },
 } satisfies ExportedHandler<Env>;

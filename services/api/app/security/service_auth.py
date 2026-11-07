@@ -16,10 +16,13 @@ from typing import Final, Protocol
 
 from fastapi import HTTPException, Request
 from pydantic import SecretStr
-from redis.asyncio import Redis
-from redis.exceptions import RedisError
+from sqlalchemy.dialects.postgresql import insert as pg_insert
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.clock import Clock
+from app.models.security_state import ServiceRequestNonce
+from app.security.errors import StoreUnavailableError
+from app.security.pg import SessionFactory, as_datetime, in_transaction
 
 logger = logging.getLogger("app.security.service_auth")
 
@@ -146,18 +149,37 @@ class InMemoryNonceStore:
         return True
 
 
-class RedisNonceStore:
-    """Replay store shared across instances: ``SET key 1 NX EX <ttl>``."""
+class PostgresNonceStore:
+    """Replay store shared by every instance: ``service_request_nonces``, one row per nonce.
 
-    def __init__(self, client: Redis, prefix: str = "mm:svc-nonce") -> None:
-        self._client = client
-        self._prefix = prefix
+    ``INSERT ... ON CONFLICT DO UPDATE ... WHERE expires_at <= now RETURNING`` returns a row only
+    when the nonce is new or its previous use has expired, in one statement: two concurrent
+    requests with the same nonce cannot both win.
+    """
+
+    def __init__(self, factory: SessionFactory, clock: Clock = time.time) -> None:
+        self._factory = factory
+        self._clock = clock
 
     async def register(self, key_id: str, nonce: str, ttl_seconds: int) -> bool:
-        stored = await self._client.set(
-            f"{self._prefix}:{key_id}:{nonce}", "1", nx=True, ex=ttl_seconds
-        )
-        return bool(stored)
+        now = self._clock()
+        current = as_datetime(now)
+        expires_at = as_datetime(now + ttl_seconds)
+
+        async def work(db: AsyncSession) -> bool:
+            statement = pg_insert(ServiceRequestNonce).values(
+                key_id=key_id, nonce=nonce, expires_at=expires_at
+            )
+            result = await db.execute(
+                statement.on_conflict_do_update(
+                    index_elements=[ServiceRequestNonce.key_id, ServiceRequestNonce.nonce],
+                    set_={"expires_at": statement.excluded.expires_at},
+                    where=ServiceRequestNonce.expires_at <= current,
+                ).returning(ServiceRequestNonce.nonce)
+            )
+            return result.first() is not None
+
+        return await in_transaction(self._factory, work)
 
 
 class ServiceAuthenticator:
@@ -296,7 +318,7 @@ async def require_service_request(request: Request) -> ServiceContext:
         logger.warning("Service request rejected: %s", exc.reason)
     except UnicodeDecodeError:
         logger.warning("Service request rejected: undecodable path")
-    except RedisError:
+    except StoreUnavailableError:
         # Only reachable after a valid signature, so this reveals nothing to an attacker.
         logger.exception("Replay store unavailable; failing closed")
         raise HTTPException(status_code=503, detail="Service unavailable") from None

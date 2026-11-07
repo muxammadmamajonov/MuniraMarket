@@ -6,7 +6,6 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from redis.asyncio import Redis
 
 from app import __version__
 from app.api.router import api_router
@@ -19,16 +18,17 @@ from app.core.request_context import RequestContextMiddleware
 from app.db.session import create_engine, create_session_factory
 from app.security.cookies import SessionCookieMiddleware
 from app.security.neon_auth import NeonAuthVerifier
-from app.security.rate_limit import InMemoryRateLimiter, RateLimiter, RedisRateLimiter
+from app.security.oidc_state import InMemoryOidcStateStore, OidcStateStore, PostgresOidcStateStore
+from app.security.rate_limit import InMemoryRateLimiter, PostgresRateLimiter, RateLimiter
 from app.security.service_auth import (
     InMemoryNonceStore,
     NonceStore,
-    RedisNonceStore,
+    PostgresNonceStore,
     ServiceAuthenticator,
 )
 from app.security.session import (
     InMemorySessionStore,
-    RedisSessionStore,
+    PostgresSessionStore,
     SessionManager,
     SessionStore,
 )
@@ -39,15 +39,15 @@ from app.telegram.identity import (
     HmacInitDataVerifier,
     TelegramIdentityVerifier,
 )
-from app.telegram.login_widget import LoginWidgetVerifier
+from app.telegram.oidc import HttpOidcProvider, OidcClient, OidcEndpoints
 
 logger = logging.getLogger("app.main")
 
 API_PREFIX = "/api/v1"
 # initData is capped at 4096 characters; leave room for JSON framing and URL-encoding overhead.
 INIT_DATA_MAX_BODY_BYTES = 8 * 1024
-# Login Widget payloads are a handful of short fields (the photo URL is the longest).
-LOGIN_WIDGET_MAX_BODY_BYTES = 4 * 1024
+# The OIDC start request carries only a return path.
+OIDC_START_MAX_BODY_BYTES = 2 * 1024
 # Catalog CSV import (admin only): the one route allowed a body above the 64 KiB default.
 CSV_IMPORT_MAX_BODY_BYTES = 1024 * 1024
 
@@ -69,31 +69,26 @@ def build_identity_verifier(settings: Settings, clock: Clock) -> TelegramIdentit
     )
 
 
-def build_login_widget_verifiers(
-    settings: Settings, clock: Clock
-) -> dict[str, LoginWidgetVerifier]:
-    """Build one Login Widget verifier per trusted browser entrance.
-
-    Storefront and admin intentionally use different bots in deployed environments: Telegram's
-    classic widget binds a bot to a website domain, and a staff session must not share the
-    customer Mini App credential.
-    """
-    if not settings.telegram_login_widget_enabled or settings.telegram_bot_token is None:
-        return {}
-    verifiers = {
-        "storefront": LoginWidgetVerifier(
-            bot_token=settings.telegram_bot_token.get_secret_value(),
-            max_age_seconds=settings.telegram_login_max_age_seconds,
+def build_oidc_client(settings: Settings, clock: Clock) -> OidcClient | None:
+    """``None`` unless Telegram OIDC sign-in is enabled (settings guarantee the credentials)."""
+    if (
+        not settings.telegram_oidc_enabled
+        or settings.telegram_oidc_client_id is None
+        or settings.telegram_oidc_client_secret is None
+    ):
+        return None
+    endpoints = OidcEndpoints(issuer=settings.telegram_oidc_issuer)
+    return OidcClient(
+        endpoints=endpoints,
+        client_id=settings.telegram_oidc_client_id,
+        provider=HttpOidcProvider(
+            endpoints=endpoints,
+            client_id=settings.telegram_oidc_client_id,
+            client_secret=settings.telegram_oidc_client_secret.get_secret_value(),
             clock=clock,
-        )
-    }
-    if settings.admin_telegram_bot_token is not None:
-        verifiers["admin"] = LoginWidgetVerifier(
-            bot_token=settings.admin_telegram_bot_token.get_secret_value(),
-            max_age_seconds=settings.telegram_login_max_age_seconds,
-            clock=clock,
-        )
-    return verifiers
+        ),
+        state_ttl_seconds=settings.telegram_oidc_state_ttl_seconds,
+    )
 
 
 def create_app(
@@ -103,6 +98,8 @@ def create_app(
     nonce_store: NonceStore | None = None,
     session_store: SessionStore | None = None,
     rate_limiter: RateLimiter | None = None,
+    oidc_state_store: OidcStateStore | None = None,
+    oidc_client: OidcClient | None = None,
 ) -> FastAPI:
     settings = settings or get_settings()
     configure_logging(
@@ -113,25 +110,30 @@ def create_app(
     )
 
     engine = create_engine(settings)
+    session_factory = create_session_factory(engine)
+    # Unit tests (APP_ENV=test) use process-local stores; everywhere else the security state lives
+    # in PostgreSQL on the application's own pool (ADR 0013), so every instance shares it.
     in_memory = settings.app_env == "test"
-    # One Redis client (connection pool) shared by every Redis-backed store, created only if
-    # some store actually needs it.
-    redis_client: Redis | None = None
-
-    def redis() -> Redis:
-        nonlocal redis_client
-        if redis_client is None:
-            redis_client = Redis.from_url(
-                settings.redis_url.get_secret_value(), decode_responses=True
-            )
-        return redis_client
-
     if nonce_store is None:
-        nonce_store = InMemoryNonceStore(clock) if in_memory else RedisNonceStore(redis())
+        nonce_store = (
+            InMemoryNonceStore(clock) if in_memory else PostgresNonceStore(session_factory, clock)
+        )
     if session_store is None:
-        session_store = InMemorySessionStore(clock) if in_memory else RedisSessionStore(redis())
+        session_store = (
+            InMemorySessionStore(clock)
+            if in_memory
+            else PostgresSessionStore(session_factory, clock)
+        )
     if rate_limiter is None:
-        rate_limiter = InMemoryRateLimiter(clock) if in_memory else RedisRateLimiter(redis(), clock)
+        rate_limiter = (
+            InMemoryRateLimiter(clock) if in_memory else PostgresRateLimiter(session_factory, clock)
+        )
+    if oidc_state_store is None:
+        oidc_state_store = (
+            InMemoryOidcStateStore(clock)
+            if in_memory
+            else PostgresOidcStateStore(session_factory, clock)
+        )
 
     @asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
@@ -150,8 +152,6 @@ def create_app(
             # Runs after uvicorn has stopped accepting connections and drained in-flight
             # requests (SIGTERM, bounded by --timeout-graceful-shutdown).
             logger.info("core-api stopping", extra={"event": "shutdown"})
-            if redis_client is not None:
-                await redis_client.aclose()
             await engine.dispose()
 
     docs = settings.docs_enabled
@@ -165,7 +165,7 @@ def create_app(
     )
     app.state.settings = settings
     app.state.clock = clock
-    app.state.session_factory = create_session_factory(engine)
+    app.state.session_factory = session_factory
     app.state.identity_verifier = build_identity_verifier(settings, clock)
     app.state.service_authenticator = ServiceAuthenticator(
         keys=settings.parsed_service_auth_keys,
@@ -181,16 +181,16 @@ def create_app(
         rotation_grace_seconds=settings.session_rotation_grace_seconds,
     )
     app.state.rate_limiter = rate_limiter
-    app.state.login_widget_verifiers = build_login_widget_verifiers(settings, clock)
+    app.state.oidc_state_store = oidc_state_store
+    app.state.oidc_client = (
+        oidc_client if oidc_client is not None else build_oidc_client(settings, clock)
+    )
     app.state.image_storage = create_image_storage(settings)
     app.state.neon_auth_verifier = (
         NeonAuthVerifier(base_url=settings.neon_auth_base_url, jwks_url=settings.neon_auth_jwks_url)
         if settings.neon_auth_base_url and settings.neon_auth_jwks_url
         else None
     )
-    # Readiness also checks Redis when a Redis-backed store is in use (sessions, rate limits
-    # and replay protection fail closed without it).
-    app.state.redis_ping = None if redis_client is None else redis_client.ping
 
     if settings.cors_allowed_origins:
         app.add_middleware(
@@ -206,7 +206,7 @@ def create_app(
         max_bytes=DEFAULT_MAX_BODY_BYTES,
         path_limits={
             f"{API_PREFIX}/auth/telegram/init-data": INIT_DATA_MAX_BODY_BYTES,
-            f"{API_PREFIX}/auth/telegram/login-widget": LOGIN_WIDGET_MAX_BODY_BYTES,
+            f"{API_PREFIX}/auth/telegram/oidc/start": OIDC_START_MAX_BODY_BYTES,
             f"{API_PREFIX}/admin/catalog/csv/import": CSV_IMPORT_MAX_BODY_BYTES,
         },
     )

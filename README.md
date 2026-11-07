@@ -9,21 +9,21 @@ trust a Telegram user ID sent by the client.
 
 ## What is in this repository
 
-| Part                 | Stack                      | Purpose                                       |
-| -------------------- | -------------------------- | --------------------------------------------- |
-| `apps/web`           | Next.js, Tailwind CSS      | Storefront website and Telegram Mini App UI   |
-| `apps/admin`         | Next.js                    | Catalog, delivery and order administration    |
-| `services/api`       | FastAPI, PostgreSQL, Redis | Core API: catalog, cart, checkout, orders     |
-| `services/telegram`  | Telegram Serverless        | Bot handlers and Mini App endpoints           |
-| `packages/ui`        | React                      | Shared components, design tokens, so‘m format |
-| `packages/contracts` | TypeScript                 | API types generated from the OpenAPI document |
+| Part                 | Stack                 | Purpose                                       |
+| -------------------- | --------------------- | --------------------------------------------- |
+| `apps/web`           | Next.js, Tailwind CSS | Storefront website and Telegram Mini App UI   |
+| `apps/admin`         | Next.js               | Catalog, delivery and order administration    |
+| `services/api`       | FastAPI, PostgreSQL   | Core API: catalog, cart, checkout, orders     |
+| `services/telegram`  | Telegram Serverless   | Bot handlers and Mini App endpoints           |
+| `packages/ui`        | React                 | Shared components, design tokens, so‘m format |
+| `packages/contracts` | TypeScript            | API types generated from the OpenAPI document |
 
 Design decisions are recorded in [architecture/](architecture/README.md).
 
 ## Run it locally
 
 You need Node.js 24 with pnpm 12, Python 3.13 with [uv](https://docs.astral.sh/uv/), and Docker
-for the local PostgreSQL and Redis.
+for the local PostgreSQL.
 
 ```bash
 pnpm install

@@ -7,9 +7,12 @@ demotion or block takes effect immediately, and it is checked **before** any ent
 wrong role gets the same ``403 forbidden`` for existing and unknown ids. The admin web app is not
 a security boundary: this API enforces every rule on its own.
 
-Back-office routes accept only Telegram **Login Widget** sessions (the admin app's sign-in). A
-Mini App (``initData``) session is a storefront session: its token lives where storefront scripts
-run and ``initData`` can be replayed for up to an hour, so it is never a back-office credential.
+Back-office routes accept only sessions created by Telegram OIDC sign-in **on the admin origin**
+(``auth_method == "telegram_oidc"`` and ``entrance == "admin"``, ADR 0014). It is the same
+Telegram user and the same bot as on the storefront; the role check below decides access. A Mini
+App (``initData``) session is a storefront session: its token lives where storefront scripts run
+and ``initData`` can be replayed for up to an hour, so it is never a back-office credential, and
+neither is a storefront OIDC session.
 """
 
 from collections.abc import Sequence
@@ -46,8 +49,8 @@ def admin_required() -> ApiError:
 
 
 async def require_back_office_session(auth: CurrentSessionDep) -> None:
-    """Refuse anything but a Login Widget session (see the module docstring)."""
-    if auth.session.auth_method != "telegram_login_widget":
+    """Refuse anything but an admin-origin OIDC session (see the module docstring)."""
+    if auth.session.auth_method != "telegram_oidc" or auth.session.entrance != "admin":
         raise staff_required()
 
 

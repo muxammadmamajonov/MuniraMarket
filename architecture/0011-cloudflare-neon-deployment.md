@@ -2,6 +2,8 @@
 
 - Status: accepted
 
+> **Amended** by [ADR 0013](0013-security-state-in-postgres.md): there is no Redis; sessions, rate limits and nonces live in Neon. One Neon project (`munira-market`, production branch) is used; no staging project is created for launch.
+
 ## Context
 
 MuniraMarket goes to a soft launch. The storefront/Mini App and the admin are Next.js apps, the

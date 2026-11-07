@@ -263,20 +263,60 @@ describe('SessionProvider', () => {
     expect(screen.getByTestId('status')).toHaveTextContent('anonymous');
   });
 
-  it('loginWithWidget posts the payload and authenticates', async () => {
+  it('startTelegramLogin posts return_to and resolves with the authorization URL', async () => {
+    const url = 'https://oauth.telegram.org/auth?response_type=code&client_id=1';
     mockFetch((call) =>
       call.url.endsWith('/auth/session')
         ? errorBody('session_required', 401)
-        : Response.json(session('csrf-W')),
+        : Response.json({ authorization_url: url }),
     );
     renderSession();
     await waitFor(() => expect(screen.getByTestId('status')).toHaveTextContent('anonymous'));
-    const payload = { id: 5, first_name: 'W', auth_date: 1, hash: 'h' };
-    await act(() => latest.loginWithWidget(payload));
-    const call = calls.find((c) => c.url === '/api/v1/auth/telegram/login-widget');
-    expect(JSON.parse(call?.body ?? '{}')).toEqual(payload);
-    expect(screen.getByTestId('status')).toHaveTextContent('authenticated');
+    let result = '';
+    await act(async () => {
+      result = await latest.startTelegramLogin('/uz/orders');
+    });
+    expect(result).toBe(url);
+    const call = calls.find((c) => c.url === '/api/v1/auth/telegram/oidc/start');
+    expect(call?.method).toBe('POST');
+    expect(call?.credentials).toBe('same-origin');
+    expect(call?.headers.get('content-type')).toBe('application/json');
+    expect(JSON.parse(call?.body ?? '{}')).toEqual({ return_to: '/uz/orders' });
+    // Starting does not create a session by itself.
+    expect(screen.getByTestId('status')).toHaveTextContent('anonymous');
+    // The old Login Widget route is gone.
+    expect(calls.some((c) => c.url.includes('login-widget'))).toBe(false);
   });
+
+  it('startTelegramLogin rejects with the API error code', async () => {
+    mockFetch((call) =>
+      call.url.endsWith('/auth/session')
+        ? errorBody('session_required', 401)
+        : errorBody('feature_disabled', 404),
+    );
+    renderSession();
+    await waitFor(() => expect(screen.getByTestId('status')).toHaveTextContent('anonymous'));
+    await expect(latest.startTelegramLogin('/uz')).rejects.toMatchObject({
+      code: 'feature_disabled',
+      status: 404,
+    });
+  });
+
+  it.each([['javascript:alert(1)'], ['/relative'], [''], [42]])(
+    'startTelegramLogin refuses a non-http(s) authorization URL (%j)',
+    async (url) => {
+      mockFetch((call) =>
+        call.url.endsWith('/auth/session')
+          ? errorBody('session_required', 401)
+          : Response.json({ authorization_url: url }),
+      );
+      renderSession();
+      await waitFor(() => expect(screen.getByTestId('status')).toHaveTextContent('anonymous'));
+      await expect(latest.startTelegramLogin('/uz')).rejects.toMatchObject({
+        code: 'invalid_response',
+      });
+    },
+  );
 
   it('keeps the CSRF token out of web storage', async () => {
     mockFetch(() => Response.json(session('super-secret-csrf')));

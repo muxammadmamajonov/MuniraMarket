@@ -41,7 +41,7 @@ function useAuthConfig(enabled: boolean): ConfigState {
  * Shown where a signed-in user is required (cart actions) and there is no session:
  *
  * - inside the Mini App: the session could not be established, so offer a retry;
- * - in a browser: the Telegram Login Widget, but only when the API enables it;
+ * - in a browser: the "Sign in with Telegram" button (OIDC), but only when the API enables it;
  * - otherwise: ask the visitor to open the shop in Telegram.
  *
  * Browsing the catalog never needs this.
@@ -69,22 +69,19 @@ export function SignInPrompt() {
   } else message = inMiniApp ? dict.auth.miniAppFailed : dict.auth.openInTelegram;
 
   const showRetry = inMiniApp || status === 'error';
-  const widgetEnabled =
+  const telegramLoginEnabled =
     !inMiniApp &&
     status === 'anonymous' &&
     config.status === 'ready' &&
-    config.config.telegram_login_widget.enabled &&
-    config.config.telegram_login_widget.bot_username !== null;
+    config.config.telegram_oidc.enabled;
 
   return (
     <div className="flex flex-col items-start gap-3 rounded-xl border border-border bg-surface p-4">
-      {widgetEnabled && config.status === 'ready' ? (
+      {telegramLoginEnabled ? (
         <>
           <p className="font-semibold">{dict.auth.loginHeading}</p>
-          <p className="text-muted-foreground">{dict.auth.loginWidgetHint}</p>
-          <TelegramLoginButton
-            botUsername={config.config.telegram_login_widget.bot_username ?? ''}
-          />
+          <p className="text-muted-foreground">{dict.auth.loginHint}</p>
+          <TelegramLoginButton />
         </>
       ) : (
         <p role="status">{message}</p>

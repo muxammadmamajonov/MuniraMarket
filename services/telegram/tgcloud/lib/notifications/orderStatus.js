@@ -5,7 +5,8 @@
  * Delivery path: Core API writes a transactional outbox row for every status change (ADR 0008);
  * `drainOrderNotifications` (`./outbox.js`) claims rows and hands each one to a transport
  * (`./transport.js`), which calls `sendOrderStatusNotification` below. The trigger that runs the
- * drain is NOT wired yet: no handler or endpoint calls it. See services/telegram/README.md.
+ * drain runs from the api-gateway Worker's Cloudflare Cron Trigger (see services/telegram/README.md),
+ * which reuses this module unchanged.
  */
 import { BotApiError } from 'sdk';
 import { isOrderStatus, messagesFor, pickLocale } from '../i18n.js';
@@ -13,6 +14,15 @@ import { isOrderStatus, messagesFor, pickLocale } from '../i18n.js';
 const NBSP = ' ';
 const MAX_REASON_CHARS = 200;
 const ORDER_NUMBER_RE = /^[\p{L}\p{N}_-]{1,32}$/u;
+
+/**
+ * Whether `value` is a well-formed customer-facing order number.
+ * @param {unknown} value
+ * @returns {value is string}
+ */
+export function isOrderNumber(value) {
+  return typeof value === 'string' && ORDER_NUMBER_RE.test(value);
+}
 
 /**
  * Formats a non-negative integer amount of UZS with U+00A0 as the thousands separator.
@@ -62,9 +72,7 @@ function cleanReason(reason) {
  */
 export function buildOrderStatusMessage({ orderNumber, status, locale, totalUzs, cancelReason }) {
   if (!isOrderStatus(status)) throw new TypeError('Unknown order status');
-  if (typeof orderNumber !== 'string' || !ORDER_NUMBER_RE.test(orderNumber)) {
-    throw new TypeError('Invalid order number');
-  }
+  if (!isOrderNumber(orderNumber)) throw new TypeError('Invalid order number');
   const messages = messagesFor(pickLocale(locale));
 
   const lines = [`${messages.orderStatus[status]}`, `${messages.orderLabel} №${orderNumber}`];

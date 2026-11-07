@@ -5,9 +5,13 @@ import { YANDEX_MAPS_API_ORIGIN, YANDEX_MAPS_DATA_ORIGIN } from './maps/config';
  *
  * Scripts are restricted to same-origin files plus the per-request nonce (Next applies it to its
  * own inline/bootstrap scripts and to `<Script>` tags) and `'strict-dynamic'`, so a script that a
- * trusted script loads (for example the Telegram widget) is allowed without a host allow-list.
- * `https://telegram.org` is listed for browsers that ignore `'strict-dynamic'`. There is no
- * `'unsafe-inline'` in `script-src`.
+ * trusted script loads is allowed without a host allow-list. `https://telegram.org` is listed only
+ * for the Mini App script (`telegram-web-app.js`, loaded by the root layout) in browsers that
+ * ignore `'strict-dynamic'`. There is no `'unsafe-inline'` in `script-src`.
+ *
+ * Browser sign-in ("Sign in with Telegram") is an OIDC redirect run by the Core API: no Telegram
+ * script or iframe is loaded for it, so nothing may be framed (`frame-src 'none'`). The top-level
+ * navigation to Telegram (`location.assign`) is not governed by `form-action`.
  *
  * Yandex Maps hosts are added only when a Maps key is configured (`yandexMaps`): the official API
  * host in `script-src` (for browsers that ignore `'strict-dynamic'`) and `connect-src`, its data
@@ -45,6 +49,7 @@ export function buildContentSecurityPolicy({
     "'self'",
     `'nonce-${nonce}'`,
     "'strict-dynamic'",
+    // Mini App script only (see above); the browser sign-in loads nothing from Telegram.
     'https://telegram.org',
     ...(yandexMaps ? [YANDEX_MAPS_API_ORIGIN] : []),
     ...(isDevelopment ? ["'unsafe-eval'"] : []),
@@ -54,8 +59,8 @@ export function buildContentSecurityPolicy({
     ['default-src', ["'self'"]],
     ['script-src', scriptSrc],
     // Inline styles are allowed because a nonce cannot cover `style=""` attributes (React `style`
-    // props, and the Telegram widget sets inline styles on its iframe). Style injection can't run
-    // script, and scripts stay locked down above.
+    // props, and the map library's own elements). Style injection can't run script, and scripts
+    // stay locked down above.
     ['style-src', ["'self'", "'unsafe-inline'"]],
     ['img-src', ["'self'", 'data:', 'blob:', 'https:']],
     ['font-src', ["'self'"]],
@@ -65,8 +70,8 @@ export function buildContentSecurityPolicy({
       ["'self'", ...(yandexMaps ? [YANDEX_MAPS_API_ORIGIN, YANDEX_MAPS_DATA_ORIGIN] : [])],
     ],
     ...(yandexMaps ? ([['worker-src', ["'self'", 'blob:']]] as Array<[string, string[]]>) : []),
-    // Telegram Login Widget iframe.
-    ['frame-src', ['https://oauth.telegram.org']],
+    // Nothing is framed: sign-in is a top-level redirect and the Yandex Maps API needs no frame.
+    ['frame-src', ["'none'"]],
     // Telegram Web embeds Mini Apps in an iframe; native clients use webviews (no framing).
     ['frame-ancestors', ["'self'", 'https://web.telegram.org', 'https://*.telegram.org']],
     ['base-uri', ["'none'"]],

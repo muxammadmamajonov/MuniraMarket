@@ -29,8 +29,11 @@ let counter = 0;
  * @returns {((array: Uint8Array) => Uint8Array) | null}
  */
 function platformGetRandomValues() {
+  // Read through an untyped view of globalThis: `crypto` is typed differently (or not at all) by
+  // the Node and Workers type libraries that check this shared module.
+  const scope = /** @type {{ crypto?: unknown }} */ (/** @type {unknown} */ (globalThis));
   const c = /** @type {{ getRandomValues?: (array: Uint8Array) => Uint8Array } | undefined} */ (
-    /** @type {unknown} */ (globalThis.crypto)
+    scope.crypto
   );
   if (c && typeof c.getRandomValues === 'function') {
     return (array) =>

@@ -145,49 +145,54 @@ describe('SessionProvider', () => {
     });
   });
 
-  it('logs in with the widget payload and ignores a slower session check', async () => {
-    let releaseSession: (response: Response) => void = () => undefined;
+  it('starts the Telegram sign-in: posts return_to and resolves with the authorization URL', async () => {
+    const url = 'https://oauth.telegram.org/auth?response_type=code&client_id=1';
     const api = installFakeApi(
       (call) =>
-        call.path === '/api/v1/auth/session'
-          ? new Promise<Response>((resolve) => {
-              releaseSession = resolve;
-            })
-          : undefined,
-      (call) =>
-        call.path === '/api/v1/auth/telegram/login-widget' ? json(sessionFor('admin')) : undefined,
-    );
-    renderProbe();
-    await waitFor(() => expect(api.to('/api/v1/auth/session')).toHaveLength(1));
-
-    await act(() => session().loginWithWidget({ id: 5, first_name: 'T', auth_date: 1, hash: 'h' }));
-    expect(screen.getByTestId('state')).toHaveTextContent('authenticated:admin:true');
-    expect(api.to('/api/v1/auth/telegram/login-widget')[0]?.body).toEqual({
-      id: 5,
-      first_name: 'T',
-      auth_date: 1,
-      hash: 'h',
-    });
-
-    // The session check that started before the login finally answers "no session".
-    await act(async () => {
-      releaseSession(apiError(401, 'session_required'));
-    });
-    expect(screen.getByTestId('state')).toHaveTextContent('authenticated:admin:true');
-  });
-
-  it('rejects a failed widget login without changing the state', async () => {
-    installFakeApi(
-      (call) =>
         call.path === '/api/v1/auth/session' ? apiError(401, 'session_required') : undefined,
-      () => apiError(401, 'invalid_telegram_auth'),
+      (call) =>
+        call.method === 'POST' && call.path === '/api/v1/auth/telegram/oidc/start'
+          ? json({ authorization_url: url })
+          : undefined,
     );
     renderProbe();
     await waitFor(() => expect(session().status).toBe('anonymous'));
-    await expect(
-      session().loginWithWidget({ id: 5, first_name: 'T', auth_date: 1, hash: 'bad' }),
-    ).rejects.toMatchObject({ code: 'invalid_telegram_auth' });
+
+    let result = '';
+    await act(async () => {
+      result = await session().startTelegramLogin('/ru');
+    });
+    expect(result).toBe(url);
+    expect(api.to('/api/v1/auth/telegram/oidc/start')[0]?.body).toEqual({ return_to: '/ru' });
+    // Starting creates no session by itself.
     expect(session().status).toBe('anonymous');
+  });
+
+  it('rejects a failed sign-in start with the API error, without changing the state', async () => {
+    installFakeApi(
+      (call) =>
+        call.path === '/api/v1/auth/session' ? apiError(401, 'session_required') : undefined,
+      () => apiError(429, 'rate_limited'),
+    );
+    renderProbe();
+    await waitFor(() => expect(session().status).toBe('anonymous'));
+    await expect(session().startTelegramLogin('/uz')).rejects.toMatchObject({
+      code: 'rate_limited',
+    });
+    expect(session().status).toBe('anonymous');
+  });
+
+  it('refuses an authorization URL that is not absolute http(s)', async () => {
+    installFakeApi(
+      (call) =>
+        call.path === '/api/v1/auth/session' ? apiError(401, 'session_required') : undefined,
+      () => json({ authorization_url: 'javascript:alert(1)' }),
+    );
+    renderProbe();
+    await waitFor(() => expect(session().status).toBe('anonymous'));
+    await expect(session().startTelegramLogin('/uz')).rejects.toMatchObject({
+      code: 'invalid_response',
+    });
   });
 
   it('logs out with the CSRF token and forgets the user', async () => {

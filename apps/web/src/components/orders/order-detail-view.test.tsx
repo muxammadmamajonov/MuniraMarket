@@ -12,7 +12,7 @@ const session = vi.hoisted(() => ({
   error: null as unknown,
   apiFetch: vi.fn<(path: string, init?: RequestInit) => Promise<Response>>(),
   retry: vi.fn(),
-  loginWithWidget: vi.fn(),
+  startTelegramLogin: vi.fn(),
   logout: vi.fn(),
 }));
 vi.mock('@/lib/session', () => ({ useSession: () => session }));
@@ -221,8 +221,7 @@ describe('OrderDetailView: content', () => {
     first.unmount();
 
     session.status = 'anonymous';
-    routes['GET /auth/config'] = () =>
-      respond({ telegram_login_widget: { enabled: false, bot_username: null } });
+    routes['GET /auth/config'] = () => respond({ telegram_oidc: { enabled: false } });
     const second = renderDetail();
     expect(screen.getByRole('status')).toHaveTextContent('Telegram orqali oching');
     second.unmount();

@@ -441,7 +441,7 @@ export interface paths {
     };
     /**
      * Auth Config
-     * @description Which sign-in methods the website may offer.
+     * @description Which browser sign-in methods this origin may offer.
      */
     get: operations['auth_config_api_v1_auth_config_get'];
     put?: never;
@@ -532,7 +532,27 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
-  '/api/v1/auth/telegram/login-widget': {
+  '/api/v1/auth/telegram/oidc/callback': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Finish Oidc Login
+     * @description Telegram redirects here. Always answers ``303`` to a same-origin path.
+     */
+    get: operations['finish_oidc_login_api_v1_auth_telegram_oidc_callback_get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/auth/telegram/oidc/start': {
     parameters: {
       query?: never;
       header?: never;
@@ -542,10 +562,12 @@ export interface paths {
     get?: never;
     put?: never;
     /**
-     * Sign In With Login Widget
-     * @description Verify a Telegram Login Widget payload (website) and start a cookie session.
+     * Start Oidc Login
+     * @description Begin a Telegram sign-in: returns the authorization URL the browser must navigate to.
+     *
+     *     Sets a short-lived binding cookie; only the browser holding it can complete the login.
      */
-    post: operations['sign_in_with_login_widget_api_v1_auth_telegram_login_widget_post'];
+    post: operations['start_oidc_login_api_v1_auth_telegram_oidc_start_post'];
     delete?: never;
     options?: never;
     head?: never;
@@ -708,12 +730,35 @@ export interface paths {
     };
     /**
      * Ready
-     * @description Readiness: the database answers ``SELECT 1`` and, when sessions and rate limits use
-     *     Redis, Redis answers ``PING``. Failures are logged by class only, never returned.
+     * @description Readiness: the database answers and the security-state tables (sessions, rate limits,
+     *     replay nonces, OIDC states) are reachable. Failures are logged by class only.
      */
     get: operations['ready_api_v1_health_ready_get'];
     put?: never;
     post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/internal/maintenance/cleanup': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Cleanup
+     * @description Delete expired sessions, rate-limit windows, replay nonces and OIDC login states.
+     *
+     *     Correctness never depends on this (readers filter on ``expires_at``); it only bounds table
+     *     size. Safe to call concurrently and repeatedly.
+     */
+    post: operations['cleanup_api_v1_internal_maintenance_cleanup_post'];
     delete?: never;
     options?: never;
     head?: never;
@@ -791,6 +836,26 @@ export interface paths {
      * @description Upsert the user the bot is acting for. The body id must equal the signed actor.
      */
     post: operations['create_session_api_v1_internal_telegram_session_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/internal/telegram/staff-chat/connect': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Connect
+     * @description Make the given group the staff order-alert chat. ``403`` unless the actor is an admin.
+     */
+    post: operations['connect_api_v1_internal_telegram_staff_chat_connect_post'];
     delete?: never;
     options?: never;
     head?: never;
@@ -1248,7 +1313,7 @@ export interface components {
     };
     /** AuthConfigResponse */
     AuthConfigResponse: {
-      telegram_login_widget: components['schemas']['LoginWidgetConfig'];
+      telegram_oidc: components['schemas']['OidcConfig'];
     };
     /** CancelOrderRequest */
     CancelOrderRequest: {
@@ -1416,6 +1481,11 @@ export interface components {
        * Format: date-time
        */
       lease_expires_at: string;
+    };
+    /** ConnectResponse */
+    ConnectResponse: {
+      /** Connected */
+      connected: boolean;
     };
     /** CreateOrderRequest */
     CreateOrderRequest: {
@@ -1794,36 +1864,6 @@ export interface components {
      * @enum {string}
      */
     Language: 'uz' | 'ru';
-    /** LoginWidgetConfig */
-    LoginWidgetConfig: {
-      /** Bot Username */
-      bot_username: string | null;
-      /** Enabled */
-      enabled: boolean;
-    };
-    /**
-     * LoginWidgetRequest
-     * @description Fields of the Telegram Login Widget callback, passed through unchanged.
-     *
-     *     Unknown fields are rejected: they would otherwise be silently included in (or excluded from)
-     *     the signed data-check-string.
-     */
-    LoginWidgetRequest: {
-      /** Auth Date */
-      auth_date: number;
-      /** First Name */
-      first_name: string;
-      /** Hash */
-      hash: string;
-      /** Id */
-      id: number;
-      /** Last Name */
-      last_name?: string | null;
-      /** Photo Url */
-      photo_url?: string | null;
-      /** Username */
-      username?: string | null;
-    };
     /**
      * NeonIdentityResponse
      * @description Who a verified Neon Auth JWT belongs to (``GET /auth/neon/me``).
@@ -1835,6 +1875,21 @@ export interface components {
       name: string | null;
       /** User Id */
       user_id: string;
+    };
+    /** OidcConfig */
+    OidcConfig: {
+      /** Enabled */
+      enabled: boolean;
+    };
+    /** OidcStartRequest */
+    OidcStartRequest: {
+      /** Return To */
+      return_to?: string | null;
+    };
+    /** OidcStartResponse */
+    OidcStartResponse: {
+      /** Authorization Url */
+      authorization_url: string;
     };
     /** OrderAddress */
     OrderAddress: {
@@ -4824,7 +4879,37 @@ export interface operations {
       };
     };
   };
-  sign_in_with_login_widget_api_v1_auth_telegram_login_widget_post: {
+  finish_oidc_login_api_v1_auth_telegram_oidc_callback_get: {
+    parameters: {
+      query?: {
+        code?: string | null;
+        state?: string | null;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Back to the app (signed in) or to its sign-in page */
+      303: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  start_oidc_login_api_v1_auth_telegram_oidc_start_post: {
     parameters: {
       query?: never;
       header?: never;
@@ -4833,7 +4918,7 @@ export interface operations {
     };
     requestBody: {
       content: {
-        'application/json': components['schemas']['LoginWidgetRequest'];
+        'application/json': components['schemas']['OidcStartRequest'];
       };
     };
     responses: {
@@ -4843,16 +4928,7 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          'application/json': components['schemas']['SessionResponse'];
-        };
-      };
-      /** @description Unauthorized */
-      401: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['ErrorEnvelope'];
+          'application/json': components['schemas']['OidcStartResponse'];
         };
       };
       /** @description Forbidden */
@@ -5411,7 +5487,7 @@ export interface operations {
           'application/json': components['schemas']['ReadinessResponse'];
         };
       };
-      /** @description Database or Redis unavailable */
+      /** @description Database unavailable */
       503: {
         headers: {
           [name: string]: unknown;
@@ -5419,6 +5495,24 @@ export interface operations {
         content: {
           'application/json': components['schemas']['ReadinessResponse'];
         };
+      };
+    };
+  };
+  cleanup_api_v1_internal_maintenance_cleanup_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
       };
     };
   };
@@ -5547,6 +5641,45 @@ export interface operations {
         content: {
           'application/json': components['schemas']['UserEnvelope'];
         };
+      };
+    };
+  };
+  connect_api_v1_internal_telegram_staff_chat_connect_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': {
+          /** Chat Id */
+          chat_id: number;
+          /**
+           * Chat Type
+           * @enum {string}
+           */
+          chat_type: 'group' | 'supergroup';
+        };
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ConnectResponse'];
+        };
+      };
+      /** @description The actor is not an admin */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
       };
     };
   };

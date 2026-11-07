@@ -8,27 +8,76 @@ behalf using signed requests ([ADR 0003](../../architecture/0003-service-auth-co
 
 ## What it does today
 
-| Piece                  | File                                                          | Behaviour                                                                                                                                                                                          |
-| ---------------------- | ------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `/start` handler       | `tgcloud/handlers/message.js` -> `lib/bot/start.js`           | Syncs the Telegram user to the Core API (best effort), replies in uz/ru with a button that opens the Main Mini App. Other messages are ignored.                                                    |
-| `getProfile` endpoint  | `tgcloud/endpoints/getProfile.js` -> `lib/miniapp/profile.js` | Identity is the platform-verified `ctx.initData.user` only (never `input`). Calls the Core API and returns `{ user }`; any failure becomes `EndpointError` with `{ code: 'PROFILE_UNAVAILABLE' }`. |
-| Core API signer/client | `tgcloud/lib/coreApi/`                                        | HMAC-SHA256 request signing exactly per ADR 0003, incl. its test vector.                                                                                                                           |
-| Crypto                 | `tgcloud/lib/crypto/`                                         | Dependency-free UTF-8, SHA-256, HMAC-SHA256 (WebCrypto is not documented in the runtime). Tested against `node:crypto`.                                                                            |
-| Config                 | `tgcloud/lib/config.js`, `tgcloud/schema.js`                  | Reads `service_config` from the Serverless DB; fails closed.                                                                                                                                       |
-| Order notifications    | `tgcloud/lib/notifications/{orderStatus,transport,outbox}.js` | Message builder/sender, transport interface and the outbox drain ([ADR 0008](../../architecture/0008-order-notification-outbox.md)). **Nothing calls the drain yet, see below.**                   |
+| Piece                     | File                                                          | Behaviour                                                                                                                                                                                                     |
+| ------------------------- | ------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `/start` handler          | `tgcloud/handlers/message.js` -> `lib/bot/start.js`           | Syncs the Telegram user to the Core API (best effort), replies in uz/ru with a button that opens the Main Mini App. Private chats only.                                                                       |
+| `/connect_orders` handler | `tgcloud/handlers/message.js` -> `lib/bot/connectOrders.js`   | Inside the staff group: asks the Core API to make this group the order-alert chat, authorised as the sender. See [Staff group](#staff-group-connect_orders).                                                  |
+| `getProfile` endpoint     | `tgcloud/endpoints/getProfile.js` -> `lib/miniapp/profile.js` | Identity is the platform-verified `ctx.initData.user` only (never `input`). Calls the Core API and returns `{ user }`; any failure becomes `EndpointError` with `{ code: 'PROFILE_UNAVAILABLE' }`.            |
+| Core API signer/client    | `tgcloud/lib/coreApi/`                                        | HMAC-SHA256 request signing exactly per ADR 0003, incl. its test vector.                                                                                                                                      |
+| Crypto                    | `tgcloud/lib/crypto/`                                         | Dependency-free UTF-8, SHA-256, HMAC-SHA256 (WebCrypto is not documented in the runtime). Tested against `node:crypto`.                                                                                       |
+| Config                    | `tgcloud/lib/config.js`, `tgcloud/schema.js`                  | Reads `service_config` from the Serverless DB; fails closed.                                                                                                                                                  |
+| Order notifications       | `tgcloud/lib/notifications/`                                  | Customer status messages, staff group alerts, the transport and the outbox drain ([ADR 0008](../../architecture/0008-order-notification-outbox.md)). **Run by the api-gateway Worker's Cron Trigger**, below. |
 
-## Order notifications: outbox drain (not wired yet)
+Every other message is ignored.
 
-[ADR 0008](../../architecture/0008-order-notification-outbox.md): Core API writes a notification
-outbox row in the same transaction as every order status change. This service only _drains_ it.
-**No handler or endpoint calls the drain today**, because the platform documents no trigger that
-runs our code without a Telegram update or a Mini App call.
+## Staff group: `/connect_orders`
 
-| Piece                                                                     | File                             | Role                                                                                                                          |
-| ------------------------------------------------------------------------- | -------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
-| `claimNotifications`, `reportNotification`                                | `lib/coreApi/client.js`          | Signed calls with an EMPTY actor (the drain acts for the service, never for a user).                                          |
-| `NotificationTransport`, `createTelegramBotTransport({ api })`            | `lib/notifications/transport.js` | `deliver(notification)` resolves to `{ outcome, errorCode? }`. The Bot API implementation uses `sendOrderStatusNotification`. |
-| `drainOrderNotifications({ coreApi, transport, limit, maxBatches, now })` | `lib/notifications/outbox.js`    | Claim, validate, deliver sequentially, report; returns a summary.                                                             |
+Order alerts for staff go to ONE Telegram group (or supergroup). To connect it:
+
+1. Add the bot to the staff group (group -> Add members -> the bot). It needs no admin rights,
+   only permission to send messages.
+2. A MuniraMarket **admin** (role `admin` in the Core API, not blocked) sends
+   `/connect_orders` in that group from their personal account. With the bot's privacy mode on
+   (the BotFather default) the bot still receives commands, and `/connect_orders@<bot_username>`
+   is always delivered to the bot it names.
+3. The bot replies (Uzbek, then Russian) that the group is connected. From then on new orders and
+   important status changes (cancelled, out for delivery, delivered) are posted there.
+
+Rules (`lib/bot/connectOrders.js`):
+
+- Recognised text: `/connect_orders` or `/connect_orders@<bot>`; the bot part is compared
+  case-insensitively with `bot_username` from `service_config` (else `getMe`). A command
+  addressed to another bot is ignored silently.
+- Group or supergroup only. In a private chat the bot explains (uz + ru) that the command works
+  only inside the staff group; channels are ignored.
+- Anonymous admins (`sender_chat` set, or `from` is GroupAnonymousBot `1087968824`) and channel
+  senders are refused with a request to send it from a personal account (turn off "Remain
+  anonymous").
+- The Core API call `POST /api/v1/internal/telegram/staff-chat/connect` is signed (ADR 0003) with
+  actor `tg:<message.from.id>` (the platform-verified update, never message text) and body
+  `{"chat_id": <negative id>, "chat_type": "group" | "supergroup"}`. 200 -> "connected"; 403 ->
+  "only a MuniraMarket admin can connect the group" (nothing else revealed); anything else,
+  including missing config -> "could not connect now, try later". The chat id, tokens and the
+  Core API response never appear in replies or logs.
+- The Core API stores the group chat id in its own PostgreSQL; nothing is stored in the
+  Serverless DB. Running `/connect_orders` in another group moves the alerts there. If a group is
+  upgraded to a supergroup its id changes: run `/connect_orders` again in the supergroup.
+
+## Order notifications: outbox drain
+
+[ADR 0008](../../architecture/0008-order-notification-outbox.md): the Core API writes notification
+outbox rows in the same transaction as every order status change. They are _drained_ by
+`drainOrderNotifications` in this package, but **not from Telegram Serverless**: the platform's
+only entry points are `handlers/<update_type>.js` (Telegram updates), `endpoints/<name>.js`
+(callable only from the bot's Mini App with valid initData), `lib/` and `schema.js`
+([Telegram Serverless docs](https://core.telegram.org/bots/serverless)). There is no scheduler,
+cron or background trigger, and no traffic-driven drain is used.
+
+**Trigger:** a Cloudflare Cron Trigger on the api-gateway Worker
+([`services/api-gateway`](../api-gateway/README.md), `src/scheduler.ts`) runs every minute (UTC)
+and calls the SAME modules from `tgcloud/lib/` (bundled into the Worker): `createCoreApiClient`
+(signer), `drainOrderNotifications`, and `createTelegramBotTransport` over a minimal Bot API
+adapter that uses the gateway's `TELEGRAM_BOT_TOKEN` secret. The Core API requests stay inside the
+Worker (internal `scheduler` entrance). Keep `lib/coreApi/` and `lib/notifications/`
+dependency-free plain ESM: the gateway bundles them, and their only `sdk` import (`BotApiError`)
+is aliased there to a stand-in.
+
+| Piece                                                                     | File                                                | Role                                                                                                                                  |
+| ------------------------------------------------------------------------- | --------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| `claimNotifications`, `reportNotification`                                | `lib/coreApi/client.js`                             | Signed calls with an EMPTY actor (the drain acts for the service, never for a user).                                                  |
+| `NotificationTransport`, `createTelegramBotTransport({ api })`            | `lib/notifications/transport.js`                    | `deliver(notification)` resolves to `{ outcome, errorCode? }`; customer messages and staff alerts, both plain text (no `parse_mode`). |
+| `buildOrderStatusMessage`, `buildStaffAlertMessage`                       | `lib/notifications/orderStatus.js`, `staffAlert.js` | Message texts.                                                                                                                        |
+| `drainOrderNotifications({ coreApi, transport, limit, maxBatches, now })` | `lib/notifications/outbox.js`                       | Claim, validate, deliver sequentially, report; returns a summary.                                                                     |
 
 **Core API contract** (signed per ADR 0003, empty actor; 401 for any auth failure, 403 if an actor is sent):
 
@@ -41,11 +90,19 @@ runs our code without a Telegram update or a Mini App call.
   it was reclaimed since. `attempt` is the item's `attempts` from the claim: a fencing token, so a
   worker that outlived its lease cannot overwrite the outcome of the worker that reclaimed it. `retry` backs off on the server and
   becomes `failed` after 8 attempts. `error_code` matches `^[a-z0-9_.-]{1,64}$`.
-- `order.status_changed` payload: `order_id`, `order_number`, `status`, `locale` (`uz`|`ru`),
-  `total_uzs` (integer), `chat_id` (integer), optional `cancel_reason`. No address or phone.
+- `order.status_changed` payload (to the customer): `order_id`, `order_number`, `status`,
+  `locale` (`uz`|`ru`), `total_uzs` (integer), `chat_id` (integer > 0), optional `cancel_reason`.
+  No address or phone.
+- `order.staff_alert` payload (to the connected staff group; enqueued for NEW, CANCELLED,
+  OUT_FOR_DELIVERY and DELIVERED when a group is connected): `order_id`, `order_number`, `status`,
+  `previous_status` (status or `null`), `total_uzs`, `chat_id` (negative group id),
+  `cancelled_by_customer` (boolean). No customer PII. The message is one bilingual text: Uzbek
+  lines (headline + order number, status with the previous status when known, total, "cancelled
+  by the customer" when true), a blank line, then the same in Russian.
 
 **Outcome mapping** (`createTelegramBotTransport`): sent -> `delivered`; Bot API 403 ->
-`recipient_blocked`; Bot API 401 (bad or rotated token), 429 or >= 500 -> `retry` `bot_api_<code>`; other Bot API 4xx ->
+`recipient_blocked` (customer blocked the bot, or the bot was removed from the staff group);
+Bot API 401 (bad or rotated token), 429 or >= 500 -> `retry` `bot_api_<code>`; other Bot API 4xx ->
 `failed` `bot_api_<code>`; unusable notification -> `failed` `invalid_payload`; anything else
 (network) -> `retry` `transport_error`. The drain itself reports `failed` `unknown_event` for an
 unknown `event_type` and `failed` `invalid_payload` for a malformed payload. Error codes never
@@ -56,29 +113,8 @@ checked; with less than 10 s left the rest of the batch is left alone (`skipped`
 after the lease expires. A report that fails (network, 404 after a lost lease) never stops the
 batch; it is counted in `reportFailed`. Summary:
 `{ claimed, delivered, blocked, retried, failed, skipped, reportFailed }`. If the first claim
-fails, `drainOrderNotifications` rejects with the `CoreApiError`; wrap the call.
-
-**How a future handler would call it** (illustrative; it does not exist yet):
-
-```js
-import { api } from 'sdk/api';
-import { fetch } from 'sdk/fetch';
-import { createCoreApiClient } from '../lib/coreApi/client.js';
-import { drainOrderNotifications } from '../lib/notifications/outbox.js';
-import { createTelegramBotTransport } from '../lib/notifications/transport.js';
-
-// config: the validated service config (see lib/config.js)
-const coreApi = createCoreApiClient({ fetch, config });
-try {
-  await drainOrderNotifications({ coreApi, transport: createTelegramBotTransport({ api }) });
-} catch {
-  // never let a drain failure break the real update/endpoint work
-}
-```
-
-Either call it opportunistically on update or Mini App endpoint traffic (latency then depends on
-activity; keep `limit` small and `await` it after the user-facing work), or from a platform trigger
-if Telegram ever documents one. Both are product/platform decisions that are not made here.
+fails, `drainOrderNotifications` rejects with the `CoreApiError`; the gateway catches and logs it.
+Overlapping drains (a late cron tick) are safe because of the lease and the `attempt` fencing.
 
 ## Layout
 
@@ -87,7 +123,7 @@ services/telegram/
   tgcloud.jsonc            # tgcloud project config ($schema only; no static hosting yet)
   tgcloud/                 # the ONLY thing that is deployed (plain ESM .js)
     schema.js              # Serverless DB tables (service_config)
-    handlers/message.js    # update handler: /start
+    handlers/message.js    # update handler: /connect_orders, /start
     endpoints/getProfile.js
     lib/                   # config, i18n, crypto/, coreApi/, bot/, miniapp/, notifications/
   test/                    # vitest; test/sdk-fake/ is a local double of the `sdk` modules
@@ -99,6 +135,8 @@ Runtime rules enforced by lint and tests: modules under `tgcloud/` import only `
 `sdk/api`, `sdk/fetch` and relative `.js` files; no npm packages, no Node built-ins, no
 `Buffer`/`TextEncoder`/`URL`/WebCrypto; `handlers/` and `endpoints/` are flat; no foreign keys.
 Files are plain JavaScript with JSDoc types (`// @ts-check`) because the platform deploys only `.js`.
+`lib/coreApi/` and `lib/notifications/` are also bundled by `services/api-gateway` (Cron
+Trigger): run its tests too when changing them.
 
 ## Commands
 
@@ -115,7 +153,8 @@ Tests never contact Telegram or the Core API.
 ## Operator runbook (manual, once per environment)
 
 Nothing below is automated or stored in the repository. Never commit tokens, the signing secret or
-bot usernames.
+bot usernames. `.tgcloud/` is local CLI state (it holds the CLI access token): git-ignored, never
+committed.
 
 1. **Enable Serverless** for the bot in @BotFather: your bot -> Serverless -> turn on.
 2. **Log the CLI in** (interactive terminal only): `npx tgcloud login` and paste the CLI access
@@ -128,13 +167,13 @@ bot usernames.
    wherever it is hosted.
 5. **Insert the `service_config` rows** (table `service_config`, columns `key`, `value`):
 
-   | key                 | value                                                                                     | required    |
-   | ------------------- | ----------------------------------------------------------------------------------------- | ----------- |
-   | `core_api_base_url` | Core API origin, `https://...` (http allowed only for localhost), no path                 | yes         |
-   | `service_key_id`    | key id, `[A-Za-z0-9_-]{1,32}`, must exist in the Core API's `SERVICE_AUTH_KEYS`           | yes         |
-   | `service_secret`    | signing secret, at least 32 bytes, matching the Core API key                              | yes         |
-   | `mini_app_url`      | https URL of the Main Mini App (used for the `web_app` button)                            | recommended |
-   | `bot_username`      | bot username without `@`; only used for the `https://t.me/<bot>?startapp` fallback button | optional    |
+   | key                 | value                                                                                                                            | required    |
+   | ------------------- | -------------------------------------------------------------------------------------------------------------------------------- | ----------- |
+   | `core_api_base_url` | Core API origin, `https://...` (http allowed only for localhost), no path                                                        | yes         |
+   | `service_key_id`    | key id, `[A-Za-z0-9_-]{1,32}`, must exist in the Core API's `SERVICE_AUTH_KEYS`                                                  | yes         |
+   | `service_secret`    | signing secret, at least 32 bytes, matching the Core API key                                                                     | yes         |
+   | `mini_app_url`      | https URL of the Main Mini App (used for the `web_app` button)                                                                   | recommended |
+   | `bot_username`      | bot username without `@`; the `https://t.me/<bot>?startapp` fallback button, and matching `/connect_orders@<bot>` (else `getMe`) | recommended |
 
    **TODO (pending confirmation of a supported secret store):** the mechanism for inserting the
    rows, especially `service_secret`, is not defined. The docs describe no secret store,
@@ -142,18 +181,31 @@ bot usernames.
    screen, a one-off `tgcloud run` module, a temporary admin handler) all put the secret in a
    place we have not verified as safe. Do not improvise: confirm first.
 
+**Deploying a change** (e.g. this release: `/connect_orders` and staff alerts):
+
+```bash
+cd services/telegram
+npx tgcloud push       # upload the changed modules (handlers/message.js, lib/)
+npx tgcloud webhook    # check the webhook's update types still match handlers/ (message)
+```
+
+No `npx tgcloud migrate` is needed unless `tgcloud/schema.js` changed (this release does not touch
+it). The outbox drain needs nothing here: it is deployed with the api-gateway Worker (its Cron
+Trigger), see [services/api-gateway](../api-gateway/README.md). Then connect the staff group
+([Staff group](#staff-group-connect_orders)).
+
+`/connect_orders` needs `core_api_base_url`, `service_key_id` and `service_secret`; without them
+it answers "could not connect now".
+
 Behaviour without config: `/start` still greets the user (no button if neither `mini_app_url` nor
 `bot_username` is set, logged as a warning) and skips the Core API sync; `getProfile` fails with
 `PROFILE_UNAVAILABLE`. The signer never runs with a missing or weak secret.
 
 ## Open decisions
 
-1. **What triggers the outbox drain?** Decided in ADR 0008: a Core API outbox drained by
-   `drainOrderNotifications`. Still open: the trigger (opportunistic on update/endpoint traffic, or
-   a platform trigger if one is documented). Nothing calls the drain yet.
-2. **Mini App hosting.** `tgcloud.jsonc` deliberately has no `static` block; whether the Mini App
+1. **Mini App hosting.** `tgcloud.jsonc` deliberately has no `static` block; whether the Mini App
    is hosted on tgcloud.ai or elsewhere is pending.
-3. **Secret storage** for `service_secret` (see the TODO above).
+2. **Secret storage** for `service_secret` (see the TODO above).
 
 ## Open questions (assumptions beyond the official docs)
 
@@ -180,7 +232,10 @@ Everything here is outside what the Telegram docs state. Each one is isolated an
   `username`, `language_code` are sent as `null` when absent; `X-MM-Actor` is always sent, empty
   when no user acts (ADR 0003 allows an empty actor).
 - **`message.chat.type`.** `/start` is only answered in private chats (or when the type is
-  absent, which keeps `tgcloud run` payloads simple).
+  absent, which keeps `tgcloud run` payloads simple). `/connect_orders` acts only in `group` /
+  `supergroup` chats.
+- **Replies to `/connect_orders`** use the Bot API `reply_parameters` (with
+  `allow_sending_without_reply`), passed through the SDK `api.sendMessage` unchanged.
 - **Inline `web_app` button.** Uses the documented `InlineKeyboardButton.web_app` with the
   configured URL. The Main Mini App itself must still be configured in @BotFather.
 - **Telegram IDs.** Up to 52 significant bits (per the Mini Apps docs), so plain JS numbers are

@@ -1,14 +1,12 @@
-"""Fixed-window rate limiting: per IP, per user, Retry-After, Redis command shape."""
+"""Fixed-window rate limiting: per IP, per user, Retry-After, fail closed."""
 
-import os
 import uuid
 from collections.abc import AsyncIterator
-from typing import Annotated, cast
+from typing import Annotated
 
 import httpx
 import pytest
 from fastapi import Depends, FastAPI
-from redis.asyncio import Redis
 
 from app.api.auth_deps import get_current_user, get_rate_limiter, rate_limit
 from app.models.enums import Language, UserRole
@@ -16,15 +14,15 @@ from app.repositories.users import UserRecord
 from app.security.rate_limit import (
     AUTH_LOGIN,
     InMemoryRateLimiter,
+    PostgresRateLimiter,
     RateLimitDecision,
-    RedisRateLimiter,
 )
 from app.security.session import StoreUnavailableError
 from tests.auth_helpers import (
     INIT_DATA_PATH,
     SESSION_PATH,
-    FakeRedis,
     build_app,
+    failing_factory,
     http_client,
     init_data,
 )
@@ -63,27 +61,8 @@ async def test_in_memory_fixed_window(clock: FakeClock) -> None:
     assert (await limiter.hit("s", "a", limit=3, window_seconds=60)).allowed
 
 
-async def test_redis_limiter_commands(clock: FakeClock) -> None:
-    fake = FakeRedis()
-    limiter = RedisRateLimiter(cast("Redis", fake), clock)
-    clock.now = NOW + 59.5
-    first = await limiter.hit("auth_login", "203.0.113.7", limit=1, window_seconds=60)
-    key = f"mm:rl:auth_login:203.0.113.7:{int(NOW)}"
-    assert fake.commands == [
-        ("MULTI",),
-        ("INCR", key),
-        ("EXPIRE", key, 60, "NX"),
-        ("EXEC",),
-    ]
-    assert fake.ttls[key] == 60
-    second = await limiter.hit("auth_login", "203.0.113.7", limit=1, window_seconds=60)
-    assert first.allowed
-    assert not second.allowed
-    assert second.retry_after_seconds == 1  # never 0
-
-
-async def test_redis_limiter_fails_closed(clock: FakeClock) -> None:
-    limiter = RedisRateLimiter(cast("Redis", FakeRedis(fail=True)), clock)
+async def test_postgres_limiter_fails_closed(clock: FakeClock) -> None:
+    limiter = PostgresRateLimiter(failing_factory(), clock)
     with pytest.raises(StoreUnavailableError):
         await limiter.hit("s", "a", limit=1, window_seconds=60)
 
@@ -182,31 +161,3 @@ async def test_limiter_can_be_overridden(app: FastAPI, api: httpx.AsyncClient) -
     app.dependency_overrides[get_rate_limiter] = AlwaysAllow
     app.dependency_overrides[get_current_user] = lambda: _user(3)
     assert {(await api.get(USER_PATH)).status_code for _ in range(5)} == {200}
-
-
-# --- optional: real Redis -------------------------------------------------------------------
-
-
-@pytest.fixture
-async def real_redis() -> AsyncIterator[Redis]:
-    client = Redis.from_url(os.environ["TEST_REDIS_URL"], decode_responses=True)
-    try:
-        yield client
-    finally:
-        await client.aclose()
-
-
-@pytest.mark.integration
-@pytest.mark.redis
-async def test_real_redis_fixed_window(real_redis: Redis, clock: FakeClock) -> None:
-    limiter = RedisRateLimiter(real_redis, clock)
-    scope = f"test_{uuid.uuid4().hex}"
-    key = f"mm:rl:{scope}:a:{int(NOW)}"
-    try:
-        decisions = [
-            (await limiter.hit(scope, "a", limit=2, window_seconds=60)).allowed for _ in range(3)
-        ]
-        assert decisions == [True, True, False]
-        assert 0 < await real_redis.ttl(key) <= 60
-    finally:
-        await real_redis.delete(key)

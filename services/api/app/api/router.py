@@ -13,7 +13,9 @@ from app.api.routes import (
     catalog,
     delivery,
     health,
+    internal_maintenance,
     internal_notifications,
+    internal_staff_chat,
     internal_telegram,
     neon_auth,
     orders,
@@ -25,6 +27,8 @@ api_router.include_router(auth.router)
 api_router.include_router(neon_auth.router)
 api_router.include_router(internal_telegram.router)
 api_router.include_router(internal_notifications.router)
+api_router.include_router(internal_staff_chat.router)
+api_router.include_router(internal_maintenance.router)
 api_router.include_router(catalog.router)
 api_router.include_router(delivery.router)
 api_router.include_router(cart.router)

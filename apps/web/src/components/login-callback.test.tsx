@@ -1,118 +1,85 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { LocaleProvider } from '@/i18n/context';
-import { beginLoginState } from '@/lib/auth/login-state';
-import { LoginCallback, payloadFromSearchParams } from './login-callback';
+import { LoginCallback } from './login-callback';
 
 const mocks = vi.hoisted(() => ({
   search: '',
-  replace: vi.fn(),
-  loginWithWidget: vi.fn(),
+  startTelegramLogin: vi.fn<(returnTo: string) => Promise<string>>(),
+  navigateTo: vi.fn<(url: string) => void>(),
 }));
 
 vi.mock('next/navigation', () => ({
   useSearchParams: () => new URLSearchParams(mocks.search),
-  useRouter: () => ({ replace: mocks.replace }),
 }));
 vi.mock('@/lib/session', () => ({
-  useSession: () => ({ loginWithWidget: mocks.loginWithWidget }),
+  useSession: () => ({ startTelegramLogin: mocks.startTelegramLogin }),
 }));
+vi.mock('@/lib/auth/navigate', () => ({ navigateTo: mocks.navigateTo }));
 
 beforeEach(() => {
-  mocks.replace.mockReset();
-  mocks.loginWithWidget.mockReset();
-  window.sessionStorage.clear();
+  mocks.search = '';
+  mocks.startTelegramLogin.mockReset();
+  mocks.navigateTo.mockReset();
 });
 
-/** Query string as the widget produces it after a login this tab started. */
-function startedLogin(fields: string): string {
-  return `state=${beginLoginState() ?? ''}&${fields}`;
+function renderPage(locale: 'uz' | 'ru' = 'uz') {
+  return render(
+    <LocaleProvider locale={locale}>
+      <LoginCallback />
+    </LocaleProvider>,
+  );
 }
 
-describe('payloadFromSearchParams', () => {
-  it('maps the documented widget fields', () => {
-    const payload = payloadFromSearchParams(
-      new URLSearchParams(
-        'id=5&first_name=Ann&last_name=B&username=ann&photo_url=https%3A%2F%2Ft.me%2Fa.jpg&auth_date=1700000000&hash=abc',
-      ),
+describe('LoginCallback (sign-in failure page)', () => {
+  it.each([
+    ['failed', 'Telegram orqali kirib bo‘lmadi'],
+    ['cancelled', 'Kirish bekor qilindi'],
+    ['blocked', 'Hisobingiz bloklangan'],
+    ['unavailable', 'Xizmat vaqtincha ishlamayapti'],
+  ])('explains status=%s', (status, text) => {
+    mocks.search = `status=${status}`;
+    renderPage();
+    expect(screen.getByRole('heading', { name: 'Kirish amalga oshmadi' })).toBeInTheDocument();
+    expect(screen.getByRole('alert')).toHaveTextContent(text);
+    expect(screen.getByRole('link', { name: 'Bosh sahifaga qaytish' })).toHaveAttribute(
+      'href',
+      '/uz',
     );
-    expect(payload).toEqual({
-      id: 5,
-      first_name: 'Ann',
-      last_name: 'B',
-      username: 'ann',
-      photo_url: 'https://t.me/a.jpg',
-      auth_date: 1700000000,
-      hash: 'abc',
-    });
   });
 
-  it('ignores unknown fields and rejects incomplete or non-numeric input', () => {
-    expect(
-      payloadFromSearchParams(
-        new URLSearchParams('id=5&first_name=A&auth_date=1&hash=h&is_admin=true'),
-      ),
-    ).toEqual({ id: 5, first_name: 'A', auth_date: 1, hash: 'h' });
-    expect(
-      payloadFromSearchParams(new URLSearchParams('id=x&first_name=A&auth_date=1&hash=h')),
-    ).toBeNull();
-    expect(
-      payloadFromSearchParams(new URLSearchParams('id=5&first_name=A&auth_date=1')),
-    ).toBeNull();
-    expect(payloadFromSearchParams(new URLSearchParams(''))).toBeNull();
-  });
-});
+  it.each([[''], ['status=weird'], ['status=<script>'], ['code=abc&state=xyz']])(
+    'treats an unknown or missing status (%j) as failed',
+    (search) => {
+      mocks.search = search;
+      renderPage();
+      expect(screen.getByRole('alert')).toHaveTextContent('Telegram orqali kirib bo‘lmadi');
+    },
+  );
 
-describe('LoginCallback', () => {
-  function renderCallback() {
-    return render(
-      <LocaleProvider locale="ru">
-        <LoginCallback />
-      </LocaleProvider>,
+  it('is localized in Russian', () => {
+    mocks.search = 'status=cancelled';
+    renderPage('ru');
+    expect(screen.getByRole('heading', { name: 'Вход не выполнен' })).toBeInTheDocument();
+    expect(screen.getByRole('alert')).toHaveTextContent('Вход отменён.');
+    expect(screen.getByRole('button', { name: 'Войти через Telegram' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'На главную' })).toHaveAttribute('href', '/ru');
+  });
+
+  it('offers a retry that starts a new sign-in returning to the cart', async () => {
+    mocks.search = 'status=cancelled';
+    mocks.startTelegramLogin.mockResolvedValue('https://oauth.telegram.org/auth?x=1');
+    renderPage();
+    fireEvent.click(screen.getByRole('button', { name: 'Telegram orqali kirish' }));
+    expect(mocks.startTelegramLogin).toHaveBeenCalledWith('/uz/cart');
+    await waitFor(() =>
+      expect(mocks.navigateTo).toHaveBeenCalledWith('https://oauth.telegram.org/auth?x=1'),
     );
-  }
-
-  it('posts the payload once and continues to the cart', async () => {
-    mocks.search = startedLogin('id=5&first_name=Ann&auth_date=1&hash=h');
-    mocks.loginWithWidget.mockResolvedValue(undefined);
-    renderCallback();
-    await waitFor(() => expect(mocks.replace).toHaveBeenCalledWith('/ru/cart'));
-    expect(mocks.loginWithWidget).toHaveBeenCalledOnce();
-    expect(mocks.loginWithWidget).toHaveBeenCalledWith({
-      id: 5,
-      first_name: 'Ann',
-      auth_date: 1,
-      hash: 'h',
-    });
   });
 
-  it('shows an error when the API rejects the login', async () => {
-    mocks.search = startedLogin('id=5&first_name=Ann&auth_date=1&hash=h');
-    mocks.loginWithWidget.mockRejectedValue(new Error('nope'));
-    renderCallback();
-    expect(await screen.findByRole('alert')).toHaveTextContent('Не удалось войти через Telegram.');
-    expect(mocks.replace).not.toHaveBeenCalled();
-  });
-
-  it('shows an error without calling the API for a malformed callback', async () => {
-    mocks.search = startedLogin('foo=bar');
-    renderCallback();
-    expect(await screen.findByRole('alert')).toBeInTheDocument();
-    expect(mocks.loginWithWidget).not.toHaveBeenCalled();
-  });
-
-  it('refuses a validly signed payload this tab did not ask for (login CSRF)', async () => {
-    mocks.search = `state=${'a'.repeat(32)}&id=666&first_name=Attacker&auth_date=1&hash=h`;
-    renderCallback();
-    expect(await screen.findByRole('alert')).toBeInTheDocument();
-    expect(mocks.loginWithWidget).not.toHaveBeenCalled();
-  });
-
-  it('refuses a callback without state', async () => {
-    beginLoginState();
-    mocks.search = 'id=5&first_name=Ann&auth_date=1&hash=h';
-    renderCallback();
-    expect(await screen.findByRole('alert')).toBeInTheDocument();
-    expect(mocks.loginWithWidget).not.toHaveBeenCalled();
+  it('offers no retry to a blocked account', () => {
+    mocks.search = 'status=blocked';
+    renderPage();
+    expect(screen.queryByRole('button')).toBeNull();
   });
 });

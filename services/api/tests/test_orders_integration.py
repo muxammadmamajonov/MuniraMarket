@@ -22,7 +22,7 @@ from app.models.cart import CartItem
 from app.models.catalog import Category, Product
 from app.models.delivery import DeliveryZone
 from app.models.enums import UserRole
-from app.models.notification import NotificationOutbox
+from app.models.notification import NotificationOutbox, StaffNotificationChat
 from app.models.order import Order, OrderStatusHistory
 from app.repositories import orders as order_repository
 from app.repositories.users import UserRecord
@@ -688,6 +688,50 @@ async def test_concurrent_cancels_restock_once(shop: Shop) -> None:
     assert sorted(r.status_code for r in responses) == [200, 409, 409]
     assert await shop.stock(apple) == 5
     assert len(await shop.outbox(order["id"])) == 2
+
+
+async def test_staff_group_gets_alerts_for_new_orders_and_key_statuses(shop: Shop) -> None:
+    """ADR 0015: with a group connected, the same transaction also enqueues staff alerts for
+    NEW, OUT_FOR_DELIVERY, DELIVERED and CANCELLED, without customer personal data."""
+    plain = await shop.product("plain", price=30_000, stock=10)
+    await shop.add(plain, 2)
+    before = await shop.place()  # no group yet: customer notification only
+    assert [m.event_type for m in await shop.outbox(before["id"])] == ["order.status_changed"]
+    assert (await shop.cancel(before["id"])).status_code == 200
+
+    async with shop.factory() as session:
+        session.add(StaffNotificationChat(id=1, chat_id=-1001234567890))
+        await session.commit()
+
+    apple = await shop.product("apple", price=30_000, stock=10)
+    await shop.add(apple, 2)
+    order = await shop.place()
+    for status in ("CONFIRMED", "PICKING", "READY_FOR_DELIVERY", "OUT_FOR_DELIVERY", "DELIVERED"):
+        assert (await shop.move(order["id"], status)).status_code == 200
+    alerts = [m for m in await shop.outbox(order["id"]) if m.event_type == "order.staff_alert"]
+    assert [m.payload["status"] for m in alerts] == ["NEW", "OUT_FOR_DELIVERY", "DELIVERED"]
+    assert all(m.payload["chat_id"] == -1001234567890 for m in alerts)
+    assert alerts[0].payload["previous_status"] is None
+    assert set(alerts[0].payload) == {
+        "order_id",
+        "order_number",
+        "status",
+        "previous_status",
+        "total_uzs",
+        "chat_id",
+        "cancelled_by_customer",
+    }
+    customer = [m for m in await shop.outbox(order["id"]) if m.event_type != "order.staff_alert"]
+    assert len(customer) == 6  # the customer's own notifications are unchanged
+
+    await shop.add(apple, 2)
+    cancelled = await shop.place()
+    assert (await shop.cancel(cancelled["id"])).status_code == 200
+    [_, cancel_alert] = [
+        m for m in await shop.outbox(cancelled["id"]) if m.event_type == "order.staff_alert"
+    ]
+    assert cancel_alert.payload["status"] == "CANCELLED"
+    assert cancel_alert.payload["cancelled_by_customer"] is True
 
 
 # --- isolation ------------------------------------------------------------------------------------

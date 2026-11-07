@@ -4,6 +4,8 @@
 - Scope: `services/api` (sessions, CSRF, rate limits), `apps/web` (same-origin proxy)
 - Builds on: ADR 0004 (Telegram identity verification)
 
+> **Amended.** Storage moved from Redis to PostgreSQL ([ADR 0013](0013-security-state-in-postgres.md)); the Telegram Login Widget was replaced by Telegram OIDC with one bot ([ADR 0014](0014-telegram-oidc-browser-sign-in.md)). The session, rotation, CSRF and rate-limit rules below are unchanged.
+
 ## Context
 
 The website and the Telegram Mini App need a signed-in state for the cart (and later checkout)

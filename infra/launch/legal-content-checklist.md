@@ -30,11 +30,11 @@ The section list is an engineering proposal; the lawyer may rename, add or remov
       offer's seller section.
 - [ ] Personal data actually processed: Telegram id, name, username, language; delivery address
       and recipient phone; order history; technical logs (no IPs or phone numbers in application
-      logs, see services/api/README.md). Where it is stored (Neon region, Cloudflare, Redis
-      provider region) and for how long.
+      logs, see services/api/README.md). Where it is stored (Neon region, Cloudflare
+      region) and for how long.
 - [ ] Personal data localisation requirements for citizens of Uzbekistan, and whether the chosen
-      database/Redis regions satisfy them or a local copy is needed. **Decide before launch.**
-- [ ] Processors: Cloudflare, Neon, the Redis provider, Telegram.
+      database regions satisfy them or a local copy is needed. **Decide before launch.**
+- [ ] Processors: Cloudflare, Neon, Telegram (incl. OIDC sign-in), Yandex Maps.
 - [ ] Payment terms (cash/card on delivery only at launch), delivery zones/fees/minimums/slots
       as configured in the admin, cancellation rules (customer may cancel `NEW`/`CONFIRMED`).
 - [ ] Returns policy for food and non-food goods, refund method and deadlines.

@@ -3,6 +3,7 @@ import type {
   OrderStatus,
   PaymentMethod,
   ProductUnit,
+  TelegramOidcFailureStatus,
   UserRole,
 } from '@muniramarket/contracts';
 import type { AuditDict } from './sections/audit';
@@ -41,6 +42,12 @@ export interface Dictionary {
     retry: string;
     signInTitle: string;
     signInHint: string;
+    /** The "Sign in with Telegram" button. */
+    loginButton: string;
+    /** Button label while the sign-in is starting (before the browser leaves for Telegram). */
+    loginStarting: string;
+    /** Inline error: the sign-in could not be started (generic). */
+    loginStartFailed: string;
     notConfiguredTitle: string;
     notConfiguredMessage: string;
     configFailed: string;
@@ -50,8 +57,10 @@ export interface Dictionary {
     rateLimited: string;
     serviceUnavailable: string;
     sessionFailed: string;
-    callbackSigningIn: string;
-    callbackFailed: string;
+    /** `/<locale>/auth/telegram`: heading when Telegram sign-in did not complete. */
+    callbackTitle: string;
+    /** Message per `?status=` of the sign-in failure page (unknown values use `failed`). */
+    callbackStatus: Record<TelegramOidcFailureStatus, string>;
     callbackBack: string;
   };
   orders: {

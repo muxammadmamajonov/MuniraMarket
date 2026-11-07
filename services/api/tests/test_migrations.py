@@ -373,7 +373,7 @@ async def test_an_already_migrated_schema_on_the_search_path_is_never_touched() 
 
         await upgrade(my_engine)
         assert await _scalar(my_engine, tables_in, schema=mine) == 2
-        assert await _scalar(my_engine, "SELECT version_num FROM alembic_version") == "0004"
+        assert await _scalar(my_engine, "SELECT version_num FROM alembic_version") == "0005"
 
         await truncate_app_tables(my_engine)
         assert await _scalar(my_engine, count_other) == 1
@@ -448,6 +448,36 @@ async def test_admin_revision_downgrades_to_0003_and_back(empty_engine: AsyncEng
     assert await _scalar(empty_engine, _FUNCTION_SQL) == 0
     assert await _audit_triggers(empty_engine) == []
     assert await _scalar(empty_engine, "SELECT version_num FROM alembic_version") == "0003"
+
+    await upgrade(empty_engine)
+    assert await _tables(empty_engine) == after_upgrade
+    assert await _model_differences(empty_engine) == []
+
+
+SECURITY_STATE_TABLES = {
+    "auth_sessions",
+    "rate_limit_counters",
+    "service_request_nonces",
+    "oidc_login_states",
+    "staff_notification_chat",
+}
+
+
+async def test_security_state_revision_downgrades_to_0004_and_back(
+    empty_engine: AsyncEngine,
+) -> None:
+    await upgrade(empty_engine)
+    after_upgrade = await _tables(empty_engine)
+    assert after_upgrade >= SECURITY_STATE_TABLES
+    for table in SECURITY_STATE_TABLES - {"staff_notification_chat"}:
+        assert "expires_at" in await _columns(empty_engine, table)
+    assert "ck_staff_notification_chat_single_row" in await _constraints(
+        empty_engine, "staff_notification_chat"
+    )
+
+    await downgrade(empty_engine, "0004")
+    assert not (await _tables(empty_engine) & SECURITY_STATE_TABLES)
+    assert await _scalar(empty_engine, "SELECT version_num FROM alembic_version") == "0004"
 
     await upgrade(empty_engine)
     assert await _tables(empty_engine) == after_upgrade
