@@ -83,8 +83,7 @@ objects are still owned by the Neon owner. Before running the next migration as 
 run the narrowly allow-listed, one-time adoption script as that owner:
 
 ```bash
-psql "$OWNER_URL" -v ON_ERROR_STOP=1 \
-  -f infra/neon/sql/00-adopt-legacy-public-schema.sql
+OWNER_URL="$OWNER_URL" infra/neon/scripts/adopt-legacy-public-schema.sh
 ```
 
 It refuses unexpected tables, missing known application tables, unknown enum types and sequences;
