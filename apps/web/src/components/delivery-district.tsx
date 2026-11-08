@@ -29,8 +29,9 @@ const BUTTON =
  *
  * Before a choice the whole card is one button ("Choose the delivery address"). After a choice it
  * shows only the district and a "Change" button. The district is the real coverage choice and the
- * only thing remembered (see `district-preference.ts`). The map in the sheet is for orientation
- * only: it marks and saves nothing; the exact address is typed in the checkout form.
+ * only thing remembered (see `district-preference.ts`). "Choose on the map" in the sheet opens the
+ * map step (`address-picker.tsx`): a confirmed point is checked against the live zones and can
+ * select its district; the point itself is never saved. The exact address is typed at checkout.
  */
 export function DeliveryDistrict({ zones }: DeliveryDistrictProps) {
   const { dict, locale } = useI18n();
@@ -71,6 +72,15 @@ export function DeliveryDistrict({ zones }: DeliveryDistrictProps) {
     if (fullscreenRequested.current) exitFullscreenIfOn(webApp);
     fullscreenRequested.current = false;
     setSheetOpen(true);
+  };
+
+  // A served district picked from a map result: only its code is saved (the point is not), and
+  // the customer lands back on the storefront with the summary updated.
+  const chooseFromMap = (code: DistrictCode) => {
+    setMapOpen(false);
+    if (fullscreenRequested.current) exitFullscreenIfOn(webApp);
+    fullscreenRequested.current = false;
+    choose(code);
   };
 
   const live = (
@@ -117,7 +127,7 @@ export function DeliveryDistrict({ zones }: DeliveryDistrictProps) {
         onChoose={choose}
         onOpenMap={openMap}
       />
-      <AddressPicker open={mapOpen} onClose={closeMap} />
+      <AddressPicker open={mapOpen} onClose={closeMap} zones={zones} onChoose={chooseFromMap} />
       {live}
     </>
   );
@@ -221,7 +231,7 @@ interface DistrictSheetProps {
 }
 
 /**
- * The picker: an optional "View on the map" (orientation only) on top, then one radio group with every served
+ * The picker: an optional "Choose on the map" on top, then one radio group with every served
  * district and a "Choose" button that commits. Arrow keys move between districts without
  * committing (native radio behaviour), so a keyboard or screen-reader user can browse the list;
  * Escape, the backdrop and the close button leave the previous choice untouched.

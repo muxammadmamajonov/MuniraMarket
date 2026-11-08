@@ -7,7 +7,7 @@ import type {
   DeliveryZoneAdminList,
 } from '@muniramarket/contracts';
 import { Button, EmptyState } from '@muniramarket/ui';
-import { useMemo, useRef, useState, type FormEvent } from 'react';
+import { useId, useMemo, useRef, useState, type FormEvent } from 'react';
 import { useI18n } from '@/i18n/context';
 import { formatMessage } from '@/i18n/format';
 import type { FieldKey } from '@/i18n/dictionaries/sections/shared';
@@ -38,6 +38,7 @@ import { CheckboxField, SelectField, TextField, integerInputAttrs } from '../ui/
 import { Modal } from '../ui/modal';
 import { PageHeader } from '../ui/page-header';
 import { ResourceView } from '../ui/resource-view';
+import { Select } from '../ui/select';
 
 type Errors = Partial<Record<FieldKey, string>>;
 
@@ -306,7 +307,7 @@ function CapacityBar({ slot }: { slot: DeliverySlotAdmin }) {
     <div className="flex min-w-0 flex-col gap-1">
       <div aria-hidden="true" className="h-2 w-full overflow-hidden rounded-full bg-surface-muted">
         <div
-          className={`h-full rounded-full ${full ? 'bg-red-700 dark:bg-red-500' : 'bg-primary'}`}
+          className={`h-full rounded-full ${full ? 'bg-danger' : 'bg-primary'}`}
           style={{ width: `${share}%` }}
         />
       </div>
@@ -327,6 +328,7 @@ type DialogState =
 
 /** Delivery slots, grouped by date, with capacity bars; filter by zone and date range. */
 export function SlotsView() {
+  const zoneLabelId = useId();
   const { dict, locale } = useI18n();
   const copy = dict.slots;
   const { apiFetch } = useSession();
@@ -408,22 +410,17 @@ export function SlotsView() {
         onSubmit={(event) => event.preventDefault()}
         className="grid gap-3 sm:grid-cols-3"
       >
-        <label className="flex min-w-0 flex-col gap-1 text-sm font-medium">
-          {copy.zone}
-          <select
+        <div className="flex min-w-0 flex-col gap-1 text-sm font-medium">
+          <span id={zoneLabelId}>{copy.zone}</span>
+          <Select
+            labelledBy={zoneLabelId}
             value={zoneId}
-            onChange={(event) => replace({ zone: event.target.value })}
-            data-testid="slots-zone-filter"
-            className={INPUT}
-          >
-            <option value="">{copy.allZones}</option>
-            {[...zoneNames].map(([id, name]) => (
-              <option key={id} value={id}>
-                {name}
-              </option>
-            ))}
-          </select>
-        </label>
+            onChange={(next) => replace({ zone: next })}
+            testId="slots-zone-filter"
+            placeholder={copy.allZones}
+            options={[...zoneNames].map(([id, name]) => ({ value: id, label: name }))}
+          />
+        </div>
         <label className="flex min-w-0 flex-col gap-1 text-sm font-medium">
           {copy.from}
           <input

@@ -5,8 +5,9 @@ import { expect, test, type Page } from '@playwright/test';
  *
  * - Bottom tab bar (Home, Catalog, Cart, Profile) on phones only, with real routes, the current
  *   tab marked, an accessible cart badge, and no bar on checkout.
- * - The optional map step of the address chooser: without a Maps key (as in CI) it shows its own
- *   fallback and nothing is ever requested from Yandex. CI never talks to Yandex at all.
+ * - The map step of the address chooser: without a Maps key (this server) it shows its own
+ *   fallback and nothing is requested from Yandex. The keyed map flow (stub SDK) is in
+ *   `delivery-map.spec.ts`. CI never talks to Yandex at all.
  * - Telegram fullscreen and landscape safe areas, through a stubbed `Telegram.WebApp`.
  * - 320px, 390px, desktop, dark mode, long Uzbek/Russian labels, a huge cart count, a long
  *   profile name, offline and a keyboard-sized viewport: never a sideways scroll.
@@ -68,7 +69,12 @@ function tabBar(page: Page) {
 /** Placeholder signed-in session and a cart, answered at the network boundary. */
 async function fakeSignedIn(
   page: Page,
-  { firstName, lastName, units }: { firstName: string; lastName: string | null; units: number },
+  {
+    firstName,
+    lastName,
+    units,
+    language = 'uz',
+  }: { firstName: string; lastName: string | null; units: number; language?: 'uz' | 'ru' },
 ): Promise<void> {
   await page.route('**/api/v1/auth/session', (route) =>
     route.fulfill({
@@ -78,8 +84,11 @@ async function fakeSignedIn(
           id: '00000000-0000-4000-8000-0000000000e2',
           first_name: firstName,
           last_name: lastName,
-          language: 'uz',
+          // The saved account language: the storefront URL follows it.
+          language,
           role: 'customer',
+          language_confirmed: true,
+          phone_verified: true,
           telegram_user_id: 900_000_099,
           username: null,
         },
@@ -154,7 +163,7 @@ test.describe('bottom navigation', () => {
 
     await bar.getByRole('link', { name: 'Profil' }).click();
     await expect(page).toHaveURL(/\/uz\/profile$/);
-    await expect(page.getByTestId('profile-anonymous')).toContainText('Hisobingizga kiring');
+    await expect(page.getByTestId('sign-in-screen')).toContainText('Telegram orqali kiring');
     await expectNoHorizontalScroll(page);
     await shot(page, 'p9-uz-390-profile-anonymous');
 
@@ -217,6 +226,7 @@ test.describe('break-ui: worst realistic data', () => {
       firstName: 'Aleksandra-Wiśniewska-Kowalczyk-Abdurakhmonova',
       lastName: 'Bartholomew-Fitzgerald-Northwind-Industries-Holdings',
       units: 12_345,
+      language: 'ru',
     });
     await page.setViewportSize({ width: 320, height: 640 });
     await page.goto('/ru/profile');
@@ -271,7 +281,7 @@ test.describe('break-ui: worst realistic data', () => {
       .filter({ visible: true })
       .getByRole('button', { name: 'Yetkazib berish manzilini tanlang' })
       .click();
-    await page.getByRole('button', { name: 'Xaritada ko‘rish' }).click();
+    await page.getByRole('button', { name: 'Xaritada belgilash' }).click();
     await expect(page.getByTestId('address-picker').getByRole('dialog')).toBeVisible();
     await expectNoHorizontalScroll(page);
     await context.setOffline(false);
@@ -299,11 +309,11 @@ test.describe('map step without a Maps key (CI)', () => {
 
       await card.getByRole('button', { name: /O‘zgartirish/ }).click();
       const sheet = page.getByRole('dialog', { name: 'Yetkazib berish manzili' });
-      await sheet.getByRole('button', { name: 'Xaritada ko‘rish' }).click();
-      const picker = page.getByRole('dialog', { name: 'Xaritada ko‘rish' });
+      await sheet.getByRole('button', { name: 'Xaritada belgilash' }).click();
+      const picker = page.getByRole('dialog', { name: 'Xaritada belgilash' });
       await expect(picker).toBeVisible();
       await expect(picker.getByTestId('map-unavailable')).toContainText(
-        'Xarita hozircha mavjud emas',
+        'Xarita bu yerda ishlamaydi',
       );
       await expect(picker.getByRole('button', { name: 'Orqaga' })).toBeFocused();
       await expectNoHorizontalScroll(page);
@@ -314,7 +324,7 @@ test.describe('map step without a Maps key (CI)', () => {
       await page.keyboard.press('Escape');
       await expect(picker).toBeHidden();
       await expect(sheet).toBeVisible();
-      // The map selects nothing: no "point marked" or "saved" wording anywhere.
+      // Without a key nothing was checked: no "point marked" or "saved" wording anywhere.
       await expect(page.getByText(/nuqta belgilan|saqlandi/i)).toHaveCount(0);
       expect(yandex).toEqual([]);
       // Still only the district code is remembered.
@@ -330,13 +340,13 @@ test.describe('map step without a Maps key (CI)', () => {
       .filter({ visible: true })
       .getByRole('button', { name: 'Выберите адрес доставки' })
       .click();
-    await page.getByRole('button', { name: 'Посмотреть на карте' }).click();
-    const picker = page.getByRole('dialog', { name: 'Посмотреть на карте' });
-    await expect(picker).toContainText('Карта пока недоступна');
+    await page.getByRole('button', { name: 'Указать на карте' }).click();
+    const picker = page.getByRole('dialog', { name: 'Указать на карте' });
+    await expect(picker).toContainText('Карта здесь не работает');
     // Wait out the 200ms entrance before measuring and capturing.
     await expect(picker).toHaveCSS('opacity', '1');
     const box = await picker.boundingBox();
-    expect(box !== null && box.width <= 768 && box.x > 0).toBe(true);
+    expect(box !== null && box.width <= 896 && box.x > 0).toBe(true);
     await settled(page);
     await shot(page, 'p9-desktop-map-fallback');
   });
@@ -409,7 +419,7 @@ test.describe('Telegram fullscreen safe areas', () => {
       .filter({ visible: true })
       .getByRole('button', { name: 'Yetkazib berish manzilini tanlang' })
       .click();
-    await page.getByRole('button', { name: 'Xaritada ko‘rish' }).click();
+    await page.getByRole('button', { name: 'Xaritada belgilash' }).click();
     const back = page.getByRole('button', { name: 'Orqaga' });
     const backBox = await back.boundingBox();
     expect(backBox !== null && backBox.y >= 93).toBe(true);

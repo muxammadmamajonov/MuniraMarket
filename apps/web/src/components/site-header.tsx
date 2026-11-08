@@ -4,7 +4,6 @@ import type { Dictionary } from '@/i18n';
 import { AccountMenu } from './account-menu';
 import { CartLink } from './cart-link';
 import { ReceiptIcon } from './icons';
-import { LanguageSwitcher } from './language-switcher';
 import { PageContainer } from './page-container';
 import { FOCUS_RING, PRESS } from './ui-classes';
 import { Wordmark } from './wordmark';
@@ -16,14 +15,16 @@ export interface SiteHeaderProps {
 
 /**
  * Compact sticky header. Padded by the top and side safe-area insets (notch, Telegram fullscreen,
- * landscape). On phones the wordmark and the language toggle are all it holds: orders, cart and
+ * landscape). On phones the wordmark is all it holds (the language lives only in Profile): orders, cart and
  * the account live in the bottom tab bar (`bottom-nav.tsx`). From `md` up it is the main
- * navigation: orders, cart, language and, in a browser, the account.
+ * navigation: orders, cart and, in a browser, the account.
  */
 export function SiteHeader({ locale, dict }: SiteHeaderProps) {
   return (
     <header className="sticky top-0 z-40 border-b border-border bg-background pt-(--mm-inset-top) pr-(--mm-inset-right) pl-(--mm-inset-left)">
-      <PageContainer className="flex flex-wrap items-center justify-between gap-x-1 gap-y-0 py-1.5">
+      {/* Mobile Telegram fullscreen: only the logo is on this row, centred in the content safe
+          area (Telegram's Close / "…" controls sit above it, outside our layout). */}
+      <PageContainer className="flex flex-wrap items-center justify-between gap-x-1 gap-y-0 py-1.5 max-md:[:root[data-tg-fullscreen]_&]:justify-center">
         <Link
           href={`/${locale}`}
           aria-label={`${dict.meta.title}: ${dict.nav.home}`}
@@ -31,7 +32,7 @@ export function SiteHeader({ locale, dict }: SiteHeaderProps) {
         >
           <Wordmark name={dict.meta.title} />
         </Link>
-        <div className="ml-auto flex flex-wrap items-center justify-end gap-x-0.5">
+        <div className="ml-auto flex flex-wrap items-center justify-end gap-x-0.5 max-md:[:root[data-tg-fullscreen]_&]:hidden">
           <nav
             aria-label={dict.nav.mainNavigation}
             className="flex items-center gap-x-0.5 max-md:hidden"
@@ -48,13 +49,6 @@ export function SiteHeader({ locale, dict }: SiteHeaderProps) {
             </Link>
             <CartLink />
           </nav>
-          <LanguageSwitcher
-            compact
-            locale={locale}
-            label={dict.language.label}
-            names={{ uz: dict.language.uz, ru: dict.language.ru }}
-            shortNames={{ uz: dict.language.uzShort, ru: dict.language.ruShort }}
-          />
           <div className="max-md:hidden">
             <AccountMenu />
           </div>

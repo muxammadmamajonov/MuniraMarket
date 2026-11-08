@@ -17,6 +17,7 @@ from app.api.routes import (
     internal_notifications,
     internal_staff_chat,
     internal_telegram,
+    me,
     orders,
 )
 
@@ -29,6 +30,7 @@ api_router.include_router(internal_staff_chat.router)
 api_router.include_router(internal_maintenance.router)
 api_router.include_router(catalog.router)
 api_router.include_router(delivery.router)
+api_router.include_router(me.router)
 api_router.include_router(cart.router)
 api_router.include_router(orders.checkout_router)
 api_router.include_router(orders.router)

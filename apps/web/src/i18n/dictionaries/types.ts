@@ -77,7 +77,11 @@ export interface Dictionary {
     /** Screen-reader announcement after a choice. `{district}` */
     saved: string;
   };
-  /** The optional map view (Yandex Maps): orientation only, it selects and saves nothing. */
+  /**
+   * The map step (Yandex Maps): the customer moves the map under a centre pin, confirms with
+   * "Deliver here", and the point is reverse-geocoded to a district and checked against the live
+   * zones. Only the chosen district is remembered; the point itself is never stored.
+   */
   map: {
     /** Button in the district sheet that opens the picker. */
     open: string;
@@ -86,6 +90,7 @@ export interface Dictionary {
     /** Accessible name of the map canvas, including how to pan it by keyboard. */
     canvasLabel: string;
     loading: string;
+    /** No Maps key configured. */
     unavailableTitle: string;
     unavailableText: string;
     backToList: string;
@@ -93,12 +98,54 @@ export interface Dictionary {
     offlineTitle: string;
     errorText: string;
     retry: string;
-    /** Under the map: orientation only; the district is chosen in the list, the address at checkout. */
+    /** Beside the map before confirming: how the centre pin works. */
     hint: string;
     myLocation: string;
     locating: string;
     locationDenied: string;
     locationUnavailable: string;
+    /** Accessible description of the centre pin. */
+    pinLabel: string;
+    /** The confirm button: reverse-geocode the pin and show the delivery result. */
+    deliverHere: string;
+    /** Opens the district list instead. */
+    pickFromList: string;
+    /** Back from a result to moving the map. */
+    movePin: string;
+    checking: string;
+    /** `{district}` */
+    servedTitle: string;
+    zoneLabel: string;
+    feeLabel: string;
+    minOrderLabel: string;
+    freeLabel: string;
+    hoursLabel: string;
+    /** Fee of 0. */
+    free: string;
+    /** `{amount}`: free delivery from this subtotal. */
+    freeFrom: string;
+    freeNever: string;
+    openNow: string;
+    closedNow: string;
+    /** Badge next to a seeded `demo-` zone name. */
+    demoBadge: string;
+    demoNote: string;
+    /** `{district}`: saves the district (only) and closes the map. */
+    chooseDistrict: string;
+    /** After a served result: the street address is typed at checkout; the point is not kept. */
+    addressLater: string;
+    /** `{district}` */
+    notServedTitle: string;
+    notServedNearby: string;
+    notServedNoNearby: string;
+    outsideTitle: string;
+    outsideText: string;
+    /** Lookup worked but named no district. */
+    unknownTitle: string;
+    unknownText: string;
+    /** Lookup unavailable (key/plan, quota, network). Never implies we deliver. */
+    lookupFailedTitle: string;
+    lookupFailedText: string;
   };
   search: {
     label: string;
@@ -450,6 +497,14 @@ export interface Dictionary {
     accountBlocked: string;
     rateLimited: string;
     serviceUnavailable: string;
+    /** Branded sign-in screen (cart, orders, profile, checkout). */
+    screenTitle: string;
+    screenSubtitle: string;
+    benefits: readonly string[];
+    /** Under the button: what signing in with Telegram does and does not do. */
+    trust: string;
+    /** The sign-in options could not be loaded. */
+    configFailed: string;
     logout: string;
     /** `{name}` */
     signedInAs: string;
@@ -486,7 +541,62 @@ export interface Dictionary {
     /** Why to sign in; the sign-in control itself is the shared `SignInPrompt`. */
     anonymousText: string;
     ordersLink: string;
+    ordersHint: string;
     languageHeading: string;
+    /** Under the language choice: it is one setting shared with the bot. */
+    languageHint: string;
+    /** Inline error when the language could not be saved. */
+    languageFailed: string;
+    /** Under the name: the account is the Telegram account. */
+    telegramAccount: string;
+    settingsHeading: string;
+    helpLink: string;
+    helpHint: string;
+    /** Footer line in the Mini App: no sign-out, the Telegram account is the session. */
+    miniAppSession: string;
+  };
+  /** Account phone: shared from Telegram (Mini App) or via the bot (browser). Never typed. */
+  phone: {
+    heading: string;
+    verified: string;
+    notVerified: string;
+    /** Why the number is needed; only what it is really used for. */
+    why: string;
+    share: string;
+    update: string;
+    updateHint: string;
+    waiting: string;
+    success: string;
+    cancelled: string;
+    timeout: string;
+    checkAgain: string;
+    /** Browser: open the bot, which asks for the number. */
+    openBot: string;
+    browserHint: string;
+    /** Browser without a configured bot link. */
+    openInTelegram: string;
+    /** Telegram app too old for `requestContact`. */
+    unsupported: string;
+    checkoutTitle: string;
+    checkoutText: string;
+  };
+  /** `/<locale>/help`: how the shop works; only what the app really does. */
+  help: {
+    title: string;
+    intro: string;
+    orderingTitle: string;
+    orderingSteps: readonly string[];
+    paymentTitle: string;
+    paymentText: string;
+    deliveryTitle: string;
+    deliveryText: string;
+    deliveryLink: string;
+    statusTitle: string;
+    statusText: string;
+    phoneTitle: string;
+    phoneText: string;
+    languageTitle: string;
+    languageText: string;
   };
   catalogPage: {
     title: string;

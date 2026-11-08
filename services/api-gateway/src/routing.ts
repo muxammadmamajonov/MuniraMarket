@@ -5,8 +5,10 @@
  * Four entrances (see README.md):
  *
  * - `public`: the Worker's own hostname, reached from the internet. Only liveness/readiness and
- *   the two service-signed routes Telegram Serverless calls (ADR 0003): user sync
- *   (`internal/telegram/session`) and staff group connect (`internal/telegram/staff-chat/connect`).
+ *   the service-signed routes Telegram Serverless calls (ADR 0003): user sync
+ *   (`internal/telegram/session`), staff group connect (`internal/telegram/staff-chat/connect`),
+ *   the onboarding language (`PUT internal/telegram/language`) and the user's own contact
+ *   (`POST internal/telegram/phone`).
  * - `storefront`: the `StorefrontApi` entrypoint, reachable only through the web Worker's service
  *   binding. Everything the storefront proxy forwards, never `admin/**` or `internal/**`.
  * - `admin`: the `AdminApi` entrypoint, reachable only through the admin Worker's service
@@ -38,10 +40,13 @@ const SCHEDULER_ROUTES: ReadonlySet<string> = new Set([
   'internal/maintenance/cleanup',
 ]);
 
-/** The only routes Telegram Serverless calls through the public hostname (signed POSTs). */
-const TELEGRAM_PUBLIC_ROUTES: ReadonlySet<string> = new Set([
-  'internal/telegram/session',
-  'internal/telegram/staff-chat/connect',
+/** The only routes Telegram Serverless calls through the public hostname, with their method. */
+const TELEGRAM_PUBLIC_ROUTES: ReadonlyMap<string, string> = new Map([
+  ['internal/telegram/session', 'POST'],
+  ['internal/telegram/staff-chat/connect', 'POST'],
+  // Bot onboarding language choice and the user's own shared contact (ADR 0003, signed).
+  ['internal/telegram/language', 'PUT'],
+  ['internal/telegram/phone', 'POST'],
 ]);
 
 const HEALTH_ROUTES: ReadonlySet<string> = new Set(['health', 'health/ready']);
@@ -92,8 +97,8 @@ export function isAllowed(entrance: Entrance, method: string, pathname: string):
 
   switch (entrance) {
     case 'public':
-      // Telegram Serverless calls only these signed POSTs.
-      return upper === 'POST' && TELEGRAM_PUBLIC_ROUTES.has(route);
+      // Telegram Serverless calls only these signed routes, each with one method.
+      return TELEGRAM_PUBLIC_ROUTES.get(route) === upper;
     case 'storefront':
       return segments[0] !== 'admin' && segments[0] !== 'internal';
     case 'admin':
@@ -163,6 +168,54 @@ export function singleIp(value: string | null): string | null {
 
 const REQUEST_ID = /^[A-Za-z0-9._-]{8,128}$/;
 
+/**
+ * The only route whose redirect the gateway passes on: the end of the Telegram OIDC sign-in
+ * (ADR 0014). The Function always answers it `303` with a same-origin, path-absolute `Location`
+ * (the `return_to` page or `/<locale>/auth/telegram?status=...`) plus the session cookie on
+ * success. Only browser entrances reach it.
+ */
+export const OIDC_CALLBACK_ROUTE = 'auth/telegram/oidc/callback';
+
+/** Whether this request is the OIDC callback on a browser entrance (GET only). */
+export function isOidcCallback(entrance: Entrance, method: string, pathname: string): boolean {
+  if (entrance !== 'storefront' && entrance !== 'admin') return false;
+  if (method.toUpperCase() !== 'GET') return false;
+  return apiSegments(pathname)?.join('/') === OIDC_CALLBACK_ROUTE;
+}
+
+/**
+ * `true` for a same-origin, path-absolute `Location` such as `/uz/orders?x=1`: a single leading
+ * `/` (not `//`, protocol-relative), no backslash (browsers read `/\` like `//`), no control
+ * characters or spaces, and it still resolves to the same origin. Mirrors the admin and web
+ * proxies' check, so the gateway never hands a browser an off-site redirect.
+ */
+export function isSafeRelativeLocation(location: string): boolean {
+  if (location.length === 0 || location.length > 2048) return false;
+  if (!location.startsWith('/') || location.startsWith('//')) return false;
+  // eslint-disable-next-line no-control-regex
+  if (/[\u0000-\u0020\u007f\\]/.test(location)) return false;
+  try {
+    const base = 'http://same-origin.invalid';
+    return new URL(location, base).origin === base;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * The request id the Function (and every gateway log line and response) uses: the caller's
+ * `X-Request-ID` on the browser entrances when it is well-formed (the app proxies generate one
+ * per request, so the browser, the app, the gateway and the Function share it), otherwise the
+ * fallback (the Cloudflare ray id, or a UUID).
+ */
+export function requestIdFor(entrance: Entrance, incoming: Headers, fallback: string): string {
+  const requestId = incoming.get('x-request-id');
+  const callerMayChooseId = entrance === 'storefront' || entrance === 'admin';
+  return requestId !== null && REQUEST_ID.test(requestId) && callerMayChooseId
+    ? requestId
+    : fallback;
+}
+
 export interface UpstreamContext {
   entrance: Entrance;
   /**
@@ -202,23 +255,24 @@ export function upstreamHeaders(
   // The Function rejects any request without the gateway secret.
   headers.set('x-mm-entrance', context.entrance);
   headers.set(GATEWAY_SECRET_HEADER, context.gatewaySecret);
-  const requestId = incoming.get('x-request-id');
-  const callerMayChooseId = context.entrance === 'storefront' || context.entrance === 'admin';
-  headers.set(
-    'x-request-id',
-    requestId !== null && REQUEST_ID.test(requestId) && callerMayChooseId
-      ? requestId
-      : context.fallbackRequestId,
-  );
+  headers.set('x-request-id', requestIdFor(context.entrance, incoming, context.fallbackRequestId));
   return headers;
 }
 
-/** The JSON error envelope the Core API uses, so clients see one shape. */
-export function errorResponse(status: number, code: string, message: string): Response {
-  return Response.json(
-    { error: { code, message } },
-    { status, headers: { 'cache-control': 'no-store' } },
-  );
+/**
+ * The JSON error envelope the Core API uses, so clients see one shape. With a request id it is
+ * also sent as `X-Request-ID`, so an error the gateway produced itself (timeout, network failure,
+ * refused redirect) can still be matched to the gateway's log line.
+ */
+export function errorResponse(
+  status: number,
+  code: string,
+  message: string,
+  requestId?: string,
+): Response {
+  const headers: Record<string, string> = { 'cache-control': 'no-store' };
+  if (requestId !== undefined) headers['x-request-id'] = requestId;
+  return Response.json({ error: { code, message } }, { status, headers });
 }
 
 /**

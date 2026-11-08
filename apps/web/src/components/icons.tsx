@@ -145,3 +145,31 @@ export const LocateIcon = (props: IconProps) => (
     <path d="M12 2.5v4M12 17.5v4M2.5 12h4M17.5 12h4" />
   </Icon>
 );
+
+export const PhoneIcon = (props: IconProps) => (
+  <Icon {...props}>
+    <rect x="7" y="2.5" width="10" height="19" rx="2.5" />
+    <path d="M11 18h2" />
+  </Icon>
+);
+
+export const HelpIcon = (props: IconProps) => (
+  <Icon {...props}>
+    <circle cx="12" cy="12" r="9" />
+    <path d="M9.5 9.5a2.5 2.5 0 1 1 3.3 2.37c-.5.17-.8.64-.8 1.16V14" />
+    <path d="M12 17.25h.01" />
+  </Icon>
+);
+
+export const TelegramIcon = (props: IconProps) => (
+  <Icon {...props}>
+    <path d="M21 4 3 11.2l5.6 2L18 7l-7.3 7.6v4.9l3.1-3.4 4 3L21 4Z" />
+  </Icon>
+);
+
+export const ShieldCheckIcon = (props: IconProps) => (
+  <Icon {...props}>
+    <path d="M12 3 5 6v5c0 4.2 2.9 8.1 7 9 4.1-.9 7-4.8 7-9V6l-7-3Z" />
+    <path d="m9 12 2 2 4-4" />
+  </Icon>
+);

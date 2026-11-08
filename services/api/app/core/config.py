@@ -131,6 +131,14 @@ class Settings(BaseSettings):
     # How long a started login may take before its state is refused.
     telegram_oidc_state_ttl_seconds: int = 600
 
+    # Orders need a verified account phone (own Telegram contact shared with the bot). Turning
+    # it off is for local experiments only; deployed environments keep it on.
+    checkout_require_verified_phone: bool = True
+    # Phone OTP via Telegram Gateway (paid, separate account and token). Off unless both the flag
+    # and the token are set; the token is a Function secret and is never logged.
+    phone_otp_provider: Literal["disabled", "telegram_gateway"] = "disabled"
+    telegram_gateway_token: SecretStr | None = None
+
     # Peers whose X-Forwarded-For uvicorn trusts (``--proxy-headers``): the web proxy only, as
     # comma-separated IPs/CIDRs. uvicorn reads this same FORWARDED_ALLOW_IPS variable; the API
     # validates it here so a deployment cannot start without it. Unset in development/test means

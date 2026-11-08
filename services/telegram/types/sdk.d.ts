@@ -96,6 +96,8 @@ declare module 'sdk/api' {
   export interface Api {
     sendMessage(params: Record<string, unknown>): Promise<unknown>;
     getMe(): Promise<unknown>;
+    answerCallbackQuery(params: Record<string, unknown>): Promise<unknown>;
+    editMessageText(params: Record<string, unknown>): Promise<unknown>;
     [method: string]: (params?: Record<string, any>) => Promise<any>;
   }
   export const api: Api;

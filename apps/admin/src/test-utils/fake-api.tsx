@@ -35,8 +35,12 @@ export function apiError(
   status: number,
   code: string,
   extra: Record<string, unknown> = {},
+  requestId?: string,
 ): Response {
-  return json({ error: { code, message: 'test', ...extra } }, { status });
+  return json(
+    { error: { code, message: 'test', ...extra } },
+    { status, ...(requestId === undefined ? {} : { headers: { 'x-request-id': requestId } }) },
+  );
 }
 
 export function userWithRole(role: UserRole): UserPublic {
@@ -48,6 +52,8 @@ export function userWithRole(role: UserRole): UserPublic {
     username: null,
     language: 'uz',
     role,
+    language_confirmed: true,
+    phone_verified: false,
   };
 }
 

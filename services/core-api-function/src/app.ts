@@ -18,7 +18,7 @@ import { registerRoutes } from './routes/index.ts';
  * 4. routes; unknown paths 404, known paths with another method 405, uncaught errors 500.
  */
 
-const NO_STORE_PREFIXES = ['auth', 'cart', 'checkout', 'orders', 'admin', 'internal'].map(
+const NO_STORE_PREFIXES = ['auth', 'me', 'cart', 'checkout', 'orders', 'admin', 'internal'].map(
   (segment) => `${API_PREFIX}/${segment}`,
 );
 const QUIET_PATHS = new Set([`${API_PREFIX}/health`]);
@@ -126,7 +126,10 @@ export function createApp(deps: Deps): Hono<AppBindings> {
   app.onError((error, c) => {
     if (error instanceof ApiError) return apiErrorResponse(error);
     if (error instanceof StoreUnavailableError) {
-      log.error('Security store unavailable; failing closed', { route: c.req.path });
+      log.error('Security store unavailable; failing closed', {
+        route: c.get('routeTemplate') ?? c.req.path,
+        request_id: c.get('requestId'),
+      });
       return errorJson(503, 'service_unavailable', 'Service temporarily unavailable');
     }
     log.error(`Unhandled exception on ${c.req.method} ${c.get('routeTemplate') ?? c.req.path}`, {

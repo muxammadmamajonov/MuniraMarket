@@ -43,8 +43,12 @@ describe('isAllowed', () => {
     }
   });
 
-  it('exposes only the two signed Telegram Serverless routes publicly', () => {
+  it('exposes only the signed Telegram Serverless routes publicly', () => {
     expect(isAllowed('public', 'POST', '/api/v1/internal/telegram/session')).toBe(true);
+    expect(isAllowed('public', 'PUT', '/api/v1/internal/telegram/language')).toBe(true);
+    expect(isAllowed('public', 'POST', '/api/v1/internal/telegram/language')).toBe(false);
+    expect(isAllowed('public', 'POST', '/api/v1/internal/telegram/phone')).toBe(true);
+    expect(isAllowed('public', 'GET', '/api/v1/internal/telegram/phone')).toBe(false);
     expect(isAllowed('public', 'POST', '/api/v1/internal/telegram/staff-chat/connect')).toBe(true);
     expect(isAllowed('public', 'GET', '/api/v1/internal/telegram/session')).toBe(false);
     expect(isAllowed('public', 'GET', '/api/v1/internal/telegram/me')).toBe(false);

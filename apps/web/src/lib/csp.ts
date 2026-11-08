@@ -1,4 +1,8 @@
-import { YANDEX_MAPS_API_ORIGIN, YANDEX_MAPS_DATA_ORIGIN } from './maps/config';
+import {
+  YANDEX_MAPS_API_ORIGIN,
+  YANDEX_MAPS_DATA_ORIGIN,
+  YANDEX_MAPS_SEARCH_ORIGIN,
+} from './maps/config';
 
 /**
  * Content Security Policy for HTML pages, built per request in `src/proxy.ts`.
@@ -15,7 +19,7 @@ import { YANDEX_MAPS_API_ORIGIN, YANDEX_MAPS_DATA_ORIGIN } from './maps/config';
  *
  * Yandex Maps hosts are added only when a Maps key is configured (`yandexMaps`): the official API
  * host in `script-src` (for browsers that ignore `'strict-dynamic'`) and `connect-src`, its data
- * hosts in `connect-src`, and `blob:` workers, which the API uses to render vector tiles. Tiles
+ * hosts and the geosearch host (`ymaps3.search`) in `connect-src`, and `blob:` workers, which the API uses to render vector tiles. Tiles
  * that arrive as images are already covered by `img-src https:`.
  */
 
@@ -67,7 +71,12 @@ export function buildContentSecurityPolicy({
     // The browser only talks to this origin: the API is reached through the same-origin proxy.
     [
       'connect-src',
-      ["'self'", ...(yandexMaps ? [YANDEX_MAPS_API_ORIGIN, YANDEX_MAPS_DATA_ORIGIN] : [])],
+      [
+        "'self'",
+        ...(yandexMaps
+          ? [YANDEX_MAPS_API_ORIGIN, YANDEX_MAPS_DATA_ORIGIN, YANDEX_MAPS_SEARCH_ORIGIN]
+          : []),
+      ],
     ],
     ...(yandexMaps ? ([['worker-src', ["'self'", 'blob:']]] as Array<[string, string[]]>) : []),
     // Nothing is framed: sign-in is a top-level redirect and the Yandex Maps API needs no frame.

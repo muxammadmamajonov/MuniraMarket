@@ -209,6 +209,7 @@ def create_app(
         no_store_paths=(
             f"{API_PREFIX}/auth",
             f"{API_PREFIX}/cart",
+            f"{API_PREFIX}/me",
             f"{API_PREFIX}/checkout",
             f"{API_PREFIX}/orders",
             f"{API_PREFIX}/admin",

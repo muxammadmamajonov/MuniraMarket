@@ -47,6 +47,13 @@ export interface SessionContextValue {
   startTelegramLogin: (returnTo: string) => Promise<string>;
   /** Ends the session on the server and forgets the CSRF token. */
   logout: () => Promise<void>;
+  /**
+   * Re-reads `GET /auth/session` without showing a loading state (for example after the bot
+   * stored a shared phone). Resolves with the fresh user, or `null` when it could not be read.
+   */
+  refresh: () => Promise<UserPublic | null>;
+  /** Replaces the signed-in user with one the API just returned (e.g. `PUT /me/language`). */
+  applyUser: (user: UserPublic) => void;
 }
 
 const SessionContext = createContext<SessionContextValue | null>(null);
@@ -239,9 +246,28 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     apply({ kind: 'anonymous' });
   }, [apiFetch, apply]);
 
+  const refresh = useCallback(async (): Promise<UserPublic | null> => {
+    try {
+      const response = await sameOriginFetch('/auth/session', {
+        method: 'GET',
+        headers: { accept: 'application/json' },
+      });
+      if (!response.ok) return null;
+      const session = await readJson<SessionResponse>(response);
+      apply({ kind: 'ok', session });
+      return session.user;
+    } catch {
+      return null;
+    }
+  }, [apply]);
+
+  const applyUser = useCallback((user: UserPublic) => {
+    setState((current) => (current.status === 'authenticated' ? { ...current, user } : current));
+  }, []);
+
   const value = useMemo<SessionContextValue>(
-    () => ({ ...state, apiFetch, retry, startTelegramLogin, logout }),
-    [state, apiFetch, retry, startTelegramLogin, logout],
+    () => ({ ...state, apiFetch, retry, startTelegramLogin, logout, refresh, applyUser }),
+    [state, apiFetch, retry, startTelegramLogin, logout, refresh, applyUser],
   );
 
   return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>;

@@ -40,7 +40,7 @@ beforeEach(() => {
 });
 
 describe('SiteHeader', () => {
-  it('has the wordmark linking home, orders, cart and a one-button language switch', () => {
+  it('has the wordmark linking home, orders and cart, and no language switch (Profile only)', () => {
     renderHeader();
     const home = screen.getByRole('link', { name: /MuniraMarket/ });
     expect(home).toHaveAttribute('href', '/uz');
@@ -51,7 +51,7 @@ describe('SiteHeader', () => {
       '/uz/orders',
     );
     expect(screen.getByRole('link', { name: 'Savat' })).toHaveAttribute('href', '/uz/cart');
-    expect(screen.getByRole('link', { name: 'Русский' })).toHaveTextContent('RU');
+    expect(screen.queryByRole('link', { name: 'Русский' })).toBeNull();
     expect(screen.getByRole('button', { name: 'Chiqish' })).toBeInTheDocument();
   });
 
@@ -84,6 +84,6 @@ describe('SiteHeader', () => {
     renderHeader('ru');
     expect(screen.getByRole('link', { name: 'Корзина' })).toHaveAttribute('href', '/ru/cart');
     expect(screen.getByRole('link', { name: 'Мои заказы' })).toHaveAttribute('href', '/ru/orders');
-    expect(screen.getByRole('link', { name: 'O‘zbekcha' })).toHaveTextContent('UZ');
+    expect(screen.queryByRole('link', { name: 'O‘zbekcha' })).toBeNull();
   });
 });

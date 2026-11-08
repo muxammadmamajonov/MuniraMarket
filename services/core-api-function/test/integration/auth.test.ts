@@ -68,6 +68,9 @@ describe.skipIf(!hasDatabase)('auth routes (initData sessions)', () => {
       'username',
       'language',
       'role',
+      'language_confirmed',
+      'phone_verified',
+      'phone_hint',
     ]);
     expect(body.user).toMatchObject({
       telegram_user_id: 501,

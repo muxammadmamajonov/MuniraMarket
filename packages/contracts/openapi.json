@@ -655,6 +655,7 @@
               "invalid_status_transition",
               "order_status_conflict",
               "too_many_open_orders",
+              "phone_verification_required",
               "slug_taken",
               "sku_taken",
               "category_cycle",
@@ -3337,6 +3338,20 @@
         "title": "SetCartItemQuantityRequest",
         "type": "object"
       },
+      "SetLanguageRequest": {
+        "additionalProperties": false,
+        "description": "Body of ``PUT /me/language`` and ``PUT /internal/telegram/language``.",
+        "properties": {
+          "language": {
+            "$ref": "#/components/schemas/Language"
+          }
+        },
+        "required": [
+          "language"
+        ],
+        "title": "SetLanguageRequest",
+        "type": "object"
+      },
       "SlotCreateRequest": {
         "additionalProperties": false,
         "properties": {
@@ -3518,6 +3533,11 @@
           "language": {
             "$ref": "#/components/schemas/Language"
           },
+          "language_confirmed": {
+            "default": false,
+            "title": "Language Confirmed",
+            "type": "boolean"
+          },
           "last_name": {
             "anyOf": [
               {
@@ -3528,6 +3548,22 @@
               }
             ],
             "title": "Last Name"
+          },
+          "phone_hint": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Phone Hint"
+          },
+          "phone_verified": {
+            "default": false,
+            "title": "Phone Verified",
+            "type": "boolean"
           },
           "role": {
             "$ref": "#/components/schemas/UserRole"
@@ -7769,6 +7805,49 @@
         ]
       }
     },
+    "/api/v1/internal/telegram/language": {
+      "put": {
+        "description": "The language the user picked in the bot's onboarding (same column as the shop profile).",
+        "operationId": "set_language_api_v1_internal_telegram_language_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "description": "Body of ``PUT /me/language`` and ``PUT /internal/telegram/language``.",
+                "properties": {
+                  "language": {
+                    "$ref": "#/components/schemas/Language"
+                  }
+                },
+                "required": [
+                  "language"
+                ],
+                "title": "SetLanguageRequest",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserEnvelope"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Set Language",
+        "tags": [
+          "internal"
+        ]
+      }
+    },
     "/api/v1/internal/telegram/me": {
       "get": {
         "operationId": "get_me_api_v1_internal_telegram_me_get",
@@ -7909,6 +7988,58 @@
           }
         },
         "summary": "Report Result",
+        "tags": [
+          "internal"
+        ]
+      }
+    },
+    "/api/v1/internal/telegram/phone": {
+      "post": {
+        "description": "Store the sender's OWN shared Telegram contact as the verified account phone.\n\nThe number is never logged or returned.",
+        "operationId": "record_phone_api_v1_internal_telegram_phone_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "description": "Body of ``POST /internal/telegram/phone``: the sender's own shared contact.\n\nThe bot sends it only when the platform-verified update has ``contact.user_id == from.id``;\nthe API checks ``contact_user_id`` against the signed actor again.",
+                "properties": {
+                  "contact_user_id": {
+                    "exclusiveMinimum": 0.0,
+                    "title": "Contact User Id",
+                    "type": "integer"
+                  },
+                  "phone_number": {
+                    "maxLength": 32,
+                    "minLength": 7,
+                    "title": "Phone Number",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "contact_user_id",
+                  "phone_number"
+                ],
+                "title": "TelegramContactRequest",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserEnvelope"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Record Phone",
         "tags": [
           "internal"
         ]
@@ -8059,6 +8190,98 @@
         ]
       }
     },
+    "/api/v1/me/language": {
+      "put": {
+        "description": "Save the storefront language. The same value the bot uses; the URL locale follows it.",
+        "operationId": "set_language_api_v1_me_language_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetLanguageRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserEnvelope"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "summary": "Set Language",
+        "tags": [
+          "me"
+        ]
+      }
+    },
     "/api/v1/orders": {
       "get": {
         "description": "The signed-in customer's orders, newest first.",
@@ -8157,7 +8380,7 @@
         ]
       },
       "post": {
-        "description": "Place an order from the whole cart.\n\nThe same ``Idempotency-Key`` with the same body returns the original order (``200`` and\n``Idempotent-Replayed: true``); with a different body it is ``409 idempotency_key_conflict``.\nWhen the zone has delivery slots, ``delivery_slot_id`` is required (``409 slot_required``) and\nbooked atomically (``409 slot_full`` / ``slot_unavailable``).",
+        "description": "Place an order from the whole cart.\n\nThe same ``Idempotency-Key`` with the same body returns the original order (``200`` and\n``Idempotent-Replayed: true``); with a different body it is ``409 idempotency_key_conflict``.\nWhen the zone has delivery slots, ``delivery_slot_id`` is required (``409 slot_required``) and\nbooked atomically (``409 slot_full`` / ``slot_unavailable``). Without a verified account\nphone it is ``409 phone_verification_required`` (unless disabled by configuration).",
         "operationId": "create_order_api_v1_orders_post",
         "parameters": [
           {

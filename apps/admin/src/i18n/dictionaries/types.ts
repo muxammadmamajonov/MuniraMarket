@@ -34,6 +34,8 @@ export interface Dictionary {
   };
   header: {
     appName: string;
+    /** Small tag under the logo that marks the back office ("Admin panel"). */
+    brandTag: string;
     logout: string;
     language: { label: string; names: Record<Locale, string> };
   };
@@ -62,6 +64,14 @@ export interface Dictionary {
     /** Message per `?status=` of the sign-in failure page (unknown values use `failed`). */
     callbackStatus: Record<TelegramOidcFailureStatus, string>;
     callbackBack: string;
+    /** Button that starts a new sign-in after a failure. */
+    tryAgain: string;
+    /** `{code}`: the short request id ("support code") of a failed request. */
+    supportCode: string;
+    /** What to do with the support code. */
+    supportCodeHint: string;
+    /** Short line under the sign-in card: who may use this panel. */
+    staffOnly: string;
   };
   orders: {
     title: string;

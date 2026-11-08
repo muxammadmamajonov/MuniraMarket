@@ -129,6 +129,10 @@
 
 @layer base {
   html {
+    /* The page never jumps sideways when content starts or stops overflowing. */
+    scrollbar-gutter: stable;
+    scrollbar-width: thin;
+    scrollbar-color: var(--mm-color-border-strong) transparent;
     -webkit-text-size-adjust: 100%;
     -webkit-tap-highlight-color: transparent;
     overscroll-behavior: none;
@@ -136,6 +140,25 @@
 
   body {
     @apply bg-background font-sans text-foreground antialiased;
+    /* Long Uzbek/Russian words and very narrow screens never widen the page. */
+    min-width: 20rem;
+    overflow-wrap: break-word;
+  }
+
+  /* WebKit/Blink without `scrollbar-width`: a thin, quiet thumb that turns brand red on hover. */
+  ::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  ::-webkit-scrollbar-thumb {
+    border-radius: 9999px;
+    background-color: var(--mm-color-border-strong);
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background-color: var(--mm-color-primary);
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
   }
 
   input,

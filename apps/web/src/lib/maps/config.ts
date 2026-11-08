@@ -17,6 +17,9 @@ export const YANDEX_MAPS_API_ORIGIN = 'https://api-maps.yandex.ru';
 /** Tiles, vector data and styles the API fetches once loaded. */
 export const YANDEX_MAPS_DATA_ORIGIN = 'https://*.maps.yandex.net';
 
+/** Geosearch host `ymaps3.search` calls (reverse geocoding), per the v3 CSP requirements. */
+export const YANDEX_MAPS_SEARCH_ORIGIN = 'https://search-maps.yandex.ru';
+
 /** Yandex developer keys are UUIDs; anything else is a misconfiguration and disables the map. */
 const KEY_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 

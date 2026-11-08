@@ -18,7 +18,13 @@ export const ORDER_STATUSES = Object.freeze([
 /**
  * @typedef {object} Messages
  * @property {string} startGreeting
+ * @property {(name: string) => string} personalGreeting
  * @property {string} openShop
+ * @property {string} languageSaved
+ * @property {string} phoneRequest
+ * @property {string} phoneButton
+ * @property {string} phoneVerified
+ * @property {string} phoneNotOwn
  * @property {string} genericError
  * @property {string} orderLabel
  * @property {string} totalLabel
@@ -32,7 +38,16 @@ export const MESSAGES = {
   uz: {
     startGreeting:
       'MuniraMarket’ga xush kelibsiz! Mahsulotlarni tanlash va buyurtma berish uchun do‘konni oching.',
+    personalGreeting: (name) =>
+      `Assalomu alaykum, ${name}! MuniraMarket’ga xush kelibsiz. Mahsulotlarni tanlash va buyurtma berish uchun do‘konni oching.`,
     openShop: 'Do‘konni ochish',
+    languageSaved:
+      'Til saqlandi: o‘zbekcha. Uni istalgan vaqt do‘kondagi Profil bo‘limida o‘zgartirishingiz mumkin.',
+    phoneRequest:
+      'Buyurtmani tasdiqlash uchun telefon raqamingiz kerak. Pastdagi tugmani bosing — Telegram faqat sizning roziligingiz bilan raqamingizni yuboradi.',
+    phoneButton: 'Raqamimni yuborish',
+    phoneVerified: 'Rahmat! Raqamingiz tasdiqlandi. Endi buyurtma berishingiz mumkin.',
+    phoneNotOwn: 'Iltimos, o‘z raqamingizni pastdagi tugma orqali yuboring.',
     genericError: 'Xatolik yuz berdi. Iltimos, keyinroq qayta urinib ko‘ring.',
     orderLabel: 'Buyurtma',
     totalLabel: 'Jami',
@@ -51,7 +66,16 @@ export const MESSAGES = {
   ru: {
     startGreeting:
       'Добро пожаловать в MuniraMarket! Откройте магазин, чтобы выбрать товары и оформить заказ.',
+    personalGreeting: (name) =>
+      `Здравствуйте, ${name}! Добро пожаловать в MuniraMarket. Откройте магазин, чтобы выбрать товары и оформить заказ.`,
     openShop: 'Открыть магазин',
+    languageSaved:
+      'Язык сохранён: русский. Его можно изменить в любой момент в разделе «Профиль» в магазине.',
+    phoneRequest:
+      'Чтобы подтвердить заказ, нужен ваш номер телефона. Нажмите кнопку ниже — Telegram отправит номер только с вашего согласия.',
+    phoneButton: 'Отправить мой номер',
+    phoneVerified: 'Спасибо! Номер подтверждён. Теперь можно оформить заказ.',
+    phoneNotOwn: 'Пожалуйста, отправьте свой номер кнопкой ниже.',
     genericError: 'Произошла ошибка. Пожалуйста, попробуйте позже.',
     orderLabel: 'Заказ',
     totalLabel: 'Итого',
@@ -171,3 +195,17 @@ export const STAFF_MESSAGES = Object.freeze({
     }),
   }),
 });
+
+/**
+ * First-start language prompt. Shown before any language is known, so it is bilingual; the
+ * buttons are each language's own name.
+ * @param {string} name
+ */
+export function languagePrompt(name) {
+  return (
+    `Assalomu alaykum, ${name}! Qaysi tilda davom etamiz?\n\n` +
+    `Здравствуйте, ${name}! На каком языке продолжим?`
+  );
+}
+
+export const LANGUAGE_BUTTONS = Object.freeze({ uz: 'O‘zbekcha', ru: 'Русский' });

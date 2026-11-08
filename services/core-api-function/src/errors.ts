@@ -43,6 +43,7 @@ export const ERROR_CODES = [
   'invalid_status_transition',
   'order_status_conflict',
   'too_many_open_orders',
+  'phone_verification_required',
   // admin: catalog, CSV, users
   'slug_taken',
   'sku_taken',

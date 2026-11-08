@@ -10,7 +10,9 @@ import { formatMessage } from '@/i18n/format';
 import { dayLabel, slotWindow } from '@/lib/checkout/slots';
 import { useCheckoutFlow, type FocusTarget } from '@/lib/checkout/use-checkout';
 import { zoneForDistrict } from '@/lib/checkout/zones';
+import { useSession } from '@/lib/session';
 import { useHaptics, useMainButton, useTelegram } from '@/lib/telegram';
+import { PhoneCard } from '../phone-card';
 import { SignInPrompt } from '../sign-in-prompt';
 import { LINK_BUTTON_PRIMARY } from '../ui-classes';
 import { CheckoutFormFields } from './checkout-form';
@@ -76,6 +78,7 @@ export function CheckoutView() {
   const onError = useCallback(() => notify('error'), [notify]);
 
   const flow = useCheckoutFlow({ onPlaced, onSuccess, onError, focusField });
+  const { user } = useSession();
   const { load, values, quote, readyQuote, priceChange, failure, submitting, cooldown } = flow;
 
   // Bring a new notice into view (it sits above the summary, below the fields).
@@ -96,7 +99,11 @@ export function CheckoutView() {
   const action = priceChange !== null ? dict.checkout.confirmNewTotal : dict.checkout.submit;
   const mainButtonText = totalText === null ? action : `${action} — ${totalText}`;
 
-  const blocked = readyQuote !== null && !readyQuote.can_place_order && priceChange === null;
+  // The phone card below asks for the number; until then the order cannot be placed (the API
+  // refuses it with 409 phone_verification_required anyway).
+  const phoneMissing = flow.status === 'authenticated' && user?.phone_verified !== true;
+  const blocked =
+    phoneMissing || (readyQuote !== null && !readyQuote.can_place_order && priceChange === null);
   // Telegram: the MainButton cannot be tapped to reveal errors, so it stays disabled until the
   // form is valid and the server says the order can be placed.
   const slotMissing = flow.slots.missing;
@@ -123,7 +130,7 @@ export function CheckoutView() {
     return flow.status === 'loading' ? (
       <CheckoutSkeleton label={dict.checkout.loading} />
     ) : (
-      <SignInPrompt />
+      <SignInPrompt variant="screen" />
     );
   }
   if (load.kind === 'loading') return <CheckoutSkeleton label={dict.checkout.loading} />;
@@ -223,6 +230,7 @@ export function CheckoutView() {
       />
 
       <div className="flex min-w-0 flex-col gap-4 md:sticky md:top-4">
+        <PhoneCard variant="checkout" />
         <FailureNotice
           ref={noticeRef}
           failure={failure}

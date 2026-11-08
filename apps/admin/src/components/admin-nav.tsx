@@ -14,16 +14,20 @@ import {
   type NavGroup,
   type NavItem,
 } from '@/lib/nav';
+import { BrandLockup } from './brand';
 import { LanguageSwitcher } from './language-switcher';
 import { LogoutButton } from './logout-button';
 import { NavIcon } from './nav-icon';
 import { Modal } from './ui/modal';
 
 const ROW =
-  'flex min-h-11 items-center gap-3 rounded-xl px-3 text-base transition-[background-color,transform] ' +
+  'flex min-h-11 items-center gap-3 rounded-xl px-3 text-base transition-transform ' +
   'duration-150 ease-out active:scale-[0.98] focus-visible:outline-2 focus-visible:outline-offset-2 ' +
   'focus-visible:outline-focus';
-const ROW_ON = 'bg-surface-muted font-semibold';
+// The current page: brand tint and ink, plus a bar on the leading edge (not colour alone).
+const ROW_ON =
+  'relative bg-brand-soft font-semibold text-brand-ink before:absolute before:inset-y-2 ' +
+  'before:left-0 before:w-1 before:rounded-full before:bg-primary';
 const ROW_OFF = 'hover:bg-surface-muted';
 
 const GROUP_ORDER: NavGroup[] = ['main', 'catalog', 'delivery', 'system'];
@@ -88,9 +92,9 @@ function Sidebar({ user, isAdmin }: { user: UserPublic; isAdmin: boolean }) {
     <aside className="sticky top-0 hidden h-dvh w-60 shrink-0 flex-col gap-4 overflow-y-auto overscroll-contain border-r border-border bg-surface p-3 sm:flex">
       <Link
         href={`/${locale}`}
-        className="flex min-h-11 items-center px-3 text-lg font-bold focus-visible:outline-2 focus-visible:outline-focus"
+        className="flex min-h-14 items-center rounded-xl px-2 focus-visible:outline-2 focus-visible:outline-focus"
       >
-        {dict.header.appName}
+        <BrandLockup appName={dict.header.appName} tag={dict.header.brandTag} />
       </Link>
       <nav aria-label={dict.nav.label} className="flex flex-1 flex-col gap-2">
         <NavLinks items={navItemsFor(isAdmin)} />
@@ -166,9 +170,9 @@ function MobileChrome({ user, isAdmin }: { user: UserPublic; isAdmin: boolean })
       <header className="sticky top-0 z-30 flex items-center justify-between gap-2 border-b border-border bg-surface px-4 pt-[env(safe-area-inset-top)] sm:hidden">
         <Link
           href={`/${locale}`}
-          className="flex min-h-12 min-w-0 items-center text-lg font-bold break-words focus-visible:outline-2 focus-visible:outline-focus"
+          className="flex min-h-14 min-w-0 items-center rounded-xl focus-visible:outline-2 focus-visible:outline-focus"
         >
-          {dict.header.appName}
+          <BrandLockup appName={dict.header.appName} tag={dict.header.brandTag} />
         </Link>
       </header>
 
@@ -184,7 +188,7 @@ function MobileChrome({ user, isAdmin }: { user: UserPublic; isAdmin: boolean })
               href={navHref(locale, item)}
               aria-current={active ? 'page' : undefined}
               data-testid={`quick-${item.id}`}
-              className={cx(TAB, active ? 'text-foreground' : 'text-muted-foreground')}
+              className={cx(TAB, active ? 'text-brand-ink' : 'text-muted-foreground')}
             >
               <NavIcon id={item.id} className={cx('size-6', active && 'stroke-[2.5]')} />
               <span className="max-w-full truncate">{dict.nav.items[item.id]}</span>

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { buildContentSecurityPolicy, generateNonce } from './csp';
+import { YANDEX_MAPS_SEARCH_ORIGIN } from './maps/config';
 
 function directive(policy: string, name: string): string[] {
   const part = policy.split('; ').find((entry) => entry.startsWith(`${name} `));
@@ -78,6 +79,7 @@ describe('buildContentSecurityPolicy', () => {
 
   it('allows no Yandex host unless a Maps key is configured', () => {
     expect(production).not.toContain('yandex');
+    expect(directive(production, 'connect-src')).not.toContain(YANDEX_MAPS_SEARCH_ORIGIN);
     expect(production).not.toContain('worker-src');
   });
 
@@ -88,7 +90,9 @@ describe('buildContentSecurityPolicy', () => {
       "'self'",
       'https://api-maps.yandex.ru',
       'https://*.maps.yandex.net',
+      YANDEX_MAPS_SEARCH_ORIGIN,
     ]);
+    expect(YANDEX_MAPS_SEARCH_ORIGIN).toBe('https://search-maps.yandex.ru');
     expect(directive(withMaps, 'worker-src')).toEqual(["'self'", 'blob:']);
     expect(directive(withMaps, 'frame-src')).toEqual(["'none'"]);
     expect(directive(withMaps, 'script-src')).not.toContain("'unsafe-inline'");

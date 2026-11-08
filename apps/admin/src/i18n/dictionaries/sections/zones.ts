@@ -3,6 +3,8 @@ import type { Locale } from '@muniramarket/contracts';
 export interface ZonesDict {
   title: string;
   newZone: string;
+  /** Always-visible note: the seeded zones are made up; real rules come from an admin. */
+  demoNotice: { title: string; body: string };
   loading: string;
   empty: string;
   list: string;
@@ -44,6 +46,10 @@ export interface ZonesDict {
 export const zonesDict: Record<Locale, ZonesDict> = {
   uz: {
     title: 'Yetkazib berish hududlari',
+    demoNotice: {
+      title: 'Namuna ma’lumotlar',
+      body: 'Boshlang‘ich hududlar, narxlar va ish vaqtlari sinov uchun o‘ylab topilgan (demo). Haqiqiy yetkazib berish qoidalarini — tumanlar, narx, bepul yetkazish chegarasi, minimal buyurtma va vaqtni — administrator shu yerda belgilashi kerak.',
+    },
     newZone: 'Yangi hudud',
     loading: 'Hududlar yuklanmoqda…',
     empty: 'Hozircha hududlar yo‘q. Birinchisini yarating.',
@@ -89,6 +95,10 @@ export const zonesDict: Record<Locale, ZonesDict> = {
   },
   ru: {
     title: 'Зоны доставки',
+    demoNotice: {
+      title: 'Демонстрационные данные',
+      body: 'Начальные зоны, цены и часы работы придуманы для проверки (демо). Настоящие правила доставки — районы, стоимость, порог бесплатной доставки, минимальный заказ и время — должен задать администратор здесь.',
+    },
     newZone: 'Новая зона',
     loading: 'Загрузка зон…',
     empty: 'Зон пока нет. Создайте первую.',

@@ -126,12 +126,12 @@ export function CancelDialog({
             className="w-full rounded-xl border border-border bg-background p-3 focus-visible:outline-2 focus-visible:outline-focus"
           />
           {invalid ? (
-            <p id={errorId} role="alert" className="text-sm text-red-700 dark:text-red-300">
+            <p id={errorId} role="alert" className="text-sm text-danger">
               {copy.reasonInvalid}
             </p>
           ) : null}
           {error !== null ? (
-            <p role="alert" className="text-sm text-red-700 dark:text-red-300">
+            <p role="alert" className="text-sm text-danger">
               {error}
             </p>
           ) : null}

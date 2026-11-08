@@ -1,5 +1,12 @@
 import { vi, type Mock } from 'vitest';
-import type { LngLat, YMapProps, YMaps3 } from './yandex-types';
+import type {
+  LngLat,
+  YMapListenerProps,
+  YMapProps,
+  YMaps3,
+  YSearchFeature,
+  YSearchOptions,
+} from './yandex-types';
 
 /**
  * A fake `window.ymaps3` for tests. Test-only; not imported by app code. Nothing here (or in any
@@ -20,10 +27,37 @@ export interface FakeMap {
 export interface FakeYMaps {
   api: YMaps3;
   maps: FakeMap[];
+  /** `ymaps3.search`; answers `[]` unless a test sets an implementation. */
+  search: Mock<(options: YSearchOptions) => Promise<YSearchFeature[]>>;
+  /** Keys passed to `getDefaultConfig().setApikeys`. */
+  setApikeys: Mock<(keys: { search?: string }) => void>;
+  /** Every `YMapListener` added to a map; call `onActionStart` to simulate a drag. */
+  listeners: YMapListenerProps[];
 }
 
-export function makeYMaps(): FakeYMaps {
+/** A toponym result as `ymaps3.search` returns it. */
+export function toponym(name: string, description: string): YSearchFeature {
+  return { properties: { name, description } };
+}
+
+export interface MakeYMapsOptions {
+  /** Leave out `search` (an SDK build without geosearch). */
+  withoutSearch?: boolean;
+}
+
+export function makeYMaps({ withoutSearch = false }: MakeYMapsOptions = {}): FakeYMaps {
   const maps: FakeMap[] = [];
+  const listeners: YMapListenerProps[] = [];
+  const search = vi.fn<(options: YSearchOptions) => Promise<YSearchFeature[]>>(() =>
+    Promise.resolve([]),
+  );
+  const setApikeys = vi.fn<(keys: { search?: string }) => void>();
+
+  class YMapListener {
+    constructor(props: YMapListenerProps) {
+      listeners.push(props);
+    }
+  }
 
   class YMap {
     readonly fake: FakeMap;
@@ -74,9 +108,12 @@ export function makeYMaps(): FakeYMaps {
     YMap,
     YMapDefaultSchemeLayer: class {},
     YMapDefaultFeaturesLayer: class {},
+    YMapListener,
+    getDefaultConfig: () => ({ setApikeys }),
+    ...(withoutSearch ? {} : { search }),
   } as unknown as YMaps3;
 
-  return { api, maps };
+  return { api, maps, search, setApikeys, listeners };
 }
 
 /**

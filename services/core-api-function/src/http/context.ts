@@ -25,6 +25,12 @@ export interface UserRecord {
   language: Language;
   role: UserRole;
   is_blocked: boolean;
+  /** An explicit language choice was made (bot onboarding or the shop profile). */
+  language_confirmed: boolean;
+  /** The account phone is verified; the number itself never leaves the API. */
+  phone_verified: boolean;
+  /** The verified number; read only to build `phone_hint`, never serialised. */
+  phone?: string | null;
 }
 
 export interface SessionData {

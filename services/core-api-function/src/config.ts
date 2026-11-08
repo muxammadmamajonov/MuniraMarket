@@ -62,6 +62,12 @@ export interface Settings {
   appRelease: string | null;
   dbStatementTimeoutMs: number;
   dbIdleInTransactionTimeoutMs: number;
+  /** Orders need a verified account phone (`CHECKOUT_REQUIRE_VERIFIED_PHONE`, default on). */
+  checkoutRequireVerifiedPhone: boolean;
+  /** Phone OTP provider (`PHONE_OTP_PROVIDER`); `disabled` unless explicitly configured. */
+  phoneOtpProvider: 'disabled' | 'telegram_gateway';
+  /** `TELEGRAM_GATEWAY_TOKEN`. Secret: never log or echo. */
+  telegramGatewayToken: string | null;
 }
 
 export function sessionCookieName(settings: Pick<Settings, 'sessionCookieSecure'>): string {
@@ -377,6 +383,17 @@ export function loadSettings(env: Env): Settings {
     throw new ConfigError("APP_RELEASE must be 1-64 letters, digits, '.', '_' or '-'");
   }
 
+  const phoneOtpProvider = oneOf<'disabled' | 'telegram_gateway'>(
+    env,
+    'PHONE_OTP_PROVIDER',
+    ['disabled', 'telegram_gateway'],
+    'disabled',
+  );
+  const telegramGatewayToken = text(env, 'TELEGRAM_GATEWAY_TOKEN') ?? null;
+  if (phoneOtpProvider === 'telegram_gateway' && telegramGatewayToken === null) {
+    throw new ConfigError('PHONE_OTP_PROVIDER=telegram_gateway needs TELEGRAM_GATEWAY_TOKEN');
+  }
+
   return {
     appEnv,
     databaseUrl,
@@ -413,5 +430,8 @@ export function loadSettings(env: Env): Settings {
       0,
       600_000,
     ),
+    checkoutRequireVerifiedPhone: bool(env, 'CHECKOUT_REQUIRE_VERIFIED_PHONE', true),
+    phoneOtpProvider,
+    telegramGatewayToken,
   };
 }

@@ -46,7 +46,14 @@ Cloudflare Cron Trigger ─▶ API gateway `scheduled()` (sign only) ───�
   The Function compares it in constant time (SHA-256 digests + `timingSafeEqual`) before reading
   a body or touching Postgres and answers `401` otherwise, health checks included. The gateway
   builds the upstream URL from the fixed origin plus path and query, refuses redirects and maps
-  timeouts to `504`.
+  timeouts to `504`. The one redirect it passes on is the Telegram OIDC callback's `303` to a
+  same-origin path, with its cookies (ADR 0014); without it every deployed browser sign-in ended
+  on a `service_unavailable` JSON page.
+- **Timeout budget and request ids.** Each layer gives up before the one wrapping it: Function
+  (`pg` connect 10 s, Telegram HTTP 10 s), gateway 20 s, admin proxy 25 s (one retry, only for
+  reads and the OIDC start, only on `502`/`503`). Every request carries one `X-Request-ID` from
+  the app proxy through the gateway to the Function; all three log it as `request_id`, every
+  response returns it, and the admin shows its first 8 characters as a "support code".
 - **Entrances unchanged.** Storefront and admin traffic still reaches the gateway only through
   service bindings (`StorefrontApi`, `AdminApi`); the public `api` hostname exposes only the health
   checks and the two signed routes Telegram Serverless calls (`internal/telegram/session`,

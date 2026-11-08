@@ -353,6 +353,21 @@ jobs:
           done
           echo "Web app did not become ready" >&2
           exit 1
+      # Same build, second instance with a placeholder (all-zero, not a real) Maps key, for
+      # e2e/delivery-map.spec.ts. The spec serves a stub Yandex SDK via page.route and aborts
+      # every other Yandex request, so nothing ever reaches Yandex.
+      - name: Start the web app with a placeholder Maps key
+        env:
+          YANDEX_MAPS_API_KEY: 00000000-0000-4000-8000-000000000000
+        working-directory: apps/web
+        run: |
+          nohup pnpm exec next start --port 3002 > "$E2E_LOG_DIR/web-maps.log" 2>&1 &
+          for _ in $(seq 1 60); do
+            curl -fsS -o /dev/null http://localhost:3002/uz && exit 0
+            sleep 1
+          done
+          echo "Web app (maps) did not become ready" >&2
+          exit 1
       - name: Start the admin app
         run: |
           nohup pnpm --filter @muniramarket/admin start > "$E2E_LOG_DIR/admin.log" 2>&1 &
@@ -370,6 +385,7 @@ jobs:
           E2E_BASE_URL: http://localhost:3000
           E2E_ADMIN_URL: http://localhost:3001
           E2E_SKIP_ADMIN: '1'
+          E2E_MAPS_BASE_URL: http://localhost:3002
         run: pnpm --filter @muniramarket/web test:e2e
       - name: Playwright E2E tests (admin)
         env:

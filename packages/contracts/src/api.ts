@@ -19,6 +19,7 @@ export const API_V1_PREFIX = '/api/v1';
  * display it but must never send it back as proof of identity.
  */
 export type UserPublic = Schemas['UserPublic'];
+export type SetLanguageRequest = Schemas['SetLanguageRequest'];
 
 /**
  * Login response and `GET /auth/session`. `csrf_token` is kept in memory by the client and sent as
@@ -280,6 +281,7 @@ export const API_ERROR_CODES = [
   'invalid_status_transition',
   'order_status_conflict',
   'too_many_open_orders',
+  'phone_verification_required',
   // Back office (phase 4).
   'slug_taken',
   'sku_taken',

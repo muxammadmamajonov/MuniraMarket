@@ -154,6 +154,18 @@ export interface TelegramWebApp {
   requestFullscreen?(): void;
   /** Bot API 8.0+. */
   exitFullscreen?(): void;
+  /**
+   * Bot API 6.9+. Native consent popup; the callback gets only `true` when the user shared. The
+   * contact itself goes to the bot's chat (a platform-verified update), never to this page.
+   */
+  requestContact?(callback?: (shared: boolean) => void): void;
+  /** Bot API 7.7+. Stops a vertical swipe from closing or minimising the Mini App. */
+  disableVerticalSwipes?(): void;
+  /** Bot API 6.1+. */
+  setHeaderColor?(color: string): void;
+  /** Bot API 6.1+. */
+  setBackgroundColor?(color: string): void;
+  readonly isExpanded?: boolean;
   onEvent(eventType: TelegramEventType, handler: TelegramEventHandler): void;
   offEvent(eventType: TelegramEventType, handler: TelegramEventHandler): void;
   readonly BackButton: TelegramBackButton;

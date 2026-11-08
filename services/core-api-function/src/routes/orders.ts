@@ -174,7 +174,10 @@ async function create(c: Ctx): Promise<Response> {
   const payload = readBody(validation, body, createOrderRequest);
   validation.check();
 
-  const { db, clock, logger } = deps(c);
+  const { db, clock, logger, settings } = deps(c);
+  if (settings.checkoutRequireVerifiedPhone && !user.phone_verified) {
+    throw new ApiError(409, 'phone_verification_required', 'Verify your phone number first');
+  }
   const created = await mapCheckoutErrors(
     () =>
       createOrder(

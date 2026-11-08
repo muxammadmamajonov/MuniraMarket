@@ -23,7 +23,14 @@ path + query, so a request path can never change the authority). The gateway alw
 `src/forward.ts` sends the request to `CORE_API_FUNCTION_ORIGIN` with
 `X-MM-Gateway-Secret: CORE_API_FUNCTION_SECRET`, `redirect: 'manual'` (a redirect is refused with
 `502`, the secret never follows it), a 20 s timeout (`504`; the scheduler entrance waits up to
-60 s for a drain) and `502` on network errors. A missing or malformed origin/secret is `503`
+60 s for a drain) and `502` on network errors. The one redirect passed on is the end of the
+Telegram OIDC sign-in (`GET auth/telegram/oidc/callback` on the storefront and admin entrances):
+exactly `303` with a same-origin, path-absolute `Location`, plus its cookies (ADR 0014). Every
+response, including the gateway's own errors, carries `X-Request-ID` (the app proxy's id on the
+binding entrances), and every gateway log line has it as `request_id`.
+
+Timeout budget (each layer gives up before the one outside it): Function `pg` connect 10 s and
+Telegram HTTP 10 s, gateway 20 s, admin proxy 25 s. A missing or malformed origin/secret is `503`
 without any upstream call. Request bodies are streamed unchanged, so ADR 0003 signatures still
 verify.
 

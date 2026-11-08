@@ -14,7 +14,15 @@ export {
   type CallServerlessOptions,
   type ServerlessErrorType,
 } from './serverless';
-export { canRequestFullscreen, exitFullscreenIfOn, requestFullscreenOnce } from './fullscreen';
+export {
+  armFullscreenOnFirstGesture,
+  canRequestFullscreen,
+  disableVerticalSwipes,
+  exitFullscreenIfOn,
+  isMobileTelegram,
+  requestFullscreenOnce,
+} from './fullscreen';
+export { canRequestContact, requestContact, type ContactRequestOutcome } from './contact';
 export { applySafeAreaInsets, clearSafeAreaInsets, useTelegramSafeArea } from './safe-area';
 export { applyTelegramTheme, useTelegramTheme } from './theme';
 export type * from './types';

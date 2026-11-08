@@ -63,6 +63,9 @@ export const FailureNotice = forwardRef<HTMLDivElement, FailureNoticeProps>(func
       case 'district_not_served':
         message = f.districtNotServed;
         break;
+      case 'phone_verification_required':
+        message = dict.phone.checkoutText;
+        break;
       case 'too_many_open_orders':
         message = f.tooManyOpenOrders;
         toOrders = true;

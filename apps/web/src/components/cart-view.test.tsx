@@ -314,13 +314,13 @@ describe('CartView', () => {
     });
   });
 
-  it('shows the sign-in prompt instead of the cart when anonymous', () => {
+  it('shows the sign-in prompt instead of the cart when anonymous', async () => {
     session.status = 'anonymous';
     session.apiFetch.mockResolvedValue(respond({ telegram_oidc: { enabled: false } }));
     renderCart();
-    expect(screen.getByRole('status')).toHaveTextContent(
-      'Savatdan foydalanish uchun saytni Telegram orqali oching.',
-    );
+    expect(
+      await screen.findByText('Savatdan foydalanish uchun saytni Telegram orqali oching.'),
+    ).toBeInTheDocument();
     expect(session.apiFetch).not.toHaveBeenCalledWith('/cart', expect.anything());
   });
 

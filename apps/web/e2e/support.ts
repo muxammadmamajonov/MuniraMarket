@@ -1,3 +1,5 @@
+import { botReceivesOwnContact, demoPhoneFor } from './bot';
+import type { FakeTelegramUser } from './telegram-init-data';
 import {
   expect,
   type Browser,
@@ -44,7 +46,21 @@ export interface MainButtonState {
  * nothing while the button is hidden or disabled. Other UI methods are no-ops with real handler
  * registries.
  */
-function webAppStub(initData: string): string {
+export interface TelegramStubOptions {
+  /** Telegram client platform; phones (`ios`, `android`) arm fullscreen on the first tap. */
+  platform?: string;
+  /** `ok`: requestFullscreen enters fullscreen; `fail`: fires fullscreenFailed; `absent`: no API. */
+  fullscreen?: 'ok' | 'fail' | 'absent';
+  /**
+   * Before the test, the bot stand-in verifies this user's phone (as if they had shared their
+   * contact once), because placing an order needs it. Default `true`; the phone spec turns it off.
+   */
+  verifiedPhone?: boolean;
+}
+
+function webAppStub(initData: string, options: TelegramStubOptions = {}): string {
+  const platform = options.platform ?? 'tdesktop';
+  const fullscreen = options.fullscreen ?? 'absent';
   return `
 (() => {
   const noop = () => {};
@@ -90,10 +106,37 @@ function webAppStub(initData: string): string {
       initDataUnsafe: { user: { id: 900000001, first_name: 'E2E' } },
       colorScheme: 'light',
       themeParams: {},
-      platform: 'tdesktop',
+      platform: ${JSON.stringify(platform)},
       version: '8.0',
+      isVersionAtLeast: (v) => Number(v) <= 8,
       ready: noop,
       expand: noop,
+      disableVerticalSwipes: noop,
+      isFullscreen: false,
+      ...(${JSON.stringify(fullscreen)} === 'absent' ? {} : {
+        requestFullscreen() {
+          window.__mm.fullscreenRequests = (window.__mm.fullscreenRequests ?? 0) + 1;
+          if (${JSON.stringify(fullscreen)} === 'ok') {
+            window.Telegram.WebApp.isFullscreen = true;
+            window.Telegram.WebApp.safeAreaInset = { top: 47, bottom: 34, left: 0, right: 0 };
+            window.Telegram.WebApp.contentSafeAreaInset = { top: 46, bottom: 0, left: 0, right: 0 };
+            for (const cb of events.get('fullscreenChanged') ?? []) cb();
+          } else {
+            for (const cb of events.get('fullscreenFailed') ?? []) cb({ error: 'UNSUPPORTED' });
+          }
+        },
+        exitFullscreen() {
+          window.Telegram.WebApp.isFullscreen = false;
+          for (const cb of events.get('fullscreenChanged') ?? []) cb();
+        },
+      }),
+      // The contact itself goes to the bot chat; the page only learns whether it was shared. The
+      // test exposes \`__mmShareContact\` to play the bot's part.
+      requestContact(cb) {
+        window.__mm.contactRequests = (window.__mm.contactRequests ?? 0) + 1;
+        const share = window.__mmShareContact ? window.__mmShareContact() : Promise.resolve(false);
+        Promise.resolve(share).then((ok) => cb && cb(ok !== false));
+      },
       onEvent: (type, cb) => { (events.get(type) ?? events.set(type, new Set()).get(type)).add(cb); },
       offEvent: (type, cb) => { events.get(type)?.delete(cb); },
       BackButton: registry(),
@@ -105,11 +148,22 @@ function webAppStub(initData: string): string {
 `;
 }
 
-export async function installTelegramStub(page: Page, initData: string): Promise<void> {
+export async function installTelegramStub(
+  page: Page,
+  initData: string,
+  options: TelegramStubOptions = {},
+): Promise<void> {
+  if (options.verifiedPhone !== false) {
+    const raw = new URLSearchParams(initData).get('user');
+    if (raw !== null) {
+      const user = JSON.parse(raw) as FakeTelegramUser;
+      await botReceivesOwnContact(user, demoPhoneFor(user));
+    }
+  }
   // Routes registered later win, so block everything first, then allow the stub.
   await page.route(/^https:\/\/([^/]+\.)?telegram\.org\//, (route) => route.abort());
   await page.route(WEB_APP_SCRIPT, (route) =>
-    route.fulfill({ contentType: 'application/javascript', body: webAppStub(initData) }),
+    route.fulfill({ contentType: 'application/javascript', body: webAppStub(initData, options) }),
   );
 }
 
