@@ -20,8 +20,13 @@ export const YANDEX_MAPS_DATA_ORIGIN = 'https://*.maps.yandex.net';
 /** Geosearch host `ymaps3.search` calls (reverse geocoding), per the v3 CSP requirements. */
 export const YANDEX_MAPS_SEARCH_ORIGIN = 'https://search-maps.yandex.ru';
 
-/** Yandex developer keys are UUIDs; anything else is a misconfiguration and disables the map. */
-const KEY_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+/**
+ * Yandex issues both legacy UUID keys and newer compact JavaScript API keys. The key reaches the
+ * browser as a URL query parameter, so accept only a conservative token alphabet (including
+ * base64 padding) and reject whitespace, quotes and markup rather than tying the app to one
+ * issuance format.
+ */
+const KEY_PATTERN = /^[A-Za-z0-9_=\-]{20,128}$/;
 
 export function readYandexMapsApiKey(
   env: Readonly<Record<string, string | undefined>> = process.env,

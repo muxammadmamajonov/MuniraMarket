@@ -8,8 +8,9 @@ import {
   yandexMapsScriptUrl,
 } from './yandex-loader';
 
-// Placeholder only: the shape of a key, not a real one. Nothing is ever sent to Yandex in tests.
+// Placeholders only: real-looking key shapes, never sent to Yandex in tests.
 const KEY = '00000000-0000-4000-8000-000000000000';
+const COMPACT_KEY = 'test_yandex_key_000000==';
 
 function scripts(): HTMLScriptElement[] {
   return Array.from(document.querySelectorAll('script[data-mm-yandex-maps]'));
@@ -23,12 +24,13 @@ afterEach(() => {
 });
 
 describe('readYandexMapsApiKey', () => {
-  it('accepts only a UUID-shaped key and treats anything else as missing', () => {
+  it('accepts legacy UUID and compact keys, rejecting malformed values', () => {
     expect(readYandexMapsApiKey({})).toBeNull();
     expect(readYandexMapsApiKey({ YANDEX_MAPS_API_KEY: '' })).toBeNull();
     expect(readYandexMapsApiKey({ YANDEX_MAPS_API_KEY: 'not-a-key' })).toBeNull();
     expect(readYandexMapsApiKey({ YANDEX_MAPS_API_KEY: `${KEY}"><script>` })).toBeNull();
     expect(readYandexMapsApiKey({ YANDEX_MAPS_API_KEY: ` ${KEY} ` })).toBe(KEY);
+    expect(readYandexMapsApiKey({ YANDEX_MAPS_API_KEY: COMPACT_KEY })).toBe(COMPACT_KEY);
   });
 });
 
