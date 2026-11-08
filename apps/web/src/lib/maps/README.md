@@ -44,22 +44,27 @@ map step shows its own "use the list" fallback.
   to need the paid (commercial) licence. Each "Deliver here" is one geosearch request; map tiles
   count separately per Yandex's billing rules. Confirm the plan and limits with Yandex before
   production; this note is not legal or billing advice.
-- **Data use**: we do not store geocoder results or points; only the district code chosen by the
-  customer is saved (`lib/delivery/district-preference.ts`). Storing coordinates on orders would
-  need a separate privacy, consent and Yandex licence review.
+- **Data use**: the map point is used only to find the district. It is sent to Yandex once (the
+  geosearch request) and nowhere else: not to our API, not to the database, not on the order.
+  Only the district code chosen by the customer is saved (`lib/delivery/district-preference.ts`)
+  and sent with checkout. Storing coordinates on orders would need a separate privacy, consent
+  and Yandex licence review.
 
 ## CSP
 
-`lib/csp.ts` adds, only when a key is configured:
+`lib/csp.ts` adds, only when a key is configured (`yandexMaps === true`), using the constants in
+`config.ts`:
 
-- `script-src https://api-maps.yandex.ru` (for browsers without `'strict-dynamic'`);
-- `connect-src https://api-maps.yandex.ru https://*.maps.yandex.net`;
+- `script-src https://api-maps.yandex.ru` (`YANDEX_MAPS_API_ORIGIN`, for browsers without
+  `'strict-dynamic'`);
+- `connect-src https://api-maps.yandex.ru https://*.maps.yandex.net https://search-maps.yandex.ru`
+  (`YANDEX_MAPS_API_ORIGIN`, `YANDEX_MAPS_DATA_ORIGIN`, and `YANDEX_MAPS_SEARCH_ORIGIN`, the
+  geosearch host `ymaps3.search` calls, per the v3 CSP requirements);
 - `worker-src 'self' blob:` (vector tile workers); images are covered by `img-src https:`.
 
-**Unverified**: the exact host `ymaps3.search` calls. If it is not one of the hosts above, the
-browser blocks it, the lookup fails, and the picker falls back to the list (safe, but no
-automatic check). Watch the browser console for a CSP violation on the first real-key test and
-add that host to `connect-src` in `csp.ts`.
+Without a key none of these hosts appear (`csp.test.ts` checks both cases). If a real-key test
+still shows a CSP violation in the console, the lookup fails safely (list fallback); add the
+reported host to `config.ts` and `csp.ts`.
 
 ## Privacy rules (enforced by tests)
 
