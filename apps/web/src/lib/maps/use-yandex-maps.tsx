@@ -6,21 +6,33 @@ import { MapsLoadError, loadYandexMaps, type MapsLoadErrorKind } from './yandex-
 import type { YMaps3 } from './yandex-types';
 
 const MapsKeyContext = createContext<string | null>(null);
+const GeocoderKeyContext = createContext<string | null>(null);
 
-/** Hands the (public, referrer-restricted) key read by the root layout to the picker. */
+/** Hands the public, referrer-restricted Yandex keys read by the root layout to the picker. */
 export function MapsConfigProvider({
   apiKey,
+  geocoderApiKey = apiKey,
   children,
 }: {
   apiKey: string | null;
+  geocoderApiKey?: string | null;
   children: ReactNode;
 }) {
-  return <MapsKeyContext.Provider value={apiKey}>{children}</MapsKeyContext.Provider>;
+  return (
+    <MapsKeyContext.Provider value={apiKey}>
+      <GeocoderKeyContext.Provider value={geocoderApiKey}>{children}</GeocoderKeyContext.Provider>
+    </MapsKeyContext.Provider>
+  );
 }
 
-/** The configured key (or `null`), for the picker's reverse-geocoding request. */
+/** The configured JavaScript API key (or `null`) for loading the map. */
 export function useYandexMapsApiKey(): string | null {
   return useContext(MapsKeyContext);
+}
+
+/** The configured Geocoder key (or `null`) for the picker's confirmed-point lookup. */
+export function useYandexMapsGeocoderApiKey(): string | null {
+  return useContext(GeocoderKeyContext);
 }
 
 export type YandexMapsState =

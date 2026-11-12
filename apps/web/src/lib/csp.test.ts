@@ -83,18 +83,27 @@ describe('buildContentSecurityPolicy', () => {
     expect(production).not.toContain('worker-src');
   });
 
-  it('with a Maps key, allows only the official Yandex Maps hosts', () => {
+  it('with only a Maps key, allows only the official map hosts', () => {
     const withMaps = buildContentSecurityPolicy({ nonce, yandexMaps: true });
     expect(directive(withMaps, 'script-src')).toContain('https://api-maps.yandex.ru');
     expect(directive(withMaps, 'connect-src')).toEqual([
       "'self'",
       'https://api-maps.yandex.ru',
       'https://*.maps.yandex.net',
-      YANDEX_MAPS_SEARCH_ORIGIN,
     ]);
+    expect(directive(withMaps, 'connect-src')).not.toContain(YANDEX_MAPS_SEARCH_ORIGIN);
     expect(YANDEX_MAPS_SEARCH_ORIGIN).toBe('https://search-maps.yandex.ru');
     expect(directive(withMaps, 'worker-src')).toEqual(["'self'", 'blob:']);
     expect(directive(withMaps, 'frame-src')).toEqual(["'none'"]);
     expect(directive(withMaps, 'script-src')).not.toContain("'unsafe-inline'");
+  });
+
+  it('adds the geosearch host only when both Yandex products are configured', () => {
+    const withGeocoder = buildContentSecurityPolicy({
+      nonce,
+      yandexMaps: true,
+      yandexGeocoder: true,
+    });
+    expect(directive(withGeocoder, 'connect-src')).toContain(YANDEX_MAPS_SEARCH_ORIGIN);
   });
 });

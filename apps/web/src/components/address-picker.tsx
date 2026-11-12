@@ -18,7 +18,7 @@ import { districtName, zoneHours, zoneName } from '@/lib/checkout/zones';
 import { coverageFor, isDemoZone, type Coverage } from '@/lib/delivery/coverage';
 import { districtLabel } from '@/lib/delivery/districts';
 import { reverseGeocodeDistrict } from '@/lib/maps/reverse-geocode';
-import { useYandexMaps, useYandexMapsApiKey } from '@/lib/maps/use-yandex-maps';
+import { useYandexMaps, useYandexMapsGeocoderApiKey } from '@/lib/maps/use-yandex-maps';
 import type { LngLat, YMapInstance, YMaps3 } from '@/lib/maps/yandex-types';
 import { useBackButton, useSuppressMainButton } from '@/lib/telegram';
 import { ChevronLeftIcon, LocateIcon, MapIcon, PinIcon } from './icons';
@@ -99,7 +99,7 @@ function PickerPanel({ closing, onClose, zones, onChoose }: PickerPanelProps) {
   const panelRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<YMapInstance | null>(null);
   const [maps, retry] = useYandexMaps(true);
-  const apiKey = useYandexMapsApiKey();
+  const geocoderApiKey = useYandexMapsGeocoderApiKey();
   const [check, setCheck] = useState<Check>({ phase: 'pick' });
   // Bumped whenever the map moves, so a lookup for an old point can never show its result.
   const generation = useRef(0);
@@ -126,12 +126,14 @@ function PickerPanel({ closing, onClose, zones, onChoose }: PickerPanelProps) {
 
   const checkPoint = async () => {
     const map = mapRef.current;
-    if (map === null || maps.status !== 'ready' || apiKey === null || check.phase === 'checking')
-      return;
+    if (map === null || maps.status !== 'ready' || check.phase === 'checking') return;
     const ticket = ++generation.current;
     setCheck({ phase: 'checking' });
     const point: LngLat = [map.center[0], map.center[1]];
-    const match = await reverseGeocodeDistrict(maps.api, point, { apiKey });
+    const match =
+      geocoderApiKey === null
+        ? null
+        : await reverseGeocodeDistrict(maps.api, point, { apiKey: geocoderApiKey });
     if (ticket !== generation.current) return;
     setCheck({ phase: 'result', coverage: coverageFor(zones, match, point) });
   };

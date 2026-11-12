@@ -356,9 +356,10 @@ jobs:
       # Same build, second instance with a placeholder (all-zero, not a real) Maps key, for
       # e2e/delivery-map.spec.ts. The spec serves a stub Yandex SDK via page.route and aborts
       # every other Yandex request, so nothing ever reaches Yandex.
-      - name: Start the web app with a placeholder Maps key
+      - name: Start the web app with placeholder Maps keys
         env:
-          YANDEX_MAPS_API_KEY: 00000000-0000-4000-8000-000000000000
+          YANDEX_MAPS_JAVASCRIPT_API_KEY: 00000000-0000-4000-8000-000000000000
+          YANDEX_MAPS_GEOCODER_API_KEY: 11111111-1111-4111-8111-111111111111
         working-directory: apps/web
         run: |
           nohup pnpm exec next start --port 3002 > "$E2E_LOG_DIR/web-maps.log" 2>&1 &

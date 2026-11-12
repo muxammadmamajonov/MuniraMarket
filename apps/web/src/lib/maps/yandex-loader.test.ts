@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { readYandexMapsApiKey } from './config';
+import { readYandexMapsGeocoderApiKey, readYandexMapsJavaScriptApiKey } from './config';
 import { autoloadYandexScript, makeYMaps } from './test-helpers';
 import {
   MapsLoadError,
@@ -23,14 +23,22 @@ afterEach(() => {
   delete window.ymaps3;
 });
 
-describe('readYandexMapsApiKey', () => {
-  it('accepts legacy UUID and compact keys, rejecting malformed values', () => {
-    expect(readYandexMapsApiKey({})).toBeNull();
-    expect(readYandexMapsApiKey({ YANDEX_MAPS_API_KEY: '' })).toBeNull();
-    expect(readYandexMapsApiKey({ YANDEX_MAPS_API_KEY: 'not-a-key' })).toBeNull();
-    expect(readYandexMapsApiKey({ YANDEX_MAPS_API_KEY: `${KEY}"><script>` })).toBeNull();
-    expect(readYandexMapsApiKey({ YANDEX_MAPS_API_KEY: ` ${KEY} ` })).toBe(KEY);
-    expect(readYandexMapsApiKey({ YANDEX_MAPS_API_KEY: COMPACT_KEY })).toBe(COMPACT_KEY);
+describe('Yandex key configuration', () => {
+  it('reads the JavaScript and Geocoder keys independently, rejecting malformed values', () => {
+    expect(readYandexMapsJavaScriptApiKey({})).toBeNull();
+    expect(readYandexMapsGeocoderApiKey({ YANDEX_MAPS_GEOCODER_API_KEY: '' })).toBeNull();
+    expect(
+      readYandexMapsJavaScriptApiKey({ YANDEX_MAPS_JAVASCRIPT_API_KEY: 'not-a-key' }),
+    ).toBeNull();
+    expect(
+      readYandexMapsGeocoderApiKey({ YANDEX_MAPS_GEOCODER_API_KEY: `${KEY}"><script>` }),
+    ).toBeNull();
+    expect(readYandexMapsJavaScriptApiKey({ YANDEX_MAPS_JAVASCRIPT_API_KEY: ` ${KEY} ` })).toBe(
+      KEY,
+    );
+    expect(readYandexMapsGeocoderApiKey({ YANDEX_MAPS_GEOCODER_API_KEY: COMPACT_KEY })).toBe(
+      COMPACT_KEY,
+    );
   });
 });
 

@@ -7,7 +7,8 @@ import { expect, test, type Page, type Request } from '@playwright/test';
  * key and never talks to Yandex.
  *
  * Needs a second storefront server started with a placeholder key, for example
- *   YANDEX_MAPS_API_KEY=00000000-0000-4000-8000-000000000000 \
+ *   YANDEX_MAPS_JAVASCRIPT_API_KEY=00000000-0000-4000-8000-000000000000 \
+ *   YANDEX_MAPS_GEOCODER_API_KEY=11111111-1111-4111-8111-111111111111 \
  *     pnpm --filter @muniramarket/web exec next start --port 3002
  * and `E2E_MAPS_BASE_URL=http://localhost:3002`. Without it these specs are skipped; the
  * no-key fallback runs against the normal server in `mobile-shell.spec.ts`.
@@ -22,7 +23,7 @@ const DISTRICT_ITEM = 'mm.delivery-district.v1';
 
 test.skip(
   MAPS_BASE_URL === undefined || MAPS_BASE_URL === '',
-  'Set E2E_MAPS_BASE_URL to a storefront started with a placeholder YANDEX_MAPS_API_KEY.',
+  'Set E2E_MAPS_BASE_URL to a storefront started with placeholder Yandex JavaScript and Geocoder keys.',
 );
 test.use({ baseURL: MAPS_BASE_URL });
 

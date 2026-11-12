@@ -17,16 +17,19 @@ import {
  * script or iframe is loaded for it, so nothing may be framed (`frame-src 'none'`). The top-level
  * navigation to Telegram (`location.assign`) is not governed by `form-action`.
  *
- * Yandex Maps hosts are added only when a Maps key is configured (`yandexMaps`): the official API
- * host in `script-src` (for browsers that ignore `'strict-dynamic'`) and `connect-src`, its data
- * hosts and the geosearch host (`ymaps3.search`) in `connect-src`, and `blob:` workers, which the API uses to render vector tiles. Tiles
- * that arrive as images are already covered by `img-src https:`.
+ * Yandex Maps hosts are added only when a JavaScript API key is configured (`yandexMaps`): the
+ * official API host in `script-src` (for browsers that ignore `'strict-dynamic'`) and
+ * `connect-src`, its data hosts and `blob:` workers. The geosearch host is added separately only
+ * when a Geocoder key is present (`yandexGeocoder`). Tiles that arrive as images are already
+ * covered by `img-src https:`.
  */
 
 export interface CspOptions {
   nonce: string;
   /** Allow the Yandex Maps JavaScript API (only when a key is configured). */
   yandexMaps?: boolean;
+  /** Allow Yandex geosearch only when its separate Geocoder key is configured. */
+  yandexGeocoder?: boolean;
   /** Adds `'unsafe-eval'` to `script-src`; React's dev tooling needs it. Never in production. */
   isDevelopment?: boolean;
 }
@@ -46,6 +49,7 @@ export function buildContentSecurityPolicy({
   nonce,
   isDevelopment = false,
   yandexMaps = false,
+  yandexGeocoder = false,
 }: CspOptions): string {
   if (!NONCE_PATTERN.test(nonce)) throw new Error('CSP nonce must be a base64 string.');
 
@@ -73,9 +77,8 @@ export function buildContentSecurityPolicy({
       'connect-src',
       [
         "'self'",
-        ...(yandexMaps
-          ? [YANDEX_MAPS_API_ORIGIN, YANDEX_MAPS_DATA_ORIGIN, YANDEX_MAPS_SEARCH_ORIGIN]
-          : []),
+        ...(yandexMaps ? [YANDEX_MAPS_API_ORIGIN, YANDEX_MAPS_DATA_ORIGIN] : []),
+        ...(yandexMaps && yandexGeocoder ? [YANDEX_MAPS_SEARCH_ORIGIN] : []),
       ],
     ],
     ...(yandexMaps ? ([['worker-src', ["'self'", 'blob:']]] as Array<[string, string[]]>) : []),

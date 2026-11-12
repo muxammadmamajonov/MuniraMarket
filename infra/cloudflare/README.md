@@ -62,20 +62,20 @@ node infra/cloudflare/scripts/validate-deploy-env.mts --mode staging
 
 ## Secrets: where each one lives
 
-| Secret                                             | Stored as                                                                                            | Rotation                                                                      |
-| -------------------------------------------------- | ---------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
-| `CORE_API_FUNCTION_ORIGIN`                         | Worker secret on `muniramarket-api-gateway[-staging]` (the Function's `invocation_url`)              | only if the Function moves branch/project                                     |
-| `CORE_API_FUNCTION_SECRET`                         | Worker secret on the gateway **and** Neon Function env (`neon.ts`), same value                       | see "Rotating" below                                                          |
-| `SCHEDULER_SERVICE_SECRET`                         | Worker secret on the gateway; the Function's `SERVICE_AUTH_KEYS` holds `scheduler:<same value>`      | add the new pair to `SERVICE_AUTH_KEYS`, update the Worker, drop the old pair |
-| `SERVICE_AUTH_KEYS`                                | Neon Function env only (incl. `scheduler`); Telegram Serverless config has its own entry             | two keys at once (ADR 0003), then drop old                                    |
-| `TELEGRAM_BOT_TOKEN`                               | Neon Function env (initData HMAC + outbox drain); Telegram Serverless platform                       | BotFather `/revoke`, update both                                              |
-| `TELEGRAM_OIDC_CLIENT_SECRET`                      | Neon Function env only; server-side OIDC code exchange (ADR 0014)                                    | BotFather → Login Widget, regenerate, update the Function                     |
-| `MM_APP_DATABASE_URL`                              | Neon Function env only: pooled endpoint, `mm_app` + its own password, `sslmode=require`              | new `mm_app` password (`ALTER ROLE`), update the Function env, redeploy       |
-| `DATABASE_URL`                                     | never set by hand; Neon may inject it (owner role); the Core API never reads it                      | n/a                                                                           |
-| `DATABASE_URL_UNPOOLED` / `MIGRATION_DATABASE_URL` | Alembic only: GitHub Environment secret or the operator's secret manager                             | per migration window                                                          |
-| `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`    | GitHub Environment secrets, scoped tokens only                                                       | per token policy                                                              |
-| R2 credentials                                     | none: R2 is used through a Worker binding (r2/README.md)                                             | n/a                                                                           |
-| `YANDEX_MAPS_API_KEY`                              | Worker secret on `muniramarket-web[-staging]`; it is intentionally visible to the browser at runtime | create/restrict a replacement key in Yandex                                   |
+| Secret                                                            | Stored as                                                                                                | Rotation                                                                      |
+| ----------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
+| `CORE_API_FUNCTION_ORIGIN`                                        | Worker secret on `muniramarket-api-gateway[-staging]` (the Function's `invocation_url`)                  | only if the Function moves branch/project                                     |
+| `CORE_API_FUNCTION_SECRET`                                        | Worker secret on the gateway **and** Neon Function env (`neon.ts`), same value                           | see "Rotating" below                                                          |
+| `SCHEDULER_SERVICE_SECRET`                                        | Worker secret on the gateway; the Function's `SERVICE_AUTH_KEYS` holds `scheduler:<same value>`          | add the new pair to `SERVICE_AUTH_KEYS`, update the Worker, drop the old pair |
+| `SERVICE_AUTH_KEYS`                                               | Neon Function env only (incl. `scheduler`); Telegram Serverless config has its own entry                 | two keys at once (ADR 0003), then drop old                                    |
+| `TELEGRAM_BOT_TOKEN`                                              | Neon Function env (initData HMAC + outbox drain); Telegram Serverless platform                           | BotFather `/revoke`, update both                                              |
+| `TELEGRAM_OIDC_CLIENT_SECRET`                                     | Neon Function env only; server-side OIDC code exchange (ADR 0014)                                        | BotFather → Login Widget, regenerate, update the Function                     |
+| `MM_APP_DATABASE_URL`                                             | Neon Function env only: pooled endpoint, `mm_app` + its own password, `sslmode=require`                  | new `mm_app` password (`ALTER ROLE`), update the Function env, redeploy       |
+| `DATABASE_URL`                                                    | never set by hand; Neon may inject it (owner role); the Core API never reads it                          | n/a                                                                           |
+| `DATABASE_URL_UNPOOLED` / `MIGRATION_DATABASE_URL`                | Alembic only: GitHub Environment secret or the operator's secret manager                                 | per migration window                                                          |
+| `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`                   | GitHub Environment secrets, scoped tokens only                                                           | per token policy                                                              |
+| R2 credentials                                                    | none: R2 is used through a Worker binding (r2/README.md)                                                 | n/a                                                                           |
+| `YANDEX_MAPS_JAVASCRIPT_API_KEY` / `YANDEX_MAPS_GEOCODER_API_KEY` | Worker secrets on `muniramarket-web[-staging]`; both are intentionally visible to the browser at runtime | create/restrict replacement keys in Yandex                                    |
 
 The admin Worker holds **no secrets**; the gateway holds only the three above. Set Worker
 secrets per environment with Wrangler (cf does not yet set single secrets) or upload them with the
@@ -143,9 +143,9 @@ Cloudflare sets `CF-Connecting-IP`; the apps forward it as `X-Forwarded-For`
 writes `X-Forwarded-For` itself. The Function trusts that header because every request it serves
 carries the gateway secret; a request without it is rejected before anything else happens.
 
-The storefront's optional map step reads `YANDEX_MAPS_API_KEY` (a Yandex developer key, UUID)
-at runtime. It is a web Worker secret, but necessarily becomes visible to browsers in Yandex's
-script URL. Restrict it in the Yandex console by HTTP Referer to the storefront HTTPS origin;
-never put it in Git, a deploy env file or the admin/gateway Worker. If missing or malformed, the
-picker shows its own "map unavailable" state, nothing loads from Yandex and the CSP lists no
-Yandex host.
+The storefront's optional map step reads `YANDEX_MAPS_JAVASCRIPT_API_KEY` and
+`YANDEX_MAPS_GEOCODER_API_KEY` at runtime. They are web Worker secrets, but necessarily become
+visible to browsers in Yandex requests. Restrict each in the Yandex console by HTTP Referer to
+the storefront domain; never put them in Git or the admin/gateway Worker. Without the JavaScript
+key the picker shows "map unavailable"; without the Geocoder key the map works but the customer
+must choose a district from the list.
