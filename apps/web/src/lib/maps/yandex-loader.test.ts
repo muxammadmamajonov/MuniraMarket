@@ -48,7 +48,7 @@ describe('yandexMapsScriptUrl', () => {
     expect(uz.origin).toBe('https://api-maps.yandex.ru');
     expect(uz.pathname).toBe('/v3/');
     expect(uz.searchParams.get('apikey')).toBe(KEY);
-    expect(uz.searchParams.get('lang')).toBe('uz_UZ');
+    expect(uz.searchParams.get('lang')).toBe('ru_RU');
     expect(new URL(yandexMapsScriptUrl(KEY, 'ru')).searchParams.get('lang')).toBe('ru_RU');
   });
 });

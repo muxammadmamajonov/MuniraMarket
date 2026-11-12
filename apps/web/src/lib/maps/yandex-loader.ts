@@ -23,7 +23,10 @@ export class MapsLoadError extends Error {
   }
 }
 
-const LANGS: Record<Locale, string> = { uz: 'uz_UZ', ru: 'ru_RU' };
+// Yandex Maps v3 does not support an Uzbek locale. Keep the product interface in Uzbek,
+// but request Russian map labels rather than sending the unsupported `uz_UZ` and failing
+// map initialization. Russian is already the map language used for the Russian storefront.
+const LANGS: Record<Locale, string> = { uz: 'ru_RU', ru: 'ru_RU' };
 
 export const DEFAULT_LOAD_TIMEOUT_MS = 15_000;
 
