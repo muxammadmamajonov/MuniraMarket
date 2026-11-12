@@ -39,12 +39,14 @@ export function PhoneCard({ variant = 'profile' }: PhoneCardProps) {
   const [phase, setPhase] = useState<Phase>('idle');
   const cancelled = useRef(false);
 
-  useEffect(
-    () => () => {
+  useEffect(() => {
+    // Re-armed on every mount: React's development double mount runs the cleanup once, and a
+    // flag left `true` would silently drop every later answer from Telegram.
+    cancelled.current = false;
+    return () => {
       cancelled.current = true;
-    },
-    [],
-  );
+    };
+  }, []);
 
   const waitForVerification = useCallback(async () => {
     setPhase('waiting');
