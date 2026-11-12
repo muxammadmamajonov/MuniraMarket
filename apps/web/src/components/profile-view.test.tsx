@@ -1,3 +1,4 @@
+import { StrictMode } from 'react';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { LocaleProvider } from '@/i18n/context';
@@ -149,6 +150,26 @@ describe('ProfileView', () => {
     });
     expect(session.refresh).toHaveBeenCalledTimes(2);
     expect(screen.getByText('Raqamingiz tasdiqlandi.')).toBeInTheDocument();
+  });
+
+  it("still hears Telegram's answer under React's development double mount (StrictMode)", async () => {
+    const requestContact = vi.fn((callback?: (shared: boolean) => void) => callback?.(false));
+    installWebApp(makeWebApp({ requestContact, isVersionAtLeast: () => true }));
+    session.status = 'authenticated';
+    session.user = { first_name: 'Munira', last_name: null, phone_verified: false };
+    render(
+      <StrictMode>
+        <LocaleProvider locale="uz">
+          <TelegramProvider>
+            <ProfileView />
+          </TelegramProvider>
+        </LocaleProvider>
+      </StrictMode>,
+    );
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Raqamni Telegram orqali ulashish' }));
+    });
+    expect(screen.getByText(/Raqam ulashilmadi/)).toBeInTheDocument();
   });
 
   it('says so when the user declines, and times out honestly', async () => {

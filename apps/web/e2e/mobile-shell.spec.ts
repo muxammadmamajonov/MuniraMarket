@@ -407,6 +407,20 @@ test.describe('Telegram fullscreen safe areas', () => {
     await expect
       .poll(() => header.evaluate((element) => getComputedStyle(element).paddingTop))
       .toBe('47px');
+    // The logo fills Telegram's own Close / "…" row (47..93), centred between the buttons, and
+    // the page (delivery address first) starts below that row, never under the buttons.
+    const logo = await page.getByTestId('header-logo').boundingBox();
+    expect(logo).not.toBeNull();
+    if (logo !== null) {
+      expect(logo.y).toBeGreaterThanOrEqual(47);
+      expect(logo.y + logo.height).toBeLessThanOrEqual(93);
+      expect(Math.abs(logo.x + logo.width / 2 - 195)).toBeLessThanOrEqual(2);
+    }
+    const delivery = await page
+      .getByTestId('delivery-district')
+      .filter({ visible: true })
+      .boundingBox();
+    expect(delivery !== null && delivery.y >= 93).toBe(true);
     await expect
       .poll(() => tabBar(page).evaluate((element) => getComputedStyle(element).paddingBottom))
       .toBe('34px');
@@ -422,7 +436,7 @@ test.describe('Telegram fullscreen safe areas', () => {
     await page.getByRole('button', { name: 'Xaritada belgilash' }).click();
     const back = page.getByRole('button', { name: 'Orqaga' });
     const backBox = await back.boundingBox();
-    expect(backBox !== null && backBox.y >= 47).toBe(true);
+    expect(backBox !== null && backBox.y >= 93).toBe(true);
     expect(
       await page.evaluate(
         () => (window as { __mmFullscreenRequests?: number }).__mmFullscreenRequests,

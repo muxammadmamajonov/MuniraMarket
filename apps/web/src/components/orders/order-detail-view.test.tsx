@@ -168,14 +168,39 @@ describe('OrderDetailView: content', () => {
       );
     renderDetail();
     expect(await screen.findByTestId('order-comment')).toHaveTextContent('Eshik oldiga qoldiring');
+    // The whole delivery path: what happened (with times), the current step, what comes next.
     const steps = within(screen.getByTestId('timeline')).getAllByRole('listitem');
-    expect(steps).toHaveLength(2);
+    expect(steps).toHaveLength(6);
     expect(steps[0]).toHaveTextContent('Yangi');
     expect(steps[0]).toHaveTextContent('01.11.2026 02:30');
+    expect(steps[0]).toHaveAttribute('data-state', 'done');
     expect(steps[1]).toHaveTextContent('Tasdiqlandi');
     expect(steps[1]).toHaveTextContent('01.11.2026 09:15');
     expect(steps[1]).toHaveAttribute('aria-current', 'step');
     expect(steps[0]).not.toHaveAttribute('aria-current');
+    for (const upcoming of steps.slice(2)) {
+      expect(upcoming).toHaveAttribute('data-state', 'upcoming');
+      expect(upcoming.querySelector('time')).toBeNull();
+    }
+    expect(steps[5]).toHaveTextContent('Yetkazildi');
+  });
+
+  it('draws a cancelled order only up to the cancellation', async () => {
+    routes[`GET /orders/${ID}`] = () =>
+      respond(
+        order({
+          status: 'CANCELLED',
+          can_cancel: false,
+          history: [
+            { status: 'NEW', at: '2026-10-31T21:30:00Z' },
+            { status: 'CANCELLED', at: '2026-10-31T22:00:00Z' },
+          ],
+        }),
+      );
+    renderDetail();
+    const steps = within(await screen.findByTestId('timeline')).getAllByRole('listitem');
+    expect(steps.map((step) => step.getAttribute('data-state'))).toEqual(['done', 'cancelled']);
+    expect(steps[1]).toHaveAttribute('aria-current', 'step');
   });
 
   it('shows the cancel reason of a cancelled order and offers no cancel button', async () => {

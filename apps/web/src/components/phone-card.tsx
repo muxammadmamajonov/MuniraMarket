@@ -39,12 +39,14 @@ export function PhoneCard({ variant = 'profile' }: PhoneCardProps) {
   const [phase, setPhase] = useState<Phase>('idle');
   const cancelled = useRef(false);
 
-  useEffect(
-    () => () => {
+  useEffect(() => {
+    // Re-armed on every mount: React's development double mount runs the cleanup once, and a
+    // flag left `true` would silently drop every later answer from Telegram.
+    cancelled.current = false;
+    return () => {
       cancelled.current = true;
-    },
-    [],
-  );
+    };
+  }, []);
 
   const waitForVerification = useCallback(async () => {
     setPhase('waiting');
@@ -119,7 +121,7 @@ export function PhoneCard({ variant = 'profile' }: PhoneCardProps) {
     <section
       aria-labelledby={`phone-${variant}`}
       data-testid={`phone-card-${variant}`}
-      className={`${CARD} flex flex-col gap-3 ${variant === 'checkout' ? 'border-brand-ink/30 bg-brand-soft' : ''}`}
+      className={`${CARD} flex flex-col gap-3 ${variant === 'checkout' ? 'bg-brand-soft' : ''}`}
     >
       <div className="flex items-start gap-3">
         <span
@@ -137,7 +139,7 @@ export function PhoneCard({ variant = 'profile' }: PhoneCardProps) {
               <span data-money className="text-base font-medium">
                 {user.phone_hint}
               </span>
-              <span className="inline-flex items-center gap-1 rounded-full bg-success-soft px-2 py-0.5 text-xs font-semibold text-success">
+              <span className="inline-flex items-center gap-1 rounded-full bg-surface-muted px-2 py-0.5 text-xs font-semibold text-foreground">
                 <CheckIcon width={12} height={12} aria-hidden="true" />
                 {t.verified}
               </span>

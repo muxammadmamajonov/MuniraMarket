@@ -674,7 +674,7 @@ function NearbyList({
           <button
             type="button"
             onClick={() => onChoose(district.code)}
-            className={`inline-flex min-h-11 items-center rounded-xl border border-border bg-surface px-3 text-sm font-semibold hover:bg-surface-muted ${PRESS} ${FOCUS_RING}`}
+            className={`inline-flex min-h-11 items-center rounded-full bg-surface-muted px-4 text-sm font-semibold hover:bg-border ${PRESS} ${FOCUS_RING}`}
           >
             {districtName(district, locale)}
           </button>
@@ -756,7 +756,7 @@ function SecondaryButton({ onClick, children }: { onClick: () => void; children:
     <button
       type="button"
       onClick={onClick}
-      className={`inline-flex min-h-12 items-center justify-center rounded-xl border border-border bg-surface px-6 text-center font-semibold text-foreground hover:bg-surface-muted ${PRESS} ${FOCUS_RING}`}
+      className={`inline-flex min-h-12 items-center justify-center rounded-2xl bg-surface-muted px-6 text-center font-semibold text-foreground hover:bg-border ${PRESS} ${FOCUS_RING}`}
     >
       {children}
     </button>

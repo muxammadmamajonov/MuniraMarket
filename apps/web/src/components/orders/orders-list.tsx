@@ -13,7 +13,9 @@ import { useSession } from '@/lib/session';
 import { Pagination } from '../pagination';
 import { SignInPrompt } from '../sign-in-prompt';
 import { StatusBadge } from '../status-badge';
-import { FOCUS_RING, LINK_BUTTON_PRIMARY, PRESS } from '../ui-classes';
+import { EmptyPanel } from '../empty-panel';
+import { ChevronRightIcon, ReceiptIcon } from '../icons';
+import { FOCUS_RING, GROUP, LINK_BUTTON_PRIMARY, ROWS } from '../ui-classes';
 
 export const ORDERS_PAGE_SIZE = 10;
 
@@ -21,10 +23,13 @@ type Load = { kind: 'loading' } | { kind: 'ready'; page: OrderPage } | { kind: '
 
 function OrdersSkeleton({ label }: { label: string }) {
   return (
-    <div role="status" aria-label={label} className="flex flex-col gap-3">
-      <Skeleton className="h-24 w-full" />
-      <Skeleton className="h-24 w-full" />
-      <Skeleton className="h-24 w-full" />
+    <div role="status" aria-label={label} className={`${GROUP} flex flex-col gap-5 p-4`}>
+      {[0, 1, 2].map((index) => (
+        <div key={index} className="flex flex-col gap-2">
+          <Skeleton className="h-5 w-2/3" />
+          <Skeleton className="h-4 w-1/2" />
+        </div>
+      ))}
     </div>
   );
 }
@@ -36,24 +41,25 @@ function OrderCard({ order }: { order: OrderSummary }) {
       <Link
         href={`/${locale}/orders/${encodeURIComponent(order.id)}`}
         data-testid="order-card"
-        className={`flex min-h-11 flex-col gap-2 rounded-xl border border-border bg-surface p-4 hover:bg-surface-muted ${PRESS} ${FOCUS_RING}`}
+        className={`-mx-4 flex min-h-11 items-center gap-3 px-4 py-3.5 transition-colors duration-150 hover:bg-surface-muted active:bg-surface-muted ${FOCUS_RING} focus-visible:-outline-offset-2`}
       >
-        <span className="flex items-start justify-between gap-3">
+        <span className="flex min-w-0 flex-1 flex-col gap-1">
           <span data-user-text className="min-w-0 font-semibold">
             {formatMessage(dict.orders.orderNumber, { number: order.number })}
           </span>
-          <StatusBadge status={order.status} label={dict.orders.status[order.status]} />
-        </span>
-        <span className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
           <span className="min-w-0 text-sm text-muted-foreground">
             <time dateTime={order.created_at}>{formatDateTime(order.created_at)}</time>
             {' · '}
             {formatPlural(dict.orders.items, order.item_count, locale)}
           </span>
-          <span data-money data-testid="order-total" className="shrink-0 text-lg font-bold">
-            {formatUZS(order.total_uzs, locale)}
+          <span className="mt-1 flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
+            <StatusBadge status={order.status} label={dict.orders.status[order.status]} />
+            <span data-money data-testid="order-total" className="shrink-0 text-[17px] font-bold">
+              {formatUZS(order.total_uzs, locale)}
+            </span>
           </span>
         </span>
+        <ChevronRightIcon aria-hidden="true" className="shrink-0 text-muted-foreground" />
       </Link>
     </li>
   );
@@ -106,7 +112,8 @@ export function OrdersList({ page }: { page: number }) {
   const result = load.page;
   if (result.total === 0) {
     return (
-      <EmptyState
+      <EmptyPanel
+        icon={<ReceiptIcon />}
         title={dict.orders.emptyTitle}
         description={dict.orders.emptyHint}
         action={
@@ -133,7 +140,10 @@ export function OrdersList({ page }: { page: number }) {
 
   return (
     <div className="flex flex-col gap-3">
-      <ul className="flex flex-col gap-3" aria-label={dict.orders.title}>
+      <ul
+        className={`${GROUP} ${ROWS} flex flex-col overflow-hidden px-4`}
+        aria-label={dict.orders.title}
+      >
         {result.items.map((order) => (
           <OrderCard key={order.id} order={order} />
         ))}

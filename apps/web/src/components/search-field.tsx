@@ -49,7 +49,7 @@ export function SearchField({ defaultValue, placeholder, label, clearLabel }: Se
         autoComplete="off"
         autoCapitalize="none"
         spellCheck={false}
-        className="min-h-12 w-full min-w-0 rounded-2xl border border-border bg-surface pr-12 pl-11 text-base text-foreground placeholder:text-muted-foreground focus-visible:outline-2 focus-visible:outline-offset-0 focus-visible:outline-focus"
+        className="min-h-12 w-full min-w-0 rounded-2xl border border-transparent bg-surface pr-12 pl-11 text-base text-foreground placeholder:text-muted-foreground focus-visible:outline-2 focus-visible:outline-offset-0 focus-visible:outline-focus"
       />
       {hydrated && value !== '' ? (
         <button

@@ -173,3 +173,17 @@ export const ShieldCheckIcon = (props: IconProps) => (
     <path d="m9 12 2 2 4-4" />
   </Icon>
 );
+
+export const TruckIcon = (props: IconProps) => (
+  <Icon {...props}>
+    <path d="M3 6h11v10H3zM14 9h4l3 3.5V16h-7" />
+    <circle cx="7" cy="17.5" r="1.8" />
+    <circle cx="17" cy="17.5" r="1.8" />
+  </Icon>
+);
+
+export const TrashIcon = (props: IconProps) => (
+  <Icon {...props}>
+    <path d="M4 7h16M10 11v6M14 11v6M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12M9 7V4h6v3" />
+  </Icon>
+);

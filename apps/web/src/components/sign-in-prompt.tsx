@@ -99,7 +99,7 @@ export function SignInPrompt({ variant = 'inline' }: SignInPromptProps) {
 
   if (variant === 'inline') {
     return (
-      <div className="flex flex-col items-start gap-3 rounded-xl border border-border bg-surface p-4">
+      <div className="flex flex-col items-start gap-3 rounded-3xl bg-surface p-4">
         {telegramLoginEnabled ? (
           <>
             <p className="font-semibold">{dict.auth.loginHeading}</p>
@@ -122,7 +122,7 @@ export function SignInPrompt({ variant = 'inline' }: SignInPromptProps) {
     <section
       aria-labelledby="sign-in-title"
       data-testid="sign-in-screen"
-      className="mm-enter relative isolate overflow-hidden rounded-3xl border border-border bg-surface p-5 sm:p-8"
+      className="mm-enter relative isolate overflow-hidden rounded-3xl bg-surface p-5 sm:p-8"
     >
       <div
         aria-hidden="true"

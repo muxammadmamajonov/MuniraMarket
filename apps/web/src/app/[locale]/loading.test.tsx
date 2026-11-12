@@ -9,9 +9,11 @@ describe('loading skeleton', () => {
     const tiles = screen.getAllByTestId('tile-skeleton');
     expect(tiles.length).toBeGreaterThanOrEqual(8);
     expect(tiles[0]?.parentElement).toHaveClass('grid-cols-2');
-    // Same footprint as a real card: a square image and a 44px control.
+    // Same footprint as a real tile: a borderless square photo (the add button sits on it), then
+    // the price line; no card frame around it.
     expect(tiles[0]?.querySelector('.aspect-square')).not.toBeNull();
-    expect(tiles[0]?.querySelector('.h-11')).not.toBeNull();
+    expect(tiles[0]?.querySelector('.h-5')).not.toBeNull();
+    expect(tiles[0]).not.toHaveClass('border');
     for (const block of container.querySelectorAll('.animate-pulse')) {
       expect(block).toHaveAttribute('aria-hidden', 'true');
     }

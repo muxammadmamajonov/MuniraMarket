@@ -1,8 +1,9 @@
 'use client';
 
-import { EmptyState, ErrorState } from '@muniramarket/ui';
 import Link from 'next/link';
 import { useI18n } from '@/i18n/context';
+import { EmptyPanel } from './empty-panel';
+import { BasketIcon, HelpIcon } from './icons';
 import { PageContainer } from './page-container';
 import { LINK_BUTTON_PRIMARY } from './ui-classes';
 
@@ -11,12 +12,18 @@ export function ErrorView({ onRetry }: { onRetry: () => void }) {
   const { dict } = useI18n();
   return (
     <PageContainer>
-      <ErrorState
-        title={dict.errors.title}
-        description={dict.errors.message}
-        retryLabel={dict.errors.retry}
-        onRetry={onRetry}
-      />
+      <div role="alert">
+        <EmptyPanel
+          icon={<HelpIcon />}
+          title={dict.errors.title}
+          description={dict.errors.message}
+          action={
+            <button type="button" onClick={onRetry} className={LINK_BUTTON_PRIMARY}>
+              {dict.errors.retry}
+            </button>
+          }
+        />
+      </div>
     </PageContainer>
   );
 }
@@ -26,7 +33,8 @@ export function NotFoundView() {
   const { dict, locale } = useI18n();
   return (
     <PageContainer>
-      <EmptyState
+      <EmptyPanel
+        icon={<BasketIcon />}
         title={dict.errors.notFoundTitle}
         description={dict.errors.notFoundMessage}
         action={

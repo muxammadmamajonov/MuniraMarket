@@ -47,6 +47,8 @@ export interface Dictionary {
     title: string;
     tagline: string;
     categoriesHeading: string;
+    /** Link from a home section heading to the full list (the catalog). */
+    seeAll: string;
     newestHeading: string;
     /** Shown instead of the sections when the catalog has no categories and no products. */
     emptyTitle: string;
@@ -187,6 +189,10 @@ export interface Dictionary {
     sku: string;
     brand: string;
     description: string;
+    /** Heading of the product's details block (description, SKU, brand). */
+    about: string;
+    /** `{count}`: how much of this product the cart already holds (units of its own measure). */
+    inCart: string;
     category: string;
     inStock: string;
     outOfStock: string;
@@ -221,6 +227,8 @@ export interface Dictionary {
     empty: string;
     emptyHint: string;
     continueShopping: string;
+    /** Under the cart total: the delivery fee depends on the district, priced at checkout. */
+    deliveryAtCheckout: string;
     /** `{count}` */
     itemCount: string;
     subtotal: string;

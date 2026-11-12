@@ -2,6 +2,7 @@ import { isLocale } from '@muniramarket/contracts';
 import { notFound } from 'next/navigation';
 import { OrdersList } from '@/components/orders/orders-list';
 import { PageContainer } from '@/components/page-container';
+import { PAGE_TITLE } from '@/components/ui-classes';
 import { getDictionary } from '@/i18n';
 import { parsePage } from '@/lib/catalog';
 
@@ -13,8 +14,8 @@ export default async function OrdersPage({ params, searchParams }: PageProps<'/[
 
   return (
     <main className="flex-1">
-      <PageContainer className="flex flex-col gap-4 py-6">
-        <h1 className="text-2xl font-bold tracking-tight">{dict.orders.title}</h1>
+      <PageContainer className="flex flex-col gap-4 py-4">
+        <h1 className={PAGE_TITLE}>{dict.orders.title}</h1>
         <OrdersList page={page} />
       </PageContainer>
     </main>

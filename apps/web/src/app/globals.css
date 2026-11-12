@@ -12,6 +12,29 @@
 }
 
 /*
+ * Storefront surfaces. Content sits on borderless grouped surfaces (white on a warm grey page,
+ * like a native grouped list), so the page is a shade deeper than the shared token: white blocks
+ * read as shapes without a 1px border round every one. Rows inside a group are split by an inset
+ * hairline. Contrast on the page: foreground 17:1, muted #5F5D5A 6.1:1, brand-ink 7.0:1.
+ */
+:root {
+  --mm-color-background: #f5f3ef;
+  --mm-color-hairline: rgb(20 20 22 / 0.08);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    /* Restated: the light override above comes after the shared dark block. */
+    --mm-color-background: #121214;
+    --mm-color-hairline: rgb(255 255 255 / 0.08);
+  }
+}
+
+@theme inline {
+  --color-hairline: var(--mm-color-hairline);
+}
+
+/*
  * Placeholder tiles for products without a photo: eight warm neutral tints (off-white, sand,
  * stone, a whisper of brand red), picked deterministically from the product's category (see
  * `lib/placeholder.ts`), so a category reads as one family. Foreground is only a large decorative
@@ -101,13 +124,12 @@
   --mm-tg-content-bottom: 0px;
   --mm-tg-content-left: 0px;
   --mm-tg-content-right: 0px;
-  /* Telegram's content inset already represents the area clear of its own controls. Adding it
-     to the physical safe inset double-counted the top bar and pushed the logo too far down. */
-  --mm-inset-top: max(
-    env(safe-area-inset-top, 0px),
-    var(--mm-tg-safe-top),
-    var(--mm-tg-content-top)
-  );
+  /* Device inset only (status bar / notch). In Telegram fullscreen the Close / "…" row sits
+     right below it, `--mm-tg-content-top` tall: Telegram reports the content inset *relative to*
+     the device safe area, so the two add up. Taking the max of them let the page start under
+     Telegram's buttons. The header fills that row with the centred logo (site-header.tsx). */
+  --mm-safe-top: max(env(safe-area-inset-top, 0px), var(--mm-tg-safe-top));
+  --mm-inset-top: calc(var(--mm-safe-top) + var(--mm-tg-content-top));
   --mm-inset-bottom: max(
     env(safe-area-inset-bottom, 0px),
     var(--mm-tg-safe-bottom),

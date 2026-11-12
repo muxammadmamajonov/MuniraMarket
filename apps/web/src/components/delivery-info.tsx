@@ -16,13 +16,13 @@ export function DeliveryInfo({ dict }: { dict: Dictionary }) {
     <section
       aria-label={info.paymentTitle}
       data-testid="delivery-info"
-      className="grid gap-4 rounded-2xl border border-border bg-surface p-4"
+      className="grid gap-4 rounded-3xl bg-surface px-4 py-3.5"
     >
       {items.map((item) => (
         <div key={item.key} className="flex items-start gap-3">
           <span
             aria-hidden="true"
-            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-surface text-brand-ink"
+            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-brand-soft text-brand-ink"
           >
             {item.icon}
           </span>

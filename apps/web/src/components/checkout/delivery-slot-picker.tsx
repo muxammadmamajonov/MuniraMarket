@@ -18,6 +18,7 @@ import {
   type SlotDay,
 } from '@/lib/checkout/slots';
 import { CARD, ERROR_TEXT, FOCUS_RING, PRESS } from '../ui-classes';
+import { STEP_HEADING, StepNumber } from './step-number';
 
 export interface DeliverySlotPickerProps {
   slots: readonly DeliverySlotOption[];
@@ -34,6 +35,8 @@ export interface DeliverySlotPickerProps {
   onClear: () => void;
   /** `YYYY-MM-DD` in Tashkent: the day "Today" refers to. */
   today: string;
+  /** Place of this section in the numbered checkout steps. */
+  step?: number;
 }
 
 /**
@@ -84,6 +87,7 @@ export function DeliverySlotPicker({
   onSelect,
   onClear,
   today,
+  step,
 }: DeliverySlotPickerProps) {
   const { dict, locale } = useI18n();
   const t = dict.checkout.slots;
@@ -172,7 +176,8 @@ export function DeliverySlotPicker({
       className={`${CARD} mm-enter flex min-w-0 flex-col gap-4`}
     >
       <div className="flex flex-col gap-1">
-        <h2 id={headingId} className="text-lg font-bold">
+        <h2 id={headingId} className={STEP_HEADING}>
+          {step === undefined ? null : <StepNumber step={step} />}
           {t.title}
         </h2>
         <p id={hintId} className="text-sm text-muted-foreground">

@@ -26,20 +26,22 @@ export function sortHref(
   return text === '' ? basePath : `${basePath}?${text}`;
 }
 
-/** Sort dropdown (custom listbox); changing it navigates to the sorted listing. */
+/** Sort pill (custom listbox); changing it navigates to the sorted listing. */
 export function SortSelect({ value, basePath, params }: SortSelectProps) {
   const { dict } = useI18n();
   const router = useRouter();
   const labelId = useId();
 
   return (
-    <div className="flex items-center gap-2 text-sm">
-      <span id={labelId} className="text-muted-foreground">
+    <div className="flex min-w-0 items-center text-sm">
+      {/* The pill shows the chosen order; its name stays available to screen readers. */}
+      <span id={labelId} className="sr-only">
         {dict.catalog.sortLabel}
       </span>
       <ListboxSelect
         aria-labelledby={labelId}
-        className="min-w-44"
+        variant="chip"
+        className="min-w-0"
         value={value}
         options={PRODUCT_SORTS.map((sort) => ({ value: sort, label: dict.catalog.sort[sort] }))}
         onChange={(next) => router.push(sortHref(basePath, next as ProductSort, params))}

@@ -11,7 +11,7 @@ import { Pagination } from '@/components/pagination';
 import { ProductGrid } from '@/components/product-grid';
 import { SearchForm } from '@/components/search-form';
 import { SessionNotice } from '@/components/session-notice';
-import { LINK_BUTTON_PRIMARY } from '@/components/ui-classes';
+import { LINK_BUTTON_PRIMARY, PAGE_TITLE } from '@/components/ui-classes';
 import { getDictionary } from '@/i18n';
 import { formatMessage } from '@/i18n/format';
 import { fetchCategories, fetchProducts } from '@/lib/api/server';
@@ -46,8 +46,8 @@ export default async function SearchPage({ params, searchParams }: PageProps<'/[
 
   return (
     <main className="flex-1">
-      <PageContainer className="flex flex-col gap-5 py-6">
-        <h1 className="text-2xl font-bold tracking-tight">{dict.search.heading}</h1>
+      <PageContainer className="flex flex-col gap-4 py-4">
+        <h1 className={PAGE_TITLE}>{dict.search.heading}</h1>
         <SearchForm locale={locale} dict={dict} defaultValue={q} />
 
         {results === null ? (

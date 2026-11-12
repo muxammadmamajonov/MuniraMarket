@@ -88,7 +88,7 @@ export function DeliveryDistrict({ zones }: DeliveryDistrictProps) {
         data-testid="delivery-district"
         data-state="pending"
         aria-hidden="true"
-        className="h-[68px] rounded-2xl bg-surface-muted"
+        className="h-16 rounded-3xl bg-surface"
       />
     );
   }
@@ -99,7 +99,7 @@ export function DeliveryDistrict({ zones }: DeliveryDistrictProps) {
         aria-label={t.heading}
         data-testid="delivery-district"
         data-state={zones === null ? 'unavailable' : 'no-zones'}
-        className="flex items-center gap-3 rounded-2xl border border-border bg-surface p-3"
+        className="flex items-center gap-3 rounded-3xl bg-surface p-2.5"
       >
         <PinBadge />
         <p className="min-w-0 text-sm leading-5 text-muted-foreground">
@@ -131,18 +131,18 @@ export function DeliveryDistrict({ zones }: DeliveryDistrictProps) {
           type="button"
           aria-haspopup="dialog"
           onClick={() => setSheetOpen(true)}
-          className={`flex w-full items-center gap-3 rounded-2xl bg-brand-soft p-3 text-left hover:bg-brand-soft/80 ${PRESS} ${FOCUS_RING}`}
+          className={`flex w-full items-center gap-3 rounded-3xl bg-surface p-2.5 pr-3 text-left hover:bg-surface/70 ${PRESS} ${FOCUS_RING}`}
         >
           <PinBadge />
           <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-            <span className="text-base leading-6 font-semibold">{t.choosePrompt}</span>
+            <span className="text-[15px] leading-5 font-semibold">{t.choosePrompt}</span>
             {staleChoice ? (
               <span className="text-sm leading-5 text-muted-foreground">
                 {t.previousUnavailable}
               </span>
             ) : null}
           </span>
-          <ChevronRightIcon aria-hidden="true" className="shrink-0 text-brand-ink" />
+          <ChevronRightIcon aria-hidden="true" className="shrink-0 text-muted-foreground" />
         </button>
         {overlays}
       </section>
@@ -157,7 +157,7 @@ export function DeliveryDistrict({ zones }: DeliveryDistrictProps) {
       data-testid="delivery-district"
       data-state="set"
       data-district={served.district.code}
-      className="flex items-center gap-3 rounded-2xl border border-border bg-surface p-3"
+      className="flex items-center gap-3 rounded-3xl bg-surface p-2.5"
     >
       <PinBadge />
       <div className="flex min-w-0 flex-1 flex-col">
@@ -179,7 +179,7 @@ export function DeliveryDistrict({ zones }: DeliveryDistrictProps) {
         aria-haspopup="dialog"
         aria-label={`${t.change}: ${t.heading}, ${name}`}
         onClick={() => setSheetOpen(true)}
-        className={`${BUTTON} -mr-1 border border-border bg-surface text-foreground hover:bg-surface-muted`}
+        className={`${BUTTON} bg-surface-muted text-foreground hover:bg-border`}
       >
         {t.change}
       </button>
@@ -192,7 +192,7 @@ function PinBadge() {
   return (
     <span
       aria-hidden="true"
-      className="flex size-11 shrink-0 items-center justify-center rounded-full bg-surface text-brand-ink ring-1 ring-border"
+      className="flex size-11 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground"
     >
       <PinIcon width={20} height={20} />
     </span>
@@ -268,7 +268,7 @@ function DistrictSheet({ open, onClose, zones, current, onChoose, onOpenMap }: D
           type="button"
           data-testid="open-map"
           onClick={onOpenMap}
-          className={`flex min-h-14 w-full items-center gap-3 rounded-xl border border-border bg-surface px-3 text-left hover:bg-surface-muted ${PRESS} ${FOCUS_RING}`}
+          className={`flex min-h-14 w-full items-center gap-3 rounded-2xl bg-surface-muted px-3 text-left hover:bg-border ${PRESS} ${FOCUS_RING}`}
         >
           <span
             aria-hidden="true"

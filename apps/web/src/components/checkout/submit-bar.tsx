@@ -25,7 +25,7 @@ export function SubmitBar({ total, label, busy, disabled, reason = null }: Submi
   return (
     <div
       data-testid="submit-bar"
-      className="fixed inset-x-0 bottom-0 z-30 border-t border-border bg-background pb-(--mm-inset-bottom) pl-(--mm-inset-left) pr-(--mm-inset-right)"
+      className="fixed inset-x-0 bottom-0 z-30 border-t border-hairline bg-background/95 backdrop-blur-md pb-(--mm-inset-bottom) pl-(--mm-inset-left) pr-(--mm-inset-right)"
     >
       <div className="mx-auto flex w-full max-w-5xl flex-wrap items-center justify-between gap-x-4 gap-y-2 px-4 py-3 sm:px-6">
         {reason === null ? null : (

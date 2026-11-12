@@ -53,6 +53,8 @@ export interface ListboxSelectProps {
   onBlur?: () => void;
   /** Classes of the wrapper (width, margins). */
   className?: string;
+  /** `field` (default): a filled form field. `chip`: a compact pill for toolbars (sort). */
+  variant?: 'field' | 'chip';
 }
 
 interface FlatOption extends ListboxOption {
@@ -106,6 +108,7 @@ export function ListboxSelect({
   dataField,
   onBlur,
   className,
+  variant = 'field',
 }: ListboxSelectProps) {
   const autoId = useId();
   const triggerId = id ?? `${autoId}-trigger`;
@@ -347,8 +350,11 @@ export function ListboxSelect({
         }}
         onBlur={onBlur}
         className={
-          'flex min-h-11 w-full min-w-0 cursor-pointer items-center justify-between gap-2 rounded-xl border border-border bg-surface px-3 py-2 text-left text-base text-foreground ' +
-          'aria-[invalid=true]:border-danger focus-visible:outline-2 focus-visible:outline-offset-0 focus-visible:outline-focus ' +
+          'flex min-h-11 w-full min-w-0 cursor-pointer items-center justify-between gap-2 text-left text-foreground ' +
+          (variant === 'chip'
+            ? 'rounded-full bg-surface py-2 pr-2.5 pl-3.5 text-sm font-semibold whitespace-nowrap '
+            : 'min-h-12 rounded-2xl border border-transparent bg-surface-muted px-3.5 py-2 text-base aria-[invalid=true]:border-danger aria-[invalid=true]:bg-danger-soft ') +
+          'focus-visible:outline-2 focus-visible:outline-offset-0 focus-visible:outline-focus ' +
           'disabled:cursor-not-allowed disabled:opacity-50 ' +
           PRESS
         }
@@ -399,7 +405,7 @@ export function ListboxSelect({
             data-closing={closing}
             className={
               // Phone: bottom sheet. From 640px: popover under the trigger, growing from its top edge.
-              'fixed inset-x-0 bottom-0 z-50 max-h-[60dvh] overflow-y-auto overscroll-contain rounded-t-2xl border border-border bg-surface pb-(--mm-inset-bottom) shadow-xl outline-none ' +
+              'fixed inset-x-0 bottom-0 z-50 max-h-[60dvh] overflow-y-auto overscroll-contain rounded-t-3xl border border-border bg-surface pb-(--mm-inset-bottom) shadow-xl outline-none ' +
               'sm:absolute sm:inset-x-0 sm:top-full sm:bottom-auto sm:mt-1 sm:max-h-72 sm:origin-top sm:rounded-xl sm:pb-0 ' +
               'translate-y-0 scale-100 opacity-100 transition-[transform,opacity] duration-160 ease-out-strong ' +
               'starting:translate-y-full starting:opacity-0 sm:starting:translate-y-0 sm:starting:scale-[0.97] ' +

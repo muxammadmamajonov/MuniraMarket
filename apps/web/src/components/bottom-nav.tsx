@@ -106,16 +106,16 @@ interface TabProps {
 }
 
 function Tab({ href, current, label, accessibleName, testId, children }: TabProps) {
+  const fuller = accessibleName !== undefined && accessibleName !== label;
   return (
     <li className="min-w-0">
       <Link
         href={href}
         aria-current={current ? 'page' : undefined}
-        aria-label={accessibleName}
         data-testid={testId}
         className={
           'group flex h-full min-w-0 flex-col items-center justify-center gap-0.5 rounded-xl px-1 ' +
-          (current ? 'text-primary ' : 'text-muted-foreground ') +
+          (current ? 'text-brand-ink ' : 'text-muted-foreground ') +
           FOCUS_RING
         }
       >
@@ -123,11 +123,16 @@ function Tab({ href, current, label, accessibleName, testId, children }: TabProp
         <span className="flex transition-transform duration-150 ease-out-strong group-active:scale-[0.92] motion-reduce:transition-none">
           {children}
         </span>
+        {/* The name comes from the content, never an `aria-label` that would differ from the
+            visible label: a fuller name (the cart's count) replaces the short one for screen
+            readers only. */}
         <span
+          aria-hidden={fuller ? true : undefined}
           className={`max-w-full truncate text-[11px] leading-4 ${current ? 'font-semibold' : 'font-medium'}`}
         >
           {label}
         </span>
+        {fuller ? <span className="sr-only">{accessibleName}</span> : null}
       </Link>
     </li>
   );

@@ -1,6 +1,6 @@
 'use client';
 
-import type { OrderDetail, OrderLine } from '@muniramarket/contracts';
+import type { OrderDetail, OrderLine, OrderStatus } from '@muniramarket/contracts';
 import { Button, EmptyState, ErrorState, Skeleton, formatUZS } from '@muniramarket/ui';
 import Link from 'next/link';
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
@@ -11,9 +11,17 @@ import { ApiRequestError } from '@/lib/api/errors';
 import { getOrder } from '@/lib/api/orders';
 import { slotWindow } from '@/lib/checkout/slots';
 import { useSession } from '@/lib/session';
+import { CheckIcon } from '../icons';
 import { SignInPrompt } from '../sign-in-prompt';
 import { StatusBadge } from '../status-badge';
-import { CARD, LINK_BUTTON_PRIMARY, LINK_BUTTON_SECONDARY } from '../ui-classes';
+import {
+  CARD,
+  LINK_BUTTON_PRIMARY,
+  LINK_BUTTON_SECONDARY,
+  PAGE_TITLE,
+  ROWS,
+  SECTION_TITLE,
+} from '../ui-classes';
 import { CancelOrderSheet } from './cancel-order-sheet';
 
 type Load =
@@ -36,7 +44,7 @@ function DetailSkeleton({ label }: { label: string }) {
 function Section({ id, title, children }: { id: string; title: string; children: ReactNode }) {
   return (
     <section aria-labelledby={id} className={`${CARD} flex min-w-0 flex-col gap-3`}>
-      <h2 id={id} className="text-lg font-bold">
+      <h2 id={id} className={SECTION_TITLE}>
         {title}
       </h2>
       {children}
@@ -90,34 +98,108 @@ function LineRow({ line }: { line: OrderLine }) {
   );
 }
 
+/** The way an order normally goes; the timeline shows every step, done or still ahead. */
+const DELIVERY_PATH: readonly OrderStatus[] = [
+  'NEW',
+  'CONFIRMED',
+  'PICKING',
+  'READY_FOR_DELIVERY',
+  'OUT_FOR_DELIVERY',
+  'DELIVERED',
+];
+
+type StepState = 'done' | 'current' | 'upcoming' | 'cancelled';
+
+interface Step {
+  status: OrderStatus;
+  at: string | null;
+  state: StepState;
+}
+
+/**
+ * Steps to draw. A live order: the whole delivery path, each step done (with the time it happened,
+ * when the history has it), current, or still ahead, so the customer sees what comes next. A
+ * cancelled order: only what really happened, ending in the cancellation.
+ */
+function timelineSteps(order: Pick<OrderDetail, 'status' | 'history' | 'created_at'>): Step[] {
+  const history =
+    order.history.length > 0 ? order.history : [{ status: order.status, at: order.created_at }];
+  if (order.status === 'CANCELLED') {
+    return history.map((entry, index) => ({
+      status: entry.status,
+      at: entry.at,
+      state:
+        index === history.length - 1
+          ? entry.status === 'CANCELLED'
+            ? 'cancelled'
+            : 'current'
+          : 'done',
+    }));
+  }
+  const currentIndex = DELIVERY_PATH.indexOf(order.status);
+  const lastAt = new Map<OrderStatus, string>();
+  for (const entry of history) lastAt.set(entry.status, entry.at);
+  return DELIVERY_PATH.map((status, index) => ({
+    status,
+    at: lastAt.get(status) ?? null,
+    state: index < currentIndex ? 'done' : index === currentIndex ? 'current' : 'upcoming',
+  }));
+}
+
+const DOT: Record<StepState, string> = {
+  done: 'bg-foreground text-background',
+  current: 'bg-primary text-primary-foreground ring-4 ring-brand-soft',
+  upcoming: 'border-2 border-border-strong bg-surface',
+  cancelled: 'bg-danger text-white dark:text-background ring-4 ring-danger-soft',
+};
+
 function Timeline({ order }: { order: OrderDetail }) {
   const { dict } = useI18n();
-  const entries =
-    order.history.length > 0 ? order.history : [{ status: order.status, at: order.created_at }];
+  const steps = timelineSteps(order);
   return (
     <ol className="flex flex-col" data-testid="timeline">
-      {entries.map((entry, index) => {
-        const current = index === entries.length - 1;
+      {steps.map((step, index) => {
+        const last = index === steps.length - 1;
+        const active = step.state === 'current' || step.state === 'cancelled';
         return (
           <li
-            key={`${entry.status}-${entry.at}`}
-            aria-current={current ? 'step' : undefined}
+            key={`${step.status}-${step.at ?? index}`}
+            data-state={step.state}
+            aria-current={active ? 'step' : undefined}
             className="relative flex gap-3 pb-4 last:pb-0"
           >
-            <span aria-hidden="true" className="flex w-3 shrink-0 flex-col items-center">
+            <span aria-hidden="true" className="flex w-5 shrink-0 flex-col items-center">
               <span
-                className={`mt-1.5 size-3 shrink-0 rounded-full ${current ? 'bg-primary' : 'border-2 border-border bg-surface'}`}
-              />
-              {index === entries.length - 1 ? null : <span className="mt-1 w-px grow bg-border" />}
+                className={`mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full ${DOT[step.state]}`}
+              >
+                {step.state === 'done' ? (
+                  <CheckIcon width={12} height={12} strokeWidth={3} />
+                ) : null}
+              </span>
+              {last ? null : (
+                <span
+                  className={`mt-1 w-0.5 grow rounded-full ${step.state === 'done' ? 'bg-foreground' : 'bg-border'}`}
+                />
+              )}
             </span>
-            <div className="min-w-0">
-              <p className={current ? 'font-bold' : 'font-medium'}>
-                {dict.orders.status[entry.status]}
-                {current ? <span className="sr-only"> — {dict.orders.detail.current}</span> : null}
+            <div className="min-w-0 pb-0.5">
+              <p
+                className={
+                  active
+                    ? 'font-bold'
+                    : step.state === 'upcoming'
+                      ? 'font-medium text-muted-foreground'
+                      : 'font-medium'
+                }
+              >
+                {dict.orders.status[step.status]}
+                {active ? <span className="sr-only"> — {dict.orders.detail.current}</span> : null}
               </p>
-              <p className="text-sm text-muted-foreground">
-                <time dateTime={entry.at}>{formatDateTime(entry.at)}</time>
-              </p>
+              {step.at === null ? null : (
+                <p className="text-sm text-muted-foreground">
+                  <time dateTime={step.at}>{formatDateTime(step.at)}</time>
+                </p>
+              )}
             </div>
           </li>
         );
@@ -205,35 +287,35 @@ export function OrderDetailView({ id, placed, found = false }: OrderDetailViewPr
   const districtName = locale === 'ru' ? address.district_name_ru : address.district_name_uz;
 
   return (
-    <div className="flex min-w-0 flex-col gap-4">
+    <div className="flex min-w-0 flex-col gap-3">
       {placed ? (
         <div
           role="status"
           data-testid="placed-banner"
           data-found={found ? 'true' : undefined}
-          className="mm-enter flex flex-col gap-1 rounded-xl border border-success bg-success-soft p-4 text-foreground"
+          className={`${CARD} mm-enter flex items-start gap-3`}
         >
-          <p className="font-bold">{found ? d.foundTitle : d.placedTitle}</p>
-          <p className="text-sm">{found ? d.foundHint : d.placedHint}</p>
+          <span
+            aria-hidden="true"
+            className="flex size-10 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground"
+          >
+            <CheckIcon width={22} height={22} strokeWidth={2.5} />
+          </span>
+          <div className="flex min-w-0 flex-col gap-0.5">
+            <p className="text-lg leading-6 font-bold">{found ? d.foundTitle : d.placedTitle}</p>
+            <p className="text-sm text-muted-foreground">{found ? d.foundHint : d.placedHint}</p>
+          </div>
         </div>
       ) : null}
       {cancelledNotice ? (
-        <p
-          role="status"
-          data-testid="cancelled-notice"
-          className="mm-enter rounded-xl border border-border bg-surface-muted p-4 font-medium"
-        >
+        <p role="status" data-testid="cancelled-notice" className={`${CARD} mm-enter font-medium`}>
           {dict.orders.cancel.done}
         </p>
       ) : null}
 
       <header className="flex flex-col gap-2">
         <div className="flex items-start justify-between gap-3">
-          <h1
-            data-user-text
-            data-testid="order-number"
-            className="min-w-0 text-2xl font-bold tracking-tight"
-          >
+          <h1 data-user-text data-testid="order-number" className={`min-w-0 ${PAGE_TITLE}`}>
             {formatMessage(dict.orders.orderNumber, { number: order.number })}
           </h1>
           <StatusBadge
@@ -249,12 +331,12 @@ export function OrderDetailView({ id, placed, found = false }: OrderDetailViewPr
         </p>
       </header>
 
-      <div className="grid min-w-0 gap-4 md:grid-cols-2 md:items-start">
-        <div className="flex min-w-0 flex-col gap-4">
+      <div className="grid min-w-0 gap-3 md:grid-cols-2 md:items-start">
+        <div className="flex min-w-0 flex-col gap-3">
           <Section id="order-status" title={d.timeline}>
             <Timeline order={order} />
             {order.status === 'CANCELLED' ? (
-              <div className="flex flex-col gap-1 border-t border-border pt-3">
+              <div className="flex flex-col gap-1 border-t border-hairline pt-3">
                 <p className="font-medium">{d.cancelReasonHeading}</p>
                 {order.cancel_reason === null ? (
                   <p className="text-muted-foreground">{d.cancelledNotice}</p>
@@ -268,12 +350,12 @@ export function OrderDetailView({ id, placed, found = false }: OrderDetailViewPr
           </Section>
 
           <Section id="order-items" title={d.itemsHeading}>
-            <ul className="flex flex-col divide-y divide-border">
+            <ul className={`flex flex-col ${ROWS}`}>
               {order.items.map((line) => (
                 <LineRow key={`${line.sku}-${line.name_uz}`} line={line} />
               ))}
             </ul>
-            <div className="flex flex-col gap-1.5 border-t border-border pt-3">
+            <div className="flex flex-col gap-1.5 border-t border-hairline pt-3">
               <p className="flex items-baseline justify-between gap-3">
                 <span>{d.subtotal}</span>
                 <span data-money className="shrink-0">
@@ -298,7 +380,7 @@ export function OrderDetailView({ id, placed, found = false }: OrderDetailViewPr
           </Section>
         </div>
 
-        <div className="flex min-w-0 flex-col gap-4">
+        <div className="flex min-w-0 flex-col gap-3">
           <Section id="order-delivery" title={d.deliveryHeading}>
             <dl className="flex flex-col gap-1.5">
               {order.delivery_slot === null ? null : (
@@ -349,7 +431,7 @@ export function OrderDetailView({ id, placed, found = false }: OrderDetailViewPr
             size="lg"
             onClick={() => setSheetOpen(true)}
             data-testid="cancel-order"
-            className="text-danger"
+            className="min-h-12 rounded-2xl border-transparent bg-surface text-danger"
           >
             {dict.orders.cancel.button}
           </Button>

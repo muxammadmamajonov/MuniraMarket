@@ -44,7 +44,7 @@ function NavRow({
     >
       <span
         aria-hidden="true"
-        className="flex size-10 shrink-0 items-center justify-center rounded-full bg-surface-muted text-foreground"
+        className="flex size-10 shrink-0 items-center justify-center rounded-full bg-brand-soft text-brand-ink"
       >
         {icon}
       </span>
@@ -86,10 +86,7 @@ export function ProfileView() {
   );
 
   const help = (
-    <nav
-      aria-label={t.settingsHeading}
-      className="overflow-hidden rounded-xl border border-border bg-surface"
-    >
+    <nav aria-label={t.settingsHeading} className="overflow-hidden rounded-3xl bg-surface">
       <NavRow
         href={`/${locale}/help`}
         icon={<HelpIcon width={20} height={20} />}
@@ -102,9 +99,9 @@ export function ProfileView() {
   if (status === 'loading') {
     return (
       <div role="status" aria-label={t.checking} className="flex flex-col gap-3">
-        <Skeleton className="h-24 w-full rounded-2xl" />
-        <Skeleton className="h-32 w-full rounded-xl" />
-        <Skeleton className="h-16 w-full rounded-xl" />
+        <Skeleton className="h-24 w-full rounded-3xl bg-surface" />
+        <Skeleton className="h-32 w-full rounded-3xl bg-surface" />
+        <Skeleton className="h-16 w-full rounded-3xl bg-surface" />
       </div>
     );
   }
@@ -122,10 +119,10 @@ export function ProfileView() {
   const fullName = [user.first_name, user.last_name ?? ''].join(' ').trim();
 
   return (
-    <div data-testid="profile-authenticated" className="flex flex-col gap-4">
+    <div data-testid="profile-authenticated" className="flex flex-col gap-3">
       <section
         aria-label={t.accountHeading}
-        className="relative isolate flex items-center gap-4 overflow-hidden rounded-2xl border border-border bg-surface p-4"
+        className="relative isolate flex items-center gap-4 overflow-hidden rounded-3xl bg-surface p-4"
       >
         <div
           aria-hidden="true"
@@ -158,7 +155,7 @@ export function ProfileView() {
 
       <nav
         aria-label={t.accountHeading}
-        className="divide-y divide-border overflow-hidden rounded-xl border border-border bg-surface"
+        className="divide-y divide-hairline overflow-hidden rounded-3xl bg-surface"
       >
         <NavRow
           href={`/${locale}/orders`}
