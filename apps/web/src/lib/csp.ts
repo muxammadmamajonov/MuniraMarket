@@ -46,6 +46,19 @@ export function generateNonce(): string {
 // The nonce is interpolated into a response header, so refuse anything that is not base64.
 const NONCE_PATTERN = /^[A-Za-z0-9+/_-]+={0,2}$/;
 
+/**
+ * The nonce in a policy built by `buildContentSecurityPolicy`, or `undefined` when there is none.
+ *
+ * `src/proxy.ts` forwards the policy on the request headers; the root layout reads the nonce back
+ * from it to hand to `<Script>` explicitly. Next applies the nonce on the server by itself, but the
+ * client copy of `<Script>` never learns it, so without the prop the client renders no `nonce`
+ * while the server HTML has one, and React reports a hydration mismatch.
+ */
+export function nonceFromContentSecurityPolicy(policy: string | null): string | undefined {
+  const nonce = policy?.match(/'nonce-([^']+)'/)?.[1];
+  return nonce !== undefined && NONCE_PATTERN.test(nonce) ? nonce : undefined;
+}
+
 export function buildContentSecurityPolicy({
   nonce,
   isDevelopment = false,
