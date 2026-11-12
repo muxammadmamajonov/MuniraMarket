@@ -86,10 +86,7 @@ export function ProfileView() {
   );
 
   const help = (
-    <nav
-      aria-label={t.settingsHeading}
-      className="overflow-hidden rounded-3xl bg-surface"
-    >
+    <nav aria-label={t.settingsHeading} className="overflow-hidden rounded-3xl bg-surface">
       <NavRow
         href={`/${locale}/help`}
         icon={<HelpIcon width={20} height={20} />}

@@ -294,11 +294,7 @@ function CartLineItem({ line, busy, onQuantity, onRemove }: CartLineItemProps) {
         : null;
 
   return (
-    <li
-      data-testid="cart-line"
-      data-issue={line.issue ?? undefined}
-      className="flex gap-3 py-3.5"
-    >
+    <li data-testid="cart-line" data-issue={line.issue ?? undefined} className="flex gap-3 py-3.5">
       <Link
         href={`/${locale}/p/${encodeURIComponent(product.slug)}`}
         tabIndex={-1}
@@ -332,7 +328,8 @@ function CartLineItem({ line, busy, onQuantity, onRemove }: CartLineItemProps) {
           </button>
         </div>
         <p className="text-sm text-muted-foreground">
-          <span data-money>{formatUZS(product.price_uzs, locale)}</span> / {dict.units[product.unit]}
+          <span data-money>{formatUZS(product.price_uzs, locale)}</span> /{' '}
+          {dict.units[product.unit]}
         </p>
 
         {issueText !== null ? (

@@ -140,7 +140,10 @@ export function OrdersList({ page }: { page: number }) {
 
   return (
     <div className="flex flex-col gap-3">
-      <ul className={`${GROUP} ${ROWS} flex flex-col overflow-hidden px-4`} aria-label={dict.orders.title}>
+      <ul
+        className={`${GROUP} ${ROWS} flex flex-col overflow-hidden px-4`}
+        aria-label={dict.orders.title}
+      >
         {result.items.map((order) => (
           <OrderCard key={order.id} order={order} />
         ))}

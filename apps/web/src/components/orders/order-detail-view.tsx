@@ -129,7 +129,11 @@ function timelineSteps(order: Pick<OrderDetail, 'status' | 'history' | 'created_
       status: entry.status,
       at: entry.at,
       state:
-        index === history.length - 1 ? (entry.status === 'CANCELLED' ? 'cancelled' : 'current') : 'done',
+        index === history.length - 1
+          ? entry.status === 'CANCELLED'
+            ? 'cancelled'
+            : 'current'
+          : 'done',
     }));
   }
   const currentIndex = DELIVERY_PATH.indexOf(order.status);
@@ -168,7 +172,9 @@ function Timeline({ order }: { order: OrderDetail }) {
               <span
                 className={`mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full ${DOT[step.state]}`}
               >
-                {step.state === 'done' ? <CheckIcon width={12} height={12} strokeWidth={3} /> : null}
+                {step.state === 'done' ? (
+                  <CheckIcon width={12} height={12} strokeWidth={3} />
+                ) : null}
               </span>
               {last ? null : (
                 <span
@@ -302,22 +308,14 @@ export function OrderDetailView({ id, placed, found = false }: OrderDetailViewPr
         </div>
       ) : null}
       {cancelledNotice ? (
-        <p
-          role="status"
-          data-testid="cancelled-notice"
-          className={`${CARD} mm-enter font-medium`}
-        >
+        <p role="status" data-testid="cancelled-notice" className={`${CARD} mm-enter font-medium`}>
           {dict.orders.cancel.done}
         </p>
       ) : null}
 
       <header className="flex flex-col gap-2">
         <div className="flex items-start justify-between gap-3">
-          <h1
-            data-user-text
-            data-testid="order-number"
-            className={`min-w-0 ${PAGE_TITLE}`}
-          >
+          <h1 data-user-text data-testid="order-number" className={`min-w-0 ${PAGE_TITLE}`}>
             {formatMessage(dict.orders.orderNumber, { number: order.number })}
           </h1>
           <StatusBadge

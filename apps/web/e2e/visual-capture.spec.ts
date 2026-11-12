@@ -97,9 +97,7 @@ test('capture every customer page', async ({ page }) => {
     orderUrl = `/uz/orders/${existing.items?.[0]?.id ?? ''}`;
   }
 
-  const pages: Array<{ key: string; path: string }> = [
-    { key: 'cart-empty', path: '/uz/cart' },
-  ];
+  const pages: Array<{ key: string; path: string }> = [{ key: 'cart-empty', path: '/uz/cart' }];
   const filledPages: Array<{ key: string; path: string }> = [
     { key: 'home', path: '/uz' },
     { key: 'catalog', path: '/uz/catalog' },

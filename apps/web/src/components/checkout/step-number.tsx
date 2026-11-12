@@ -15,4 +15,5 @@ export function StepNumber({ step }: { step: number }) {
 }
 
 /** Heading classes for a numbered checkout section. */
-export const STEP_HEADING = 'flex items-center gap-2.5 text-lg leading-7 font-bold tracking-[-0.01em]';
+export const STEP_HEADING =
+  'flex items-center gap-2.5 text-lg leading-7 font-bold tracking-[-0.01em]';

@@ -73,7 +73,10 @@ export default async function ProductPage({ params }: PageProps<'/[locale]/p/[sl
               {localizedName(product.category, locale)}
               <ChevronRightIcon aria-hidden="true" width={14} height={14} />
             </Link>
-            <h1 data-user-text className="text-[24px] leading-[30px] font-bold tracking-[-0.02em] text-balance">
+            <h1
+              data-user-text
+              className="text-[24px] leading-[30px] font-bold tracking-[-0.02em] text-balance"
+            >
               {name}
             </h1>
           </div>
@@ -110,10 +113,7 @@ export default async function ProductPage({ params }: PageProps<'/[locale]/p/[sl
             }}
           />
 
-          <section
-            aria-labelledby="details-heading"
-            className={`${GROUP} flex flex-col gap-3 p-4`}
-          >
+          <section aria-labelledby="details-heading" className={`${GROUP} flex flex-col gap-3 p-4`}>
             <h2 id="details-heading" className={SECTION_TITLE}>
               {dict.product.about}
             </h2>

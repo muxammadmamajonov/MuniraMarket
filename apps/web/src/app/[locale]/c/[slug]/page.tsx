@@ -50,8 +50,7 @@ export default async function CategoryPage({
   }
 
   const parent = path.length > 1 ? path.at(-2) : undefined;
-  const chips =
-    category.children.length > 0 ? category.children : (parent?.children ?? []);
+  const chips = category.children.length > 0 ? category.children : (parent?.children ?? []);
 
   const base = `/${locale}/c/${encodeURIComponent(slug)}`;
   const hrefFor = (nextPage: number) => listingHref(base, { sort, inStock, page: nextPage });

@@ -152,7 +152,7 @@ describe('ProfileView', () => {
     expect(screen.getByText('Raqamingiz tasdiqlandi.')).toBeInTheDocument();
   });
 
-  it('still hears Telegram\'s answer under React\'s development double mount (StrictMode)', async () => {
+  it("still hears Telegram's answer under React's development double mount (StrictMode)", async () => {
     const requestContact = vi.fn((callback?: (shared: boolean) => void) => callback?.(false));
     installWebApp(makeWebApp({ requestContact, isVersionAtLeast: () => true }));
     session.status = 'authenticated';
