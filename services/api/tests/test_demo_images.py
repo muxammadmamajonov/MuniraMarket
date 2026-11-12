@@ -46,7 +46,9 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 PUBLIC = REPO_ROOT / "apps" / "web" / "public"
 BASE = "https://shop.example.uz"
 DB_ENV = {"DEMO_IMPORT_DATABASE_URL": "postgresql+asyncpg://u:p@localhost/db"}
-MANIFEST_ROW = re.compile(r"^\| `(?P<file>[a-z0-9-]+\.webp)` \| \[[^\]]*\]\((?P<page>[^)]+)\) \| ")
+MANIFEST_ROW = re.compile(
+    r"^\|\s*`(?P<file>[a-z0-9-]+\.webp)`\s*\|\s*\[[^\]]*\]\((?P<page>[^)]+)\)\s*\|"
+)
 ALLOWED_PAGES = ("https://unsplash.com/photos/", "https://www.pexels.com/photo/")
 
 
@@ -150,11 +152,7 @@ def test_base_url_refuses_anything_but_a_public_https_origin(raw: str) -> None:
 # --- command line, before any connection ----------------------------------------------------------
 
 
-async def test_images_needs_a_base_url_and_checks_it_before_connecting() -> None:
-    code, text = await _invoke("images", "--confirm", IMAGES_PHRASE)
-    assert code == demo_catalog.EXIT_USAGE
-    assert "--image-base-url" in text
-
+async def test_a_bad_base_url_is_refused_before_connecting() -> None:
     code, text = await _invoke("images", "--image-base-url", "http://shop.example.uz")
     assert code == demo_catalog.EXIT_USAGE
     assert "https" in text
@@ -170,10 +168,14 @@ async def test_images_refuses_a_wrong_confirm_phrase_before_connecting(phrase: s
     assert "refused" in text
 
 
-async def test_the_base_url_may_come_from_the_environment() -> None:
-    """With a valid base from ``DEMO_IMAGE_BASE_URL`` the command goes on to connect."""
-    with pytest.raises(AssertionError, match="must not connect"):
-        await _invoke("images", environ={**DB_ENV, "DEMO_IMAGE_BASE_URL": BASE})
+async def test_the_base_url_is_optional_and_may_come_from_the_environment() -> None:
+    """Without a base (storefront paths) or with a valid one from ``DEMO_IMAGE_BASE_URL``, the
+    command goes on to connect."""
+    for environ in (DB_ENV, {**DB_ENV, "DEMO_IMAGE_BASE_URL": BASE}):
+        with pytest.raises(AssertionError, match="must not connect"):
+            await _invoke("images", environ=environ)
+    code, _ = await _invoke("images", environ={**DB_ENV, "DEMO_IMAGE_BASE_URL": "http://x.uz"})
+    assert code == demo_catalog.EXIT_USAGE
 
 
 # --- against a real database ----------------------------------------------------------------------
@@ -189,6 +191,14 @@ async def _images(factory: SessionFactory) -> dict[str, str | None]:
     }
 
 
+async def _clear_images(factory: SessionFactory) -> None:
+    """A catalog imported before the photos existed: no image URLs at all."""
+    async with factory() as session:
+        await session.execute(update(Product).values(image_url=None))
+        await session.execute(update(Category).values(image_url=None))
+        await session.commit()
+
+
 async def _count(factory: SessionFactory, model: type[Any], *where: Any) -> int:
     async with factory() as session:
         statement = select(func.count()).select_from(model).where(*where)
@@ -199,7 +209,7 @@ async def _count(factory: SessionFactory, model: type[Any], *where: Any) -> int:
 @pytest.mark.asyncio(loop_scope="module")
 async def test_backfill_fills_only_empty_demo_images(session_factory: SessionFactory) -> None:
     await import_demo_catalog(session_factory, apply=True)
-    assert await _count(session_factory, Product, Product.image_url.is_not(None)) == 0
+    await _clear_images(session_factory)
     audit_before = await _count(session_factory, AuditLog)
 
     # An admin's own photo, an empty string, and a real product without a photo.
@@ -244,7 +254,23 @@ async def test_backfill_fills_only_empty_demo_images(session_factory: SessionFac
 
 @pytest.mark.integration
 @pytest.mark.asyncio(loop_scope="module")
-async def test_import_with_a_base_url_sets_the_photos(session_factory: SessionFactory) -> None:
+async def test_import_sets_the_photos_as_storefront_paths(
+    session_factory: SessionFactory,
+) -> None:
+    report = await import_demo_catalog(session_factory, apply=True)
+    assert report.image_base_url is None
+    images = await _images(session_factory)
+    assert images["product:demo-banan"] == "/products/banan.webp"
+    assert images["category:demo-sut"] == "/categories/sut.webp"
+    assert sum(url is not None for url in images.values()) == len(DEMO_PRODUCT_IMAGES) + len(
+        DEMO_CATEGORY_IMAGES
+    )
+    assert (await set_demo_images(session_factory, apply=True)).changed == 0
+
+
+@pytest.mark.integration
+@pytest.mark.asyncio(loop_scope="module")
+async def test_import_with_a_base_url_stores_absolute_urls(session_factory: SessionFactory) -> None:
     report = await import_demo_catalog(session_factory, apply=True, image_base_url=BASE)
     assert report.image_base_url == BASE
     images = await _images(session_factory)
@@ -269,16 +295,18 @@ async def test_images_command_end_to_end(
 
     code, text = await invoke("import", "--confirm", IMPORT_PHRASE)
     assert code == 0
-    assert "image URLs: left empty" in text
+    assert "image URLs: demo photos as storefront paths" in text
+    await _clear_images(session_factory)
 
-    code, text = await invoke("images", "--image-base-url", BASE)
+    code, text = await invoke("images")
     assert code == 0
     assert "DRY RUN" in text
     assert IMAGES_PHRASE in text
     assert await _count(session_factory, Product, Product.image_url.is_not(None)) == 0
 
-    code, text = await invoke("images", "--image-base-url", BASE, "--confirm", IMAGES_PHRASE)
+    code, text = await invoke("images", "--confirm", IMAGES_PHRASE)
     assert code == 0
     assert f"products updated: {len(production_products())}" in text
     assert "postgresql" not in text
     assert await _count(session_factory, Product, Product.image_url.is_(None)) == 0
+    assert (await _images(session_factory))["product:demo-olma"] == "/products/olma.webp"

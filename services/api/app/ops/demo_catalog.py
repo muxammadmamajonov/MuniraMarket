@@ -2,9 +2,9 @@
 
     DEMO_IMPORT_DATABASE_URL=... uv run python -m app.ops.demo_catalog status
     DEMO_IMPORT_DATABASE_URL=... uv run python -m app.ops.demo_catalog import \
-        --image-base-url https://<storefront host> --confirm "IMPORT DEMO CATALOG"
+        --confirm "IMPORT DEMO CATALOG"
     DEMO_IMPORT_DATABASE_URL=... uv run python -m app.ops.demo_catalog images \
-        --image-base-url https://<storefront host> --confirm "SET DEMO IMAGES"
+        --confirm "SET DEMO IMAGES"
     DEMO_IMPORT_DATABASE_URL=... uv run python -m app.ops.demo_catalog remove \
         --confirm "REMOVE DEMO CATALOG"
 
@@ -27,13 +27,13 @@ category and zone slugs start with ``demo-``; a product is demo when its slug st
   districts. Rows that already exist are left exactly as they are (an admin's edits survive), so
   a second run writes nothing. No delivery slots (they are dated and would go stale): the demo
   zones take orders without a slot;
-- sets the demo photos (``app.ops.demo_images``) as absolute URLs on the storefront origin given
-  by ``--image-base-url`` (or ``DEMO_IMAGE_BASE_URL``); without one it leaves image URLs empty
-  (the storefront renders branded placeholders) and ``images`` can fill them in later.
+- sets the demo photos (``app.ops.demo_images``): storefront paths such as
+  ``/products/banan.webp``, or absolute URLs on the origin given by ``--image-base-url`` (or
+  ``DEMO_IMAGE_BASE_URL``).
 
-``images`` (one transaction) backfills those photo URLs: it sets ``image_url`` only on demo
-categories and products whose ``image_url`` is empty, so an image an admin chose is never replaced
-and a second run writes nothing.
+``images`` (one transaction) backfills those photo URLs for a catalog imported before the photos
+existed: it sets ``image_url`` only on demo categories and products whose ``image_url`` is
+empty, so an image an admin chose is never replaced and a second run writes nothing.
 
 ``remove`` (one transaction) touches demo rows only:
 
@@ -102,6 +102,7 @@ from app.ops.demo_images import (
     IMAGE_BASE_URL_ENV,
     InvalidImageBaseUrlError,
     category_image_url,
+    demo_image_url,
     product_image_url,
     validate_image_base_url,
 )
@@ -176,7 +177,7 @@ class ImportReport:
     districts_assigned: int
     # True when real delivery zones exist, so the demo zones were not added.
     zones_skipped: bool
-    # The storefront origin the photo URLs point at; None = image URLs left empty.
+    # The origin the photo URLs point at; None = storefront paths (``/products/banan.webp``).
     image_base_url: str | None = None
 
     @property
@@ -222,7 +223,7 @@ class RemoveReport:
 @dataclass(frozen=True, slots=True)
 class ImagesReport:
     applied: bool
-    image_base_url: str
+    image_base_url: str | None
     categories_updated: int
     products_updated: int
     # Demo rows that already have an image URL: left exactly as they are.
@@ -297,9 +298,7 @@ async def _insert_categories(
                 parent_id=ids[category.parent_slug] if category.parent_slug else None,
                 name_uz=category.name_uz,
                 name_ru=category.name_ru,
-                image_url=None
-                if image_base_url is None
-                else category_image_url(category.slug, image_base_url),
+                image_url=category_image_url(category.slug, image_base_url),
                 sort_order=category.sort_order,
                 is_active=category.is_active,
             )
@@ -337,9 +336,7 @@ async def _insert_products(
                 price_uzs=product.price_uzs,
                 old_price_uzs=product.old_price_uzs,
                 stock_quantity=product.stock_quantity,
-                image_url=None
-                if image_base_url is None
-                else product_image_url(product.slug, image_base_url),
+                image_url=product_image_url(product.slug, image_base_url),
                 is_active=product.is_active,
             )
             # A conflict on the slug or the SKU means the demo product is already there.
@@ -399,8 +396,8 @@ async def import_demo_catalog(
 ) -> ImportReport:
     """Insert the missing demo rows in one transaction; rolled back unless ``apply``.
 
-    ``image_base_url`` (from ``validate_image_base_url``) is the storefront origin of the demo
-    photos; ``None`` leaves image URLs empty.
+    ``image_base_url`` (from ``validate_image_base_url``) makes the demo photo URLs absolute;
+    ``None`` stores the storefront paths.
 
     Raises ``DemoCatalogError`` (nothing written) when the catalog holds non-demo rows.
     """
@@ -632,7 +629,7 @@ async def _backfill(
     model: type[Category] | type[Product],
     demo: ColumnElement[bool],
     images: Mapping[str, str],
-    image_base_url: str,
+    image_base_url: str | None,
 ) -> tuple[int, int]:
     kept = await _count(
         session, model, demo, model.slug.in_(list(images)), not_(_no_image(model.image_url))
@@ -642,7 +639,7 @@ async def _backfill(
         result = await session.execute(
             update(model)
             .where(demo, model.slug == slug, _no_image(model.image_url))
-            .values(image_url=image_base_url + path)
+            .values(image_url=demo_image_url(path, image_base_url))
             .execution_options(synchronize_session=False)
         )
         updated += _rowcount(result)
@@ -650,7 +647,10 @@ async def _backfill(
 
 
 async def set_demo_images(
-    session_factory: async_sessionmaker[AsyncSession], *, image_base_url: str, apply: bool
+    session_factory: async_sessionmaker[AsyncSession],
+    *,
+    apply: bool,
+    image_base_url: str | None = None,
 ) -> ImagesReport:
     """Set the demo photo URLs on demo rows without an image, in one transaction; rolled back
     unless ``apply``. Rows with an image URL and non-demo rows are never changed."""
@@ -747,9 +747,9 @@ def build_parser() -> argparse.ArgumentParser:
                 "--image-base-url",
                 metavar="URL",
                 help=(
-                    "public https origin of the storefront that serves /products and /categories "
-                    f"(default: {IMAGE_BASE_URL_ENV})"
-                    + ("; required" if name == "images" else "; without it images stay empty")
+                    "store absolute photo URLs on this public https origin of the storefront "
+                    f"(default: {IMAGE_BASE_URL_ENV}; without either, storefront paths such as "
+                    "/products/banan.webp)"
                 ),
             )
     return parser
@@ -803,12 +803,7 @@ def _format_import(report: ImportReport) -> list[str]:
         "  note: demo zones are placeholders; replace them with the real delivery rules in the "
         "admin panel before taking real orders"
     )
-    if report.image_base_url is None:
-        lines.append(
-            "  image URLs: left empty (no --image-base-url); the images command can set them later"
-        )
-    else:
-        lines.append(f"  image URLs: demo photos on {report.image_base_url}")
+    lines.append(f"  image URLs: {_photos_on(report.image_base_url)}")
     if not report.applied:
         lines.append(f'  to apply, re-run with --confirm "{IMPORT_PHRASE}"')
     return lines
@@ -837,10 +832,16 @@ def _format_remove(report: RemoveReport) -> list[str]:
     return lines
 
 
+def _photos_on(image_base_url: str | None) -> str:
+    if image_base_url is None:
+        return "demo photos as storefront paths (/products/..., /categories/...)"
+    return f"demo photos on {image_base_url}"
+
+
 def _format_images(report: ImagesReport) -> list[str]:
     lines = [
         f"demo images backfill ({_mode(report.applied)}):",
-        f"  photos on: {report.image_base_url}",
+        f"  image URLs: {_photos_on(report.image_base_url)}",
         f"  categories updated: {report.categories_updated} "
         f"(left unchanged, already have an image: {report.categories_kept})",
         f"  products updated: {report.products_updated} "
@@ -875,11 +876,6 @@ def _options(args: argparse.Namespace, environ: Mapping[str, str]) -> Options:
         image_base_url = validate_image_base_url(raw) if raw.strip() else None
     except InvalidImageBaseUrlError as exc:
         raise DemoCatalogError(f"refused: {exc}; nothing was changed") from None
-    if command == "images" and image_base_url is None:
-        raise DemoCatalogError(
-            f"refused: images needs --image-base-url (or {IMAGE_BASE_URL_ENV}), the public https "
-            "origin of the storefront; nothing was changed"
-        )
     return Options(command=command, apply=confirm == phrase, image_base_url=image_base_url)
 
 
@@ -889,7 +885,7 @@ async def _execute(options: Options, factory: async_sessionmaker[AsyncSession]) 
         return _format_status(await demo_catalog_status(factory))
     if options.command == "import":
         return _format_import(await import_demo_catalog(factory, apply=apply, image_base_url=base))
-    if options.command == "images" and base is not None:
+    if options.command == "images":
         return _format_images(await set_demo_images(factory, image_base_url=base, apply=apply))
     if options.command == "remove":
         return _format_remove(await remove_demo_catalog(factory, apply=apply))

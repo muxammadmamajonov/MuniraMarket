@@ -21,6 +21,9 @@ const SCHEME_CHARS = /^[A-Za-z0-9+\-.]+$/;
 const PY_SPACE_OR_CONTROL =
   // eslint-disable-next-line no-control-regex
   /[\x00-\x20\x7f\x85\xa0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]/;
+// The storefront's own photos (`/products/<name>.webp`, `/categories/<name>.webp`): a fixed
+// same-origin path, the one exception to "absolute https" (see image_url.py).
+const STOREFRONT_PHOTO_PATH = /^\/(?:products|categories)\/[a-z0-9]+(?:-[a-z0-9]+)*\.webp$/;
 const IPV4 = /^(25[0-5]|2[0-4]\d|1\d\d|[1-9]\d|\d)(\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]\d|\d)){3}$/;
 
 export class InvalidImageUrlError extends Error {
@@ -124,6 +127,7 @@ function checkHost(hostname: string): void {
 
 /** Return the URL unchanged if it is acceptable, else throw `InvalidImageUrlError`. */
 export function validateImageUrl(raw: string): string {
+  if (STOREFRONT_PHOTO_PATH.test(raw)) return raw;
   if ([...raw].length > MAX_IMAGE_URL_LENGTH) throw new InvalidImageUrlError('too long');
   if (PY_SPACE_OR_CONTROL.test(raw)) {
     throw new InvalidImageUrlError('contains whitespace or control characters');

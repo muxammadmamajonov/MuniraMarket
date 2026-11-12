@@ -138,6 +138,10 @@ def test_diff_fields() -> None:
         "https://x0.example.com/a.png",
         "https://123.example.com/a.png",
         "https://cdn.0xide.com/a.png",
+        # The storefront's own photos (demo catalog): fixed same-origin paths.
+        "/products/banan.webp",
+        "/products/bolgar-qalampiri-400.webp",
+        "/categories/mevalar-sabzavotlar.webp",
     ],
 )
 def test_valid_image_urls(url: str) -> None:
@@ -168,6 +172,12 @@ def test_valid_image_urls(url: str) -> None:
         "https://cdn.example.123/a.png",
         "https://" + "a" * 2048 + ".com/",
         "https:///a.png",
+        "/products/banan.png",
+        "/products/../admin.webp",
+        "/products/banan.webp\n",
+        "/products/Banan.webp",
+        "/uploads/a.webp",
+        "products/banan.webp",
         # Hosts a browser parses as IPv4 (WHATWG "ends in a number"), or hex-numeric labels.
         "https://127.0.0.0x1/",
         "https://0x7f.0x0.0x0.0x1/",

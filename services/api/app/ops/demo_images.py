@@ -6,12 +6,11 @@ one is an Unsplash (Unsplash License) or Pexels (Pexels License) photo; page URL
 licence are recorded in the ``SOURCES.md`` next to the files. ``test_demo_images`` checks that every
 path below has both files and a manifest row.
 
-A row stores an absolute ``https`` URL in production, because the admin API only accepts plain
-public ``https`` image URLs (``app.domain.image_url``) and the admin app lives on another origin.
-The origin is the storefront's public one, which is only known at deploy time, so it is passed in
-(``--image-base-url`` / ``DEMO_IMAGE_BASE_URL``) and never committed. Without a base the local dev
-seed stores the path itself (``/products/banan.webp``), which the storefront resolves against its
-own origin.
+A row stores the storefront path (``/products/banan.webp``): the image URL validation
+(``app.domain.image_url``) accepts exactly these paths besides public ``https`` URLs, and the
+storefront resolves them against its own origin wherever it is deployed. With a base URL
+(``--image-base-url`` / ``DEMO_IMAGE_BASE_URL``, a public ``https`` origin) the URLs are absolute
+instead, for clients on other origins.
 """
 
 from collections.abc import Mapping

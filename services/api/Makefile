@@ -34,7 +34,7 @@ seed:
 # catalog. Reads DEMO_IMPORT_DATABASE_URL (the migrator URL, from the secret store) from the
 # environment and never prints it. ACTION=status|import|remove|images; import/remove/images are dry
 # runs unless CONFIRM="IMPORT DEMO CATALOG" / "REMOVE DEMO CATALOG" / "SET DEMO IMAGES" is given.
-# IMAGE_BASE_URL=https://<storefront host> (import, images) stores the demo photo URLs.
+# IMAGE_BASE_URL=https://<storefront host> (import, images) makes the demo photo URLs absolute.
 ACTION ?= status
 demo-catalog:
 	uv run python -m app.ops.demo_catalog $(ACTION) $(if $(CONFIRM),--confirm "$(CONFIRM)",) \
