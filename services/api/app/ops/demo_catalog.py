@@ -2,13 +2,16 @@
 
     DEMO_IMPORT_DATABASE_URL=... uv run python -m app.ops.demo_catalog status
     DEMO_IMPORT_DATABASE_URL=... uv run python -m app.ops.demo_catalog import \
-        --confirm "IMPORT DEMO CATALOG"
+        --image-base-url https://<storefront host> --confirm "IMPORT DEMO CATALOG"
+    DEMO_IMPORT_DATABASE_URL=... uv run python -m app.ops.demo_catalog images \
+        --image-base-url https://<storefront host> --confirm "SET DEMO IMAGES"
     DEMO_IMPORT_DATABASE_URL=... uv run python -m app.ops.demo_catalog remove \
         --confirm "REMOVE DEMO CATALOG"
 
 Nothing runs this automatically: it is not wired into migrations, app start-up or any deploy
-step. ``import`` and ``remove`` are dry runs (one transaction that is rolled back) unless
-``--confirm`` carries the exact phrase; a wrong phrase is refused before any connection is made.
+step. ``import``, ``remove`` and ``images`` are dry runs (one transaction that is rolled back)
+unless ``--confirm`` carries the exact phrase; a wrong phrase is refused before any connection is
+made.
 
 The data is the canonical synthetic dataset in ``app.ops.demo_dataset`` without its ``dev_only``
 edge-case rows. Demo rows are recognised by their markers only (no extra column, no migration):
@@ -24,7 +27,13 @@ category and zone slugs start with ``demo-``; a product is demo when its slug st
   districts. Rows that already exist are left exactly as they are (an admin's edits survive), so
   a second run writes nothing. No delivery slots (they are dated and would go stale): the demo
   zones take orders without a slot;
-- leaves image URLs empty (the storefront renders branded placeholders).
+- sets the demo photos (``app.ops.demo_images``) as absolute URLs on the storefront origin given
+  by ``--image-base-url`` (or ``DEMO_IMAGE_BASE_URL``); without one it leaves image URLs empty
+  (the storefront renders branded placeholders) and ``images`` can fill them in later.
+
+``images`` (one transaction) backfills those photo URLs: it sets ``image_url`` only on demo
+categories and products whose ``image_url`` is empty, so an image an admin chose is never replaced
+and a second run writes nothing.
 
 ``remove`` (one transaction) touches demo rows only:
 
@@ -36,7 +45,7 @@ category and zone slugs start with ``demo-``; a product is demo when its slug st
 - demo delivery zones release their districts; a zone or slot that orders reference is
   deactivated and kept, everything else is deleted.
 
-Both commands add one ``audit_log`` row when they change something. The database URL comes only
+Each command adds one ``audit_log`` row when they change something. The database URL comes only
 from ``DEMO_IMPORT_DATABASE_URL`` and no part of it is ever printed or logged: unexpected errors are
 reported by exception type only, because driver messages can contain the host or user name.
 """
@@ -57,6 +66,7 @@ from sqlalchemy import (
     exists,
     func,
     not_,
+    or_,
     select,
     text,
     update,
@@ -86,10 +96,21 @@ from app.ops.demo_dataset import (
     production_products,
     production_zones,
 )
+from app.ops.demo_images import (
+    DEMO_CATEGORY_IMAGES,
+    DEMO_PRODUCT_IMAGES,
+    IMAGE_BASE_URL_ENV,
+    InvalidImageBaseUrlError,
+    category_image_url,
+    product_image_url,
+    validate_image_base_url,
+)
 
 DATABASE_URL_ENV = "DEMO_IMPORT_DATABASE_URL"
 IMPORT_PHRASE = "IMPORT DEMO CATALOG"
 REMOVE_PHRASE = "REMOVE DEMO CATALOG"
+IMAGES_PHRASE = "SET DEMO IMAGES"
+PHRASES = {"import": IMPORT_PHRASE, "remove": REMOVE_PHRASE, "images": IMAGES_PHRASE}
 DEMO_SLUG_PREFIX = "demo-"
 DEMO_SKU_PREFIX = "DEMO-"
 APPLICATION_NAME = "muniramarket-demo-catalog"
@@ -155,6 +176,8 @@ class ImportReport:
     districts_assigned: int
     # True when real delivery zones exist, so the demo zones were not added.
     zones_skipped: bool
+    # The storefront origin the photo URLs point at; None = image URLs left empty.
+    image_base_url: str | None = None
 
     @property
     def changed(self) -> int:
@@ -194,6 +217,21 @@ class RemoveReport:
             + self.slots_deactivated
             + self.districts_released
         )
+
+
+@dataclass(frozen=True, slots=True)
+class ImagesReport:
+    applied: bool
+    image_base_url: str
+    categories_updated: int
+    products_updated: int
+    # Demo rows that already have an image URL: left exactly as they are.
+    categories_kept: int
+    products_kept: int
+
+    @property
+    def changed(self) -> int:
+        return self.categories_updated + self.products_updated
 
 
 # --- shared transaction helpers -------------------------------------------------------------------
@@ -246,7 +284,9 @@ async def demo_catalog_status(session_factory: async_sessionmaker[AsyncSession])
 # --- import ---------------------------------------------------------------------------------------
 
 
-async def _insert_categories(session: AsyncSession) -> tuple[dict[str, object], int]:
+async def _insert_categories(
+    session: AsyncSession, image_base_url: str | None
+) -> tuple[dict[str, object], int]:
     ids: dict[str, object] = {}
     created = 0
     for category in production_categories():
@@ -257,7 +297,9 @@ async def _insert_categories(session: AsyncSession) -> tuple[dict[str, object], 
                 parent_id=ids[category.parent_slug] if category.parent_slug else None,
                 name_uz=category.name_uz,
                 name_ru=category.name_ru,
-                image_url=None,
+                image_url=None
+                if image_base_url is None
+                else category_image_url(category.slug, image_base_url),
                 sort_order=category.sort_order,
                 is_active=category.is_active,
             )
@@ -275,7 +317,9 @@ async def _insert_categories(session: AsyncSession) -> tuple[dict[str, object], 
     return ids, created
 
 
-async def _insert_products(session: AsyncSession, category_ids: Mapping[str, object]) -> int:
+async def _insert_products(
+    session: AsyncSession, category_ids: Mapping[str, object], image_base_url: str | None
+) -> int:
     created = 0
     for product in production_products():
         statement = (
@@ -293,7 +337,9 @@ async def _insert_products(session: AsyncSession, category_ids: Mapping[str, obj
                 price_uzs=product.price_uzs,
                 old_price_uzs=product.old_price_uzs,
                 stock_quantity=product.stock_quantity,
-                image_url=None,
+                image_url=None
+                if image_base_url is None
+                else product_image_url(product.slug, image_base_url),
                 is_active=product.is_active,
             )
             # A conflict on the slug or the SKU means the demo product is already there.
@@ -346,9 +392,15 @@ async def _insert_zones(session: AsyncSession) -> tuple[int, int]:
 
 
 async def import_demo_catalog(
-    session_factory: async_sessionmaker[AsyncSession], *, apply: bool
+    session_factory: async_sessionmaker[AsyncSession],
+    *,
+    apply: bool,
+    image_base_url: str | None = None,
 ) -> ImportReport:
     """Insert the missing demo rows in one transaction; rolled back unless ``apply``.
+
+    ``image_base_url`` (from ``validate_image_base_url``) is the storefront origin of the demo
+    photos; ``None`` leaves image URLs empty.
 
     Raises ``DemoCatalogError`` (nothing written) when the catalog holds non-demo rows.
     """
@@ -363,8 +415,8 @@ async def import_demo_catalog(
                 f"{status.other_products} non-demo products). The demo catalog is only for an "
                 "empty catalog; nothing was changed."
             )
-        category_ids, categories_created = await _insert_categories(session)
-        products_created = await _insert_products(session, category_ids)
+        category_ids, categories_created = await _insert_categories(session, image_base_url)
+        products_created = await _insert_products(session, category_ids, image_base_url)
         zones_skipped = status.other_zones > 0
         zones_created = districts_assigned = 0
         if not zones_skipped:
@@ -376,6 +428,7 @@ async def import_demo_catalog(
             zones_created=zones_created,
             districts_assigned=districts_assigned,
             zones_skipped=zones_skipped,
+            image_base_url=image_base_url,
         )
         if apply and report.changed:
             record_audit(
@@ -567,6 +620,72 @@ async def remove_demo_catalog(
     return report
 
 
+# --- images ---------------------------------------------------------------------------------------
+
+
+def _no_image(column: SQLColumnExpression[str | None]) -> ColumnElement[bool]:
+    return or_(column.is_(None), func.btrim(column) == "")
+
+
+async def _backfill(
+    session: AsyncSession,
+    model: type[Category] | type[Product],
+    demo: ColumnElement[bool],
+    images: Mapping[str, str],
+    image_base_url: str,
+) -> tuple[int, int]:
+    kept = await _count(
+        session, model, demo, model.slug.in_(list(images)), not_(_no_image(model.image_url))
+    )
+    updated = 0
+    for slug, path in images.items():
+        result = await session.execute(
+            update(model)
+            .where(demo, model.slug == slug, _no_image(model.image_url))
+            .values(image_url=image_base_url + path)
+            .execution_options(synchronize_session=False)
+        )
+        updated += _rowcount(result)
+    return updated, kept
+
+
+async def set_demo_images(
+    session_factory: async_sessionmaker[AsyncSession], *, image_base_url: str, apply: bool
+) -> ImagesReport:
+    """Set the demo photo URLs on demo rows without an image, in one transaction; rolled back
+    unless ``apply``. Rows with an image URL and non-demo rows are never changed."""
+    async with session_factory() as session:
+        await _begin(session)
+        categories_updated, categories_kept = await _backfill(
+            session, Category, demo_category(), DEMO_CATEGORY_IMAGES, image_base_url
+        )
+        products_updated, products_kept = await _backfill(
+            session, Product, demo_product(), DEMO_PRODUCT_IMAGES, image_base_url
+        )
+        report = ImagesReport(
+            applied=apply,
+            image_base_url=image_base_url,
+            categories_updated=categories_updated,
+            products_updated=products_updated,
+            categories_kept=categories_kept,
+            products_kept=products_kept,
+        )
+        if apply and report.changed:
+            record_audit(
+                session,
+                AUDIT_ACTOR,
+                action="catalog.demo_images",
+                entity_type=AuditEntity.CATALOG,
+                entity_id="demo",
+                extra={"source": "demo", "updates": report.changed},
+            )
+        if apply:
+            await session.commit()
+        else:
+            await session.rollback()
+    return report
+
+
 # --- command line ---------------------------------------------------------------------------------
 
 
@@ -615,6 +734,7 @@ def build_parser() -> argparse.ArgumentParser:
     for name, phrase, summary in (
         ("import", IMPORT_PHRASE, "insert the demo catalog into an empty catalog"),
         ("remove", REMOVE_PHRASE, "delete or archive the demo rows only"),
+        ("images", IMAGES_PHRASE, "set the demo photos on demo rows that have no image yet"),
     ):
         command = commands.add_parser(name, help=summary)
         command.add_argument(
@@ -622,6 +742,16 @@ def build_parser() -> argparse.ArgumentParser:
             metavar="PHRASE",
             help=f'apply the change; must be exactly "{phrase}" (otherwise a dry run)',
         )
+        if name != "remove":
+            command.add_argument(
+                "--image-base-url",
+                metavar="URL",
+                help=(
+                    "public https origin of the storefront that serves /products and /categories "
+                    f"(default: {IMAGE_BASE_URL_ENV})"
+                    + ("; required" if name == "images" else "; without it images stay empty")
+                ),
+            )
     return parser
 
 
@@ -673,6 +803,12 @@ def _format_import(report: ImportReport) -> list[str]:
         "  note: demo zones are placeholders; replace them with the real delivery rules in the "
         "admin panel before taking real orders"
     )
+    if report.image_base_url is None:
+        lines.append(
+            "  image URLs: left empty (no --image-base-url); the images command can set them later"
+        )
+    else:
+        lines.append(f"  image URLs: demo photos on {report.image_base_url}")
     if not report.applied:
         lines.append(f'  to apply, re-run with --confirm "{IMPORT_PHRASE}"')
     return lines
@@ -701,6 +837,65 @@ def _format_remove(report: RemoveReport) -> list[str]:
     return lines
 
 
+def _format_images(report: ImagesReport) -> list[str]:
+    lines = [
+        f"demo images backfill ({_mode(report.applied)}):",
+        f"  photos on: {report.image_base_url}",
+        f"  categories updated: {report.categories_updated} "
+        f"(left unchanged, already have an image: {report.categories_kept})",
+        f"  products updated: {report.products_updated} "
+        f"(left unchanged, already have an image: {report.products_kept})",
+    ]
+    if report.changed == 0:
+        lines.append("  nothing to do: every demo row present already has an image")
+    if not report.applied:
+        lines.append(f'  to apply, re-run with --confirm "{IMAGES_PHRASE}"')
+    return lines
+
+
+@dataclass(frozen=True, slots=True)
+class Options:
+    command: str
+    apply: bool
+    image_base_url: str | None
+
+
+def _options(args: argparse.Namespace, environ: Mapping[str, str]) -> Options:
+    """Checks everything that needs no database; refusals raise ``DemoCatalogError``."""
+    command: str = args.command
+    confirm: str | None = getattr(args, "confirm", None)
+    phrase = PHRASES.get(command)
+    if confirm is not None and confirm != phrase:
+        raise DemoCatalogError(
+            f'refused: --confirm must be exactly "{phrase}"; nothing was changed'
+        )
+    argument: str | None = getattr(args, "image_base_url", None)
+    raw = argument if argument is not None else environ.get(IMAGE_BASE_URL_ENV, "")
+    try:
+        image_base_url = validate_image_base_url(raw) if raw.strip() else None
+    except InvalidImageBaseUrlError as exc:
+        raise DemoCatalogError(f"refused: {exc}; nothing was changed") from None
+    if command == "images" and image_base_url is None:
+        raise DemoCatalogError(
+            f"refused: images needs --image-base-url (or {IMAGE_BASE_URL_ENV}), the public https "
+            "origin of the storefront; nothing was changed"
+        )
+    return Options(command=command, apply=confirm == phrase, image_base_url=image_base_url)
+
+
+async def _execute(options: Options, factory: async_sessionmaker[AsyncSession]) -> list[str]:
+    apply, base = options.apply, options.image_base_url
+    if options.command == "status":
+        return _format_status(await demo_catalog_status(factory))
+    if options.command == "import":
+        return _format_import(await import_demo_catalog(factory, apply=apply, image_base_url=base))
+    if options.command == "images" and base is not None:
+        return _format_images(await set_demo_images(factory, image_base_url=base, apply=apply))
+    if options.command == "remove":
+        return _format_remove(await remove_demo_catalog(factory, apply=apply))
+    raise DemoCatalogError(f"unknown command {options.command!r}")
+
+
 EngineFactory = Callable[[str], AsyncEngine]
 
 
@@ -715,15 +910,8 @@ async def run(
     stdout = out or sys.stdout
     stderr = err or sys.stderr
     args = build_parser().parse_args(argv)
-    command: str = args.command
-    confirm: str | None = getattr(args, "confirm", None)
-    phrase = IMPORT_PHRASE if command == "import" else REMOVE_PHRASE
-    if confirm is not None and confirm != phrase:
-        stderr.write(f'refused: --confirm must be exactly "{phrase}"; nothing was changed\n')
-        return EXIT_USAGE
-    apply = confirm == phrase
-
     try:
+        options = _options(args, environ)
         url = demo_database_url(environ)
     except DemoCatalogError as exc:
         stderr.write(f"{exc}\n")
@@ -733,12 +921,7 @@ async def run(
     del url
     factory = async_sessionmaker(engine, expire_on_commit=False)
     try:
-        if command == "status":
-            lines = _format_status(await demo_catalog_status(factory))
-        elif command == "import":
-            lines = _format_import(await import_demo_catalog(factory, apply=apply))
-        else:
-            lines = _format_remove(await remove_demo_catalog(factory, apply=apply))
+        lines = await _execute(options, factory)
     except DemoCatalogError as exc:
         stderr.write(f"{exc}\n")
         return EXIT_REFUSED

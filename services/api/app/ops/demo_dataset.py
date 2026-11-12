@@ -4,8 +4,9 @@ Used by the local dev seed (``app.dev.seed``, every row) and by the operator-run
 import (``app.ops.demo_catalog``, every row that is not ``dev_only``). A realistic mock Tashkent
 grocery catalog in Uzbek (Latin, with U+2018 apostrophes) and Russian, plausible but made-up so'm
 prices, yet everything is synthetic: the markers are the ``DEMO-NNNN`` SKUs and ``demo-`` slugs,
-brand names are invented (``SYNTHETIC_BRANDS``, never a real trademark), there are no barcodes and
-no image URLs (the storefront renders a branded placeholder).
+brand names are invented (``SYNTHETIC_BRANDS``, never a real trademark) and there are no barcodes.
+Photos (real Unsplash/Pexels stock photos served by the storefront) are mapped by slug in
+``app.ops.demo_images``.
 
 ``dev_only`` rows exist to exercise edge cases in development and tests (an inactive category
 with an active child, a product hidden by its inactive category chain, an inactive zone); the
