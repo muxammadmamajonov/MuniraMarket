@@ -292,7 +292,8 @@ async def test_dry_run_writes_nothing_and_import_is_idempotent(
     assert first.categories_created == len(production_categories())
     assert first.products_created == len(production_products())
     after_first = await _snapshot(session_factory)
-    assert await _count(session_factory, Product, Product.image_url.is_not(None)) == 0
+    # Every product gets its stock photo, as a storefront path (no --image-base-url).
+    assert await _count(session_factory, Product, Product.image_url.is_(None)) == 0
     assert await _count(session_factory, Category, Category.parent_id.is_not(None)) >= 3
     # The dev-only fixtures stay out of production.
     assert await _category(session_factory, "demo-arxiv") is None

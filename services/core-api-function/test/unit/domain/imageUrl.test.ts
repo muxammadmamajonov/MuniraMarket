@@ -13,6 +13,9 @@ describe('validateImageUrl', () => {
     'https://123.example.com/a.png',
     'https://cdn.0xide.com/a.png',
     'HTTPS://CDN.Example.com/a.png',
+    '/products/banan.webp',
+    '/products/bolgar-qalampiri-400.webp',
+    '/categories/mevalar-sabzavotlar.webp',
   ])('accepts %s', (url) => {
     expect(validateImageUrl(url)).toBe(url);
   });
@@ -39,6 +42,11 @@ describe('validateImageUrl', () => {
     'https://cdn.example.123/a.png',
     `https://${'a'.repeat(2048)}.com/`,
     'https:///a.png',
+    '/products/banan.png',
+    '/products/../admin.webp',
+    '/products/banan.webp\n',
+    '/uploads/a.webp',
+    'products/banan.webp',
     'https://127.0.0.0x1/',
     'https://0x7f.0x0.0x0.0x1/',
     'https://1.2.3.0x4./',

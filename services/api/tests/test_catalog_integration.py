@@ -496,7 +496,11 @@ async def test_seed_is_idempotent_and_shows_the_expected_catalog(
     page = await products(api, page_size=48)
     # One inactive product and one product under an inactive category are hidden.
     assert page["total"] == len(DEMO_PRODUCTS) - 2
-    assert all(item["image_url"] is None for item in page["items"])
+    # Every visible demo product has its stock photo, as a storefront path (no base URL set).
+    assert all(
+        item["image_url"] == f"/products/{item['slug'].removeprefix('demo-')}.webp"
+        for item in page["items"]
+    )
     assert all(item["sku"].startswith("DEMO-") for item in page["items"])
     assert "demo-eski-mahsulot" not in slugs(page)
     assert "demo-arxiv-mahsulot" not in slugs(page)

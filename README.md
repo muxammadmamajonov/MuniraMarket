@@ -91,6 +91,14 @@ Without `--confirm` the command is a dry run that prints what it would create. I
 when the catalog already contains real (non-demo) categories or products. Running it again
 changes nothing. The tool never prints the database URL.
 
+- **Photos:** each demo product and category gets a free stock photo (Unsplash/Pexels, credited
+  in `apps/web/public/products/SOURCES.md` and `apps/web/public/categories/SOURCES.md`), stored as
+  a storefront path such as `/products/banan.webp` (the only relative image URL the API accepts).
+  Add `--image-base-url https://<storefront host>` for absolute URLs instead. For a catalog
+  imported before the photos existed,
+  `uv run python -m app.ops.demo_catalog images --confirm "SET DEMO IMAGES"` fills them in (dry
+  run without `--confirm`). It only sets `image_url` on demo rows that have none, so a photo
+  chosen in the admin panel is kept.
 - **Check:** `uv run python -m app.ops.demo_catalog status` counts demo and real rows.
 - **Remove:** `uv run python -m app.ops.demo_catalog remove --confirm "REMOVE DEMO CATALOG"` (dry
   run without `--confirm`). It changes demo rows only. Demo products that orders reference are

@@ -17,6 +17,7 @@ import { useMainButton } from '@/lib/telegram';
 import { useCooldown } from '@/lib/use-cooldown';
 import { EmptyPanel } from './empty-panel';
 import { BagIcon, TrashIcon } from './icons';
+import { PHOTO_SIZES } from '@/lib/photo';
 import { ProductImage } from './product-image';
 import { SignInPrompt } from './sign-in-prompt';
 import { FOCUS_RING, GROUP, LINK_BUTTON_PRIMARY, PRESS, ROWS } from './ui-classes';
@@ -270,6 +271,7 @@ function CartLineItem({ line, busy, onQuantity, onRemove }: CartLineItemProps) {
           src={product.image_url}
           name={name}
           toneKey={product.category_id}
+          sizes={PHOTO_SIZES.thumb}
           className={`w-[72px] rounded-2xl ${hasIssue ? 'opacity-50 grayscale' : ''}`}
         />
       </Link>

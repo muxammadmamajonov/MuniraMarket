@@ -89,7 +89,12 @@ describe('product form rules', () => {
     expect(slugFromSku('MILK_1.5L')).toBe('milk-1-5l');
     expect(slugFromSku(' --A  B-- ')).toBe('a-b');
     expect(slugFromSku('')).toBe('');
-    for (const ok of ['https://cdn.example.com/a.png', 'https://example.com:443/x?y=1']) {
+    for (const ok of [
+      'https://cdn.example.com/a.png',
+      'https://example.com:443/x?y=1',
+      '/products/banan.webp',
+      '/categories/mevalar-sabzavotlar.webp',
+    ]) {
       expect(isValidImageUrl(ok)).toBe(true);
     }
     for (const bad of [
@@ -104,6 +109,11 @@ describe('product form rules', () => {
       'https://пример.рф/a',
       'https://example/a',
       `https://example.com/${'a'.repeat(2048)}`,
+      '/products/banan.png',
+      '/products/../admin.webp',
+      '//evil.example/products/a.webp',
+      '/uploads/a.webp',
+      '/products/Banan.webp',
     ]) {
       expect(isValidImageUrl(bad)).toBe(false);
     }
