@@ -6,12 +6,12 @@ import { CatalogToolbar } from '@/components/catalog-toolbar';
 import { CategoryChips } from '@/components/category-chips';
 import { CategoryRail } from '@/components/category-rail';
 import { EmptyPanel } from '@/components/empty-panel';
-import { BasketIcon } from '@/components/icons';
+import { BasketIcon, ChevronRightIcon } from '@/components/icons';
 import { PageContainer } from '@/components/page-container';
 import { Pagination } from '@/components/pagination';
 import { ProductGrid } from '@/components/product-grid';
 import { SessionNotice } from '@/components/session-notice';
-import { LINK_BUTTON_PRIMARY } from '@/components/ui-classes';
+import { LINK_BUTTON_PRIMARY, PAGE_TITLE } from '@/components/ui-classes';
 import { getDictionary } from '@/i18n';
 import { ApiRequestError } from '@/lib/api/errors';
 import { fetchCategories, fetchProducts } from '@/lib/api/server';
@@ -49,12 +49,16 @@ export default async function CategoryPage({
     throw error;
   }
 
+  const parent = path.length > 1 ? path.at(-2) : undefined;
+  const chips =
+    category.children.length > 0 ? category.children : (parent?.children ?? []);
+
   const base = `/${locale}/c/${encodeURIComponent(slug)}`;
   const hrefFor = (nextPage: number) => listingHref(base, { sort, inStock, page: nextPage });
 
   return (
     <main className="flex-1">
-      <PageContainer className="flex flex-col gap-5 py-6">
+      <PageContainer className="flex flex-col gap-4 py-4">
         {/* Other top-level categories stay one tap away; the current branch is highlighted. */}
         <CategoryRail
           categories={tree}
@@ -62,27 +66,36 @@ export default async function CategoryPage({
           label={dict.home.categoriesHeading}
           activeSlug={path[0]?.slug}
         />
-        <nav aria-label={dict.catalog.categoryLabel}>
-          <ol className="flex flex-wrap items-center gap-1 text-sm text-muted-foreground">
-            {path.slice(0, -1).map((ancestor) => (
-              <li key={ancestor.id}>
-                <Link
-                  href={`/${locale}/c/${encodeURIComponent(ancestor.slug)}`}
-                  className="hover:underline"
-                >
-                  {localizedName(ancestor, locale)}
-                </Link>
-                <span aria-hidden="true"> / </span>
-              </li>
-            ))}
-          </ol>
-        </nav>
-        <h1 className="text-2xl font-bold tracking-tight">{localizedName(category, locale)}</h1>
+        <header className="flex flex-col gap-1">
+          {path.length > 1 ? (
+            <nav aria-label={dict.catalog.categoryLabel}>
+              <ol className="flex flex-wrap items-center gap-1 text-sm text-muted-foreground">
+                {path.slice(0, -1).map((ancestor) => (
+                  <li key={ancestor.id} className="flex items-center gap-1">
+                    <Link
+                      href={`/${locale}/c/${encodeURIComponent(ancestor.slug)}`}
+                      className="rounded-md font-medium hover:text-foreground focus-visible:outline-2 focus-visible:outline-focus"
+                    >
+                      {localizedName(ancestor, locale)}
+                    </Link>
+                    <ChevronRightIcon aria-hidden="true" width={14} height={14} />
+                  </li>
+                ))}
+              </ol>
+            </nav>
+          ) : null}
+          <h1 data-user-text className={PAGE_TITLE}>
+            {localizedName(category, locale)}
+          </h1>
+        </header>
 
+        {/* Sub-categories; on a leaf category, its siblings with the current one marked, so
+            "Fruit" and "Vegetables" stay one tap apart. */}
         <CategoryChips
-          categories={category.children}
+          categories={chips}
           locale={locale}
           label={dict.catalog.subcategories}
+          activeSlug={slug}
         />
 
         <CatalogToolbar total={products.total} sort={sort} inStock={inStock} basePath={base} />

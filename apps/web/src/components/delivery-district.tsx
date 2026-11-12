@@ -88,7 +88,7 @@ export function DeliveryDistrict({ zones }: DeliveryDistrictProps) {
         data-testid="delivery-district"
         data-state="pending"
         aria-hidden="true"
-        className="h-16 rounded-2xl bg-surface-muted"
+        className="h-16 rounded-3xl bg-surface"
       />
     );
   }
@@ -99,7 +99,7 @@ export function DeliveryDistrict({ zones }: DeliveryDistrictProps) {
         aria-label={t.heading}
         data-testid="delivery-district"
         data-state={zones === null ? 'unavailable' : 'no-zones'}
-        className="flex items-center gap-3 rounded-2xl bg-surface-muted p-2.5"
+        className="flex items-center gap-3 rounded-3xl bg-surface p-2.5"
       >
         <PinBadge />
         <p className="min-w-0 text-sm leading-5 text-muted-foreground">
@@ -131,7 +131,7 @@ export function DeliveryDistrict({ zones }: DeliveryDistrictProps) {
           type="button"
           aria-haspopup="dialog"
           onClick={() => setSheetOpen(true)}
-          className={`flex w-full items-center gap-3 rounded-2xl bg-surface-muted p-2.5 pr-3 text-left hover:bg-surface-muted/70 ${PRESS} ${FOCUS_RING}`}
+          className={`flex w-full items-center gap-3 rounded-3xl bg-surface p-2.5 pr-3 text-left hover:bg-surface/70 ${PRESS} ${FOCUS_RING}`}
         >
           <PinBadge />
           <span className="flex min-w-0 flex-1 flex-col gap-0.5">
@@ -157,7 +157,7 @@ export function DeliveryDistrict({ zones }: DeliveryDistrictProps) {
       data-testid="delivery-district"
       data-state="set"
       data-district={served.district.code}
-      className="flex items-center gap-3 rounded-2xl bg-surface-muted p-2.5"
+      className="flex items-center gap-3 rounded-3xl bg-surface p-2.5"
     >
       <PinBadge />
       <div className="flex min-w-0 flex-1 flex-col">
@@ -179,7 +179,7 @@ export function DeliveryDistrict({ zones }: DeliveryDistrictProps) {
         aria-haspopup="dialog"
         aria-label={`${t.change}: ${t.heading}, ${name}`}
         onClick={() => setSheetOpen(true)}
-        className={`${BUTTON} bg-background text-foreground hover:bg-background/70`}
+        className={`${BUTTON} bg-surface-muted text-foreground hover:bg-border`}
       >
         {t.change}
       </button>
@@ -268,7 +268,7 @@ function DistrictSheet({ open, onClose, zones, current, onChoose, onOpenMap }: D
           type="button"
           data-testid="open-map"
           onClick={onOpenMap}
-          className={`flex min-h-14 w-full items-center gap-3 rounded-xl border border-border bg-surface px-3 text-left hover:bg-surface-muted ${PRESS} ${FOCUS_RING}`}
+          className={`flex min-h-14 w-full items-center gap-3 rounded-2xl bg-surface-muted px-3 text-left hover:bg-border ${PRESS} ${FOCUS_RING}`}
         >
           <span
             aria-hidden="true"

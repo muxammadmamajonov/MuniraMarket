@@ -6,6 +6,7 @@ import { EmptyPanel } from '@/components/empty-panel';
 import { BasketIcon } from '@/components/icons';
 import { PageContainer } from '@/components/page-container';
 import { SearchForm } from '@/components/search-form';
+import { PAGE_TITLE } from '@/components/ui-classes';
 import { getDictionary } from '@/i18n';
 import { formatMessage } from '@/i18n/format';
 import { fetchCategories } from '@/lib/api/server';
@@ -22,7 +23,7 @@ export default async function CatalogPage({ params }: PageProps<'/[locale]/catal
     <main className="flex-1">
       <PageContainer className="flex flex-col gap-4 py-4">
         <div className="flex flex-col gap-0.5">
-          <h1 className="text-2xl font-bold tracking-tight">{t.title}</h1>
+          <h1 className={PAGE_TITLE}>{t.title}</h1>
           {categories.length > 0 ? (
             <p className="text-sm text-muted-foreground">
               {formatMessage(t.count, { count: categories.length })}
