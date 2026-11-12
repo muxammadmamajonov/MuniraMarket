@@ -9,6 +9,10 @@ import { expect, test, type Page } from '@playwright/test';
  *   fallback and nothing is requested from Yandex. The keyed map flow (stub SDK) is in
  *   `delivery-map.spec.ts`. CI never talks to Yandex at all.
  * - Telegram fullscreen and landscape safe areas, through a stubbed `Telegram.WebApp`.
+ * - The header slot: the logo at home, the page title everywhere else (cut to fit between
+ *   Telegram's Close and "…" at 320px); no in-app back control anywhere, only Telegram's native
+ *   BackButton (hidden on the tab roots, history first, then the logical parent on a deep link).
+ * - No pinch or double-tap zoom, native vertical overscroll.
  * - 320px, 390px, desktop, dark mode, long Uzbek/Russian labels, a huge cart count, a long
  *   profile name, offline and a keyboard-sized viewport: never a sideways scroll.
  *
@@ -53,6 +57,26 @@ async function trackYandex(page: Page): Promise<string[]> {
     return route.abort();
   });
   return seen;
+}
+
+/**
+ * Waits until the streamed page has replaced the `loading.tsx` shell (React reveals it a moment
+ * after the HTML arrives); until then the DOM briefly holds two headers.
+ */
+async function pageSettled(page: Page): Promise<void> {
+  await expect(page.locator('main[aria-busy="true"]')).toHaveCount(0);
+}
+
+/*
+ * Visible elements only: until React cleans up, a streamed segment can linger as a copy inside a
+ * `<div hidden id="S:n">`, never shown but still in the DOM.
+ */
+function headerTitle(page: Page) {
+  return page.getByTestId('header-title').filter({ visible: true });
+}
+
+function headerLogo(page: Page) {
+  return page.getByTestId('header-logo').filter({ visible: true });
 }
 
 async function expectNoHorizontalScroll(page: Page): Promise<void> {
@@ -141,9 +165,20 @@ test.describe('bottom navigation', () => {
     await expectNoHorizontalScroll(page);
     await shot(page, 'p9-uz-390-home');
 
+    // Home: the logo in the header slot and no title.
+    await pageSettled(page);
+    await expect(headerLogo(page)).toBeVisible();
+    await expect(headerTitle(page)).toHaveCount(0);
+
     await bar.getByRole('link', { name: 'Katalog' }).click();
     await expect(page).toHaveURL(/\/uz\/catalog$/);
+    await pageSettled(page);
+    // The title replaces the logo and is the page's only h1; no "9 ta kategoriya" under it.
+    await expect(headerTitle(page)).toHaveText('Katalog');
+    await expect(page.getByRole('heading', { level: 1 })).toHaveCount(1);
     await expect(page.getByRole('heading', { level: 1, name: 'Katalog' })).toBeVisible();
+    await expect(headerLogo(page)).toHaveCount(0);
+    await expect(page.getByText(/ta kategoriya/)).toHaveCount(0);
     const categories = page.getByTestId('catalog-category');
     await expect(categories.first()).toBeVisible();
     await expect(bar.getByRole('link', { name: 'Katalog' })).toHaveAttribute(
@@ -194,10 +229,13 @@ test.describe('bottom navigation', () => {
     await expect(tabBar(page)).toBeHidden();
     const header = page.getByRole('navigation', { name: 'Asosiy menyu' });
     await expect(header.getByRole('link', { name: 'Buyurtmalarim' })).toBeVisible();
-    await expect(page.getByTestId('header-cart')).toBeVisible();
+    await expect(page.getByTestId('header-cart').filter({ visible: true })).toBeVisible();
     await expectNoHorizontalScroll(page);
     await shot(page, 'p9-desktop-home');
     await page.goto('/uz/catalog');
+    // No tab bar on wide screens: inner pages keep a small mark linking home next to the title.
+    await expect(headerTitle(page)).toHaveText('Katalog');
+    await expect(page.getByTestId('header-home').filter({ visible: true })).toBeVisible();
     await expectNoHorizontalScroll(page);
     await shot(page, 'p9-desktop-catalog');
   });
@@ -375,6 +413,20 @@ async function telegramFullscreen(
         const button = { onClick: noop, offClick: noop, show: noop, hide: noop, enable: noop,
           disable: noop, showProgress: noop, hideProgress: noop, setText: noop,
           isVisible: false, isActive: true, text: '' };
+        // The native BackButton, observable from the test: visibility, listeners, a press.
+        const backHandlers = new Set();
+        const backButton = {
+          isVisible: false,
+          show() { backButton.isVisible = true; },
+          hide() { backButton.isVisible = false; },
+          onClick(handler) { backHandlers.add(handler); },
+          offClick(handler) { backHandlers.delete(handler); },
+        };
+        window.__mmBackButton = {
+          visible: () => backButton.isVisible,
+          listeners: () => backHandlers.size,
+          press: () => { for (const handler of [...backHandlers]) handler(); },
+        };
         window.__mmFullscreenRequests = 0;
         window.Telegram = { WebApp: {
           initData: 'query_id=E2E&auth_date=1&hash=placeholder',
@@ -386,7 +438,7 @@ async function telegramFullscreen(
           isFullscreen: true,
           requestFullscreen: () => { window.__mmFullscreenRequests += 1; },
           exitFullscreen: noop,
-          BackButton: button, MainButton: { ...button },
+          BackButton: backButton, MainButton: { ...button },
         } };
       })();`,
     }),
@@ -409,7 +461,7 @@ test.describe('Telegram fullscreen safe areas', () => {
       .toBe('47px');
     // The logo fills Telegram's own Close / "…" row (47..93), centred between the buttons, and
     // the page (delivery address first) starts below that row, never under the buttons.
-    const logo = await page.getByTestId('header-logo').boundingBox();
+    const logo = await headerLogo(page).boundingBox();
     expect(logo).not.toBeNull();
     if (logo !== null) {
       expect(logo.y).toBeGreaterThanOrEqual(47);
@@ -462,5 +514,212 @@ test.describe('Telegram fullscreen safe areas', () => {
       .toBe('59px');
     await expectNoHorizontalScroll(page);
     await shot(page, 'p9-telegram-fullscreen-landscape');
+  });
+});
+
+interface BackButtonProbe {
+  visible: () => boolean;
+  listeners: () => number;
+  press: () => void;
+}
+
+function backButtonVisible(page: Page): Promise<boolean> {
+  return page.evaluate(() =>
+    (window as unknown as { __mmBackButton: BackButtonProbe }).__mmBackButton.visible(),
+  );
+}
+
+async function pressBackButton(page: Page): Promise<void> {
+  await page.evaluate(() => {
+    (window as unknown as { __mmBackButton: BackButtonProbe }).__mmBackButton.press();
+  });
+}
+
+/** Any in-page back control, in either language. */
+async function expectNoInAppBack(page: Page): Promise<void> {
+  const back = /orqaga|qaytish|barcha buyurtmalar|назад|вернуться|все заказы/i;
+  await expect(page.getByRole('link', { name: back })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: back })).toHaveCount(0);
+}
+
+const PORTRAIT_320 = {
+  safe: { top: 47, bottom: 34, left: 0, right: 0 },
+  content: { top: 46, bottom: 0, left: 0, right: 0 },
+};
+
+/** Telegram's own Close and "…" buttons take about this much on each side of their row. */
+const TELEGRAM_CONTROLS = 104;
+
+test.describe('Telegram fullscreen: page titles and the native BackButton', () => {
+  test('320px: logo at home, the title elsewhere, never under Close or "…"', async ({ page }) => {
+    await telegramFullscreen(page, PORTRAIT_320);
+    await page.setViewportSize({ width: 320, height: 640 });
+    await page.goto('/uz');
+    await pageSettled(page);
+    await expect(headerLogo(page)).toBeVisible();
+    await expect(headerTitle(page)).toHaveCount(0);
+    await expect.poll(() => backButtonVisible(page)).toBe(false);
+
+    for (const [path, title] of [
+      ['/uz/catalog', 'Katalog'],
+      ['/uz/cart', 'Savat'],
+      ['/uz/profile', 'Profil'],
+      ['/uz/search?q=olma', 'Qidiruv'],
+      ['/uz/orders', 'Buyurtmalar'],
+      ['/ru/catalog', 'Каталог'],
+      ['/ru/checkout', 'Оформление'],
+    ] as const) {
+      await page.goto(path);
+      await pageSettled(page);
+      const heading = headerTitle(page);
+      await expect(heading, path).toHaveText(title);
+      await expect(headerLogo(page)).toHaveCount(0);
+      await expect(page.getByRole('heading', { level: 1 })).toHaveCount(1);
+      const box = await heading.boundingBox();
+      expect(box, path).not.toBeNull();
+      if (box !== null) {
+        // Inside Telegram's row (47..93) and clear of its buttons on both sides.
+        expect(box.y, path).toBeGreaterThanOrEqual(47);
+        expect(box.y + box.height, path).toBeLessThanOrEqual(93);
+        expect(box.x, path).toBeGreaterThanOrEqual(TELEGRAM_CONTROLS);
+        expect(box.x + box.width, path).toBeLessThanOrEqual(320 - TELEGRAM_CONTROLS);
+      }
+      await expectNoInAppBack(page);
+      await expectNoHorizontalScroll(page);
+    }
+    await page.goto('/uz/catalog');
+    await pageSettled(page);
+    await shot(page, 'shell-320-catalog-title');
+  });
+
+  test('a long product name is cut with an ellipsis inside the slot', async ({ page }) => {
+    await telegramFullscreen(page, PORTRAIT_320);
+    await page.setViewportSize({ width: 320, height: 640 });
+    const name = 'Qaymoqli shokoladli muzqaymoq, vanilli, katta oilaviy qadoq 1 kg';
+    // The page fetches server-side, so the long name is set on the rendered page itself.
+    await page.goto('/uz/p/demo-banan');
+    await pageSettled(page);
+    const heading = headerTitle(page);
+    await heading.evaluate((element, text) => {
+      element.textContent = text;
+    }, name);
+    const fit = await heading.evaluate((element) => ({
+      overflow: getComputedStyle(element).textOverflow,
+      clipped: element.scrollWidth > element.clientWidth,
+      right: element.getBoundingClientRect().right,
+      left: element.getBoundingClientRect().left,
+    }));
+    expect(fit.overflow).toBe('ellipsis');
+    expect(fit.clipped).toBe(true);
+    expect(fit.left).toBeGreaterThanOrEqual(TELEGRAM_CONTROLS);
+    expect(fit.right).toBeLessThanOrEqual(320 - TELEGRAM_CONTROLS);
+    await expectNoHorizontalScroll(page);
+    await shot(page, 'shell-320-long-title');
+  });
+
+  test('BackButton: hidden on the tab roots, shown below them, back in history', async ({
+    page,
+  }) => {
+    await telegramFullscreen(page, PORTRAIT_320);
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto('/uz');
+    await pageSettled(page);
+    await expect.poll(() => backButtonVisible(page)).toBe(false);
+
+    const bar = tabBar(page);
+    await bar.getByRole('link', { name: 'Katalog' }).click();
+    await expect(page).toHaveURL(/\/uz\/catalog$/);
+    await expect.poll(() => backButtonVisible(page)).toBe(false);
+
+    await page.getByTestId('catalog-category').first().click();
+    await expect(page).toHaveURL(/\/uz\/c\//);
+    await pageSettled(page);
+    await expect.poll(() => backButtonVisible(page)).toBe(true);
+    await expectNoInAppBack(page);
+    // The category name is the title; no breadcrumb or second heading in the page.
+    await expect(page.getByRole('heading', { level: 1 })).toHaveCount(1);
+
+    await pressBackButton(page);
+    await expect(page).toHaveURL(/\/uz\/catalog$/);
+    await expect.poll(() => backButtonVisible(page)).toBe(false);
+    // One listener at a time, removed when the button hides.
+    expect(
+      await page.evaluate(() =>
+        (window as unknown as { __mmBackButton: BackButtonProbe }).__mmBackButton.listeners(),
+      ),
+    ).toBe(0);
+
+    for (const tab of ['Savat', 'Profil', 'Bosh sahifa']) {
+      await bar.getByRole('link', { name: tab }).click();
+      await expect.poll(() => backButtonVisible(page), tab).toBe(false);
+    }
+  });
+
+  test('BackButton on a deep link: climbs to the logical parent, product -> category -> catalog', async ({
+    context,
+  }) => {
+    // A fresh tab: the Mini App opened straight on a product, nothing to go back to.
+    const page = await context.newPage();
+    await telegramFullscreen(page, PORTRAIT_320);
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto('/uz/p/demo-banan');
+    await pageSettled(page);
+    await expect(headerTitle(page)).toHaveText('Banan');
+    await expect.poll(() => backButtonVisible(page)).toBe(true);
+    await expectNoInAppBack(page);
+
+    await pressBackButton(page);
+    await expect(page).toHaveURL(/\/uz\/c\/demo-mevalar$/);
+    await pageSettled(page);
+    await expect(headerTitle(page)).not.toBeEmpty();
+    await expect.poll(() => backButtonVisible(page)).toBe(true);
+
+    await pressBackButton(page);
+    await expect(page).toHaveURL(/\/uz\/c\/demo-mevalar-sabzavotlar$/);
+
+    await pressBackButton(page);
+    await expect(page).toHaveURL(/\/uz\/catalog$/);
+    await expect.poll(() => backButtonVisible(page)).toBe(false);
+  });
+});
+
+test.describe('zoom and scrolling', () => {
+  test.beforeEach(async ({ page }) => browseAnonymously(page));
+
+  test('no pinch or double-tap zoom; vertical overscroll left native', async ({ page }) => {
+    await page.goto('/uz/catalog');
+    await pageSettled(page);
+    const viewport = await page.locator('meta[name="viewport"]').getAttribute('content');
+    expect(viewport).toContain('maximum-scale=1');
+    expect(viewport).toContain('user-scalable=no');
+    const root = await page.evaluate(() => {
+      const style = getComputedStyle(document.documentElement);
+      return {
+        touchAction: style.touchAction,
+        overscrollY: style.overscrollBehaviorY,
+        overscrollX: style.overscrollBehaviorX,
+      };
+    });
+    expect(root.touchAction).toBe('pan-x pan-y');
+    expect(root.overscrollY).toBe('auto');
+    expect(root.overscrollX).toBe('none');
+    // The sticky header is solid: no backdrop blur re-composited on every scroll frame.
+    expect(
+      await page
+        .locator('header')
+        .first()
+        .evaluate((element) => getComputedStyle(element).backdropFilter),
+    ).toBe('none');
+    // WebKit's pinch gesture is cancelled.
+    expect(
+      await page.evaluate(() => {
+        const event = new Event('gesturestart', { cancelable: true, bubbles: true });
+        document.body.dispatchEvent(event);
+        return event.defaultPrevented;
+      }),
+    ).toBe(true);
+    // The catalog is a normal document scroll (no nested scroller to get stuck in).
+    await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+    await expect.poll(() => page.evaluate(() => window.scrollY)).toBeGreaterThan(0);
   });
 });

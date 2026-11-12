@@ -192,7 +192,6 @@ export const ru: Dictionary = {
       hint: 'Прошлая попытка всё-таки дошла: заказ № {number} оформлен, поэтому корзина пуста.',
       action: 'Открыть заказ',
     },
-    backToCart: 'Вернуться в корзину',
     optional: 'необязательно',
     sections: {
       delivery: 'Адрес доставки',
@@ -341,7 +340,6 @@ export const ru: Dictionary = {
       card_on_delivery: 'Картой при получении',
     },
     detail: {
-      back: 'Все заказы',
       loadingLabel: 'Загружаем заказ…',
       placedTitle: 'Ваш заказ принят!',
       placedHint: 'Следить за статусом можно на этой странице.',
@@ -522,9 +520,21 @@ export const ru: Dictionary = {
   },
   catalogPage: {
     title: 'Каталог',
-    count: 'Категорий: {count}',
     emptyTitle: 'Каталог пока пуст',
     emptyHint: 'Товары скоро появятся. Загляните позже.',
+  },
+  pageTitles: {
+    catalog: 'Каталог',
+    search: 'Поиск',
+    cart: 'Корзина',
+    checkout: 'Оформление',
+    orders: 'Заказы',
+    order: 'Заказ',
+    profile: 'Профиль',
+    help: 'Помощь',
+    signIn: 'Вход',
+    notFound: 'Не найдено',
+    error: 'Ошибка',
   },
   language: {
     label: 'Язык',

@@ -193,7 +193,6 @@ export const uz: Dictionary = {
       hint: 'Oldingi urinish yetib borgan ekan: № {number} buyurtma rasmiylashtirildi, shuning uchun savat bo‘sh.',
       action: 'Buyurtmani ochish',
     },
-    backToCart: 'Savatga qaytish',
     optional: 'ixtiyoriy',
     sections: {
       delivery: 'Yetkazib berish manzili',
@@ -345,7 +344,6 @@ export const uz: Dictionary = {
       card_on_delivery: 'Yetkazilganda karta orqali',
     },
     detail: {
-      back: 'Barcha buyurtmalar',
       loadingLabel: 'Buyurtma yuklanmoqda…',
       placedTitle: 'Buyurtmangiz qabul qilindi!',
       placedHint: 'Holatini shu sahifada kuzatib borishingiz mumkin.',
@@ -525,9 +523,21 @@ export const uz: Dictionary = {
   },
   catalogPage: {
     title: 'Katalog',
-    count: '{count} ta kategoriya',
     emptyTitle: 'Katalog hozircha bo‘sh',
     emptyHint: 'Mahsulotlar tez orada qo‘shiladi. Keyinroq qaytib ko‘ring.',
+  },
+  pageTitles: {
+    catalog: 'Katalog',
+    search: 'Qidiruv',
+    cart: 'Savat',
+    checkout: 'Buyurtma',
+    orders: 'Buyurtmalar',
+    order: 'Buyurtma',
+    profile: 'Profil',
+    help: 'Yordam',
+    signIn: 'Kirish',
+    notFound: 'Topilmadi',
+    error: 'Xatolik',
   },
   language: {
     label: 'Til',

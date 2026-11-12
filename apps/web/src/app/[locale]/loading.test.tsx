@@ -1,10 +1,16 @@
 import { render, screen } from '@testing-library/react';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import Loading from './loading';
+
+// The header (title from the URL) is covered by `route-header.test.tsx`.
+vi.mock('@/components/route-header', () => ({
+  RouteHeader: () => <header data-testid="route-header" />,
+}));
 
 describe('loading skeleton', () => {
   it('mirrors the storefront: a two-column grid of card-shaped placeholders, hidden from assistive tech', () => {
     const { container } = render(<Loading />);
+    expect(screen.getByTestId('route-header')).toBeInTheDocument();
     expect(screen.getByRole('main')).toHaveAttribute('aria-busy', 'true');
     const tiles = screen.getAllByTestId('tile-skeleton');
     expect(tiles.length).toBeGreaterThanOrEqual(8);
