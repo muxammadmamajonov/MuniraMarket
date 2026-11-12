@@ -11,7 +11,7 @@ import { buildSignedInitData, type FakeTelegramUser } from './telegram-init-data
  *   it and there is no switch in the header;
  * - the phone is shared from the Mini App profile (`requestContact`), arrives through the bot,
  *   and the profile shows the masked verified number; checkout asks for it before ordering;
- * - Telegram fullscreen is requested once after a tap on phones and degrades when refused;
+ * - Telegram fullscreen is requested at launch on phones and degrades when refused;
  * - the branded sign-in screen in a plain browser; 320px / 390px / desktop / dark layouts.
  *
  * Uses one fresh Telegram id per run so first-start state is real. 3 Mini App logins.
@@ -113,23 +113,20 @@ test.describe.serial('profile, language and phone', () => {
   });
 });
 
-test('fullscreen is requested once after the first tap on phones', async ({ page }) => {
+test('fullscreen is requested once when the Mini App opens on phones', async ({ page }) => {
   const who = { ...PHONE_USER, id: PHONE_USER.id + 1, username: `e2e_fs_${RUN}` };
   await openMiniApp(page, who, { platform: 'android', fullscreen: 'ok' });
   await page.goto('/uz');
   await expect(page.getByRole('banner')).toBeVisible();
-  expect(await fullscreenRequests(page)).toBe(0);
-
-  await tap(page);
   await expect.poll(() => fullscreenRequests(page)).toBe(1);
   await expect(page.locator('html')).toHaveAttribute('data-tg-fullscreen', '');
-  // The logo sits below Telegram's controls, centred in the content safe area.
+  // Telegram owns its native Close / title / menu row. The web wordmark is deliberately hidden
+  // in fullscreen instead of rendering a second header below those controls.
   const header = page.getByRole('banner');
-  const box = await header.getByRole('link').first().boundingBox();
-  const width = page.viewportSize()?.width ?? 0;
-  expect(box).not.toBeNull();
-  expect(box!.y).toBeGreaterThanOrEqual(46 + 47 - 1);
-  expect(Math.abs(box!.x + box!.width / 2 - width / 2)).toBeLessThan(24);
+  await expect(header.getByRole('link')).toHaveCount(0);
+  await expect
+    .poll(() => header.evaluate((element) => getComputedStyle(element).paddingTop))
+    .toBe('47px');
 
   await tap(page);
   expect(await fullscreenRequests(page)).toBe(1);
@@ -140,7 +137,6 @@ test('a refused fullscreen leaves the app usable; desktop clients never ask', as
   const who = { ...PHONE_USER, id: PHONE_USER.id + 1, username: `e2e_fs_${RUN}` };
   await openMiniApp(page, who, { platform: 'android', fullscreen: 'fail' });
   await page.goto('/uz');
-  await tap(page);
   await expect.poll(() => fullscreenRequests(page)).toBe(1);
   await expect(page.locator('html')).not.toHaveAttribute('data-tg-fullscreen', '');
   await expect(page.getByRole('navigation', { name: 'Bo‘limlar' })).toBeVisible();
@@ -148,7 +144,6 @@ test('a refused fullscreen leaves the app usable; desktop clients never ask', as
   await page.unrouteAll({ behavior: 'ignoreErrors' });
   await openMiniApp(page, who, { platform: 'tdesktop', fullscreen: 'ok' });
   await page.goto('/uz/profile');
-  await tap(page);
   expect(await fullscreenRequests(page)).toBe(0);
 });
 

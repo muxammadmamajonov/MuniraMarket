@@ -7,7 +7,12 @@ import {
   DISTRICT_STORAGE_ITEM,
   resetDistrictPreferenceMemory,
 } from '@/lib/delivery/district-preference';
-import { autoloadYandexScript, makeYMaps, toponym } from '@/lib/maps/test-helpers';
+import {
+  autoloadYandexScript,
+  makeYMaps,
+  mockGeocoderFetch,
+  toponym,
+} from '@/lib/maps/test-helpers';
 import { MapsConfigProvider } from '@/lib/maps/use-yandex-maps';
 import { resetYandexMapsLoader } from '@/lib/maps/yandex-loader';
 import { TelegramProvider } from '@/lib/telegram';
@@ -177,8 +182,9 @@ describe('DeliveryDistrict: map step', () => {
     window.localStorage.setItem(DISTRICT_STORAGE_ITEM, 'yunusobod');
     const fake = makeYMaps();
     fake.search.mockResolvedValue([toponym('Chilonzor tumani', 'Toshkent, O‘zbekiston')]);
+    mockGeocoderFetch(fake);
     autoloadYandexScript('load', fake.api);
-    const fetchSpy = vi.spyOn(globalThis, 'fetch');
+    const fetchSpy = vi.mocked(globalThis.fetch);
     const logs = [
       vi.spyOn(console, 'log'),
       vi.spyOn(console, 'info'),
@@ -212,7 +218,8 @@ describe('DeliveryDistrict: map step', () => {
     expect(window.sessionStorage).toHaveLength(0);
     expect(document.cookie).not.toMatch(/69\.|41\./);
     expect(window.location.href).toBe(href);
-    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(fetchSpy).toHaveBeenCalledOnce();
+    expect(String(fetchSpy.mock.calls[0]?.[0])).toMatch(/^https:\/\/geocode-maps\.yandex\.ru\//);
     expect(beacon).not.toHaveBeenCalled();
     for (const log of logs) expect(log).not.toHaveBeenCalled();
     Reflect.deleteProperty(navigator, 'sendBeacon');
@@ -222,6 +229,7 @@ describe('DeliveryDistrict: map step', () => {
     window.localStorage.setItem(DISTRICT_STORAGE_ITEM, 'yunusobod');
     const fake = makeYMaps();
     fake.search.mockRejectedValue(new Error('403'));
+    mockGeocoderFetch(fake);
     autoloadYandexScript('load', fake.api);
     renderChooser(ZONES, 'uz', KEY);
     openMapFromSheet();
@@ -235,7 +243,7 @@ describe('DeliveryDistrict: map step', () => {
     expect(window.localStorage.getItem(DISTRICT_STORAGE_ITEM)).toBe('yunusobod');
   });
 
-  it('in Telegram, asks for fullscreen only when the map is opened, and leaves it after', async () => {
+  it('does not change the app-wide fullscreen state when the map opens or closes', async () => {
     const webApp = makeWebApp({
       isVersionAtLeast: vi.fn(() => true),
       requestFullscreen: vi.fn(),
@@ -245,19 +253,14 @@ describe('DeliveryDistrict: map step', () => {
     installWebApp(webApp);
     renderChooser();
     expect(webApp.requestFullscreen).not.toHaveBeenCalled();
-
     fireEvent.click(screen.getByRole('button', { name: 'Yetkazib berish manzilini tanlang' }));
-    expect(webApp.requestFullscreen).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole('button', { name: 'Xaritada belgilash' }));
-    expect(webApp.requestFullscreen).toHaveBeenCalledTimes(1);
-
-    // The client switched (Telegram reports it); closing the map leaves fullscreen again.
-    Object.defineProperty(webApp, 'isFullscreen', { value: true, configurable: true });
+    expect(webApp.requestFullscreen).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole('button', { name: 'Orqaga' }));
-    expect(webApp.exitFullscreen).toHaveBeenCalledTimes(1);
+    expect(webApp.exitFullscreen).not.toHaveBeenCalled();
   });
 
-  it('in Telegram, a refused fullscreen changes nothing and is not "undone"', () => {
+  it('in Telegram, map navigation never tries to leave fullscreen', () => {
     const webApp = makeWebApp({
       isVersionAtLeast: vi.fn(() => true),
       requestFullscreen: vi.fn(),
@@ -267,7 +270,6 @@ describe('DeliveryDistrict: map step', () => {
     installWebApp(webApp);
     renderChooser();
     openMapFromSheet();
-    // `fullscreenFailed`: isFullscreen stays false.
     fireEvent.click(screen.getByRole('button', { name: 'Orqaga' }));
     expect(webApp.exitFullscreen).not.toHaveBeenCalled();
   });

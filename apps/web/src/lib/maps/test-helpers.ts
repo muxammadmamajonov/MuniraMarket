@@ -117,6 +117,36 @@ export function makeYMaps({ withoutSearch = false }: MakeYMapsOptions = {}): Fak
 }
 
 /**
+ * Makes the Geocoder HTTP boundary deterministic while reusing existing map fixtures. `search`
+ * remains a test-only response factory; production code never calls the JavaScript Search API.
+ */
+export function mockGeocoderFetch(fake: FakeYMaps): ReturnType<typeof vi.spyOn> {
+  return vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+    const url = new URL(String(input));
+    const features = await fake.search({
+      text: url.searchParams.get('geocode') ?? '',
+      type: ['toponyms'],
+      limit: 10,
+    });
+    return new Response(
+      JSON.stringify({
+        response: {
+          GeoObjectCollection: {
+            featureMember: features.map((feature) => ({
+              GeoObject: {
+                name: feature.properties.name,
+                description: feature.properties.description,
+              },
+            })),
+          },
+        },
+      }),
+      { status: 200 },
+    );
+  });
+}
+
+/**
  * Intercepts the loader's `<script>` and settles it: `load` (with `api` installed as
  * `window.ymaps3`), `error`, or `hang` (never settles, for timeouts). Returns the spy.
  */

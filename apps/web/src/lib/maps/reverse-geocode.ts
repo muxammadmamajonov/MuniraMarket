@@ -1,9 +1,12 @@
 import { matchPlace, type PlaceMatch } from '@/lib/delivery/district-match';
-import type { LngLat, YMaps3 } from './yandex-types';
+import { YANDEX_MAPS_GEOCODER_ORIGIN } from './config';
+import type { LngLat } from './yandex-types';
 
 /**
- * Reverse geocoding of one confirmed point with the Yandex Maps JS API v3 geosearch
- * (`ymaps3.search`, toponyms only), reduced to a Tashkent district (see `district-match.ts`).
+ * Reverse geocoding of one confirmed point with Yandex's Geocoder HTTP API, reduced to a
+ * Tashkent district (see `district-match.ts`). The Maps JS API's `search` function needs a
+ * **Search API** key, which is a different product; this deliberately uses our dedicated
+ * Geocoder key instead.
  *
  * Returns `null` whenever the lookup itself is unavailable: no `search` in this SDK, a key
  * without the Search API (403), quota exhausted, offline, a CSP block or a timeout. The caller
@@ -21,35 +24,66 @@ function coordinate(value: number): string {
 }
 
 export async function reverseGeocodeDistrict(
-  api: YMaps3,
   point: LngLat,
   { apiKey, timeoutMs = REVERSE_GEOCODE_TIMEOUT_MS }: { apiKey: string; timeoutMs?: number },
 ): Promise<PlaceMatch | null> {
-  const search = api.search;
-  if (typeof search !== 'function') return null;
   if (typeof navigator !== 'undefined' && navigator.onLine === false) return null;
 
+  const url = new URL('/v1', YANDEX_MAPS_GEOCODER_ORIGIN);
+  url.searchParams.set('apikey', apiKey);
+  url.searchParams.set('geocode', `${coordinate(point[0])},${coordinate(point[1])}`);
+  url.searchParams.set('sco', 'longlat');
+  url.searchParams.set('kind', 'district');
+  // Uzbek is not a Geocoder API locale. The app remains Uzbek; Russian gives the most reliable
+  // canonical district names, which `district-match.ts` understands.
+  url.searchParams.set('lang', 'ru_RU');
+  url.searchParams.set('format', 'json');
+
+  const controller = new AbortController();
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {
-    // The v3 reference requires a Search API key to be set before `search`; we use the one key
-    // we have. If Yandex does not enable geosearch for it, the request fails and we fall back.
-    api.getDefaultConfig?.().setApikeys({ search: apiKey });
-    const timeout = new Promise<never>((_, reject) => {
-      timer = setTimeout(() => reject(new Error('timeout')), timeoutMs);
-    });
-    const features = await Promise.race([
-      search({
-        text: `${coordinate(point[0])},${coordinate(point[1])}`,
-        type: ['toponyms'],
-        limit: 10,
-      }),
-      timeout,
-    ]);
-    if (!Array.isArray(features)) return null;
-    return matchPlace(features);
+    timer = setTimeout(() => controller.abort(), timeoutMs);
+    const response = await fetch(url, { signal: controller.signal });
+    if (!response.ok) return null;
+    const body: unknown = await response.json();
+    const members = isFeatureMembers(body);
+    if (members === null) return null;
+    return matchPlace(
+      members.map((member) => ({
+        properties: {
+          name: member.GeoObject.name,
+          description: member.GeoObject.description,
+        },
+      })),
+    );
   } catch {
     return null;
   } finally {
     clearTimeout(timer);
   }
+}
+
+interface GeocoderMember {
+  GeoObject: { name: string; description: string };
+}
+
+function isFeatureMembers(value: unknown): GeocoderMember[] | null {
+  if (typeof value !== 'object' || value === null) return null;
+  const response = (value as { response?: unknown }).response;
+  if (typeof response !== 'object' || response === null) return null;
+  const collection = (response as { GeoObjectCollection?: unknown }).GeoObjectCollection;
+  if (typeof collection !== 'object' || collection === null) return null;
+  const members = (collection as { featureMember?: unknown }).featureMember;
+  if (!Array.isArray(members)) return null;
+  const parsed: GeocoderMember[] = [];
+  for (const member of members) {
+    if (typeof member !== 'object' || member === null) continue;
+    const object = (member as { GeoObject?: unknown }).GeoObject;
+    if (typeof object !== 'object' || object === null) continue;
+    const { name, description } = object as { name?: unknown; description?: unknown };
+    if (typeof name === 'string' && typeof description === 'string') {
+      parsed.push({ GeoObject: { name, description } });
+    }
+  }
+  return parsed;
 }

@@ -106,6 +106,24 @@ export interface TelegramHapticFeedback {
   selectionChanged(): void;
 }
 
+/** Bot API 8.0+ device location, returned only after the customer explicitly asks for it. */
+export interface TelegramLocationData {
+  latitude: number;
+  longitude: number;
+  horizontal_accuracy: number | null;
+}
+
+/** Telegram's native location permission flow; preferable to browser geolocation in its WebView. */
+export interface TelegramLocationManager {
+  readonly isInited: boolean;
+  readonly isLocationAvailable: boolean;
+  readonly isAccessRequested: boolean;
+  readonly isAccessGranted: boolean;
+  init(callback?: () => void): TelegramLocationManager;
+  getLocation(callback: (location: TelegramLocationData | null) => void): TelegramLocationManager;
+  openSettings(): TelegramLocationManager;
+}
+
 /** Error delivered to a `Serverless.call` callback. */
 export interface TelegramServerlessError {
   message: string;
@@ -154,6 +172,8 @@ export interface TelegramWebApp {
   requestFullscreen?(): void;
   /** Bot API 8.0+. */
   exitFullscreen?(): void;
+  /** Bot API 8.0+. Telegram-native location access for Mini Apps. */
+  readonly LocationManager?: TelegramLocationManager;
   /**
    * Bot API 6.9+. Native consent popup; the callback gets only `true` when the user shared. The
    * contact itself goes to the bot's chat (a platform-verified update), never to this page.

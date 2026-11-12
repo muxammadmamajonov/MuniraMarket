@@ -20,8 +20,8 @@ export const YANDEX_MAPS_DATA_ORIGIN = 'https://*.maps.yandex.net';
 /** Stylesheet assets loaded by the official JavaScript API after its bootstrap script runs. */
 export const YANDEX_MAPS_STATIC_ORIGIN = 'https://yastatic.net';
 
-/** Geosearch host `ymaps3.search` calls (reverse geocoding), per the v3 CSP requirements. */
-export const YANDEX_MAPS_SEARCH_ORIGIN = 'https://search-maps.yandex.ru';
+/** The Geocoder HTTP API used for a confirmed delivery point's reverse-geocode lookup. */
+export const YANDEX_MAPS_GEOCODER_ORIGIN = 'https://geocode-maps.yandex.ru';
 
 /**
  * Yandex issues both legacy UUID keys and newer compact JavaScript API keys. The key reaches the

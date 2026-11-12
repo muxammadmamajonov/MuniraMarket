@@ -1,7 +1,7 @@
 import {
   YANDEX_MAPS_API_ORIGIN,
   YANDEX_MAPS_DATA_ORIGIN,
-  YANDEX_MAPS_SEARCH_ORIGIN,
+  YANDEX_MAPS_GEOCODER_ORIGIN,
   YANDEX_MAPS_STATIC_ORIGIN,
 } from './maps/config';
 
@@ -20,8 +20,8 @@ import {
  *
  * Yandex Maps hosts are added only when a JavaScript API key is configured (`yandexMaps`): the
  * official API host in `script-src` (for browsers that ignore `'strict-dynamic'`) and
- * `connect-src`, its data hosts and `blob:` workers. The geosearch host is added separately only
- * when a Geocoder key is present (`yandexGeocoder`). Tiles that arrive as images are already
+ * `connect-src`, its data hosts and `blob:` workers. The Geocoder HTTP host is added separately
+ * only when a Geocoder key is present (`yandexGeocoder`). Tiles that arrive as images are already
  * covered by `img-src https:`.
  */
 
@@ -29,7 +29,7 @@ export interface CspOptions {
   nonce: string;
   /** Allow the Yandex Maps JavaScript API (only when a key is configured). */
   yandexMaps?: boolean;
-  /** Allow Yandex geosearch only when its separate Geocoder key is configured. */
+  /** Allow the Yandex Geocoder HTTP API only when its separate key is configured. */
   yandexGeocoder?: boolean;
   /** Adds `'unsafe-eval'` to `script-src`; React's dev tooling needs it. Never in production. */
   isDevelopment?: boolean;
@@ -82,7 +82,7 @@ export function buildContentSecurityPolicy({
       [
         "'self'",
         ...(yandexMaps ? [YANDEX_MAPS_API_ORIGIN, YANDEX_MAPS_DATA_ORIGIN] : []),
-        ...(yandexMaps && yandexGeocoder ? [YANDEX_MAPS_SEARCH_ORIGIN] : []),
+        ...(yandexMaps && yandexGeocoder ? [YANDEX_MAPS_GEOCODER_ORIGIN] : []),
       ],
     ],
     ...(yandexMaps ? ([['worker-src', ["'self'", 'blob:']]] as Array<[string, string[]]>) : []),

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { buildContentSecurityPolicy, generateNonce } from './csp';
-import { YANDEX_MAPS_SEARCH_ORIGIN, YANDEX_MAPS_STATIC_ORIGIN } from './maps/config';
+import { YANDEX_MAPS_GEOCODER_ORIGIN, YANDEX_MAPS_STATIC_ORIGIN } from './maps/config';
 
 function directive(policy: string, name: string): string[] {
   const part = policy.split('; ').find((entry) => entry.startsWith(`${name} `));
@@ -79,7 +79,7 @@ describe('buildContentSecurityPolicy', () => {
 
   it('allows no Yandex host unless a Maps key is configured', () => {
     expect(production).not.toContain('yandex');
-    expect(directive(production, 'connect-src')).not.toContain(YANDEX_MAPS_SEARCH_ORIGIN);
+    expect(directive(production, 'connect-src')).not.toContain(YANDEX_MAPS_GEOCODER_ORIGIN);
     expect(production).not.toContain('worker-src');
   });
 
@@ -92,20 +92,20 @@ describe('buildContentSecurityPolicy', () => {
       'https://api-maps.yandex.ru',
       'https://*.maps.yandex.net',
     ]);
-    expect(directive(withMaps, 'connect-src')).not.toContain(YANDEX_MAPS_SEARCH_ORIGIN);
-    expect(YANDEX_MAPS_SEARCH_ORIGIN).toBe('https://search-maps.yandex.ru');
+    expect(directive(withMaps, 'connect-src')).not.toContain(YANDEX_MAPS_GEOCODER_ORIGIN);
+    expect(YANDEX_MAPS_GEOCODER_ORIGIN).toBe('https://geocode-maps.yandex.ru');
     expect(YANDEX_MAPS_STATIC_ORIGIN).toBe('https://yastatic.net');
     expect(directive(withMaps, 'worker-src')).toEqual(["'self'", 'blob:']);
     expect(directive(withMaps, 'frame-src')).toEqual(["'none'"]);
     expect(directive(withMaps, 'script-src')).not.toContain("'unsafe-inline'");
   });
 
-  it('adds the geosearch host only when both Yandex products are configured', () => {
+  it("adds Yandex's lookup hosts only when both Maps and Geocoder are configured", () => {
     const withGeocoder = buildContentSecurityPolicy({
       nonce,
       yandexMaps: true,
       yandexGeocoder: true,
     });
-    expect(directive(withGeocoder, 'connect-src')).toContain(YANDEX_MAPS_SEARCH_ORIGIN);
+    expect(directive(withGeocoder, 'connect-src')).toContain(YANDEX_MAPS_GEOCODER_ORIGIN);
   });
 });
