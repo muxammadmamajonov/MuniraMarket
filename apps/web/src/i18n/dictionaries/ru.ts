@@ -20,6 +20,7 @@ export const ru: Dictionary = {
     title: 'MuniraMarket',
     tagline: 'Свежие продукты с доставкой до двери.',
     categoriesHeading: 'Категории',
+    seeAll: 'Все',
     newestHeading: 'Новинки',
     emptyTitle: 'Каталог пока пуст',
     emptyHint: 'Товары скоро появятся. Загляните позже.',

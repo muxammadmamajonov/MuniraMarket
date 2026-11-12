@@ -101,13 +101,12 @@
   --mm-tg-content-bottom: 0px;
   --mm-tg-content-left: 0px;
   --mm-tg-content-right: 0px;
-  /* Telegram's content inset already represents the area clear of its own controls. Adding it
-     to the physical safe inset double-counted the top bar and pushed the logo too far down. */
-  --mm-inset-top: max(
-    env(safe-area-inset-top, 0px),
-    var(--mm-tg-safe-top),
-    var(--mm-tg-content-top)
-  );
+  /* Device inset only (status bar / notch). In Telegram fullscreen the Close / "…" row sits
+     right below it, `--mm-tg-content-top` tall: Telegram reports the content inset *relative to*
+     the device safe area, so the two add up. Taking the max of them let the page start under
+     Telegram's buttons. The header fills that row with the centred logo (site-header.tsx). */
+  --mm-safe-top: max(env(safe-area-inset-top, 0px), var(--mm-tg-safe-top));
+  --mm-inset-top: calc(var(--mm-safe-top) + var(--mm-tg-content-top));
   --mm-inset-bottom: max(
     env(safe-area-inset-bottom, 0px),
     var(--mm-tg-safe-bottom),

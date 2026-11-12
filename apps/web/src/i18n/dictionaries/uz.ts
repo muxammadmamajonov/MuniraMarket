@@ -20,6 +20,7 @@ export const uz: Dictionary = {
     title: 'MuniraMarket',
     tagline: 'Yangi oziq-ovqat mahsulotlari eshigingizgacha.',
     categoriesHeading: 'Kategoriyalar',
+    seeAll: 'Hammasi',
     newestHeading: 'Yangi mahsulotlar',
     emptyTitle: 'Katalog hozircha bo‘sh',
     emptyHint: 'Mahsulotlar tez orada qo‘shiladi. Keyinroq qaytib ko‘ring.',

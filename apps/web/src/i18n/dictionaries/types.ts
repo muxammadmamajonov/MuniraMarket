@@ -47,6 +47,8 @@ export interface Dictionary {
     title: string;
     tagline: string;
     categoriesHeading: string;
+    /** Link from a home section heading to the full list (the catalog). */
+    seeAll: string;
     newestHeading: string;
     /** Shown instead of the sections when the catalog has no categories and no products. */
     emptyTitle: string;

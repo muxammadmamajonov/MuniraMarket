@@ -1,6 +1,7 @@
 import type { CategoryNode, Locale } from '@muniramarket/contracts';
 import Link from 'next/link';
 import { localizedName } from '@/lib/catalog';
+import { toneFor } from '@/lib/placeholder';
 import { CategoryIcon, categoryIconFor } from './category-icons';
 import { FOCUS_RING, PRESS } from './ui-classes';
 
@@ -13,8 +14,8 @@ export interface CategoryRailProps {
 }
 
 /**
- * Horizontally scrollable category shortcuts: a soft brand-tinted tile with the category's line
- * icon and the name under it (clamped to two lines; the category page shows it in full). Plain
+ * Horizontally scrollable category shortcuts: a tile in the category's own tint (the same family
+ * its products' placeholders use, see `lib/placeholder.ts`) with its line icon, the name under it (clamped to two lines; the category page shows it in full). Plain
  * links in a list (so they work without JavaScript and by keyboard); the scrollbar is hidden, the
  * rail snaps and does not chain its scroll into the page.
  */
@@ -32,14 +33,14 @@ export function CategoryRail({ categories, locale, label, activeSlug }: Category
                 href={`/${locale}/c/${encodeURIComponent(category.slug)}`}
                 prefetch={false}
                 aria-current={active ? 'page' : undefined}
-                className={`group flex w-[78px] flex-col items-center gap-1.5 rounded-2xl p-1.5 sm:w-[104px] ${PRESS} ${FOCUS_RING}`}
+                className={`group flex w-[84px] flex-col items-center gap-1.5 rounded-2xl p-1.5 sm:w-[104px] ${PRESS} ${FOCUS_RING}`}
               >
                 <span
                   aria-hidden="true"
-                  className={`flex size-14 items-center justify-center rounded-2xl transition-colors duration-150 ${
+                  className={`flex size-16 items-center justify-center rounded-[22px] transition-colors duration-150 ${
                     active
                       ? 'bg-primary text-primary-foreground'
-                      : 'bg-brand-soft text-brand-ink group-hover:bg-primary group-hover:text-primary-foreground'
+                      : `mm-tone-${String(toneFor(category.id))} bg-(--tone-bg) text-(--tone-fg) group-hover:bg-primary group-hover:text-primary-foreground`
                   }`}
                 >
                   <CategoryIcon kind={categoryIconFor(category.slug)} className="size-7" />
