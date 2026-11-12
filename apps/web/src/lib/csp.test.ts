@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildContentSecurityPolicy, generateNonce } from './csp';
+import { buildContentSecurityPolicy, generateNonce, nonceFromContentSecurityPolicy } from './csp';
 import { YANDEX_MAPS_GEOCODER_ORIGIN, YANDEX_MAPS_STATIC_ORIGIN } from './maps/config';
 
 function directive(policy: string, name: string): string[] {
@@ -14,6 +14,25 @@ describe('generateNonce', () => {
     const b = generateNonce();
     expect(a).toMatch(/^[A-Za-z0-9+/]{22}==$/);
     expect(a).not.toBe(b);
+  });
+});
+
+describe('nonceFromContentSecurityPolicy', () => {
+  it('reads back the nonce of a built policy', () => {
+    const nonce = generateNonce();
+    for (const isDevelopment of [false, true]) {
+      const policy = buildContentSecurityPolicy({ nonce, isDevelopment, yandexMaps: true });
+      expect(nonceFromContentSecurityPolicy(policy)).toBe(nonce);
+    }
+  });
+
+  it('is undefined without a policy or a nonce source', () => {
+    expect(nonceFromContentSecurityPolicy(null)).toBeUndefined();
+    expect(nonceFromContentSecurityPolicy("script-src 'self'")).toBeUndefined();
+  });
+
+  it('refuses a nonce that is not base64', () => {
+    expect(nonceFromContentSecurityPolicy("script-src 'nonce-a\"><x'")).toBeUndefined();
   });
 });
 

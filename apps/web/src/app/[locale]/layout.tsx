@@ -1,5 +1,6 @@
 import { SUPPORTED_LOCALES, isLocale } from '@muniramarket/contracts';
 import type { Metadata, Viewport } from 'next';
+import { headers } from 'next/headers';
 import { notFound } from 'next/navigation';
 import { connection } from 'next/server';
 import Script from 'next/script';
@@ -11,6 +12,7 @@ import { TelegramChrome } from '@/components/telegram-chrome';
 import { getDictionary } from '@/i18n';
 import { LocaleProvider } from '@/i18n/context';
 import { CartProvider } from '@/lib/cart';
+import { nonceFromContentSecurityPolicy } from '@/lib/csp';
 import { readYandexMapsGeocoderApiKey, readYandexMapsJavaScriptApiKey } from '@/lib/maps/config';
 import { MapsConfigProvider } from '@/lib/maps/use-yandex-maps';
 import { SessionProvider } from '@/lib/session';
@@ -69,16 +71,22 @@ export default async function RootLayout({ children, params }: LayoutProps<'/[lo
   // picker in its custom "map unavailable" state and nothing is ever loaded from Yandex.
   const mapsApiKey = readYandexMapsJavaScriptApiKey();
   const geocoderApiKey = readYandexMapsGeocoderApiKey();
+  // The per-request nonce from src/proxy.ts, passed to `<Script>` explicitly so the client renders
+  // the same `nonce` as the server HTML (see `nonceFromContentSecurityPolicy`).
+  const nonce = nonceFromContentSecurityPolicy((await headers()).get('content-security-policy'));
 
   return (
-    <html lang={locale}>
+    // `suppressHydrationWarning` covers only this element's own attributes: the Telegram script
+    // below runs before hydration and sets `--tg-viewport-*` inline styles on <html>, which the
+    // client render does not have. Nothing below <html> is affected.
+    <html lang={locale} suppressHydrationWarning>
       <head>
         {/*
           Official Telegram Web Apps script. It must run before hydration so that
           `window.Telegram.WebApp` exists on first client render. It is mutable and cannot be
           pinned with SRI; it is loaded from Telegram's own origin by design.
         */}
-        <Script src={TELEGRAM_WEB_APP_SCRIPT_URL} strategy="beforeInteractive" />
+        <Script src={TELEGRAM_WEB_APP_SCRIPT_URL} strategy="beforeInteractive" nonce={nonce} />
       </head>
       <body>
         <LocaleProvider locale={locale}>
