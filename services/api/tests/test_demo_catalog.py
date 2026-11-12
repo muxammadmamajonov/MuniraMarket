@@ -15,7 +15,6 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 from app.models.audit import AuditLog
 from app.models.cart import Cart, CartItem
 from app.models.catalog import Category, Product
-from app.models.delivery import DeliveryZone, DeliveryZoneDistrict
 from app.models.enums import PaymentMethod
 from app.models.order import Order, OrderItem
 from app.ops import demo_catalog
@@ -32,13 +31,11 @@ from app.ops.demo_catalog import (
 from app.ops.demo_dataset import (
     DEMO_CATEGORIES,
     DEMO_PRODUCTS,
-    DEMO_ZONES,
     SYNTHETIC_BRANDS,
     production_categories,
     production_products,
-    production_zones,
 )
-from tests.db_data import SessionFactory, add_category, add_product, add_user, add_zone
+from tests.db_data import SessionFactory, add_category, add_product, add_user
 
 pytest_plugins = ["tests.db_fixtures"]
 
@@ -93,11 +90,9 @@ def test_production_subset_is_a_coherent_storefront_catalog() -> None:
 def test_production_subset_leaves_out_the_dev_only_fixtures() -> None:
     assert not any(row.dev_only for row in production_categories())
     assert not any(row.dev_only for row in production_products())
-    assert not any(row.dev_only for row in production_zones())
     # ...which the dev seed still has (one dataset, not two lists).
     assert any(row.dev_only for row in DEMO_CATEGORIES)
     assert any(row.dev_only for row in DEMO_PRODUCTS)
-    assert any(row.dev_only for row in DEMO_ZONES)
     assert set(production_products()) <= set(DEMO_PRODUCTS)
 
 
@@ -117,16 +112,6 @@ def test_production_subset_is_synthetic_and_has_a_stock_mix() -> None:
     assert sum(q is not None and q > 5 for q in stock) >= 20  # in stock
     with_old_price = [p for p in products if p.old_price_uzs is not None]
     assert 3 <= len(with_old_price) < len(products) // 2
-
-
-def test_production_zones_are_labelled_demo_and_keep_the_e2e_district_slot_less() -> None:
-    zones = production_zones()
-    assert all(zone.name_uz.startswith("Demo ") for zone in zones)
-    assert all(zone.name_ru.startswith("Демо ") for zone in zones)
-    [central] = [zone for zone in zones if zone.slug == "demo-markaziy"]
-    assert central.is_active
-    assert "yunusobod" in central.districts
-    assert any(zone.slug == "demo-chekka" for zone in zones)
 
 
 def test_nothing_runs_the_import_automatically() -> None:
@@ -227,12 +212,7 @@ async def _snapshot(factory: SessionFactory) -> dict[str, list[tuple[Any, ...]]]
             table.name: sorted(  # type: ignore[attr-defined]
                 (tuple(row) for row in (await session.execute(select(table))).all()), key=repr
             )
-            for table in (
-                Category.__table__,
-                Product.__table__,
-                DeliveryZone.__table__,
-                DeliveryZoneDistrict.__table__,
-            )
+            for table in (Category.__table__, Product.__table__)
         }
 
 
@@ -256,12 +236,9 @@ async def _category(factory: SessionFactory, slug: str) -> Category | None:
         ).scalar_one_or_none()
 
 
-async def _order_for(factory: SessionFactory, slugs: list[str], zone_slug: str) -> uuid.UUID:
+async def _order_for(factory: SessionFactory, slugs: list[str]) -> uuid.UUID:
     user = await add_user(factory)
     async with factory() as session:
-        zone_id = (
-            await session.execute(select(DeliveryZone.id).where(DeliveryZone.slug == zone_slug))
-        ).scalar_one()
         products = list(
             (await session.execute(select(Product).where(Product.slug.in_(slugs)))).scalars()
         )
@@ -270,14 +247,12 @@ async def _order_for(factory: SessionFactory, slugs: list[str], zone_slug: str) 
             number=f"T-{uuid.uuid4().hex[:10]}",
             user_id=user.id,
             subtotal_uzs=subtotal,
-            delivery_fee_uzs=0,
             total_uzs=subtotal,
             item_count=len(products),
             payment_method=PaymentMethod.CASH_ON_DELIVERY,
-            delivery_zone_id=zone_id,
             recipient_name="Demo Mijoz",
             recipient_phone="+998001234567",
-            address_snapshot={"district": "yunusobod", "street": "Demo", "house": "1"},
+            address_snapshot={"lat": 41.311081, "lon": 69.240562, "street": "Demo", "house": "1"},
             idempotency_key=uuid.uuid4().hex,
             idempotency_request_hash="0" * 64,
         )
@@ -316,9 +291,6 @@ async def test_dry_run_writes_nothing_and_import_is_idempotent(
     first = await import_demo_catalog(session_factory, apply=True)
     assert first.categories_created == len(production_categories())
     assert first.products_created == len(production_products())
-    assert first.zones_created == len(production_zones())
-    assert first.districts_assigned == sum(len(zone.districts) for zone in production_zones())
-    assert not first.zones_skipped
     after_first = await _snapshot(session_factory)
     # Every product gets its stock photo, as a storefront path (no --image-base-url).
     assert await _count(session_factory, Product, Product.image_url.is_(None)) == 0
@@ -377,25 +349,6 @@ async def test_import_refuses_a_catalog_with_real_data(
 
 @pytest.mark.integration
 @pytest.mark.asyncio(loop_scope="module")
-async def test_import_leaves_real_delivery_zones_alone(session_factory: SessionFactory) -> None:
-    real = await add_zone(session_factory, "tashkent-centre", ["yunusobod"])
-    report = await import_demo_catalog(session_factory, apply=True)
-    assert report.zones_skipped
-    assert report.products_created == len(production_products())
-    assert await _count(session_factory, DeliveryZone) == 1
-    async with session_factory() as session:
-        mapped = (
-            await session.execute(
-                select(DeliveryZoneDistrict.zone_id).where(
-                    DeliveryZoneDistrict.district == "yunusobod"
-                )
-            )
-        ).scalar_one()
-    assert mapped == real.id
-
-
-@pytest.mark.integration
-@pytest.mark.asyncio(loop_scope="module")
 async def test_remove_only_touches_demo_rows_and_keeps_order_history(
     session_factory: SessionFactory,
 ) -> None:
@@ -407,9 +360,8 @@ async def test_remove_only_touches_demo_rows_and_keeps_order_history(
     demo_fruits = await _category(session_factory, "demo-mevalar")
     assert demo_fruits is not None
     await add_product(session_factory, demo_fruits, "real-pear", sku="R-0002")
-    real_zone = await add_zone(session_factory, "real-zone", ["bektemir"])
-    # Orders reference two demo products and a demo zone.
-    order_id = await _order_for(session_factory, ["demo-olma", "demo-sabzi"], "demo-markaziy")
+    # An order references two demo products.
+    order_id = await _order_for(session_factory, ["demo-olma", "demo-sabzi"])
     # A cart line on a demo product that will be deleted.
     user = await add_user(session_factory)
     banana = await _product(session_factory, "demo-banan")
@@ -429,8 +381,6 @@ async def test_remove_only_touches_demo_rows_and_keeps_order_history(
     report = await remove_demo_catalog(session_factory, apply=True)
     assert report.products_archived == 2
     assert report.products_deleted == len(production_products()) - 2
-    assert report.zones_deactivated == 1
-    assert report.zones_deleted == len(production_zones()) - 1
 
     # Products referenced by orders are archived, not deleted; the order still points at them.
     for slug in ("demo-olma", "demo-sabzi"):
@@ -446,10 +396,6 @@ async def test_remove_only_touches_demo_rows_and_keeps_order_history(
             )
         ).scalar_one()
         assert linked == 2
-        order_zone = (
-            await session.execute(select(Order.delivery_zone_id).where(Order.id == order_id))
-        ).scalar_one()
-    assert order_zone is not None
     assert await _product(session_factory, "demo-banan") is None
     assert await _count(session_factory, CartItem) == 0
 
@@ -468,21 +414,11 @@ async def test_remove_only_touches_demo_rows_and_keeps_order_history(
     assert report.categories_kept == 2
     assert report.categories_deactivated == 1
 
-    # Demo zone with an order: kept, inactive, its districts released; real zone untouched.
-    async with session_factory() as session:
-        kept_zone = (
-            await session.execute(select(DeliveryZone).where(DeliveryZone.slug == "demo-markaziy"))
-        ).scalar_one()
-    assert not kept_zone.is_active
-    assert order_zone == kept_zone.id
-    districts = DeliveryZoneDistrict.zone_id != real_zone.id
-    assert await _count(session_factory, DeliveryZoneDistrict, districts) == 0
-
     # Real rows are exactly as before.
     after = await _snapshot(session_factory)
-    for table in ("categories", "products", "delivery_zones", "delivery_zone_districts"):
-        real_before = {row for row in before[table] if not _is_demo(table, row, real_zone.id)}
-        real_after = {row for row in after[table] if not _is_demo(table, row, real_zone.id)}
+    for table in ("categories", "products"):
+        real_before = {row for row in before[table] if not _is_demo(table, row)}
+        real_after = {row for row in after[table] if not _is_demo(table, row)}
         assert real_after == real_before, table
     kept_real = await _product(session_factory, "real-apple")
     assert kept_real is not None
@@ -493,9 +429,7 @@ async def test_remove_only_touches_demo_rows_and_keeps_order_history(
     assert again.changed == 0
 
 
-def _is_demo(table: str, row: tuple[Any, ...], real_zone_id: uuid.UUID) -> bool:
-    if table == "delivery_zone_districts":
-        return bool(row[1] != real_zone_id)  # (district, zone_id)
+def _is_demo(table: str, row: tuple[Any, ...]) -> bool:
     text = " ".join(str(value) for value in row)
     if table == "products":
         return "demo-" in text and "DEMO-" in text
@@ -525,7 +459,6 @@ async def test_command_line_end_to_end(
     code, text = await invoke("import", "--confirm", IMPORT_PHRASE)
     assert code == 0
     assert f"products created: {len(production_products())}" in text
-    assert "admin panel" in text
 
     code, text = await invoke("status")
     assert code == 0

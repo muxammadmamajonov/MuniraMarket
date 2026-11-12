@@ -5,14 +5,9 @@ import {
   mainButton,
   pressMainButton,
   requireBotToken,
+  seedDeliveryAddress,
 } from './support';
 import { buildSignedInitData } from './telegram-init-data';
-
-/** Opens the custom district listbox and clicks the option with this value (`data-value`). */
-async function chooseDistrict(page: Page, code: string): Promise<void> {
-  await page.getByRole('combobox', { name: 'Tuman' }).click();
-  await page.locator(`[role="option"][data-value="${code}"]`).click();
-}
 
 /**
  * An order attempt whose answer never arrived, followed by a reload. The pending attempt (key and
@@ -23,8 +18,8 @@ async function chooseDistrict(page: Page, code: string): Promise<void> {
  * 2. a request that did reach the server (its answer was lost) leaves the cart empty; the
  *    checkout then says "we found your order" and links to it.
  *
- * One sign-in for both (the Core API allows 10 logins per minute per IP). Seed data as in
- * `checkout.spec.ts`: four kilos of `demo-olma` clear the yunusobod minimum.
+ * One sign-in for both (the Core API allows 10 logins per minute per IP). Seed data and the saved
+ * delivery address as in `checkout.spec.ts`.
  */
 
 const ORDERS = '**/api/v1/orders';
@@ -43,12 +38,7 @@ async function addToCart(page: Page, slug: string, quantity: number): Promise<vo
 /** The same details every time, so the request body is identical across a reload. */
 async function fillCheckout(page: Page): Promise<void> {
   await page.goto('/uz/checkout');
-  const district = page.getByRole('combobox', { name: 'Tuman' });
-  await expect(district).toBeVisible({ timeout: 15_000 });
-  await chooseDistrict(page, 'yunusobod');
-  await expect(page.getByTestId('checkout-total')).not.toHaveText('—');
-  await page.getByLabel('Ko‘cha').fill('Demo ko‘cha');
-  await page.getByLabel('Uy', { exact: true }).fill('12');
+  await expect(page.getByTestId('checkout-address')).toBeVisible({ timeout: 15_000 });
   await page.getByLabel('Telefon raqami').fill('+998 00 123-45-67');
   await page.locator('label', { hasText: 'Yetkazilganda naqd pul' }).click();
   await expect.poll(() => mainButton(page)).toMatchObject({ visible: true, disabled: false });
@@ -90,6 +80,7 @@ test('an unanswered order survives a reload: same key for the same body, or "we 
       },
     }),
   );
+  await seedDeliveryAddress(page);
   const keys = trackOrderKeys(page);
 
   // 1. The request never reaches the server; the customer reloads and sends the same details.

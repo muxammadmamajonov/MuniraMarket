@@ -25,7 +25,6 @@ from tests.db_data import (
     add_category,
     add_product,
     add_user,
-    add_zone,
 )
 from tests.db_support import INTEGRATION_MARKS
 from tests.order_factories import order_body
@@ -72,7 +71,6 @@ async def back(session_factory: SessionFactory) -> AsyncIterator[Back]:
     admin = await add_user(session_factory, role=UserRole.ADMIN)
     customer = await add_user(session_factory)
     category = await add_category(session_factory, "mevalar")
-    await add_zone(session_factory, "demo-markaziy", ["chilonzor"], min_order_uzs=0)
     app = build_admin_app(session_factory, [admin, customer])
     transport = httpx.ASGITransport(app=app, raise_app_exceptions=True)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
@@ -135,9 +133,7 @@ async def test_product_lifecycle(back: Back) -> None:
     customer = back.customer
     add = {"product_id": product_id, "quantity": 2}
     assert (await back.send("POST", "/api/v1/cart/items", add, user=customer)).status_code == 200
-    quote = await back.send(
-        "POST", "/api/v1/checkout/quote", {"district": "chilonzor"}, user=customer
-    )
+    quote = await back.send("POST", "/api/v1/checkout/quote", None, user=customer)
     assert quote.status_code == 200, quote.text
     order_response = await back.client.post(
         "/api/v1/orders",

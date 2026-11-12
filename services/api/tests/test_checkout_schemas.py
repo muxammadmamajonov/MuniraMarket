@@ -1,8 +1,6 @@
 """Checkout request validation, the idempotency request hash and order response shaping."""
 
-import hashlib
-import uuid
-from datetime import date, time
+import math
 from typing import Any
 
 import pytest
@@ -10,11 +8,9 @@ from pydantic import ValidationError
 
 from app.api.routes.orders import request_hash
 from app.domain.order_status import OrderStatus
-from app.repositories.orders import SlotSnapshotRecord
 from app.schemas.checkout import (
     AdminOrderDetail,
     CancelOrderRequest,
-    CheckoutQuoteRequest,
     CreateOrderRequest,
     OrderDetail,
     OrderStatusUpdateRequest,
@@ -27,7 +23,7 @@ def parse(**overrides: Any) -> CreateOrderRequest:
 
 
 def with_address(**fields: Any) -> dict[str, Any]:
-    return {"district": "chilonzor", "street": "Demo ko'cha", "house": "12", **fields}
+    return {"lat": 41.311081, "lon": 69.240562, "street": "Demo ko'cha", "house": "12", **fields}
 
 
 # --- create order ---------------------------------------------------------------------------------
@@ -35,7 +31,7 @@ def with_address(**fields: Any) -> dict[str, Any]:
 
 def test_minimal_body() -> None:
     request = parse()
-    assert request.address.district == "chilonzor"
+    assert (request.address.lat, request.address.lon) == (41.311081, 69.240562)
     assert request.address.apartment is None
     assert request.comment is None
     assert request.recipient_phone == DEMO_PHONE
@@ -99,9 +95,20 @@ def test_the_comment_may_span_lines() -> None:
         {"subtotal_uzs": 1},
         {"total_uzs": 1},
         {"address": with_address(latitude=41.3)},
-        {"address": with_address(district="tashkent")},
-        {"address": with_address(district="Chilonzor")},
-        {"address": with_address(district="")},
+        # The old address shape: an area code instead of (or next to) a map point.
+        {"address": with_address(region="chilonzor")},
+        {"address": with_address(lat=90.000001)},
+        {"address": with_address(lat=-91)},
+        {"address": with_address(lon=180.5)},
+        {"address": with_address(lon=-181)},
+        {"address": with_address(lat=math.nan)},
+        {"address": with_address(lat=math.inf)},
+        {"address": with_address(lon=-math.inf)},
+        {"address": with_address(lat="NaN")},
+        {"address": with_address(lat="Infinity")},
+        {"address": with_address(lat=None)},
+        {"address": with_address(lat="forty-one")},
+        {"address": with_address(lon=[69.2])},
         {"address": with_address(street="D")},  # too short
         {"address": with_address(street="D" * 201)},
         {"address": with_address(house="")},
@@ -135,10 +142,37 @@ def test_required_fields(missing: str) -> None:
         CreateOrderRequest.model_validate(body)
 
 
+@pytest.mark.parametrize("missing", ["lat", "lon", "street", "house"])
+def test_required_address_fields(missing: str) -> None:
+    address = with_address()
+    del address[missing]
+    with pytest.raises(ValidationError):
+        parse(address=address)
+
+
+@pytest.mark.parametrize(
+    ("lat", "lon", "expected"),
+    [
+        (41.3110814999, 69.2405625001, (41.311081, 69.240563)),
+        (41, 69, (41.0, 69.0)),
+        ("41.311081", "69.240562", (41.311081, 69.240562)),
+        (-90, 180, (-90.0, 180.0)),
+        (90, -180, (90.0, -180.0)),
+        (-33.8688197, -151.2092956, (-33.86882, -151.209296)),
+    ],
+)
+def test_coordinates_are_rounded_to_six_decimals(
+    lat: object, lon: object, expected: tuple[float, float]
+) -> None:
+    address = parse(address=with_address(lat=lat, lon=lon)).address
+    assert (address.lat, address.lon) == expected
+
+
 def test_the_address_snapshot_has_every_field() -> None:
     dumped = parse(address=with_address(floor=" 3 ")).address.model_dump(mode="json")
     assert dumped == {
-        "district": "chilonzor",
+        "lat": 41.311081,
+        "lon": 69.240562,
         "street": "Demo ko'cha",
         "house": "12",
         "apartment": None,
@@ -156,7 +190,7 @@ def test_request_hash_ignores_cosmetic_differences() -> None:
     cosmetic = CreateOrderRequest.model_validate(
         {
             # different key order, spacing, explicit nulls / blanks for optional fields
-            "expected_total_uzs": 65_000,
+            "expected_total_uzs": 50_000,
             "payment_method": "cash_on_delivery",
             "recipient_phone": "+998 (00) 123-45-67",
             "recipient_name": " Demo Mijoz ",
@@ -164,7 +198,8 @@ def test_request_hash_ignores_cosmetic_differences() -> None:
             "address": {
                 "house": " 12 ",
                 "street": "Demo ko'cha ",
-                "district": "chilonzor",
+                "lon": 69.2405620001,
+                "lat": 41.311081,
                 "apartment": "",
                 "landmark": None,
             },
@@ -178,10 +213,11 @@ def test_request_hash_ignores_cosmetic_differences() -> None:
     "overrides",
     [
         {"address": with_address(house="13")},
-        {"address": with_address(district="olmazor")},
+        {"address": with_address(lat=41.311082)},
+        {"address": with_address(lon=69.240561)},
         {"recipient_phone": "+998001234568"},
         {"payment_method": "card_on_delivery"},
-        {"expected_total_uzs": 65_001},
+        {"expected_total_uzs": 50_001},
         {"comment": "Demo izoh"},
     ],
 )
@@ -190,13 +226,6 @@ def test_request_hash_changes_with_the_order(overrides: dict[str, Any]) -> None:
 
 
 # --- other requests -------------------------------------------------------------------------------
-
-
-def test_quote_request_needs_a_known_district() -> None:
-    assert CheckoutQuoteRequest.model_validate({"district": "sergeli"}).district == "sergeli"
-    for body in ({"district": "nowhere"}, {}, {"district": "sergeli", "x": 1}):
-        with pytest.raises(ValidationError):
-            CheckoutQuoteRequest.model_validate(body)
 
 
 def test_cancel_reason() -> None:
@@ -235,8 +264,8 @@ def test_status_update_request() -> None:
 
 def test_order_detail_shape() -> None:
     detail = OrderDetail.from_record(make_order())
-    assert detail.address.district_name_uz == "Chilonzor"
-    assert detail.address.district_name_ru == "Чиланзарский"
+    assert (detail.address.lat, detail.address.lon) == (41.311081, 69.240562)
+    assert detail.subtotal_uzs == detail.total_uzs == 50_000
     assert detail.can_cancel
     assert [change.status for change in detail.history] == [OrderStatus.NEW]
     assert not OrderDetail.from_record(make_order(OrderStatus.PICKING)).can_cancel
@@ -279,43 +308,24 @@ def test_admin_detail_includes_the_audit_trail() -> None:
     assert not detail.can_cancel
 
 
-# --- delivery slots -------------------------------------------------------------------------------
+# --- addresses of orders placed before courier delivery -----------------------------------------
 
 
-def test_the_slot_id_is_optional_and_must_be_a_uuid() -> None:
-    assert parse().delivery_slot_id is None
-    slot_id = uuid.uuid4()
-    assert parse(delivery_slot_id=str(slot_id)).delivery_slot_id == slot_id
-    for bad in ("", "slot-1", 7):
-        with pytest.raises(ValidationError):
-            parse(delivery_slot_id=bad)
-
-
-def test_request_hash_without_a_slot_is_unchanged() -> None:
-    """Bodies that never had a slot hash exactly as before the field existed, so a retry that
-    spans a deploy still replays instead of conflicting."""
-    request = parse()
-    legacy = request.model_dump_json(exclude={"delivery_slot_id"})
-    assert request_hash(request) == hashlib.sha256(legacy.encode()).hexdigest()
-    assert request_hash(parse(delivery_slot_id=str(uuid.uuid4()))) != request_hash(request)
-    first, second = uuid.uuid4(), uuid.uuid4()
-    assert request_hash(parse(delivery_slot_id=str(first))) != request_hash(
-        parse(delivery_slot_id=str(second))
-    )
-
-
-def test_order_detail_delivery_slot() -> None:
-    assert OrderDetail.from_record(make_order()).delivery_slot is None
-    record = make_order(
-        delivery_slot=SlotSnapshotRecord(
-            slot_date=date(2026, 11, 1), starts_at=time(10, 0), ends_at=time(13, 0)
-        )
-    )
-    detail = OrderDetail.from_record(record)
-    assert detail.model_dump(mode="json")["delivery_slot"] == {
-        "date": "2026-11-01",
-        "starts_at": "10:00",
-        "ends_at": "13:00",
+def test_a_snapshot_without_coordinates_reads_as_null_coordinates() -> None:
+    # The old snapshot shape: an area key (ignored), no map point; the total still includes the
+    # delivery charge of the time.
+    legacy = {"region": "chilonzor", "street": "Demo ko'cha", "house": "12", "floor": "3"}
+    detail = OrderDetail.from_record(make_order(address=legacy, total_uzs=65_000))
+    assert detail.model_dump(mode="json")["address"] == {
+        "lat": None,
+        "lon": None,
+        "street": "Demo ko'cha",
+        "house": "12",
+        "apartment": None,
+        "entrance": None,
+        "floor": "3",
+        "landmark": None,
     }
-    admin = AdminOrderDetail.from_admin_record(record)
-    assert admin.delivery_slot == detail.delivery_slot
+    assert (detail.subtotal_uzs, detail.total_uzs) == (50_000, 65_000)
+    admin = AdminOrderDetail.from_admin_record(make_order(address=legacy))
+    assert admin.address == OrderDetail.from_record(make_order(address=legacy)).address

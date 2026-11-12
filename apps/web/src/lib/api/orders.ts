@@ -2,7 +2,6 @@ import {
   IDEMPOTENT_REPLAYED_HEADER,
   type CheckoutQuote,
   type CreateOrderRequest,
-  type DistrictCode,
   type OrderDetail,
   type OrderPage,
 } from '@muniramarket/contracts';
@@ -26,12 +25,13 @@ import { JSON_HEADERS, requestJson } from './request';
 export const QUOTE_TIMEOUT_MS = 20_000;
 export const ORDER_TIMEOUT_MS = 30_000;
 
-/** `POST /checkout/quote`: re-checks the cart and prices delivery for `district`. */
-export function quoteCheckout(apiFetch: ApiFetch, district: DistrictCode): Promise<CheckoutQuote> {
+/**
+ * `POST /checkout/quote`: re-checks the cart and prices it. No body: delivery is done by a Yandex
+ * Go courier and paid to the courier, so the quote does not depend on the address.
+ */
+export function quoteCheckout(apiFetch: ApiFetch): Promise<CheckoutQuote> {
   return requestJson<CheckoutQuote>(apiFetch, '/checkout/quote', {
     method: 'POST',
-    headers: JSON_HEADERS,
-    body: JSON.stringify({ district }),
     signal: AbortSignal.timeout(QUOTE_TIMEOUT_MS),
   });
 }

@@ -4,8 +4,6 @@ import type {
   AdminUser,
   AuditEntry,
   Dashboard,
-  DeliverySlotAdmin,
-  DeliveryZoneAdmin,
 } from '@muniramarket/contracts';
 
 /** Synthetic back-office data: no real names, phones or addresses. */
@@ -15,8 +13,6 @@ export const IDS = {
   subcategory: '2a1d5c3e-0000-4000-8000-000000000002',
   product: '3b2e6d4f-0000-4000-8000-000000000001',
   user: '4c3f7e50-0000-4000-8000-000000000001',
-  zone: '5d408f61-0000-4000-8000-000000000001',
-  slot: '6e519072-0000-4000-8000-000000000001',
 } as const;
 
 const STAMP = '2026-10-31T09:05:00Z';
@@ -100,44 +96,6 @@ export function adminUser(overrides: Partial<AdminUser> = {}): AdminUser {
     role: 'admin',
     is_blocked: false,
     created_at: STAMP,
-    ...overrides,
-  };
-}
-
-export function zone(overrides: Partial<DeliveryZoneAdmin> = {}): DeliveryZoneAdmin {
-  return {
-    id: IDS.zone,
-    slug: 'center',
-    name_uz: 'Markaz',
-    name_ru: 'Центр',
-    delivery_fee_uzs: 15_000,
-    free_delivery_threshold_uzs: 200_000,
-    min_order_uzs: 50_000,
-    opens_at: '09:00',
-    closes_at: '21:00',
-    sort_order: 0,
-    is_active: true,
-    districts: [{ code: 'chilonzor', name_uz: 'Chilonzor', name_ru: 'Чиланзарский' }],
-    created_at: STAMP,
-    updated_at: STAMP,
-    ...overrides,
-  };
-}
-
-export function slot(overrides: Partial<DeliverySlotAdmin> = {}): DeliverySlotAdmin {
-  return {
-    id: IDS.slot,
-    zone_id: IDS.zone,
-    slot_date: '2026-11-02',
-    starts_at: '14:00',
-    ends_at: '16:00',
-    capacity: 10,
-    reserved_count: 4,
-    remaining: 6,
-    cutoff_at: '2026-11-02T07:00:00Z',
-    is_active: true,
-    created_at: STAMP,
-    updated_at: STAMP,
     ...overrides,
   };
 }

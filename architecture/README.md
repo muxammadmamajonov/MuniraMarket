@@ -13,11 +13,12 @@ outside this repository.
 | [0006](0006-money-locale-conventions.md)           | Money, locale and time conventions             | accepted           |
 | [0007](0007-browser-sessions-csrf.md)              | Browser sessions, CSRF and rate limiting       | amended by 0013/14 |
 | [0008](0008-order-notification-outbox.md)          | Order notifications via an outbox              | trigger in 0015    |
-| [0009](0009-checkout-orders.md)                    | Checkout, zones, idempotent orders, stock      | accepted           |
-| [0010](0010-admin-content-ops.md)                  | Back-office roles, audit, CSV, slots           | accepted           |
+| [0009](0009-checkout-orders.md)                    | Checkout, idempotent orders, stock             | amended by 0017    |
+| [0010](0010-admin-content-ops.md)                  | Back-office roles, audit, CSV                  | amended by 0017    |
 | [0011](0011-cloudflare-neon-deployment.md)         | Cloudflare Workers/Containers, Neon, R2        | amended by 0013    |
 | [0012](0012-warehouse-integration-boundary.md)     | Warehouse integration boundary (no vendor yet) | accepted           |
 | [0013](0013-security-state-in-postgres.md)         | Sessions, rate limits, nonces in PostgreSQL    | accepted           |
 | [0014](0014-telegram-oidc-browser-sign-in.md)      | One bot, Telegram OIDC browser sign-in         | accepted           |
-| [0015](0015-staff-group-and-notification-drain.md) | Staff group alerts, cron drain trigger         | updated by 0016    |
+| [0015](0015-staff-group-and-notification-drain.md) | Staff group alerts, cron drain trigger         | updated by 0016/17 |
 | [0016](0016-core-api-on-neon-functions.md)         | Core API on Neon Functions, no Containers      | accepted           |
+| [0017](0017-yandex-go-courier-delivery.md)         | On-demand Yandex Go courier delivery           | accepted           |

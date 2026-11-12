@@ -5,7 +5,9 @@
  *
  * It carries only what staff need to spot the order in the admin: order number, status (with the
  * previous status when known), total, and whether the customer cancelled it. No customer name,
- * phone or address ever reaches the group.
+ * phone or address ever reaches the group; the one exception is a NEW order's destination
+ * coordinates, and only inside the Yandex Go courier button URL (`./yandexGo.js`, added by the
+ * transport), never in the text.
  */
 import { STAFF_MESSAGES, isOrderStatus } from '../i18n.js';
 import { formatUzs, isOrderNumber } from './orderStatus.js';

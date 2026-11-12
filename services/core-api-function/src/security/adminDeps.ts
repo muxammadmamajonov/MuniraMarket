@@ -7,7 +7,7 @@ import { csrfProtectedUser, currentSession, currentUser } from './sessionDeps.ts
 /**
  * Back-office access control shared by every `/admin/**` route (port of
  * services/api/app/api/admin_deps.py). `operator` works orders; `admin` additionally manages the
- * catalog, delivery, users, CSV and reads the audit log. The role is re-read on every request and
+ * catalog, users, CSV and reads the audit log. The role is re-read on every request and
  * checked BEFORE any entity is read. Only Telegram OIDC sessions minted on the admin origin are
  * back-office credentials (ADR 0014): a Mini App or storefront session never is.
  */

@@ -1,15 +1,10 @@
 'use client';
 
-import {
-  PAYMENT_METHODS,
-  type DeliveryZone,
-  type DistrictCode,
-  type PaymentMethod,
-} from '@muniramarket/contracts';
-import { formatUZS } from '@muniramarket/ui';
-import type { ReactNode } from 'react';
+import { PAYMENT_METHODS, type PaymentMethod } from '@muniramarket/contracts';
+import { useState } from 'react';
 import { useI18n } from '@/i18n/context';
 import { formatMessage } from '@/i18n/format';
+import { formatAddressLine, type Address } from '@/lib/address/address';
 import {
   LIMITS,
   charCount,
@@ -18,41 +13,35 @@ import {
   type FieldName,
   type FormErrors,
 } from '@/lib/checkout/form';
-import { districtGroups, districtName, zoneHours, zoneName } from '@/lib/checkout/zones';
+import { AddressPicker } from '../address-picker';
 import { FormField } from '../form-field';
-import { CARD, ERROR_TEXT, INPUT } from '../ui-classes';
+import { PinIcon } from '../icons';
+import { CARD, ERROR_TEXT, FOCUS_RING, INPUT, PRESS } from '../ui-classes';
 import { STEP_HEADING, StepNumber } from './step-number';
-import { ListboxSelect } from '../ui/listbox-select';
 import { RadioCard } from '../ui/radio-card';
 
 export interface CheckoutFormProps {
   values: CheckoutFormValues;
   errors: FormErrors;
-  zones: DeliveryZone[];
-  /** The zone of the selected district, for the hint under the select. */
-  selectedZone: DeliveryZone | null;
   disabled: boolean;
   onChange: <K extends FieldName>(field: K, value: CheckoutFormValues[K]) => void;
-  onDistrict: (district: DistrictCode | '') => void;
+  /** An address saved in the map picker. */
+  onAddress: (address: Address) => void;
   onBlur: (field: FieldName) => void;
-  /** The delivery-time picker; rendered under the address, where the district is chosen. */
-  slotPicker?: ReactNode;
 }
 
 /** Delivery address, recipient, payment method and comment. All text is the customer's own. */
 export function CheckoutFormFields({
   values,
   errors,
-  zones,
-  selectedZone,
   disabled,
   onChange,
-  onDistrict,
+  onAddress,
   onBlur,
-  slotPicker = null,
 }: CheckoutFormProps) {
-  const { dict, locale } = useI18n();
+  const { dict } = useI18n();
   const t = dict.checkout;
+  const [pickerOpen, setPickerOpen] = useState(false);
 
   const errorText = (field: FieldName): string | undefined => {
     const error: FieldError | undefined = errors[field];
@@ -74,7 +63,7 @@ export function CheckoutFormFields({
   };
 
   const text = (
-    field: Exclude<FieldName, 'district' | 'paymentMethod' | 'comment'>,
+    field: 'recipientName' | 'recipientPhone',
     config: {
       label: string;
       optional?: boolean;
@@ -115,117 +104,81 @@ export function CheckoutFormFields({
     </FormField>
   );
 
-  const groups = districtGroups(zones);
-  // Steps are numbered in reading order; the delivery-time step exists only when slots do.
-  const recipientStep = slotPicker === null ? 2 : 3;
   const commentLength = charCount(values.comment);
+  const address = values.address;
+  const addressLine = address === null ? null : formatAddressLine(address, dict.address);
+  const addressError = errorText('address');
 
   return (
     <div className="flex min-w-0 flex-col gap-3">
-      <section aria-labelledby="checkout-delivery" className={`${CARD} flex flex-col gap-4`}>
+      <section aria-labelledby="checkout-delivery" className={`${CARD} flex flex-col gap-3`}>
         <h2 id="checkout-delivery" className={STEP_HEADING}>
           <StepNumber step={1} />
           {t.sections.delivery}
         </h2>
 
-        <FormField
-          label={t.labels.district}
-          error={errorText('district')}
-          required
-          hint={
-            selectedZone === null ? undefined : (
-              <span className="flex flex-col gap-0.5">
-                <span>{formatMessage(t.zoneHours, { time: zoneHours(selectedZone) })}</span>
-                <span>
-                  {formatMessage(t.zoneMinOrder, {
-                    min: formatUZS(selectedZone.min_order_uzs, locale),
-                  })}
-                </span>
-                {selectedZone.free_delivery_threshold_uzs === null ? null : (
-                  <span>
-                    {formatMessage(t.zoneFreeFrom, {
-                      threshold: formatUZS(selectedZone.free_delivery_threshold_uzs, locale),
-                    })}
-                  </span>
-                )}
-              </span>
-            )
+        {address === null || addressLine === null ? null : (
+          <div data-testid="checkout-address" className="flex min-w-0 items-start gap-3">
+            <span
+              aria-hidden="true"
+              className="mt-0.5 flex size-9 shrink-0 items-center justify-center rounded-full bg-brand-soft text-brand-ink"
+            >
+              <PinIcon width={18} height={18} />
+            </span>
+            <div className="flex min-w-0 flex-col">
+              <p className="font-semibold [overflow-wrap:anywhere]">{addressLine}</p>
+              {address.landmark.trim() === '' ? null : (
+                <p className="text-sm text-muted-foreground [overflow-wrap:anywhere]">
+                  {address.landmark}
+                </p>
+              )}
+            </div>
+          </div>
+        )}
+
+        <button
+          type="button"
+          name="address"
+          data-field="address"
+          aria-haspopup="dialog"
+          aria-describedby={addressError === undefined ? undefined : 'checkout-address-error'}
+          disabled={disabled}
+          onClick={() => setPickerOpen(true)}
+          className={
+            address === null
+              ? `inline-flex min-h-12 items-center justify-center gap-2 rounded-2xl bg-primary px-5 font-semibold text-primary-foreground enabled:hover:bg-primary-hover disabled:opacity-50 ${PRESS} ${FOCUS_RING}`
+              : `inline-flex min-h-11 items-center justify-center self-start rounded-xl bg-surface-muted px-4 text-sm font-semibold enabled:hover:bg-border disabled:opacity-50 ${PRESS} ${FOCUS_RING}`
           }
         >
-          {(control) => (
-            <ListboxSelect
-              {...control}
-              name="district"
-              dataField="district"
-              label={t.labels.district}
-              placeholder={t.districtPlaceholder}
-              disabled={disabled}
-              value={values.district}
-              onChange={(code) => onDistrict(code as DistrictCode | '')}
-              onBlur={() => onBlur('district')}
-              groups={groups.map(({ zone, districts }) => ({
-                id: String(zone.id),
-                label: formatMessage(t.zoneGroup, {
-                  zone: zoneName(zone, locale),
-                  fee:
-                    zone.delivery_fee_uzs === 0
-                      ? t.summary.free
-                      : formatUZS(zone.delivery_fee_uzs, locale),
-                }),
-                options: districts.map((district) => ({
-                  value: district.code,
-                  label: districtName(district, locale),
-                })),
-              }))}
-            />
+          {address === null ? (
+            <>
+              <PinIcon width={20} height={20} aria-hidden="true" />
+              {t.chooseAddress}
+            </>
+          ) : (
+            t.changeAddress
           )}
-        </FormField>
+        </button>
+        {addressError === undefined ? null : (
+          <p id="checkout-address-error" role="alert" className={ERROR_TEXT}>
+            {addressError}
+          </p>
+        )}
 
-        {text('street', {
-          label: t.labels.street,
-          required: true,
-          autoComplete: 'address-line1',
-          limit: LIMITS.street.max,
-        })}
-        <div className="grid grid-cols-2 gap-3">
-          {text('house', {
-            label: t.labels.house,
-            required: true,
-            autoComplete: 'off',
-            limit: LIMITS.house.max,
-          })}
-          {text('apartment', {
-            label: t.labels.apartment,
-            optional: true,
-            autoComplete: 'off',
-            limit: LIMITS.apartment.max,
-          })}
-          {text('entrance', {
-            label: t.labels.entrance,
-            optional: true,
-            autoComplete: 'off',
-            limit: LIMITS.entrance.max,
-          })}
-          {text('floor', {
-            label: t.labels.floor,
-            optional: true,
-            autoComplete: 'off',
-            limit: LIMITS.floor.max,
-          })}
-        </div>
-        {text('landmark', {
-          label: t.labels.landmark,
-          optional: true,
-          autoComplete: 'off',
-          limit: LIMITS.landmark.max,
-        })}
+        <AddressPicker
+          open={pickerOpen}
+          onClose={() => setPickerOpen(false)}
+          initial={address}
+          onSave={(next) => {
+            setPickerOpen(false);
+            onAddress(next);
+          }}
+        />
       </section>
-
-      {slotPicker}
 
       <section aria-labelledby="checkout-recipient" className={`${CARD} flex flex-col gap-4`}>
         <h2 id="checkout-recipient" className={STEP_HEADING}>
-          <StepNumber step={recipientStep} />
+          <StepNumber step={2} />
           {t.sections.recipient}
         </h2>
         {text('recipientName', {
@@ -256,7 +209,7 @@ export function CheckoutFormFields({
         className={`${CARD} flex min-w-0 flex-col gap-3`}
       >
         <legend className={`${STEP_HEADING} float-left w-full`}>
-          <StepNumber step={recipientStep + 1} />
+          <StepNumber step={3} />
           {t.sections.payment}
         </legend>
         <div role="radiogroup" className="flex flex-col gap-2">
@@ -285,7 +238,7 @@ export function CheckoutFormFields({
 
       <section aria-labelledby="checkout-comment" className={`${CARD} flex flex-col gap-4`}>
         <h2 id="checkout-comment" className={STEP_HEADING}>
-          <StepNumber step={recipientStep + 2} />
+          <StepNumber step={4} />
           {t.sections.comment}
         </h2>
         <FormField

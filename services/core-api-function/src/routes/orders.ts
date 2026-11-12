@@ -9,10 +9,8 @@
  * missing one (404). Request bodies (addresses, phone numbers) are never logged.
  */
 import {
-  BelowMinimumOrderError,
   CartEmptyError,
   CheckoutError,
-  DistrictNotServedError,
   IdempotencyKeyConflictError,
   InvalidStatusTransitionError,
   OrderInsufficientStockError,
@@ -21,9 +19,6 @@ import {
   OrderProductUnavailableError,
   OrderStatusConflictError,
   PriceChangedError,
-  SlotFullError,
-  SlotRequiredError,
-  SlotUnavailableError,
   TooManyOpenOrdersError,
 } from '../domain/checkout.ts';
 import { ApiError } from '../errors.ts';
@@ -40,7 +35,6 @@ import { Validation, uuid } from '../schemas/storefront/fields.ts';
 import { readBody, readJsonBody, readPath, readQuery } from '../schemas/storefront/http.ts';
 import {
   cancelOrderRequest,
-  checkoutQuoteRequest,
   createOrderRequest,
   idempotencyKeyHeader,
   orderPageQuery,
@@ -83,13 +77,7 @@ export function checkoutApiError(error: CheckoutError): ApiError {
       extra: { current_status: error.currentStatus },
     });
   }
-  if (error instanceof DistrictNotServedError) {
-    return new ApiError(409, 'district_not_served', 'No delivery to this district');
-  }
   if (error instanceof CartEmptyError) return new ApiError(409, 'cart_empty', 'Cart is empty');
-  if (error instanceof BelowMinimumOrderError) {
-    return new ApiError(409, 'below_min_order', 'Order is below the minimum');
-  }
   if (error instanceof IdempotencyKeyConflictError) {
     return new ApiError(
       409,
@@ -102,15 +90,6 @@ export function checkoutApiError(error: CheckoutError): ApiError {
   }
   if (error instanceof TooManyOpenOrdersError) {
     return new ApiError(409, 'too_many_open_orders', 'Too many orders waiting for confirmation');
-  }
-  if (error instanceof SlotRequiredError) {
-    return new ApiError(409, 'slot_required', 'Choose a delivery slot');
-  }
-  if (error instanceof SlotUnavailableError) {
-    return new ApiError(409, 'slot_unavailable', 'This delivery slot can no longer be booked');
-  }
-  if (error instanceof SlotFullError) {
-    return new ApiError(409, 'slot_full', 'This delivery slot is full');
   }
   return new ApiError(500, 'internal_error', 'Internal server error');
 }
@@ -138,22 +117,16 @@ async function ordersIpLimit(c: Ctx): Promise<void> {
 }
 
 /**
- * Re-check the cart (status, current price, stock) and price delivery for a district. Never fails
- * because of the cart's contents: problems are reported in `issues` and `can_place_order`.
- * `409 district_not_served` when no active zone covers the district.
+ * Re-check the cart (status, current price, stock); takes no body. Delivery is on demand by a
+ * Yandex Go courier the customer pays, so the total is the subtotal. Never fails because of the
+ * cart's contents: problems are reported in `issues` and `can_place_order`.
  */
 async function quote(c: Ctx): Promise<Response> {
-  const body = await readJsonBody(c);
   await ordersIpLimit(c);
   await rateLimit(c, RULES.CHECKOUT_QUOTE, 'user');
   const user = await csrfProtectedUser(c);
-  const validation = new Validation();
-  const payload = readBody(validation, body, checkoutQuoteRequest);
-  validation.check();
-  const { db, clock } = deps(c);
-  const now = clock();
-  const record = await mapCheckoutErrors(() => quoteOrder(db.pool, user.id, payload.district, now));
-  return c.json(checkoutQuote(record, now));
+  const record = await quoteOrder(deps(c).db.pool, user.id);
+  return c.json(checkoutQuote(record));
 }
 
 /**
@@ -184,14 +157,12 @@ async function create(c: Ctx): Promise<Response> {
         db,
         user.id,
         {
-          district: payload.address.district,
           address: payload.address,
           recipientName: payload.recipient_name,
           recipientPhone: payload.recipient_phone,
           paymentMethod: payload.payment_method,
           comment: payload.comment,
           expectedTotalUzs: payload.expected_total_uzs,
-          deliverySlotId: payload.delivery_slot_id,
         },
         { idempotencyKey: key, requestHash: requestHash(payload), now: clock() },
       ),

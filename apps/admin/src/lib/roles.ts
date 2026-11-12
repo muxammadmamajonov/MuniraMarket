@@ -8,7 +8,7 @@ export function isStaff(user: Pick<UserPublic, 'role'> | null): boolean {
   return user !== null && STAFF_ROLES.includes(user.role);
 }
 
-/** Catalog, delivery, users and audit are admin-only; operators work orders and the dashboard. */
+/** Catalog, users and audit are admin-only; operators work orders and the dashboard. */
 export function isAdmin(user: Pick<UserPublic, 'role'> | null): boolean {
   return user !== null && user.role === 'admin';
 }

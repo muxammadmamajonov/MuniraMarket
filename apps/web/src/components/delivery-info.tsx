@@ -1,15 +1,15 @@
 import type { Dictionary } from '@/i18n';
-import { WalletIcon } from './icons';
+import { PinIcon, WalletIcon } from './icons';
 
 /**
- * A calm note about how paying works, using only what the app does: payment on delivery. Delivery
- * itself (fee and hours per district) is explained by the district chooser at the top of the page
- * and its map step, which shows the real zone rules for a confirmed point.
+ * A calm note about how ordering works, using only what the app does: a Yandex Go courier brings
+ * the order, the customer pays for the goods on delivery and pays the courier for the delivery.
  * No offers, discounts or promises.
  */
 export function DeliveryInfo({ dict }: { dict: Dictionary }) {
   const { info } = dict.home;
   const items = [
+    { key: 'courier', icon: <PinIcon />, title: info.courierTitle, text: info.courierText },
     { key: 'payment', icon: <WalletIcon />, title: info.paymentTitle, text: info.paymentText },
   ];
   return (

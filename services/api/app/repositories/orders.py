@@ -4,28 +4,20 @@ Locking (every write is one transaction; locks are always taken in this order, s
 writers cannot deadlock):
 
 1. the customer's ``carts`` row (order creation) or the ``orders`` row (status changes),
-2. the affected ``products`` rows, ``FOR UPDATE`` in ascending id order,
-3. the booked ``delivery_slots`` row (one conditional ``UPDATE``; admin edits lock it the same
-   way, so an order and a capacity change on one slot serialise on that row).
+2. the affected ``products`` rows, ``FOR UPDATE`` in ascending id order.
 
 Order creation, under those locks: replay an earlier order with the same ``Idempotency-Key``;
 re-evaluate the cart against current prices, visibility and stock with the same pure function as
-the quote; refuse unless the cart is clean, the zone serves the district, the minimum order is
-met and the total equals what the customer was shown; then decrement tracked stock, snapshot the
-lines, write the status history and the notification outbox row, and empty the cart.
-
-Delivery slots: when the zone has a bookable slot (``bookable_slot``: active, cutoff ahead, within
-the quote's 14 local days), the order must book one. The reservation is a single
-``UPDATE ... SET reserved_count = reserved_count + 1 WHERE`` (same zone, bookable,
-``reserved_count < capacity``) ``RETURNING``, so concurrent orders can
-never take more places than the slot has (the ``reserved_count <= capacity`` CHECK is the
-backstop). An idempotent replay returns before it, so it never books a second place.
+the quote; refuse unless the cart is clean and the total equals what the customer was shown; then
+decrement tracked stock, snapshot the lines, write the status history and the notification outbox
+rows, and empty the cart. Delivery is on demand by a Yandex Go courier whom the customer pays, so
+there is no delivery fee, zone or slot to check.
 
 Stock changes go through Core ``update(Product)``, which applies the model's
 ``onupdate=func.now()`` to ``products.updated_at``: a catalog CSV exported before an order (or a
 restock) is then refused as ``stale_row`` instead of writing the old stock back.
 
-Cancelling (by the customer, or an operator) returns tracked stock and the slot's place, and
+Cancelling (by the customer, or an operator) returns tracked stock, and
 writes an ``order.status_change`` audit row (no reason text, no recipient data); so does every
 other status change. Nothing is ever committed partially: any rule violation rolls the whole
 transaction back.
@@ -36,7 +28,7 @@ import uuid
 from collections.abc import AsyncIterator, Sequence
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
-from datetime import date, datetime, time
+from datetime import datetime
 from typing import Any, Protocol
 
 from sqlalchemy import delete, func, select, update
@@ -47,9 +39,7 @@ from app.audit import AuditActor, AuditEntity, record_audit
 from app.domain.cart import LineFacts
 from app.domain.checkout import (
     MAX_OPEN_ORDERS,
-    BelowMinimumOrderError,
     CartEmptyError,
-    DistrictNotServedError,
     IdempotencyKeyConflictError,
     InvalidStatusTransitionError,
     OrderInsufficientStockError,
@@ -59,28 +49,19 @@ from app.domain.checkout import (
     OrderStatusConflictError,
     PriceChangedError,
     QuoteTotals,
-    SlotFullError,
-    SlotRequiredError,
-    SlotUnavailableError,
     TooManyOpenOrdersError,
     build_quote,
 )
-from app.domain.delivery import TASHKENT_TZ
+from app.domain.geo import snapshot_point
 from app.domain.order_status import OrderStatus, can_transition, customer_can_cancel
+from app.domain.tashkent import TASHKENT_TZ
 from app.models.cart import Cart, CartItem
 from app.models.catalog import Product
-from app.models.delivery import DeliverySlot
 from app.models.enums import Language, PaymentMethod, Unit, UserRole
 from app.models.notification import NotificationOutbox
 from app.models.order import Order, OrderItem, OrderStatusHistory
 from app.models.user import User
 from app.repositories.cart import CartLineRecord, SqlAlchemyCartRepository
-from app.repositories.delivery import (
-    SlotOptionRecord,
-    SqlAlchemyDeliveryZoneRepository,
-    ZoneRecord,
-    bookable_slot,
-)
 from app.repositories.staff_chat import staff_chat_id
 
 ORDER_STATUS_EVENT = "order.status_changed"
@@ -107,25 +88,20 @@ _NUMBER_ATTEMPTS = 5
 
 @dataclass(frozen=True, slots=True)
 class QuoteRecord:
-    zone: ZoneRecord
     lines: tuple[CartLineRecord, ...]
     totals: QuoteTotals
-    # The zone runs on delivery slots: an order must name one of them.
-    slot_required: bool = False
-    slots: tuple[SlotOptionRecord, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
 class NewOrder:
-    district: str
-    # Structured address; stored as the order's ``address_snapshot`` (``district`` included).
+    # Structured address (``lat``/``lon`` rounded to 6 decimals, street, house, ...); stored as
+    # the order's ``address_snapshot``.
     address: dict[str, Any]
     recipient_name: str
     recipient_phone: str
     payment_method: PaymentMethod
     comment: str | None
     expected_total_uzs: int
-    delivery_slot_id: uuid.UUID | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -156,22 +132,12 @@ class StatusChangeRecord:
 
 
 @dataclass(frozen=True, slots=True)
-class SlotSnapshotRecord:
-    """The booked delivery window as it was when the order was placed."""
-
-    slot_date: date
-    starts_at: time
-    ends_at: time
-
-
-@dataclass(frozen=True, slots=True)
 class OrderRecord:
     id: uuid.UUID
     number: str
     user_id: uuid.UUID
     status: OrderStatus
     subtotal_uzs: int
-    delivery_fee_uzs: int
     total_uzs: int
     item_count: int
     payment_method: PaymentMethod
@@ -184,7 +150,6 @@ class OrderRecord:
     updated_at: datetime
     items: tuple[OrderItemRecord, ...]
     history: tuple[StatusChangeRecord, ...]
-    delivery_slot: SlotSnapshotRecord | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -213,7 +178,7 @@ class CreatedOrder:
 class OrderRepository(Protocol):
     """Rule violations raise the ``app.domain.checkout`` errors."""
 
-    async def quote(self, user_id: uuid.UUID, district: str, *, now: datetime) -> QuoteRecord: ...
+    async def quote(self, user_id: uuid.UUID) -> QuoteRecord: ...
 
     async def create_order(
         self,
@@ -291,8 +256,6 @@ def first_blocking_error(quote: QuoteRecord) -> Exception | None:
             return OrderInsufficientStockError(line.product.id, line.product.stock_quantity or 0)
     if "cart_empty" in quote.totals.issues:
         return CartEmptyError()
-    if "below_min_order" in quote.totals.issues:
-        return BelowMinimumOrderError()
     return None
 
 
@@ -307,22 +270,12 @@ class SqlAlchemyOrderRepository:
     def __init__(self, session: AsyncSession) -> None:
         self._session = session
         self._carts = SqlAlchemyCartRepository(session)
-        self._zones = SqlAlchemyDeliveryZoneRepository(session)
 
     # --- checkout --------------------------------------------------------------------------------
 
-    async def quote(self, user_id: uuid.UUID, district: str, *, now: datetime) -> QuoteRecord:
-        zone = await self._zones.find_for_district(district)
-        if zone is None:
-            raise DistrictNotServedError(district)
+    async def quote(self, user_id: uuid.UUID) -> QuoteRecord:
         cart = await self._carts.get_cart(user_id)
-        return QuoteRecord(
-            zone=zone,
-            lines=cart.lines,
-            totals=build_quote(line_facts(cart.lines), zone.rules),
-            slot_required=await self._zones.has_bookable_slot(zone.zone_id, now),
-            slots=tuple(await self._zones.offered_slots(zone.zone_id, now)),
-        )
+        return QuoteRecord(lines=cart.lines, totals=build_quote(line_facts(cart.lines)))
 
     async def create_order(
         self,
@@ -364,28 +317,18 @@ class SqlAlchemyOrderRepository:
                 ).scalars()
                 await self._lock_products(list(product_ids))
 
-                zone = await self._zones.find_for_district(new_order.district)
-                if zone is None:
-                    raise DistrictNotServedError(new_order.district)
                 cart = await self._carts.get_cart(user_id)
-                quote = QuoteRecord(
-                    zone=zone,
-                    lines=cart.lines,
-                    totals=build_quote(line_facts(cart.lines), zone.rules),
-                )
+                quote = QuoteRecord(lines=cart.lines, totals=build_quote(line_facts(cart.lines)))
                 blocking = first_blocking_error(quote)
                 if blocking is not None:
                     raise blocking
                 if quote.totals.total_uzs != new_order.expected_total_uzs:
                     raise PriceChangedError(quote.totals.total_uzs)
-                # Last lock of the transaction (after the products): the slot row.
-                slot = await self._reserve_slot(zone.zone_id, new_order.delivery_slot_id, now)
 
                 order_id = await self._insert_order(
                     user_id,
                     new_order,
                     quote,
-                    slot=slot,
                     idempotency_key=idempotency_key,
                     request_hash=request_hash,
                     now=now,
@@ -511,55 +454,6 @@ class SqlAlchemyOrderRepository:
             raise IdempotencyKeyConflictError()
         return CreatedOrder(order=await self._load(order_id), replayed=True)
 
-    async def _reserve_slot(
-        self, zone_id: uuid.UUID, slot_id: uuid.UUID | None, now: datetime
-    ) -> SlotSnapshotRecord | None:
-        """Book one place in ``slot_id`` (or check that the zone needs none).
-
-        One conditional ``UPDATE``: concurrent orders queue on the row lock and each re-checks
-        ``reserved_count < capacity`` against the committed count, so the slot is never oversold.
-        """
-        if slot_id is None:
-            if await self._zones.has_bookable_slot(zone_id, now):
-                raise SlotRequiredError()
-            return None
-        booked = (
-            await self._session.execute(
-                update(DeliverySlot)
-                .where(
-                    DeliverySlot.id == slot_id,
-                    DeliverySlot.zone_id == zone_id,
-                    bookable_slot(now),
-                    DeliverySlot.reserved_count < DeliverySlot.capacity,
-                )
-                .values(reserved_count=DeliverySlot.reserved_count + 1, updated_at=func.now())
-                .returning(DeliverySlot.slot_date, DeliverySlot.starts_at, DeliverySlot.ends_at)
-            )
-        ).one_or_none()
-        if booked is not None:
-            return SlotSnapshotRecord(
-                slot_date=booked.slot_date, starts_at=booked.starts_at, ends_at=booked.ends_at
-            )
-        # Nothing booked: say why. Only "full" is worth a different message to the customer.
-        slot = (
-            await self._session.execute(
-                select(DeliverySlot.zone_id, bookable_slot(now).label("bookable")).where(
-                    DeliverySlot.id == slot_id
-                )
-            )
-        ).one_or_none()
-        if slot is None or slot.zone_id != zone_id or not slot.bookable:
-            raise SlotUnavailableError()
-        raise SlotFullError()
-
-    async def _release_slot(self, slot_id: uuid.UUID) -> None:
-        """Give a cancelled order's place back (never below zero)."""
-        await self._session.execute(
-            update(DeliverySlot)
-            .where(DeliverySlot.id == slot_id, DeliverySlot.reserved_count > 0)
-            .values(reserved_count=DeliverySlot.reserved_count - 1, updated_at=func.now())
-        )
-
     async def _lock_products(self, product_ids: list[uuid.UUID]) -> None:
         if product_ids:
             await self._session.execute(
@@ -575,7 +469,6 @@ class SqlAlchemyOrderRepository:
         new_order: NewOrder,
         quote: QuoteRecord,
         *,
-        slot: SlotSnapshotRecord | None,
         idempotency_key: str,
         request_hash: str,
         now: datetime,
@@ -587,15 +480,9 @@ class SqlAlchemyOrderRepository:
                 user_id=user_id,
                 status=OrderStatus.NEW,
                 subtotal_uzs=totals.subtotal_uzs,
-                delivery_fee_uzs=totals.delivery_fee_uzs,
                 total_uzs=totals.total_uzs,
                 item_count=totals.cart.item_count,
                 payment_method=new_order.payment_method,
-                delivery_zone_id=quote.zone.zone_id,
-                delivery_slot_id=new_order.delivery_slot_id if slot is not None else None,
-                delivery_slot_date=slot.slot_date if slot is not None else None,
-                delivery_slot_starts_at=slot.starts_at if slot is not None else None,
-                delivery_slot_ends_at=slot.ends_at if slot is not None else None,
                 recipient_name=new_order.recipient_name,
                 recipient_phone=new_order.recipient_phone,
                 address_snapshot=new_order.address,
@@ -650,8 +537,6 @@ class SqlAlchemyOrderRepository:
         if target is OrderStatus.CANCELLED:
             values["cancel_reason"] = reason
             await self._restock(order.id)
-            if order.delivery_slot_id is not None:
-                await self._release_slot(order.delivery_slot_id)
         await self._session.execute(update(Order).where(Order.id == order.id).values(**values))
         await self._record_change(
             order.id,
@@ -717,7 +602,13 @@ class SqlAlchemyOrderRepository:
         )
         row = (
             await self._session.execute(
-                select(Order.number, Order.total_uzs, User.telegram_user_id, User.language)
+                select(
+                    Order.number,
+                    Order.total_uzs,
+                    Order.address_snapshot,
+                    User.telegram_user_id,
+                    User.language,
+                )
                 .join(User, User.id == Order.user_id)
                 .where(Order.id == order_id)
             )
@@ -739,25 +630,25 @@ class SqlAlchemyOrderRepository:
             group_chat_id = await staff_chat_id(self._session)
             if group_chat_id is not None:
                 # Same transaction as the change: an alert exists iff the change committed.
-                # No customer name, address or phone: staff open the order in the admin.
+                # No customer name, address text or phone: staff open the order in the admin.
+                staff_payload: dict[str, Any] = {
+                    "order_id": str(order_id),
+                    "order_number": row.number,
+                    "status": to_status.value,
+                    "previous_status": from_status.value if from_status is not None else None,
+                    "total_uzs": row.total_uzs,
+                    "chat_id": group_chat_id,
+                    "cancelled_by_customer": (
+                        to_status is OrderStatus.CANCELLED and actor.role is UserRole.CUSTOMER
+                    ),
+                }
+                # A new order's drop-off point, only inside the "call a Yandex Go courier" button.
+                destination = snapshot_point(row.address_snapshot)
+                if to_status is OrderStatus.NEW and destination is not None:
+                    staff_payload["destination"] = {"lat": destination.lat, "lon": destination.lon}
                 self._session.add(
                     NotificationOutbox(
-                        event_type=STAFF_ALERT_EVENT,
-                        order_id=order_id,
-                        payload={
-                            "order_id": str(order_id),
-                            "order_number": row.number,
-                            "status": to_status.value,
-                            "previous_status": (
-                                from_status.value if from_status is not None else None
-                            ),
-                            "total_uzs": row.total_uzs,
-                            "chat_id": group_chat_id,
-                            "cancelled_by_customer": (
-                                to_status is OrderStatus.CANCELLED
-                                and actor.role is UserRole.CUSTOMER
-                            ),
-                        },
+                        event_type=STAFF_ALERT_EVENT, order_id=order_id, payload=staff_payload
                     )
                 )
         await self._session.flush()
@@ -827,7 +718,6 @@ class SqlAlchemyOrderRepository:
             user_id=order.user_id,
             status=order.status,
             subtotal_uzs=order.subtotal_uzs,
-            delivery_fee_uzs=order.delivery_fee_uzs,
             total_uzs=order.total_uzs,
             item_count=order.item_count,
             payment_method=order.payment_method,
@@ -861,19 +751,4 @@ class SqlAlchemyOrderRepository:
                 )
                 for change in history
             ),
-            delivery_slot=_slot_snapshot(order),
         )
-
-
-def _slot_snapshot(order: Order) -> SlotSnapshotRecord | None:
-    if (
-        order.delivery_slot_date is None
-        or order.delivery_slot_starts_at is None
-        or order.delivery_slot_ends_at is None
-    ):
-        return None
-    return SlotSnapshotRecord(
-        slot_date=order.delivery_slot_date,
-        starts_at=order.delivery_slot_starts_at,
-        ends_at=order.delivery_slot_ends_at,
-    )

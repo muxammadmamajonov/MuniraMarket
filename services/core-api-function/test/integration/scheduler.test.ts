@@ -19,7 +19,7 @@ type Behaviour = 'ok' | 'network' | number;
 
 /** A fake Bot API behind the injected `fetch`: per chat id, succeed or fail. */
 class FakeBotApi {
-  readonly sent: Array<{ chat_id: number; text: string }> = [];
+  readonly sent: Array<{ chat_id: number; text: string; reply_markup?: unknown }> = [];
   readonly urls: string[] = [];
   behaviour = new Map<number, Behaviour>();
   delayMs = 0;
@@ -136,6 +136,7 @@ describe.skipIf(!hasDatabase)('POST /internal/scheduler/notifications/drain', ()
         total_uzs: 5000,
         chat_id: -100500,
         cancelled_by_customer: false,
+        destination: { lat: 41.311081, lon: 69.240562 },
       },
       ageSeconds: 5,
     });
@@ -161,6 +162,24 @@ describe.skipIf(!hasDatabase)('POST /internal/scheduler/notifications/drain', ()
     ]);
     expect(response.headers.get('cache-control')).toBe('no-store');
     expect(bot.sent.map((m) => m.chat_id)).toEqual([1001, 1002, -100500]);
+    // The staff alert carries the Yandex Go courier button; customer messages carry none.
+    expect(bot.sent.map((m) => m.reply_markup)).toEqual([
+      undefined,
+      undefined,
+      {
+        inline_keyboard: [
+          [
+            {
+              text: 'Yandex chaqirish / Вызвать Яндекс',
+              url:
+                'https://3.redirect.appmetrica.yandex.com/route?end-lat=41.311081&end-lon=69.240562' +
+                '&tariffClass=courier&level=courier&ref=muniramarket' +
+                '&appmetrica_tracking_id=1178268795219780156&lang=uz',
+            },
+          ],
+        ],
+      },
+    ]);
     expect(bot.urls[0]).toBe(`https://api.telegram.org/bot${TEST_BOT_TOKEN}/sendMessage`);
     for (const id of [a, b, staff]) {
       expect(await row(id)).toMatchObject({ attempts: 1, outcome: 'delivered', locked: false });

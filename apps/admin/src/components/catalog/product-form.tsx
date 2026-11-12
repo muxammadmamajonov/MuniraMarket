@@ -133,7 +133,7 @@ function ProductForm({ categories, product: initial, onReload, created }: FormPr
   const previewSrc =
     previewEnabled && imageUrl !== '' && isValidImageUrl(imageUrl) ? imageUrl : null;
 
-  const handleFailure = (error: Parameters<typeof writeErrorMessage>[2]) => {
+  const handleFailure = (error: Parameters<typeof writeErrorMessage>[1]) => {
     if (error.code === 'validation_error') {
       const fields = fieldErrorsFrom(error);
       const next: ServerErrors = {};
@@ -156,7 +156,7 @@ function ProductForm({ categories, product: initial, onReload, created }: FormPr
       setFormError(null);
       return;
     }
-    setFormError(writeErrorMessage(dict, locale, error));
+    setFormError(writeErrorMessage(dict, error));
     if (error.code === 'product_archived') onReload();
   };
 
@@ -209,7 +209,7 @@ function ProductForm({ categories, product: initial, onReload, created }: FormPr
       `/admin/products/${encodeURIComponent(product.id)}`,
       jsonInit('DELETE'),
     );
-    if (!result.ok) return writeErrorMessage(dict, locale, result.error);
+    if (!result.ok) return writeErrorMessage(dict, result.error);
     setProduct(result.data);
     setValues(productToForm(result.data));
     return null;
@@ -225,7 +225,7 @@ function ProductForm({ categories, product: initial, onReload, created }: FormPr
         jsonInit('POST'),
       );
       if (!result.ok) {
-        setFormError(writeErrorMessage(dict, locale, result.error));
+        setFormError(writeErrorMessage(dict, result.error));
         return;
       }
       setProduct(result.data);

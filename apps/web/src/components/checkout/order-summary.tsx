@@ -1,22 +1,19 @@
 'use client';
 
-import type { Cart, CartLine, CheckoutQuote, DeliveryZone } from '@muniramarket/contracts';
+import type { Cart, CartLine, CheckoutQuote } from '@muniramarket/contracts';
 import { formatUZS } from '@muniramarket/ui';
 import { useI18n } from '@/i18n/context';
 import { formatMessage, formatPlural } from '@/i18n/format';
 import { localizedName } from '@/lib/catalog';
 import type { QuoteState } from '@/lib/checkout/use-checkout';
 import { CARD, ERROR_TEXT, SECTION_TITLE } from '../ui-classes';
-import { FreeDeliveryProgress } from '../free-delivery-progress';
 import { RetryButton } from './retry-button';
 
 export interface OrderSummaryProps {
   cart: Cart;
   quote: QuoteState;
-  /** The quote for the district currently selected, or `null`. */
+  /** The current quote, or `null` while it is loading or failed. */
   readyQuote: CheckoutQuote | null;
-  /** The chosen delivery window, already worded ("Today, 31.10 · 10:00–12:00"), or `null`. */
-  slotText?: string | null;
   /** Seconds left of a rate-limit wait, 0 when there is none. */
   cooldown?: number;
   /** Asks for the quote again (shown with the message when pricing the cart failed). */
@@ -49,14 +46,14 @@ function Row({
 }
 
 /**
- * Lines, subtotal, delivery fee and total. Every amount is the server's (the quote once a
- * district is chosen, the cart before); nothing is added up here. A fee of 0 reads "Free".
+ * Lines and total. Every amount is the server's (the quote, the cart before it arrives); nothing
+ * is added up here. There is no delivery line: a Yandex Go courier brings the order and is paid
+ * by the customer on receipt, which one plain line under the total says.
  */
 export function OrderSummary({
   cart,
   quote,
   readyQuote,
-  slotText = null,
   cooldown = 0,
   onRetryQuote,
 }: OrderSummaryProps) {
@@ -64,20 +61,8 @@ export function OrderSummary({
   const t = dict.checkout.summary;
   const lines: CartLine[] = readyQuote?.items ?? cart.items;
   const itemCount = readyQuote?.item_count ?? cart.item_count;
-  const subtotal = readyQuote?.subtotal_uzs ?? cart.subtotal_uzs;
-  const zone: DeliveryZone | null = readyQuote?.zone ?? null;
-
-  let delivery: string;
-  if (readyQuote !== null) {
-    delivery =
-      readyQuote.delivery_fee_uzs === 0 ? t.free : formatUZS(readyQuote.delivery_fee_uzs, locale);
-  } else if (quote.kind === 'loading') delivery = t.calculating;
-  else delivery = t.pickDistrict;
-
-  const total = readyQuote === null ? '—' : formatUZS(readyQuote.total_uzs, locale);
-  const remaining = readyQuote?.free_delivery_remaining_uzs ?? null;
+  const total = formatUZS(readyQuote?.total_uzs ?? cart.total_uzs, locale);
   const issues = readyQuote?.issues ?? [];
-  const threshold = zone?.free_delivery_threshold_uzs ?? null;
 
   return (
     <section
@@ -129,35 +114,18 @@ export function OrderSummary({
       </ul>
 
       <div className="flex flex-col gap-1.5 border-t border-hairline pt-3">
-        {slotText === null ? null : (
-          <p className="flex flex-col pb-1" data-testid="checkout-slot-summary">
-            <span className="text-sm text-muted-foreground">{dict.checkout.slots.summary}</span>
-            <span className="font-medium [overflow-wrap:anywhere]">{slotText}</span>
-          </p>
-        )}
         <p className="text-sm text-muted-foreground">
           {formatPlural(dict.checkout.summary.items, itemCount, locale)}
         </p>
-        <Row label={t.subtotal} value={formatUZS(subtotal, locale)} testId="checkout-subtotal" />
-        <Row label={t.delivery} value={delivery} testId="checkout-delivery" />
         <Row label={t.total} value={total} strong testId="checkout-total" />
+        <p className="text-sm leading-5 text-muted-foreground" data-testid="checkout-courier-note">
+          {dict.checkout.courierNote}
+        </p>
       </div>
 
       <div aria-live="polite" className="flex flex-col gap-2">
         {quote.kind === 'loading' ? (
           <p className="text-sm text-muted-foreground">{t.calculating}</p>
-        ) : null}
-        {remaining !== null && threshold !== null && threshold > 0 ? (
-          <FreeDeliveryProgress
-            threshold={threshold}
-            remaining={remaining}
-            {...(remaining > 0 ? { testId: 'free-delivery-hint' } : {})}
-          />
-        ) : null}
-        {issues.includes('below_min_order') && zone !== null ? (
-          <p role="alert" className={ERROR_TEXT} data-testid="below-min">
-            {formatMessage(t.belowMin, { min: formatUZS(zone.min_order_uzs, locale) })}
-          </p>
         ) : null}
         {issues.includes('cart_has_issues') ? (
           <p role="alert" className={ERROR_TEXT} data-testid="cart-issues">
@@ -175,23 +143,16 @@ export function OrderSummary({
             className="flex flex-col items-start gap-2 outline-none"
           >
             <p role="alert" className={ERROR_TEXT}>
-              {quote.failure.kind === 'district_not_served'
-                ? t.districtNotServed
-                : quote.failure.kind === 'rate_limited'
-                  ? formatMessage(dict.checkout.failures.rateLimited, {
-                      seconds: quote.failure.seconds,
-                    })
-                  : t.quoteFailed}
+              {quote.failure.kind === 'rate_limited'
+                ? formatMessage(dict.checkout.failures.rateLimited, {
+                    seconds: quote.failure.seconds,
+                  })
+                : t.quoteFailed}
             </p>
-            {quote.failure.kind === 'district_not_served' || onRetryQuote === undefined ? null : (
+            {onRetryQuote === undefined ? null : (
               <RetryButton cooldown={cooldown} onClick={onRetryQuote} testId="quote-retry" />
             )}
           </div>
-        ) : null}
-        {readyQuote !== null && !readyQuote.zone.is_open_now ? (
-          <p className="text-sm text-muted-foreground" data-testid="zone-closed">
-            {formatMessage(dict.checkout.closedNow, { time: readyQuote.zone.opens_at })}
-          </p>
         ) : null}
       </div>
     </section>

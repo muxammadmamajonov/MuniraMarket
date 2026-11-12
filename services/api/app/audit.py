@@ -45,24 +45,6 @@ ALLOWED_FIELDS: Final[Mapping[str, frozenset[str]]] = {
             "archived",
         }
     ),
-    "zone": frozenset(
-        {
-            "slug",
-            "name_uz",
-            "name_ru",
-            "delivery_fee_uzs",
-            "free_delivery_threshold_uzs",
-            "min_order_uzs",
-            "opens_at",
-            "closes_at",
-            "sort_order",
-            "is_active",
-            "districts",
-        }
-    ),
-    "slot": frozenset(
-        {"zone_id", "slot_date", "starts_at", "ends_at", "capacity", "cutoff_at", "is_active"}
-    ),
     "user": frozenset({"role", "is_blocked"}),
     "order": frozenset({"status"}),
     "catalog": frozenset(),
@@ -80,7 +62,6 @@ ALLOWED_EXTRA: Final = frozenset(
         "unchanged",
         "sku",
         "slug",
-        "district_count",
     }
 )
 # Allow-listed ``extra`` flags whose name contains a denied word ("reason"): only a bool is kept,
@@ -101,8 +82,6 @@ class AuditEntity:
     CATEGORY: Final = "category"
     PRODUCT: Final = "product"
     CATALOG: Final = "catalog"
-    ZONE: Final = "zone"
-    SLOT: Final = "slot"
     USER: Final = "user"
     ORDER: Final = "order"
     STAFF_CHAT: Final = "staff_chat"
@@ -124,7 +103,7 @@ def _scalar(value: object) -> Scalar:  # noqa: PLR0911 - one branch per value ki
     if isinstance(value, datetime | date | time):
         return value.isoformat()
     if isinstance(value, list | tuple | set | frozenset):
-        # Only short collections of identifiers (e.g. district codes) are meaningful here.
+        # Only short collections of identifiers are meaningful here.
         items = sorted(str(item) for item in value)
         return _truncate(",".join(items))
     if isinstance(value, str):

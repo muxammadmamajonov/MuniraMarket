@@ -35,7 +35,7 @@ function AccessDenied() {
  * the gate is mounted, so no `/admin/**` request is made.
  *
  * Staff get the role-aware navigation (`admin-nav.tsx`): operators see the dashboard and orders,
- * admins also catalog, delivery, users and audit. That filtering is a convenience: admin-only pages
+ * admins also catalog, users and audit. That filtering is a convenience: admin-only pages
  * check the role again (`AdminOnly`) and Core API independently answers 403 to an operator.
  */
 export function AdminShell({ children }: { children: ReactNode }) {

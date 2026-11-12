@@ -1,4 +1,4 @@
-"""The one canonical synthetic demo dataset: categories, products and delivery zones.
+"""The one canonical synthetic demo dataset: categories and products.
 
 Used by the local dev seed (``app.dev.seed``, every row) and by the operator-run production demo
 import (``app.ops.demo_catalog``, every row that is not ``dev_only``). A realistic mock Tashkent
@@ -9,18 +9,15 @@ Photos (real Unsplash/Pexels stock photos served by the storefront) are mapped b
 ``app.ops.demo_images``.
 
 ``dev_only`` rows exist to exercise edge cases in development and tests (an inactive category
-with an active child, a product hidden by its inactive category chain, an inactive zone); the
-production demo import leaves them out. Delivery zones are named ``Demo``/``Демо`` so nobody
-mistakes them for real delivery rules.
+with an active child, a product hidden by its inactive category chain); the production demo
+import leaves them out.
 """
 
 # Uzbek Latin is written with U+2018/U+2019 apostrophes (as in the storefront); ruff flags them.
 # ruff: noqa: RUF001, RUF003
 
 from dataclasses import dataclass
-from datetime import time
 
-from app.domain.delivery import DistrictCode
 from app.models.enums import Unit
 
 
@@ -733,77 +730,6 @@ DEMO_PRODUCTS: tuple[SeedProduct, ...] = (
 )
 
 
-@dataclass(frozen=True, slots=True)
-class SeedZone:
-    slug: str
-    name_uz: str
-    name_ru: str
-    delivery_fee_uzs: int
-    free_delivery_threshold_uzs: int | None
-    min_order_uzs: int
-    opens_at: time
-    closes_at: time
-    sort_order: int
-    districts: tuple[DistrictCode, ...]
-    is_active: bool = True
-    dev_only: bool = False
-
-
-# Every district appears in exactly one zone (``delivery_zone_districts`` enforces it).
-DEMO_ZONES: tuple[SeedZone, ...] = (
-    SeedZone(
-        "demo-markaziy",
-        "Demo markaziy zona",
-        "Демо центральная зона",
-        delivery_fee_uzs=15_000,
-        free_delivery_threshold_uzs=300_000,
-        min_order_uzs=50_000,
-        opens_at=time(9, 0),
-        closes_at=time(21, 0),
-        sort_order=10,
-        districts=("mirobod", "yakkasaroy", "shayxontohur", "yunusobod", "mirzo_ulugbek"),
-    ),
-    SeedZone(
-        "demo-chekka",
-        "Demo chekka zona",
-        "Демо окраинная зона",
-        delivery_fee_uzs=25_000,
-        free_delivery_threshold_uzs=500_000,
-        min_order_uzs=100_000,
-        opens_at=time(9, 0),
-        closes_at=time(20, 0),
-        sort_order=20,
-        districts=("chilonzor", "olmazor", "uchtepa", "yashnobod"),
-    ),
-    SeedZone(
-        "demo-janubiy",
-        "Demo janubiy zona",
-        "Демо южная зона",
-        delivery_fee_uzs=30_000,
-        free_delivery_threshold_uzs=None,
-        min_order_uzs=150_000,
-        opens_at=time(10, 0),
-        closes_at=time(19, 0),
-        sort_order=30,
-        districts=("sergeli",),
-    ),
-    SeedZone(
-        "demo-yopiq",
-        "Demo yopiq zona",
-        "Демо закрытая зона",
-        delivery_fee_uzs=40_000,
-        free_delivery_threshold_uzs=None,
-        min_order_uzs=200_000,
-        opens_at=time(10, 0),
-        closes_at=time(18, 0),
-        sort_order=40,
-        districts=("bektemir", "yangihayot"),
-        is_active=False,
-        dev_only=True,
-    ),
-)
-
-
 def production_categories() -> tuple[SeedCategory, ...]:
     """The categories the production demo import writes (parents before children)."""
     return tuple(category for category in DEMO_CATEGORIES if not category.dev_only)
@@ -811,7 +737,3 @@ def production_categories() -> tuple[SeedCategory, ...]:
 
 def production_products() -> tuple[SeedProduct, ...]:
     return tuple(product for product in DEMO_PRODUCTS if not product.dev_only)
-
-
-def production_zones() -> tuple[SeedZone, ...]:
-    return tuple(zone for zone in DEMO_ZONES if not zone.dev_only)

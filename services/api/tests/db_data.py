@@ -2,8 +2,8 @@
 
 import dataclasses
 import uuid
-from collections.abc import AsyncIterator, Sequence
-from datetime import date, datetime, time, timedelta
+from collections.abc import AsyncIterator
+from datetime import datetime
 from typing import Any
 
 from fastapi import FastAPI, Request
@@ -16,11 +16,9 @@ from app.api.deps import get_session
 from app.api.routes import cart as cart_routes
 from app.api.routes import orders as order_routes
 from app.core.clock import Clock, system_clock
-from app.domain.delivery import tashkent_instant
 from app.main import create_app
 from app.models.audit import AuditLog
 from app.models.catalog import Category, Product
-from app.models.delivery import DeliverySlot, DeliveryZone, DeliveryZoneDistrict
 from app.models.enums import Unit, UserRole
 from app.models.user import User
 from app.repositories.users import SqlAlchemyUserRepository, TelegramProfile, UserRecord
@@ -112,44 +110,9 @@ async def add_user(
         return record
 
 
-async def add_zone(
-    factory: SessionFactory,
-    slug: str,
-    districts: Sequence[str],
-    *,
-    delivery_fee_uzs: int = 15_000,
-    free_delivery_threshold_uzs: int | None = 300_000,
-    min_order_uzs: int = 50_000,
-    opens_at: time = time(9, 0),
-    closes_at: time = time(21, 0),
-    sort_order: int = 0,
-    is_active: bool = True,
-) -> DeliveryZone:
-    zone = DeliveryZone(
-        slug=slug,
-        name_uz=f"Demo {slug}",
-        name_ru=f"Демо {slug}",
-        delivery_fee_uzs=delivery_fee_uzs,
-        free_delivery_threshold_uzs=free_delivery_threshold_uzs,
-        min_order_uzs=min_order_uzs,
-        opens_at=opens_at,
-        closes_at=closes_at,
-        sort_order=sort_order,
-        is_active=is_active,
-    )
-    async with factory() as session:
-        session.add(zone)
-        await session.flush()
-        session.add_all(
-            DeliveryZoneDistrict(district=district, zone_id=zone.id) for district in districts
-        )
-        await session.commit()
-    return zone
-
-
 async def update_row(
     factory: SessionFactory,
-    model: type[Category] | type[Product] | type[DeliveryZone],
+    model: type[Category] | type[Product],
     row_id: uuid.UUID,
     **values: Any,
 ) -> None:
@@ -211,49 +174,7 @@ def build_app(
     return app
 
 
-# --- delivery slots / audit (phase 4) -------------------------------------------------------------
-
-
-async def add_slot(
-    factory: SessionFactory,
-    zone: DeliveryZone,
-    slot_date: date,
-    *,
-    starts_at: time = time(10, 0),
-    ends_at: time = time(13, 0),
-    capacity: int = 10,
-    reserved_count: int = 0,
-    cutoff_at: datetime | None = None,
-    is_active: bool = True,
-) -> DeliverySlot:
-    """A slot of ``zone``; the cutoff defaults to two hours before the local (UTC+5) start."""
-    slot = DeliverySlot(
-        zone_id=zone.id,
-        slot_date=slot_date,
-        starts_at=starts_at,
-        ends_at=ends_at,
-        capacity=capacity,
-        reserved_count=reserved_count,
-        cutoff_at=cutoff_at or tashkent_instant(slot_date, starts_at) - timedelta(hours=2),
-        is_active=is_active,
-    )
-    async with factory() as session:
-        session.add(slot)
-        await session.commit()
-    return slot
-
-
-async def slot_state(factory: SessionFactory, slot_id: uuid.UUID) -> tuple[int, int]:
-    """``(reserved_count, capacity)`` of a slot as committed."""
-    async with factory() as session:
-        row = (
-            await session.execute(
-                select(DeliverySlot.reserved_count, DeliverySlot.capacity).where(
-                    DeliverySlot.id == slot_id
-                )
-            )
-        ).one()
-        return row.reserved_count, row.capacity
+# --- audit (phase 4) -----------------------------------------------------------------------------
 
 
 async def audit_rows(factory: SessionFactory, *where: Any) -> list[AuditLog]:

@@ -24,8 +24,3 @@ export function isoSql(column: string): string {
     `'\\.000000$', '') || 'Z'`
   );
 }
-
-/** `date` columns as `YYYY-MM-DD`. */
-export function isoDateSql(column: string): string {
-  return `to_char(${column}, 'YYYY-MM-DD')`;
-}

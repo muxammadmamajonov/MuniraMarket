@@ -20,9 +20,13 @@ customer's phone number or address: use a staff test account and a test address.
 - [ ] Catalog, category, search (2-letter query), product page, empty states, out-of-stock.
 - [ ] Add to cart, change quantity, remove; tapping fast does not create duplicates; 99 cap.
 - [ ] Sign in with "Telegram orqali kirish" (OIDC redirect); return to the same page; sign out.
-- [ ] Checkout: district, address, phone `+998` formatting, slot day chips scroll horizontally
-      only, keyboard does not hide the submit button, safe areas respected (notch, home bar).
-- [ ] Slot taken by someone else meanwhile → clear notice, new choice, order succeeds.
+- [ ] Address picker: opens straight on the map; moving the pin fills street and house; "Mening
+      joylashuvim" and "Shu yerga yetkazish" are reachable with the thumb; keyboard does not hide
+      them; safe areas respected (notch, home bar).
+- [ ] Checkout: saved address shown, phone `+998` formatting, the Yandex courier line, total equals
+      the items; keyboard does not hide the submit button.
+- [ ] Staff group: a new order's message has a "Yandex chaqirish" button that opens Yandex Go's
+      courier ordering with the order's point as destination (test on iOS and Android).
 - [ ] Airplane mode during submit → offline banner, no duplicate order after reconnect and retry.
 - [ ] Rate limit (tap retry repeatedly) → readable wait message, buttons locked, recovers.
 - [ ] Orders list and order detail; cancel a `NEW` order with a reason.
@@ -45,7 +49,7 @@ customer's phone number or address: use a staff test account and a test address.
 - [ ] Orders: list, filter, move through statuses, cancel with reason; second tab shows a conflict.
 - [ ] Catalog: create/edit/archive/restore a product; image preview shows the placeholder (R2 off).
 - [ ] CSV export, dry-run import, import; stale-row protection.
-- [ ] Zones and slots; users (role change, block); audit log shows every change, no phone numbers.
+- [ ] Order detail: "Yandex chaqirish" opens Yandex Go; users (role change, block); audit log shows every change, no phone numbers.
 
 ## Performance and resilience
 

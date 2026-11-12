@@ -125,32 +125,22 @@ export type AddCartItemRequest = Schemas['AddCartItemRequest'];
 
 export type UpdateCartItemRequest = Schemas['SetCartItemQuantityRequest'];
 
-// -- Delivery zones (public) ------------------------------------------------------------------
-
-/** A Tashkent district (`tuman`); zones are matched by district, never by geocoding. */
-export type District = Schemas['District'];
-
-export type DistrictCode = District['code'];
-
-/** Hours are `HH:MM` in Asia/Tashkent; money is integer UZS. */
-export type DeliveryZone = Schemas['DeliveryZonePublic'];
-
-/** `GET /api/v1/delivery/zones`: active zones only. */
-export type DeliveryZoneList = Schemas['DeliveryZoneList'];
-
 // -- Checkout & orders (session required; writes also CSRF) -----------------------------------
 
-/** `POST /api/v1/checkout/quote` body. */
-export type CheckoutQuoteRequest = Schemas['CheckoutQuoteRequest'];
-
 /**
- * Server-computed quote. Problems are reported in `issues` / `can_place_order` rather than as
- * errors; send `total_uzs` back as `expected_total_uzs` when placing the order.
+ * `POST /api/v1/checkout/quote` (no request body). Server-computed quote; `total_uzs` equals
+ * `subtotal_uzs` because delivery is by a Yandex Go courier whom the customer pays directly.
+ * Problems are reported in `issues` / `can_place_order` rather than as errors; send `total_uzs`
+ * back as `expected_total_uzs` when placing the order.
  */
 export type CheckoutQuote = Schemas['CheckoutQuote'];
 
 export type CheckoutQuoteIssue = CheckoutQuote['issues'][number];
 
+/**
+ * Where the courier takes the order: the map point (`lat` -90..90, `lon` -180..180, WGS84; the
+ * server rounds to 6 decimals) plus street and house. Unknown keys are refused (422).
+ */
 export type DeliveryAddress = Schemas['DeliveryAddress'];
 
 /** `POST /api/v1/orders` body; needs an `Idempotency-Key` header (16-128 of `[A-Za-z0-9_-]`). */
@@ -158,11 +148,15 @@ export type CreateOrderRequest = Schemas['CreateOrderRequest'];
 
 export type OrderLine = Schemas['OrderLine'];
 
+/** Stored address; `lat`/`lon` are `null` only for orders placed before courier delivery. */
 export type OrderAddress = Schemas['OrderAddress'];
 
 export type OrderStatusChange = Schemas['OrderStatusChange'];
 
-/** The customer's view of one of their orders. */
+/**
+ * The customer's view of one of their orders. `total_uzs` equals `subtotal_uzs` for new orders;
+ * older orders keep the total charged then (including that delivery charge).
+ */
 export type OrderDetail = Schemas['OrderDetail'];
 
 export type OrderSummary = Schemas['OrderSummary'];
@@ -181,12 +175,6 @@ export type AdminOrderDetail = Schemas['AdminOrderDetail'];
 
 /** `PATCH /api/v1/admin/orders/{id}/status` body. */
 export type OrderStatusUpdateRequest = Schemas['OrderStatusUpdateRequest'];
-
-/** Booked delivery window on an order (`OrderDetail.delivery_slot`), times `HH:MM` Tashkent. */
-export type OrderDeliverySlot = Schemas['OrderDeliverySlot'];
-
-/** A bookable window offered by `POST /checkout/quote` (`delivery_slots`). */
-export type DeliverySlotOption = Schemas['DeliverySlotOption'];
 
 /** `GET /api/v1/admin/dashboard` (operator and admin): today's numbers, computed server-side. */
 export type Dashboard = Schemas['Dashboard'];
@@ -207,16 +195,6 @@ export type ProductStatusFilter = Schemas['ProductStatusFilter'];
 /** `POST /api/v1/admin/catalog/csv/import?dry_run=` response; nothing is written when `errors`. */
 export type CsvImportResult = Schemas['CsvImportResult'];
 export type CsvRowError = Schemas['CsvRowErrorOut'];
-
-export type DeliveryZoneAdmin = Schemas['DeliveryZoneAdmin'];
-export type DeliveryZoneAdminList = Schemas['DeliveryZoneAdminList'];
-export type ZoneCreateRequest = Schemas['ZoneCreateRequest'];
-export type ZoneUpdateRequest = Schemas['ZoneUpdateRequest'];
-
-export type DeliverySlotAdmin = Schemas['DeliverySlotAdmin'];
-export type DeliverySlotAdminList = Schemas['DeliverySlotAdminList'];
-export type SlotCreateRequest = Schemas['SlotCreateRequest'];
-export type SlotUpdateRequest = Schemas['SlotUpdateRequest'];
 
 export type AdminUser = Schemas['AdminUser'];
 export type AdminUserPage = Schemas['AdminUserPage'];
@@ -271,9 +249,7 @@ export const API_ERROR_CODES = [
   'cart_limit_reached',
   'cart_item_not_found',
   // checkout / orders
-  'district_not_served',
   'cart_empty',
-  'below_min_order',
   'price_changed',
   'idempotency_key_conflict',
   'order_not_found',
@@ -295,16 +271,6 @@ export const API_ERROR_CODES = [
   'user_not_found',
   'last_admin',
   'cannot_block_self',
-  'slot_required',
-  'slot_unavailable',
-  'slot_full',
-  'zone_not_found',
-  'zone_in_use',
-  'district_taken',
-  'slot_not_found',
-  'slot_exists',
-  'slot_in_use',
-  'capacity_below_reserved',
 ] as const satisfies readonly ApiErrorCode[];
 
 /** Compile error here means the API added an error code that `API_ERROR_CODES` does not list. */

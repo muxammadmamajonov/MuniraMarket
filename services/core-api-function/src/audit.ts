@@ -39,28 +39,6 @@ export const ALLOWED_FIELDS: Readonly<Record<string, ReadonlySet<string>>> = {
     'image_url',
     'archived',
   ]),
-  zone: new Set([
-    'slug',
-    'name_uz',
-    'name_ru',
-    'delivery_fee_uzs',
-    'free_delivery_threshold_uzs',
-    'min_order_uzs',
-    'opens_at',
-    'closes_at',
-    'sort_order',
-    'is_active',
-    'districts',
-  ]),
-  slot: new Set([
-    'zone_id',
-    'slot_date',
-    'starts_at',
-    'ends_at',
-    'capacity',
-    'cutoff_at',
-    'is_active',
-  ]),
   user: new Set(['role', 'is_blocked']),
   order: new Set(['status']),
   catalog: new Set(),
@@ -77,7 +55,6 @@ export const ALLOWED_EXTRA: ReadonlySet<string> = new Set([
   'unchanged',
   'sku',
   'slug',
-  'district_count',
 ]);
 /** Allow-listed flags whose name contains a denied word: only a boolean is kept. */
 const FLAG_EXTRA: ReadonlySet<string> = new Set(['has_reason']);
@@ -90,8 +67,6 @@ export const AuditEntity = {
   CATEGORY: 'category',
   PRODUCT: 'product',
   CATALOG: 'catalog',
-  ZONE: 'zone',
-  SLOT: 'slot',
   USER: 'user',
   ORDER: 'order',
   STAFF_CHAT: 'staff_chat',
@@ -103,22 +78,7 @@ export interface AuditActor {
   role: UserRole;
 }
 
-/**
- * A timezone-aware instant with the text Python's `datetime.isoformat()` gives it. Compared by
- * instant (like Python datetimes), rendered with the offset it was given (`+00:00` for values
- * read from PostgreSQL, the client's offset for request values).
- */
-export class AuditInstant {
-  readonly epochMicros: bigint;
-  readonly iso: string;
-  constructor(epochMicros: bigint, iso: string) {
-    this.epochMicros = epochMicros;
-    this.iso = iso;
-  }
-}
-
-export type AuditValue =
-  null | undefined | boolean | number | string | AuditInstant | readonly (string | number)[];
+export type AuditValue = null | undefined | boolean | number | string;
 
 export type Scalar = string | number | boolean | null;
 export type FieldChanges = Record<string, readonly [AuditValue, AuditValue]>;
@@ -135,12 +95,6 @@ function scalar(value: AuditValue): Scalar {
   if (typeof value === 'boolean') return value;
   if (typeof value === 'number') return Number.isInteger(value) ? value : null;
   if (typeof value === 'string') return truncate(value);
-  if (value instanceof AuditInstant) return value.iso;
-  if (Array.isArray(value)) {
-    // Only short collections of identifiers (e.g. district codes) are meaningful here.
-    const items = value.map((item) => String(item)).sort();
-    return truncate(items.join(','));
-  }
   return null;
 }
 
@@ -174,21 +128,6 @@ export function safeDetails(
 export function sameValue(a: AuditValue, b: AuditValue): boolean {
   const left = a === undefined ? null : a;
   const right = b === undefined ? null : b;
-  if (left instanceof AuditInstant || right instanceof AuditInstant) {
-    return (
-      left instanceof AuditInstant &&
-      right instanceof AuditInstant &&
-      left.epochMicros === right.epochMicros
-    );
-  }
-  if (Array.isArray(left) || Array.isArray(right)) {
-    return (
-      Array.isArray(left) &&
-      Array.isArray(right) &&
-      left.length === right.length &&
-      left.every((item, index) => item === right[index])
-    );
-  }
   return left === right;
 }
 

@@ -56,13 +56,6 @@ export const FailureNotice = forwardRef<HTMLDivElement, FailureNoticeProps>(func
         message = f.cartEmpty;
         toCart = true;
         break;
-      case 'below_min_order':
-        message = f.belowMin;
-        toCart = true;
-        break;
-      case 'district_not_served':
-        message = f.districtNotServed;
-        break;
       case 'phone_verification_required':
         message = dict.phone.checkoutText;
         break;

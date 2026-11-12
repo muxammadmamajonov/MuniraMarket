@@ -23,7 +23,17 @@ import { expect, test, type Page } from '@playwright/test';
  * Set `E2E_SHOTS_DIR` to save the screenshots used in the PR description.
  */
 
-const DISTRICT_ITEM = 'mm.delivery-district.v1';
+const ADDRESS_ITEM = 'mm.delivery-address.v1';
+const SAVED_ADDRESS = JSON.stringify({
+  lat: 41.311081,
+  lon: 69.240562,
+  street: 'Demo ko‘cha',
+  house: '12',
+  apartment: '',
+  entrance: '',
+  floor: '',
+  landmark: '',
+});
 
 async function shot(page: Page, name: string): Promise<void> {
   const dir = process.env['E2E_SHOTS_DIR'];
@@ -315,11 +325,10 @@ test.describe('break-ui: worst realistic data', () => {
     await expect(page.getByTestId('offline-banner')).toBeVisible();
     await expect(tabBar(page)).toBeVisible();
     await page
-      .getByTestId('delivery-district')
+      .getByTestId('delivery-address')
       .filter({ visible: true })
-      .getByRole('button', { name: 'Yetkazib berish manzilini tanlang' })
+      .getByRole('button', { name: 'Yetkazish manzilini tanlang' })
       .click();
-    await page.getByRole('button', { name: 'Xaritada belgilash' }).click();
     await expect(page.getByTestId('address-picker').getByRole('dialog')).toBeVisible();
     await expectNoHorizontalScroll(page);
     await context.setOffline(false);
@@ -331,42 +340,40 @@ test.describe('map step without a Maps key (CI)', () => {
   test.beforeEach(async ({ page }) => browseAnonymously(page));
 
   for (const scheme of ['light', 'dark'] as const) {
-    test(`${scheme}: custom fallback, no Yandex request, back to the list`, async ({ page }) => {
+    test(`${scheme}: straight to the map, custom fallback, no Yandex request`, async ({ page }) => {
       await page.emulateMedia({ colorScheme: scheme });
       const yandex = await trackYandex(page);
-      await page.addInitScript(
-        (key) => window.localStorage.setItem(key, 'yunusobod'),
-        DISTRICT_ITEM,
-      );
+      await page.addInitScript(([key, value]) => window.localStorage.setItem(key, value), [
+        ADDRESS_ITEM,
+        SAVED_ADDRESS,
+      ] as const);
       await page.goto('/uz');
-      const card = page.getByTestId('delivery-district').filter({ visible: true });
-      // Only the district and "Change": no fee, threshold or hours.
-      await expect(card.getByTestId('delivery-district-name')).toHaveText('Yunusobod');
+      const card = page.getByTestId('delivery-address').filter({ visible: true });
+      // Only the address: no fee, threshold or hours.
+      await expect(card.getByTestId('delivery-address-line')).toHaveText('Demo ko‘cha, 12');
       await expect(card).not.toContainText('so‘m');
       await expect(card).not.toContainText(/\d{2}:\d{2}/);
 
-      await card.getByRole('button', { name: /O‘zgartirish/ }).click();
-      const sheet = page.getByRole('dialog', { name: 'Yetkazib berish manzili' });
-      await sheet.getByRole('button', { name: 'Xaritada belgilash' }).click();
-      const picker = page.getByRole('dialog', { name: 'Xaritada belgilash' });
+      // One tap opens the map picker itself: no sheet or list in between.
+      await card.getByRole('button').click();
+      const picker = page.getByRole('dialog', { name: 'Yetkazish manzili' });
       await expect(picker).toBeVisible();
       await expect(picker.getByTestId('map-unavailable')).toContainText(
         'Xarita bu yerda ishlamaydi',
       );
-      await expect(picker.getByRole('button', { name: 'Orqaga' })).toBeFocused();
+      await expect(picker.getByRole('button', { name: 'Orqaga' }).first()).toBeFocused();
       await expectNoHorizontalScroll(page);
       await settled(page);
       await shot(page, `p9-map-fallback-${scheme}`);
 
-      // Escape goes back to the district list, where the real choice is made.
+      // Escape closes it; the saved address is untouched.
       await page.keyboard.press('Escape');
       await expect(picker).toBeHidden();
-      await expect(sheet).toBeVisible();
-      // Without a key nothing was checked: no "point marked" or "saved" wording anywhere.
-      await expect(page.getByText(/nuqta belgilan|saqlandi/i)).toHaveCount(0);
+      await expect(page.getByText(/saqlandi/i)).toHaveCount(0);
       expect(yandex).toEqual([]);
-      // Still only the district code is remembered.
-      expect(await page.evaluate(() => Object.keys(window.localStorage))).toEqual([DISTRICT_ITEM]);
+      expect(await page.evaluate((key) => window.localStorage.getItem(key), ADDRESS_ITEM)).toBe(
+        SAVED_ADDRESS,
+      );
     });
   }
 
@@ -374,12 +381,11 @@ test.describe('map step without a Maps key (CI)', () => {
     await page.setViewportSize({ width: 1280, height: 800 });
     await page.goto('/ru');
     await page
-      .getByTestId('delivery-district')
+      .getByTestId('delivery-address')
       .filter({ visible: true })
       .getByRole('button', { name: 'Выберите адрес доставки' })
       .click();
-    await page.getByRole('button', { name: 'Указать на карте' }).click();
-    const picker = page.getByRole('dialog', { name: 'Указать на карте' });
+    const picker = page.getByRole('dialog', { name: 'Адрес доставки' });
     await expect(picker).toContainText('Карта здесь не работает');
     // Wait out the 200ms entrance before measuring and capturing.
     await expect(picker).toHaveCSS('opacity', '1');
@@ -469,7 +475,7 @@ test.describe('Telegram fullscreen safe areas', () => {
       expect(Math.abs(logo.x + logo.width / 2 - 195)).toBeLessThanOrEqual(2);
     }
     const delivery = await page
-      .getByTestId('delivery-district')
+      .getByTestId('delivery-address')
       .filter({ visible: true })
       .boundingBox();
     expect(delivery !== null && delivery.y >= 93).toBe(true);
@@ -481,12 +487,11 @@ test.describe('Telegram fullscreen safe areas', () => {
 
     // The map step is the customer's explicit action; already fullscreen, so no second request.
     await page
-      .getByTestId('delivery-district')
+      .getByTestId('delivery-address')
       .filter({ visible: true })
-      .getByRole('button', { name: 'Yetkazib berish manzilini tanlang' })
+      .getByRole('button', { name: 'Yetkazish manzilini tanlang' })
       .click();
-    await page.getByRole('button', { name: 'Xaritada belgilash' }).click();
-    const back = page.getByRole('button', { name: 'Orqaga' });
+    const back = page.getByRole('button', { name: 'Orqaga' }).first();
     const backBox = await back.boundingBox();
     expect(backBox !== null && backBox.y >= 93).toBe(true);
     expect(

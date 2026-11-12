@@ -1,5 +1,5 @@
 /**
- * Shared plumbing of the admin route modules (catalog, CSV, delivery, users, audit, dashboard):
+ * Shared plumbing of the admin route modules (catalog, CSV, users, audit, dashboard):
  * request validation with Pydantic v2 (lax mode) semantics and messages, FastAPI's dependency /
  * validation order, and common response helpers.
  *

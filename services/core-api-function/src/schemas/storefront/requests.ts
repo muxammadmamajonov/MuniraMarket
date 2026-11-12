@@ -6,7 +6,6 @@
 import { createHash } from 'node:crypto';
 import { MAX_LINE_QUANTITY } from '../../domain/cart.ts';
 import { PHONE_MESSAGE, normalizeUzPhone } from '../../domain/checkout.ts';
-import { DISTRICT_CODES } from '../../domain/delivery.ts';
 import { ORDER_STATUSES } from '../../domain/orderStatus.ts';
 import { PRODUCT_SORTS } from '../../repositories/catalog.ts';
 import { PAYMENT_METHODS } from '../../repositories/orders.ts';
@@ -15,6 +14,7 @@ import {
   ValueError,
   blankToNull,
   bool,
+  float,
   int,
   model,
   nullable,
@@ -63,6 +63,16 @@ const comment = optionalText(500, multiLine);
 const reason = text(3, 300, multiLine);
 const quantity = int({ ge: 1, le: MAX_LINE_QUANTITY });
 
+export const COORDINATE_DECIMALS = 6;
+
+/** Python's `round(value, 6)` for a coordinate (the sign of zero kept). */
+export function roundCoordinate(value: number): number {
+  return Object.is(value, -0) ? -0 : Number(value.toFixed(COORDINATE_DECIMALS));
+}
+
+const latitude = float({ ge: -90, le: 90, after: roundCoordinate });
+const longitude = float({ ge: -180, le: 180, after: roundCoordinate });
+
 export type Output<V> = V extends Validator<infer T> ? Exclude<T, Invalid> : never;
 
 // --- cart ----------------------------------------------------------------------------------------
@@ -72,12 +82,13 @@ export const setCartItemQuantityRequest = model({ quantity });
 
 // --- checkout / orders ---------------------------------------------------------------------------
 
-export const district = oneOf(DISTRICT_CODES);
-
-export const checkoutQuoteRequest = model({ district });
-
+/**
+ * Where the Yandex Go courier delivers: the map point (WGS84, rounded to 6 decimals, about 0.1 m)
+ * and the address details the courier needs at the door.
+ */
 export const deliveryAddress = model({
-  district,
+  lat: latitude,
+  lon: longitude,
   street,
   house,
   apartment: shortPart,
@@ -94,8 +105,6 @@ export const createOrderRequest = model({
   comment,
   // The `total_uzs` of the quote the customer confirmed.
   expected_total_uzs: int({ ge: 0 }),
-  // One of the quote's `delivery_slots`; required when the quote says `slot_required`.
-  delivery_slot_id: nullable(uuid()),
 });
 export type CreateOrderRequest = Output<typeof createOrderRequest>;
 
@@ -109,17 +118,29 @@ export const orderStatusUpdateRequest = model({
   expected_status: nullable(oneOf(ORDER_STATUSES)),
 });
 
+/** A float as Pydantic's `model_dump_json()` writes it (`69.0`, `1e-6`, `0.00001`). */
+export function pydanticFloat(value: number): string {
+  if (Number.isInteger(value)) return Object.is(value, -0) ? '-0.0' : `${value}.0`;
+  const magnitude = Math.abs(value);
+  // JS switches to exponent notation below 1e-6, Pydantic below 1e-5.
+  if (magnitude >= 1e-6 && magnitude < 1e-5) return value.toExponential();
+  return String(value);
+}
+
 /**
  * Fingerprint of the *validated* request (Pydantic's `model_dump_json()`: compact JSON, fields in
- * declaration order, non-ASCII kept as UTF-8), so cosmetic differences (spacing in the phone
- * number, surrounding whitespace) do not make a retry look like a different order. Without a slot
- * the field is left out, so a body that never had one hashes as before. Byte-identical to the
- * reference, so keys used against the FastAPI service replay here too.
+ * declaration order, non-ASCII kept as UTF-8, floats always with a fraction or exponent), so
+ * cosmetic differences (spacing in the phone number, surrounding whitespace, coordinate digits
+ * beyond the sixth decimal) do not make a retry look like a different order. Byte-identical to
+ * the reference, so keys used against the FastAPI service replay here too.
  */
 export function requestHash(payload: CreateOrderRequest): string {
-  const { delivery_slot_id: slotId, ...rest } = payload;
-  const body = slotId === null ? rest : { ...rest, delivery_slot_id: slotId };
-  return createHash('sha256').update(JSON.stringify(body), 'utf8').digest('hex');
+  const { address, ...rest } = payload;
+  const { lat, lon, ...details } = address;
+  const addressJson =
+    `{"lat":${pydanticFloat(lat)},"lon":${pydanticFloat(lon)},` + JSON.stringify(details).slice(1);
+  const body = `{"address":${addressJson},` + JSON.stringify(rest).slice(1);
+  return createHash('sha256').update(body, 'utf8').digest('hex');
 }
 
 // --- query parameters ----------------------------------------------------------------------------

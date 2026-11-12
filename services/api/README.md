@@ -42,10 +42,9 @@ app/
   main.py            create_app() factory (uvicorn app.main:create_app --factory)
   core/              settings (env validation), clock, error envelope
   db/                declarative Base (naming convention, UUID pk, timestamps), engine/session
-  models/            users, catalog, carts, delivery zones + slots, orders + history, outbox,
-                     audit log (integer UZS)
-  domain/            pure business rules (cart, delivery pricing, checkout quote, order status,
-                     catalog CSV, image URLs)
+  models/            users, catalog, carts, orders + history, outbox, audit log (integer UZS)
+  domain/            pure business rules (cart, checkout quote, map points, Tashkent time,
+                     order status, catalog CSV, image URLs)
   audit.py           append-only audit writer with the PII allow/deny lists (ADR 0010)
   repositories/      persistence behind small interfaces (faked in tests)
   security/          service request signing (ADR 0003), sessions, CSRF, rate limits (ADR 0007)
@@ -279,57 +278,41 @@ UPDATE` that row (this serialises a user's concurrent writes, so stock, the 99 c
   cap cannot be raced), upsert the line with `ON CONFLICT (cart_id, product_id)`, bump
   `carts.updated_at`. Lines are ordered by when they were added (`cart_items.created_at`, then id).
 
-## Delivery zones (public, no session)
+## Delivery (Yandex Go courier, on demand)
 
-`GET /api/v1/delivery/zones` lists **active** zones in display order: `name_uz/ru`,
-`delivery_fee_uzs`, `free_delivery_threshold_uzs` (`null` = never free), `min_order_uzs`,
-`opens_at`/`closes_at` (`HH:MM`, Asia/Tashkent), `is_open_now` and the zone's `districts`
-(`code`, `name_uz`, `name_ru`). Cached and limited like the catalog (`catalog_ip`).
-
-A zone is a set of whole Tashkent districts (`delivery_zone_districts`; the district is the primary
-key, so a district belongs to at most one zone). Matching is by district code only, no geocoding.
-Delivery is free once the subtotal reaches the threshold; the minimum order is compared with the
-subtotal (before delivery). Orders are accepted at any time; outside the hours they are delivered
-from the next opening. Rules: `app/domain/delivery.py`, design: `architecture/0009-checkout-orders.md`.
+The store does not deliver or charge for delivery: a Yandex Go courier carries each order and the
+customer pays the courier. There are no delivery zones, fees, minimum order, hours or delivery
+slots; an order can be placed at any time for any amount. The customer picks the drop-off point on
+a map (`lat`/`lon`, WGS84, stored with 6 decimals); staff call the courier from the Telegram group
+alert (see the notification outbox below). Map points: `app/domain/geo.py`.
 
 ## Checkout and orders (session required; writes also CSRF)
 
 | Endpoint                         | Notes                                                                  |
 | -------------------------------- | ---------------------------------------------------------------------- |
-| `POST /checkout/quote`           | `{district}`; re-checks the cart, prices delivery. `CheckoutQuote`.    |
+| `POST /checkout/quote`           | No body; re-checks the cart. `CheckoutQuote` (`total = subtotal`).     |
 | `POST /orders`                   | `Idempotency-Key` header required; creates the order from the cart.   |
 | `GET /orders?page=&page_size=`   | The customer's orders, newest first (`OrderPage`, page size ≤ 50).    |
 | `GET /orders/{id}`               | `OrderDetail`; `404 order_not_found` also for other users' orders.     |
 | `POST /orders/{id}/cancel`       | `{reason}` (3-300); only `NEW`/`CONFIRMED`; returns tracked stock.     |
 
-- **Delivery slots** (ADR 0010): the quote also returns `slot_required` and `delivery_slots`
-  (`id`, `date`, `starts_at`/`ends_at` `HH:MM` Asia/Tashkent, `remaining`, `is_full`; at most 60).
-  One predicate (`bookable_slot` in `app/repositories/delivery.py`) defines a *bookable* slot:
-  active, cutoff in the future, and dated within the 14 Tashkent days starting today. A zone with
-  at least one bookable slot requires `delivery_slot_id` on `POST /orders` (`409 slot_required`);
-  a zone without any (none at all, or only slots further ahead) works as before, so a required
-  slot is always among those offered. The order books one place with a single conditional
-  `UPDATE` (same zone, bookable, `reserved_count < capacity`) after the product locks; otherwise
-  `409 slot_full`, or `slot_unavailable` (also for a slot beyond the 14-day window). A
-  `CHECK (reserved_count <= capacity)` is the backstop. Cancelling (customer or operator) gives
-  the place back in the same transaction. Orders keep `delivery_slot` (date and times) as a
-  snapshot.
-- **Quote** never fails because of the cart: `issues` (`cart_empty`, `cart_has_issues`,
-  `below_min_order`) and `can_place_order` say what blocks an order. `409 district_not_served`
-  when no active zone covers the district.
-- **Order body**: structured `address` (`district`, `street`, `house`, optional `apartment`,
-  `entrance`, `floor`, `landmark`), `recipient_name`, `recipient_phone` (`+998` and 9 digits;
+- **Quote** never fails because of the cart: `issues` (`cart_empty`, `cart_has_issues`) and
+  `can_place_order` say what blocks an order. `total_uzs` always equals `subtotal_uzs`.
+- **Order body**: structured `address` (`lat` -90..90 and `lon` -180..180, finite, rounded to 6
+  decimals; `street`, `house`, optional `apartment`, `entrance`, `floor`, `landmark`; any other
+  key is `422`), `recipient_name`, `recipient_phone` (`+998` and 9 digits;
   spaces, dashes and parentheses are ignored and stored normalised), `payment_method`
   (`cash_on_delivery` | `card_on_delivery`), optional `comment`, and `expected_total_uzs` (the
   quote's `total_uzs`). Text is trimmed, blank optionals become `null`, control characters are
-  rejected.
+  rejected. Orders placed before courier delivery have no map point: their `address.lat`/`lon`
+  read as `null` (keys of the old address shape are ignored) and their `total_uzs` still includes
+  the delivery charge of the time (`total_uzs >= subtotal_uzs` is the database `CHECK`).
 - **Idempotency**: the key is 16-128 characters of `[A-Za-z0-9_-]` (send a UUID), unique per user.
   Same key + same validated body → the original order, `200` with `Idempotent-Replayed: true`.
   Same key + different body → `409 idempotency_key_conflict`. A new attempt needs a new key.
 - **Refusals** (nothing is written): `409 cart_empty`, `product_inactive` / `insufficient_stock`
-  (with `product_id`, and `available_quantity` for stock), `below_min_order`,
-  `district_not_served`, `price_changed` (with the new `total_uzs`: quote again, show it, retry
-  with a new key).
+  (with `product_id`, and `available_quantity` for stock), `price_changed` (with the new
+  `total_uzs`: quote again, show it, retry with a new key).
 - **Transaction**: lock the cart row, check the key, lock the products `FOR UPDATE` in id order,
   re-evaluate with the quote's function, insert the order and the line snapshots (name, SKU, unit,
   unit price, whether stock was taken), decrement tracked stock, empty the cart, append `order_status_history` and a
@@ -346,8 +329,8 @@ from the next opening. Rules: `app/domain/delivery.py`, design: `architecture/00
 
 Design: `architecture/0010-admin-content-ops.md`. Shared dependencies: `app/api/admin_deps.py`.
 
-- **Who**: `operator` works orders and reads the dashboard; `admin` also gets catalog, CSV, zones,
-  slots, users and the audit log. The role is re-read from the database on every request and is
+- **Who**: `operator` works orders and reads the dashboard; `admin` also gets catalog, CSV, users
+  and the audit log. The role is re-read from the database on every request and is
   checked **before** any entity is read, so a wrong role gets `403 forbidden` for existing and
   unknown ids alike. Back-office routes accept only Telegram **OIDC** sessions created on the admin
   origin (same bot, same Telegram user as the storefront; ADR 0014): a Mini App (`initData`) or
@@ -366,8 +349,6 @@ Design: `architecture/0010-admin-content-ops.md`. Shared dependencies: `app/api/
 | `GET/POST /admin/products`, `GET/PATCH/DELETE …/{id}`     | admin    | `DELETE` archives (soft); `POST …/{id}/restore`; `sku_taken`, `slug_taken`  |
 | `GET /admin/catalog/csv/template`, `…/csv/export`         | admin    | `text/csv`, UTF-8 BOM, formula-escaped cells                                |
 | `POST /admin/catalog/csv/import?dry_run=`                 | admin    | raw `text/csv` ≤ 1 MiB, ≤ 2000 rows, all-or-nothing                         |
-| `GET/POST /admin/delivery/zones`, `PATCH/DELETE …/{id}`   | admin    | districts replaced as a set; `district_taken`, `zone_in_use`               |
-| `GET/POST /admin/delivery/slots`, `PATCH/DELETE …/{id}`   | admin    | `capacity_below_reserved`, `slot_in_use`, `slot_exists`                     |
 | `GET /admin/users?q=&role=&blocked=`, `PATCH …/{id}`      | admin    | `{role?, is_blocked?}`; `last_admin`, `cannot_block_self`; never the phone  |
 | `GET /admin/audit?entity_type=&entity_id=&action=`        | admin    | newest first                                                                |
 
@@ -406,22 +387,19 @@ a reason from any non-final status); `expected_status` turns a lost update into
   `products.updated_at`), or another admin's edit, after the export is never reverted by
   re-importing the file. Checked in dry runs and again under the product locks when applying.
   Leave `updated_at` empty for new products, or to overwrite on purpose.
-- **Names and descriptions** (products, categories, zones; JSON and CSV) refuse Unicode format
+- **Names and descriptions** (products, categories; JSON and CSV) refuse Unicode format
   characters (category `Cf`: bidi overrides/isolates like U+202E, zero-width U+200B/U+200D, U+FEFF,
   soft hyphen) and lone surrogates; single-line names also refuse U+2028/U+2029 and invisible
   filler letters (`app/domain/text.py`). JSON: `422 validation_error`; CSV: `invalid_text`.
-- **Zone/slot delete**: refused with `409 zone_in_use` / `slot_in_use` while slots or orders
-  reference the zone (orders the slot). Should a slot or order be committed between that check
-  and the delete, the `RESTRICT` foreign key refuses it and the answer is the same `409`.
 - **Last admin**: role/block changes lock every active admin row (`FOR UPDATE`, id order) and
   refuse to leave no active admin (`409 last_admin`); blocking yourself is `409
   cannot_block_self`. A blocked user's next request is `403 account_blocked`.
 - **Audit log** (`app/audit.py`): one append-only row (triggers reject `UPDATE`/`DELETE` and
-  `TRUNCATE`) per catalog, CSV, zone, slot, role/block and order-status change, written in the same
+  `TRUNCATE`) per catalog, CSV, role/block and order-status change, written in the same
   transaction. The triggers stop application mistakes, not the table owner (who can drop them):
   production should run the API as a role with only `INSERT`/`SELECT` on `audit_log`
-  (deployment item, ADR 0010). `zone.delete` records the deleted zone's `districts` and
-  `district_count`, like `zone.update`.
+  (deployment item, ADR 0010). Rows of entity types that no longer exist (`zone`, `slot`) stay
+  as historical data.
   `details` keeps only allow-listed fields as `{"from", "to"}` scalars; phone numbers, addresses,
   names, cancel reasons (only `has_reason`), `initData`, cookies and tokens are never recorded.
 
@@ -446,6 +424,11 @@ drains it with signed requests **without an actor** (an actor gets `403`):
 The payload holds the order id and number, status, locale, total, the Telegram chat id and, when
 cancelled, the reason; never the address or phone.
 
+With a staff group connected (ADR 0015), the same transaction also writes an `order.staff_alert`
+row for `NEW`, `OUT_FOR_DELIVERY`, `DELIVERED` and `CANCELLED`. For `NEW` orders whose address has
+a map point it carries `destination: {lat, lon}`, which the transport turns into a "call a Yandex
+Go courier" button (only the coordinates, inside the button URL; no address text, name or phone).
+
 ## Dev seed
 
 ```bash
@@ -454,18 +437,12 @@ make migrate          # local database only
 make seed             # or from the repo root: pnpm api:seed
 ```
 
-`python -m app.dev.seed` loads synthetic catalog data and delivery zones (`Demo`/`Демо` names, `DEMO-0001...` SKUs,
-round prices, no image URLs). It refuses to run unless `APP_ENV` is `development` or `test`, and is
+`python -m app.dev.seed` loads synthetic catalog data (`DEMO-0001...` SKUs, round prices, no image
+URLs). It refuses to run unless `APP_ENV` is `development` or `test`, and is
 idempotent: rows are upserted by slug and an unchanged row is not touched, so a second run writes
 nothing. A demo product an admin archived stays archived and untouched. The data includes
 products with an old price, untracked stock, an out-of-stock product, an inactive product, an
 inactive category, and an active category under an inactive one (hidden).
-The zones cover Tashkent's districts (each in at most one zone): one with a free-delivery
-threshold, one with a higher minimum, one never free, and an inactive zone whose districts are not
-served. Delivery slots are seeded only for `demo-chekka` (chilonzor, olmazor, uchtepa, yashnobod):
-two windows a day for the next 7 Tashkent days, so checkout there requires a slot while the other
-zones keep working without one. Re-running on a later day adds the new days and never touches
-`reserved_count`.
 
 ## Integration tests
 

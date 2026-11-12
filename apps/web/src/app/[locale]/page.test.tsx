@@ -5,7 +5,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { LocaleProvider } from '@/i18n/context';
 import { CartProvider } from '@/lib/cart';
 import { makeCart, makeProduct } from '@/lib/cart/test-fixtures';
-import { zone } from '@/lib/checkout/test-fixtures';
+import { ADDRESS_STORAGE_ITEM, resetDeliveryAddressMemory } from '@/lib/address/storage';
 import { TelegramProvider } from '@/lib/telegram';
 import HomePage from './page';
 
@@ -19,7 +19,6 @@ vi.mock('next/navigation', () => ({
 const api = vi.hoisted(() => ({
   fetchCategories: vi.fn(),
   fetchProducts: vi.fn(),
-  fetchDeliveryZones: vi.fn(),
 }));
 vi.mock('@/lib/api/server', () => api);
 
@@ -59,13 +58,12 @@ beforeEach(() => {
   session.apiFetch.mockResolvedValue(Response.json(makeCart()));
   api.fetchCategories.mockReset();
   api.fetchProducts.mockReset();
-  api.fetchDeliveryZones.mockReset();
-  api.fetchDeliveryZones.mockResolvedValue([zone()]);
   window.localStorage.clear();
+  resetDeliveryAddressMemory();
 });
 
 describe('home page', () => {
-  it('has the district chooser, search, category shortcuts, the payment note and a grid', async () => {
+  it('has the delivery address card, search, category shortcuts, the payment note and a grid', async () => {
     api.fetchCategories.mockResolvedValue([
       category('c1', 'meva', 'Meva'),
       category('c2', 'sabzavot', 'Sabzavot'),
@@ -88,10 +86,11 @@ describe('home page', () => {
         .map((link) => link.getAttribute('href')),
     ).toEqual(['/uz/c/meva', '/uz/c/sabzavot']);
 
-    // The district chooser comes first and does not block the catalog below it.
-    const district = screen.getByTestId('delivery-district');
-    expect(district).toHaveAttribute('data-state', 'unset');
-    expect(district.compareDocumentPosition(search)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+    // The address card comes first and does not block the catalog below it.
+    const address = screen.getByTestId('delivery-address');
+    expect(address).toHaveAttribute('data-state', 'unset');
+    expect(address).toHaveTextContent('Yetkazish manzilini tanlang');
+    expect(address.compareDocumentPosition(search)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
     expect(screen.getByTestId('delivery-info')).toHaveTextContent('To‘lov yetkazilganda');
 
     const grid = screen.getByRole('list', { name: 'Yangi mahsulotlar' });
@@ -126,15 +125,27 @@ describe('home page', () => {
     api.fetchProducts.mockResolvedValue(page([]));
     await renderHome('ru');
     expect(screen.getByTestId('empty-panel')).toHaveTextContent('Каталог пока пуст');
-    expect(screen.getByTestId('delivery-district')).toHaveTextContent('Выберите адрес доставки');
+    expect(screen.getByTestId('delivery-address')).toHaveTextContent('Выберите адрес доставки');
   });
 
-  it('still renders the catalog when the delivery zones cannot be loaded', async () => {
+  it('shows the saved delivery address above the catalog', async () => {
+    window.localStorage.setItem(
+      ADDRESS_STORAGE_ITEM,
+      JSON.stringify({
+        lat: 41.311081,
+        lon: 69.240562,
+        street: 'Amir Temur ko‘chasi',
+        house: '15',
+        apartment: '4',
+      }),
+    );
     api.fetchCategories.mockResolvedValue([]);
     api.fetchProducts.mockResolvedValue(page([makeProduct()]));
-    api.fetchDeliveryZones.mockResolvedValue(null);
     await renderHome();
-    expect(screen.getByTestId('delivery-district')).toHaveAttribute('data-state', 'unavailable');
+    expect(screen.getByTestId('delivery-address')).toHaveAttribute('data-state', 'set');
+    expect(screen.getByTestId('delivery-address-line')).toHaveTextContent(
+      'Amir Temur ko‘chasi, 15, 4-xonadon',
+    );
     expect(screen.getByRole('list', { name: 'Yangi mahsulotlar' })).toBeInTheDocument();
   });
 });

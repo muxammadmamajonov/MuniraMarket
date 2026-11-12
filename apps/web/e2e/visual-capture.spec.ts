@@ -7,6 +7,7 @@ import {
   mainButton,
   pressMainButton,
   requireBotToken,
+  seedDeliveryAddress,
 } from './support';
 import { buildSignedInitData } from './telegram-init-data';
 
@@ -62,11 +63,8 @@ test('capture every customer page', async ({ page }) => {
     }),
   );
 
-  // A customer who already picked a district (the home chooser shows it, the cart can show free
-  // delivery progress).
-  await page.addInitScript(() =>
-    window.localStorage.setItem('mm.delivery-district.v1', 'yunusobod'),
-  );
+  // A customer who already saved a delivery address (the home card and checkout show it).
+  await seedDeliveryAddress(page);
 
   const categories = (await (await page.request.get('/api/v1/categories')).json()) as {
     items: Array<{ slug: string; children: Array<{ slug: string }> }>;
@@ -82,11 +80,7 @@ test('capture every customer page', async ({ page }) => {
   if ((existing.items ?? []).length === 0) {
     await addFromProductPage(page, 'demo-olma', 4);
     await page.goto('/uz/checkout');
-    await page.getByRole('combobox', { name: 'Tuman' }).click();
-    await page.locator('[role="option"][data-value="yunusobod"]').click();
-    await page.getByLabel('Ko‘cha').fill('Amir Temur ko‘chasi');
-    await page.getByLabel('Uy', { exact: true }).fill('12');
-    await page.getByLabel('Xonadon').fill('34');
+    await expect(page.getByTestId('checkout-address')).toBeVisible({ timeout: 15_000 });
     await page.getByLabel('Telefon raqami').fill('+998 00 123-45-67');
     await page.locator('label', { hasText: 'Yetkazilganda naqd pul' }).click();
     await expect.poll(() => mainButton(page)).toMatchObject({ visible: true, disabled: false });

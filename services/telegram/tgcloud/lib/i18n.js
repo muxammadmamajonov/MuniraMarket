@@ -193,6 +193,8 @@ export const STAFF_MESSAGES = Object.freeze({
         CANCELLED: 'Отменён',
       }),
     }),
+    /** Inline button under a NEW order alert: opens Yandex Go with the order's destination. */
+    courierButton: 'Yandex chaqirish / Вызвать Яндекс',
   }),
 });
 

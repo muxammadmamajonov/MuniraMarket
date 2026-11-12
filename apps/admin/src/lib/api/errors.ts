@@ -25,8 +25,6 @@ export class ApiRequestError extends Error {
   readonly retryAfter: number | null;
   /** Field-level problems of a 422 (`loc` + `msg`, never submitted values). Empty otherwise. */
   readonly details: readonly ApiErrorDetail[];
-  /** The district code on `district_taken`. */
-  readonly district: string | null;
   /**
    * `X-Request-ID` of the failed response (set by the admin proxy, the gateway and the Core API),
    * or `null` when there was no response. Shown shortened as the "support code".
@@ -40,7 +38,6 @@ export class ApiRequestError extends Error {
     currentStatus?: OrderStatus | null | undefined;
     retryAfter?: number | null | undefined;
     details?: readonly ApiErrorDetail[] | null | undefined;
-    district?: string | null | undefined;
     requestId?: string | null | undefined;
   }) {
     super(init.message);
@@ -50,7 +47,6 @@ export class ApiRequestError extends Error {
     this.currentStatus = init.currentStatus ?? null;
     this.retryAfter = init.retryAfter ?? null;
     this.details = init.details ?? [];
-    this.district = init.district ?? null;
     this.requestId = init.requestId ?? null;
   }
 
@@ -91,7 +87,6 @@ export class ApiRequestError extends Error {
         currentStatus: body.error.current_status,
         retryAfter,
         details: Array.isArray(body.error.details) ? body.error.details : null,
-        district: typeof body.error.district === 'string' ? body.error.district : null,
         requestId,
       });
     }

@@ -45,7 +45,7 @@ function RoleDialog({
   onClose: () => void;
   onDone: () => void;
 }) {
-  const { dict, locale } = useI18n();
+  const { dict } = useI18n();
   const copy = dict.users.roleDialog;
   const { apiFetch } = useSession();
   const [role, setRole] = useState<UserRole>(user.role);
@@ -69,7 +69,7 @@ function RoleDialog({
     flying.current = false;
     setPending(false);
     if (result.ok) onDone();
-    else setError(writeErrorMessage(dict, locale, result.error));
+    else setError(writeErrorMessage(dict, result.error));
   };
 
   return (
@@ -123,7 +123,7 @@ type DialogState =
 
 /** Users: search, role/blocked filters, change role and block/unblock (both with confirmation). */
 export function UsersView() {
-  const { dict, locale } = useI18n();
+  const { dict } = useI18n();
   const copy = dict.users;
   const { apiFetch } = useSession();
   const { params, replace, hrefWith } = useUrlParams();
@@ -148,7 +148,7 @@ export function UsersView() {
       `/admin/users/${encodeURIComponent(user.id)}`,
       jsonInit('PATCH', { is_blocked: !user.is_blocked }),
     );
-    if (!result.ok) return writeErrorMessage(dict, locale, result.error);
+    if (!result.ok) return writeErrorMessage(dict, result.error);
     setNotice(user.is_blocked ? copy.unblocked : copy.blocked);
     resource.reload();
     return null;

@@ -55,7 +55,6 @@ describe('admin api proxy: allowlist', () => {
     [['orders']],
     [['orders', ORDER_ID, 'cancel']],
     [['checkout', 'quote']],
-    [['delivery', 'zones']],
     [['health']],
     [['health', 'ready']],
     [['Admin', 'orders']],

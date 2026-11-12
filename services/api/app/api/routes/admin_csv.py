@@ -24,7 +24,7 @@ from app.api.auth_deps import rate_limit
 from app.api.routes.admin_catalog import AdminCatalogRepositoryDep, to_api_error
 from app.core.errors import ApiError, error_responses
 from app.domain.catalog_csv import CsvFileError, parse_catalog_csv, render_csv, render_template
-from app.domain.delivery import TASHKENT_TZ, utc_now_from
+from app.domain.tashkent import TASHKENT_TZ, utc_now_from
 from app.repositories.admin_catalog import AdminCatalogError
 from app.schemas.admin_catalog import CsvImportResult
 from app.security.rate_limit import ADMIN_CSV_EXPORT, ADMIN_CSV_IMPORT

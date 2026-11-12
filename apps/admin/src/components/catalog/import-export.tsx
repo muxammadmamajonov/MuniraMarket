@@ -100,7 +100,7 @@ function ErrorTable({ result }: { result: CsvImportResult }) {
 
 /** Download template / export, and the two-step import: check (dry run), then apply. */
 export function ImportExportView() {
-  const { dict, locale } = useI18n();
+  const { dict } = useI18n();
   const copy = dict.csv;
   const { apiFetch } = useSession();
   const fileInput = useRef<HTMLInputElement>(null);
@@ -124,9 +124,7 @@ export function ImportExportView() {
       try {
         const response = await apiFetch(path, { headers: { accept: 'text/csv' } });
         if (!response.ok) {
-          setDownloadError(
-            writeErrorMessage(dict, locale, await ApiRequestError.fromResponse(response)),
-          );
+          setDownloadError(writeErrorMessage(dict, await ApiRequestError.fromResponse(response)));
           return;
         }
         saveBlob(await response.blob(), filename);
@@ -134,7 +132,6 @@ export function ImportExportView() {
         setDownloadError(
           writeErrorMessage(
             dict,
-            locale,
             cause instanceof ApiRequestError ? cause : ApiRequestError.network(cause),
           ),
         );
@@ -196,7 +193,7 @@ export function ImportExportView() {
       if (!response.ok) {
         setChecked(null);
         setResult(null);
-        setFailure(writeErrorMessage(dict, locale, response.error));
+        setFailure(writeErrorMessage(dict, response.error));
         return;
       }
       const data = response.data;

@@ -81,14 +81,15 @@ describe('uz and ru dictionaries: parity', () => {
     }
   });
 
-  it('have lists of the same length (the seven weekday names, for one)', () => {
+  it('have lists of the same length (the sign-in benefits and help steps, for two)', () => {
+    let lists = 0;
     for (const [path, entry] of uzTree) {
       if (entry.kind !== 'array') continue;
+      lists += 1;
       const other = ruTree.get(path);
       expect(other?.kind === 'array' ? other.length : -1, path).toBe(entry.length);
     }
-    const weekdays = uzTree.get('checkout.slots.weekdays');
-    expect(weekdays?.kind === 'array' ? weekdays.length : -1).toBe(7);
+    expect(lists).toBeGreaterThan(0);
   });
 
   it('have no empty or whitespace-only strings in either language', () => {

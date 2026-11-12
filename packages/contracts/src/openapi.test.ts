@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import openapi from '../openapi.json';
 import { API_ERROR_CODES, PRODUCT_SORTS } from './api';
-import { DISTRICT_CODES, PRODUCT_UNITS, USER_ROLES } from './enums';
+import { PRODUCT_UNITS, USER_ROLES } from './enums';
 import { SUPPORTED_LOCALES } from './locale';
 
 /**
@@ -30,11 +30,6 @@ describe('openapi.json', () => {
     expect([...PRODUCT_SORTS]).toEqual(enumOf('ProductSort'));
   });
 
-  it('DISTRICT_CODES equals the District.code enum', () => {
-    const district = schemas['District'] as { properties: { code: EnumSchema } };
-    expect([...DISTRICT_CODES].sort()).toEqual([...district.properties.code.enum].sort());
-  });
-
   it('shared enums match the API', () => {
     expect([...USER_ROLES].sort()).toEqual([...enumOf('UserRole')].sort());
     expect([...PRODUCT_UNITS].sort()).toEqual([...enumOf('Unit')].sort());
@@ -60,6 +55,13 @@ describe('openapi.json', () => {
     'CartLine',
     'AddCartItemRequest',
     'SetCartItemQuantityRequest',
+    // checkout / orders
+    'CheckoutQuote',
+    'CreateOrderRequest',
+    'DeliveryAddress',
+    'OrderAddress',
+    'OrderDetail',
+    'AdminOrderDetail',
     // auth
     'UserPublic',
     'SessionResponse',
@@ -70,6 +72,21 @@ describe('openapi.json', () => {
     'OidcStartResponse',
   ])('declares the %s schema', (name) => {
     expect(Object.keys(schemas)).toContain(name);
+  });
+
+  it('takes a map point in the delivery address and no request body for the quote', () => {
+    const address = schemas['DeliveryAddress'] as {
+      properties: Record<string, unknown>;
+      required: string[];
+      additionalProperties: boolean;
+    };
+    expect(address.required.sort()).toEqual(['house', 'lat', 'lon', 'street']);
+    expect(address.additionalProperties).toBe(false);
+    const quote = (openapi.paths as Record<string, { post?: { requestBody?: unknown } }>)[
+      '/api/v1/checkout/quote'
+    ];
+    expect(quote?.post).toBeDefined();
+    expect(quote?.post?.requestBody).toBeUndefined();
   });
 
   it('mounts every public route under the v1 prefix', () => {

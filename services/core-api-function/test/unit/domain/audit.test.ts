@@ -1,11 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import {
-  AuditInstant,
-  diffFields,
-  MAX_TEXT_LENGTH,
-  safeDetails,
-  sameValue,
-} from '../../../src/audit.ts';
+import { diffFields, MAX_TEXT_LENGTH, safeDetails, sameValue } from '../../../src/audit.ts';
 
 describe('safeDetails', () => {
   it('keeps only allow-listed fields', () => {
@@ -94,20 +88,6 @@ describe('safeDetails', () => {
     expect(truncated.endsWith('…')).toBe(true);
     expect(details.changes['price_uzs']?.to).toBeNull();
   });
-
-  it('dates, times, instants and lists', () => {
-    const details = safeDetails('slot', {
-      slot_date: [null, '2026-11-01'],
-      starts_at: [null, '09:00:00'],
-      cutoff_at: [null, new AuditInstant(0n, '2026-11-01T06:00:00+00:00')],
-    }) as { changes: Record<string, { to: unknown }> };
-    expect(details.changes['slot_date']?.to).toBe('2026-11-01');
-    expect(details.changes['starts_at']?.to).toBe('09:00:00');
-    expect(details.changes['cutoff_at']?.to).toBe('2026-11-01T06:00:00+00:00');
-    expect(safeDetails('zone', { districts: [['b', 'a'], ['c']] })).toEqual({
-      changes: { districts: { from: 'a,b', to: 'c' } },
-    });
-  });
 });
 
 describe('diffFields', () => {
@@ -115,14 +95,9 @@ describe('diffFields', () => {
     expect(diffFields({ a: 1, b: 2 }, { a: 1, b: 3, c: null })).toEqual({ b: [2, 3] });
   });
 
-  it('compares instants by instant, not by text', () => {
-    const utc = new AuditInstant(1_000_000n, '1970-01-01T00:00:01+00:00');
-    const local = new AuditInstant(1_000_000n, '1970-01-01T05:00:01+05:00');
-    expect(sameValue(utc, local)).toBe(true);
-    expect(diffFields({ cutoff_at: utc }, { cutoff_at: local })).toEqual({});
-    const later = new AuditInstant(2_000_000n, '1970-01-01T05:00:02+05:00');
-    expect(diffFields({ cutoff_at: utc }, { cutoff_at: later })).toEqual({
-      cutoff_at: [utc, later],
-    });
+  it('treats undefined like null (Python None)', () => {
+    expect(sameValue(undefined, null)).toBe(true);
+    expect(diffFields({ a: null }, { a: undefined })).toEqual({});
+    expect(sameValue(0, false)).toBe(false);
   });
 });

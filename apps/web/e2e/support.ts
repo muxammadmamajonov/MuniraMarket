@@ -218,6 +218,33 @@ export async function emptyCart(page: Page): Promise<void> {
   await expect(page.getByText(CART_EMPTY)).toBeVisible();
 }
 
+/** Same key as `src/lib/address/storage.ts`. */
+export const ADDRESS_STORAGE_ITEM = 'mm.delivery-address.v1';
+
+/** An obviously fake demo address in central Tashkent (a public square, nobody's home). */
+export const DEMO_ADDRESS = {
+  lat: 41.311081,
+  lon: 69.240562,
+  street: 'Demo ko‘cha',
+  house: '12',
+  apartment: '34',
+  entrance: '',
+  floor: '',
+  landmark: '',
+} as const;
+
+/**
+ * Saves {@link DEMO_ADDRESS} as the device's delivery address before any page script runs, as the
+ * map picker would after "Shu yerga yetkazish". CI never loads Yandex Maps, so specs outside
+ * `delivery-map.spec.ts` start from a saved address instead of driving the map.
+ */
+export async function seedDeliveryAddress(page: Page): Promise<void> {
+  await page.addInitScript(([key, value]) => window.localStorage.setItem(key, value), [
+    ADDRESS_STORAGE_ITEM,
+    JSON.stringify(DEMO_ADDRESS),
+  ] as const);
+}
+
 // --- Admin app --------------------------------------------------------------------------------
 
 /** Base URL of the admin app (`E2E_ADMIN_URL`, default http://localhost:3001). */

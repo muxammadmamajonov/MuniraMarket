@@ -1,64 +1,76 @@
-import type { DeliveryZone } from '@muniramarket/contracts';
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
 import { LocaleProvider } from '@/i18n/context';
-import { farZone, zone } from '@/lib/checkout/test-fixtures';
+import type { Address } from '@/lib/address/address';
+import type { GeocoderResult } from '@/lib/maps/reverse-geocode';
 import {
   autoloadYandexScript,
+  houseResult,
   makeYMaps,
   mockGeocoderFetch,
-  toponym,
   type FakeYMaps,
+  type GeocoderAnswer,
 } from '@/lib/maps/test-helpers';
 import { MapsConfigProvider } from '@/lib/maps/use-yandex-maps';
+import type { LngLat } from '@/lib/maps/yandex-types';
 import { resetYandexMapsLoader } from '@/lib/maps/yandex-loader';
 import { TelegramProvider } from '@/lib/telegram';
 import { installWebApp, makeWebApp, uninstallWebApp } from '@/lib/telegram/test-helpers';
-import { AddressPicker, TASHKENT_CENTER } from './address-picker';
+import { AddressPicker, GEOCODE_DEBOUNCE_MS, TASHKENT_CENTER } from './address-picker';
 
 // Placeholder shape only; jsdom never fetches the script and the SDK is a fake.
 const KEY = '00000000-0000-4000-8000-000000000000';
 const GEOCODER_KEY = '11111111-1111-4111-8111-111111111111';
 
-// Served: yunusobod, mirobod (demo central zone), chilonzor (demo outer zone, free delivery).
-const ZONES: DeliveryZone[] = [zone(), farZone()];
+const SAVED: Address = {
+  lat: 41.2995,
+  lon: 69.2401,
+  street: 'Bunyodkor ko‘chasi',
+  house: '7',
+  apartment: '12',
+  entrance: '',
+  floor: '3',
+  landmark: '',
+};
 
 function renderPicker({
   apiKey = KEY,
   geocoderApiKey = apiKey,
   locale = 'uz',
+  initial = null,
   onClose = vi.fn(),
-  onChoose = vi.fn(),
-  zones = ZONES,
+  onSave = vi.fn(),
 }: {
   apiKey?: string | null;
   geocoderApiKey?: string | null;
   locale?: 'uz' | 'ru';
+  initial?: Address | null;
   onClose?: () => void;
-  onChoose?: (code: string) => void;
-  zones?: DeliveryZone[];
+  onSave?: Mock<(address: Address) => void>;
 } = {}) {
   const view = render(
     <LocaleProvider locale={locale}>
       <TelegramProvider>
         <MapsConfigProvider apiKey={apiKey} geocoderApiKey={geocoderApiKey}>
           <button>trigger</button>
-          <AddressPicker open onClose={onClose} zones={zones} onChoose={onChoose} />
+          <AddressPicker open onClose={onClose} initial={initial} onSave={onSave} />
         </MapsConfigProvider>
       </TelegramProvider>
     </LocaleProvider>,
   );
-  return { onClose, onChoose, unmount: view.unmount };
+  return { onClose, onSave, unmount: view.unmount };
 }
 
 let fake: FakeYMaps;
+let geocoder: ReturnType<typeof mockGeocoderFetch>;
 
 beforeEach(() => {
   fake = makeYMaps();
-  mockGeocoderFetch(fake);
+  geocoder = mockGeocoderFetch();
 });
 
 afterEach(() => {
+  vi.useRealTimers();
   vi.restoreAllMocks();
   resetYandexMapsLoader();
   delete window.ymaps3;
@@ -68,50 +80,117 @@ afterEach(() => {
   window.sessionStorage.clear();
 });
 
+/** Renders the picker, waits for the (fake) map, then switches to fake timers for the debounce. */
 async function ready(options: Parameters<typeof renderPicker>[0] = {}) {
   autoloadYandexScript('load', fake.api);
   const result = renderPicker(options);
   await screen.findByTestId('map-canvas');
   await waitFor(() => expect(fake.maps).toHaveLength(1));
+  vi.useFakeTimers();
   return result;
 }
 
-async function confirmPoint(name = 'Shu yerga yetkazish') {
-  fireEvent.click(screen.getByRole('button', { name }));
-  return screen.findByTestId('map-result');
+/** A drag that ends with the map centred on `center`. */
+function drag(center: LngLat) {
+  act(() => {
+    fake.listeners[0]?.onActionStart?.();
+    fake.maps[0]?.update({ location: { center, zoom: 16 } });
+    fake.listeners[0]?.onActionEnd?.();
+  });
 }
 
-describe('AddressPicker: without a key', () => {
-  it('shows its own fallback, loads nothing and offers the district list', () => {
+/** Lets the map rest long enough for the lookup to start and settle. */
+async function settle(ms = GEOCODE_DEBOUNCE_MS) {
+  await act(() => vi.advanceTimersByTimeAsync(ms));
+}
+
+function input(name: string): HTMLInputElement {
+  return screen.getByRole('textbox', { name: new RegExp(`^${name}`) });
+}
+
+function deferred() {
+  let resolve: (value: GeocoderResult | null) => void = () => undefined;
+  const promise = new Promise<GeocoderResult | null>((done) => {
+    resolve = done;
+  });
+  return { promise, resolve };
+}
+
+describe('AddressPicker: opens straight to the map and the form', () => {
+  it('shows the map, the centre pin and the address form in one dialog', async () => {
+    await ready();
+    const dialog = screen.getByRole('dialog', { name: 'Yetkazish manzili' });
+    expect(within(dialog).getByTestId('map-canvas')).toBeInTheDocument();
+    expect(
+      within(dialog).getByRole('img', { name: 'Yetkazish nuqtasi xarita markazida' }),
+    ).toBeVisible();
+    const form = within(dialog).getByTestId('address-form');
+    for (const label of ['Ko‘cha', 'Uy', 'Xonadon', 'Podyezd', 'Qavat', 'Mo‘ljal yoki izoh']) {
+      expect(within(form).getByRole('textbox', { name: new RegExp(`^${label}`) })).toHaveValue('');
+    }
+    expect(within(form).getByRole('button', { name: 'Shu yerga yetkazish' })).toBeEnabled();
+    expect(screen.getByTestId('map-status')).toHaveTextContent(
+      'Xaritani suring: markazdagi belgi yetkazish nuqtasi.',
+    );
+  });
+
+  it('starts centred on Tashkent with the Yandex layers and a gesture listener', async () => {
+    await ready();
+    expect(fake.maps[0]?.props.location).toEqual({ center: TASHKENT_CENTER, zoom: 12 });
+    expect(fake.maps[0]?.children).toHaveLength(3);
+    expect(fake.listeners).toHaveLength(1);
+  });
+
+  it.each(['uz', 'ru'] as const)(
+    'says nothing about areas, zones, prices, fees or free delivery (%s)',
+    async (locale) => {
+      geocoder.answer.mockResolvedValue(houseResult('Amir Temur ko‘chasi', '15'));
+      await ready({ locale });
+      drag([69.25, 41.3]);
+      await settle();
+      expect(screen.getByRole('dialog').textContent).not.toMatch(
+        /hudud|zona|район|зона|so‘m|сум|bepul|бесплат|narx|цена|стоимост|minimal|минимал/i,
+      );
+    },
+  );
+
+  it('cleans the map up when it closes', async () => {
+    const { unmount } = await ready();
+    const map = fake.maps[0];
+    unmount();
+    expect(map?.destroy).toHaveBeenCalled();
+  });
+});
+
+describe('AddressPicker: without a key, loading and errors', () => {
+  it('shows its own fallback and loads nothing without a key', () => {
     const append = vi.spyOn(document.head, 'append');
     const { onClose } = renderPicker({ apiKey: null });
-    const dialog = screen.getByRole('dialog', { name: 'Xaritada belgilash' });
+    const dialog = screen.getByRole('dialog', { name: 'Yetkazish manzili' });
     expect(within(dialog).getByTestId('map-unavailable')).toHaveTextContent(
       'Xarita bu yerda ishlamaydi',
     );
     expect(within(dialog).queryByTestId('map-confirm')).toBeNull();
     expect(append).not.toHaveBeenCalled();
     expect(document.querySelector('script[data-mm-yandex-maps]')).toBeNull();
-    fireEvent.click(within(dialog).getByRole('button', { name: 'Tumanni ro‘yxatdan tanlash' }));
+    const unavailable = within(dialog).getByTestId('map-unavailable');
+    fireEvent.click(within(unavailable).getByRole('button', { name: 'Orqaga' }));
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
   it('is localized', () => {
     renderPicker({ apiKey: null, locale: 'ru' });
-    expect(screen.getByRole('dialog', { name: 'Указать на карте' })).toHaveTextContent(
+    expect(screen.getByRole('dialog', { name: 'Адрес доставки' })).toHaveTextContent(
       'Карта здесь не работает',
     );
   });
-});
 
-describe('AddressPicker: loading and errors', () => {
-  it('shows a loading state; "Deliver here" waits for the map, the list is always reachable', () => {
+  it('shows a loading state; the form is there but "Deliver here" waits for the map', () => {
     autoloadYandexScript('hang');
-    const { onClose } = renderPicker();
+    renderPicker();
     expect(screen.getByTestId('map-loading')).toHaveTextContent('Xarita yuklanmoqda…');
+    expect(screen.getByTestId('address-form')).toBeInTheDocument();
     expect(screen.getByTestId('map-confirm')).toBeDisabled();
-    fireEvent.click(screen.getByRole('button', { name: 'Tumanni ro‘yxatdan tanlash' }));
-    expect(onClose).toHaveBeenCalledTimes(1);
   });
 
   it('shows an error with a working retry', async () => {
@@ -119,6 +198,7 @@ describe('AddressPicker: loading and errors', () => {
     renderPicker();
     const error = await screen.findByTestId('map-error');
     expect(error).toHaveTextContent('Xaritani yuklab bo‘lmadi');
+    expect(screen.queryByTestId('address-form')).toBeNull();
 
     failing.mockRestore();
     autoloadYandexScript('load', fake.api);
@@ -133,180 +213,209 @@ describe('AddressPicker: loading and errors', () => {
   });
 });
 
-describe('AddressPicker: the map and the centre pin', () => {
-  it('starts centred on Tashkent with the Yandex layers, a gesture listener and our pin', async () => {
-    await ready();
-    expect(fake.maps[0]?.props.location).toEqual({ center: TASHKENT_CENTER, zoom: 12 });
-    expect(fake.maps[0]?.children).toHaveLength(3);
-    expect(fake.listeners).toHaveLength(1);
-    expect(screen.getByRole('img', { name: 'Yetkazish nuqtasi xarita markazida' })).toBeVisible();
+describe('AddressPicker: the address is looked up when the map stops', () => {
+  it('fills street and house from the Geocoder once the map has rested', async () => {
+    geocoder.answer.mockResolvedValue(houseResult('Amir Temur ko‘chasi', '15'));
+    await ready({ geocoderApiKey: GEOCODER_KEY });
+    drag([69.2401234567, 41.3112345678]);
+
+    // Not on every frame: only after the quiet period.
+    await settle(GEOCODE_DEBOUNCE_MS - 1);
+    expect(geocoder.answer).not.toHaveBeenCalled();
+    await settle(1);
+
+    expect(geocoder.answer).toHaveBeenCalledTimes(1);
+    expect(geocoder.answer).toHaveBeenCalledWith('69.240123,41.311235');
+    const [request] = geocoder.fetch.mock.calls[0] ?? [];
+    const url = new URL(String(request));
+    expect(url.searchParams.get('apikey')).toBe(GEOCODER_KEY);
+    expect(url.searchParams.get('kind')).toBe('house');
+
+    expect(input('Ko‘cha')).toHaveValue('Amir Temur ko‘chasi');
+    expect(input('Uy')).toHaveValue('15');
+    expect(screen.getByTestId('map-status')).toHaveAttribute('data-lookup', 'idle');
   });
 
-  it('looks nothing up until "Deliver here" is pressed', async () => {
+  it('a burst of moves makes one lookup, for where the map finally stopped', async () => {
+    geocoder.answer.mockResolvedValue(houseResult('Navoiy ko‘chasi', '3'));
     await ready();
-    fireEvent.keyDown(screen.getByTestId('map-canvas'), { key: 'ArrowLeft' });
+    drag([69.2, 41.3]);
+    await settle(GEOCODE_DEBOUNCE_MS / 2);
+    drag([69.21, 41.31]);
+    await settle();
+    expect(geocoder.answer).toHaveBeenCalledTimes(1);
+    expect(geocoder.answer).toHaveBeenCalledWith('69.210000,41.310000');
+  });
+
+  it('ignores a stale answer when the map moved again meanwhile', async () => {
+    const first = deferred();
+    const second = deferred();
+    geocoder.answer
+      .mockImplementationOnce((() => first.promise) as GeocoderAnswer)
+      .mockImplementationOnce((() => second.promise) as GeocoderAnswer);
+    await ready();
+
+    drag([69.2, 41.3]);
+    await settle();
+    expect(screen.getByTestId('map-status')).toHaveTextContent('Manzil aniqlanmoqda…');
+
+    // The customer drags on before the first answer arrives.
     act(() => fake.listeners[0]?.onActionStart?.());
-    expect(fake.search).not.toHaveBeenCalled();
+    await act(async () => first.resolve(houseResult('Eski ko‘cha', '1')));
+    expect(input('Ko‘cha')).toHaveValue('');
+    expect(input('Uy')).toHaveValue('');
+
+    act(() => {
+      fake.maps[0]?.update({ location: { center: [69.3, 41.35], zoom: 16 } });
+      fake.listeners[0]?.onActionEnd?.();
+    });
+    await settle();
+    await act(async () => second.resolve(houseResult('Yangi ko‘cha', '2')));
+    expect(input('Ko‘cha')).toHaveValue('Yangi ko‘cha');
+    expect(input('Uy')).toHaveValue('2');
   });
 
-  it('cleans the map up when it closes', async () => {
-    const { unmount } = await ready();
-    const map = fake.maps[0];
-    unmount();
-    expect(map?.destroy).toHaveBeenCalled();
+  it('keeps a typed street when the lookup finds only a house', async () => {
+    geocoder.answer.mockResolvedValue({ name: 'x', components: [{ kind: 'house', name: '9' }] });
+    await ready();
+    fireEvent.change(input('Ko‘cha'), { target: { value: 'Mening ko‘cham' } });
+    drag([69.2, 41.3]);
+    await settle();
+    expect(input('Ko‘cha')).toHaveValue('Mening ko‘cham');
+    expect(input('Uy')).toHaveValue('9');
+  });
+
+  it('asks the customer to type the address when the lookup fails; the pin still counts', async () => {
+    geocoder.answer.mockResolvedValue(new Response('', { status: 403 }));
+    const { onSave } = await ready();
+    drag([69.2, 41.3]);
+    await settle();
+    expect(screen.getByTestId('map-status')).toHaveTextContent(
+      'Manzilni aniqlab bo‘lmadi. Ko‘cha va uyni yozing.',
+    );
+    fireEvent.change(input('Ko‘cha'), { target: { value: 'Qo‘lda ko‘cha' } });
+    fireEvent.change(input('Uy'), { target: { value: '4' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Shu yerga yetkazish' }));
+    expect(onSave).toHaveBeenCalledWith(
+      expect.objectContaining({ lat: 41.3, lon: 69.2, street: 'Qo‘lda ko‘cha', house: '4' }),
+    );
+  });
+
+  it('without a Geocoder key it looks nothing up and says to type the address', async () => {
+    autoloadYandexScript('load', fake.api);
+    renderPicker({ geocoderApiKey: null });
+    await screen.findByTestId('map-canvas');
+    await waitFor(() => expect(fake.maps).toHaveLength(1));
+    vi.useFakeTimers();
+    drag([69.2, 41.3]);
+    await settle();
+    expect(geocoder.fetch).not.toHaveBeenCalled();
+    expect(screen.getByTestId('map-status')).toHaveAttribute('data-lookup', 'failed');
   });
 });
 
-describe('AddressPicker: delivery result after "Deliver here"', () => {
-  it('uses the dedicated Geocoder key for a confirmed point', async () => {
-    fake.search.mockResolvedValue([toponym('Yunusobod tumani', 'Toshkent, O‘zbekiston')]);
-    await ready({ geocoderApiKey: GEOCODER_KEY });
-    await confirmPoint();
-    const call = globalThis.fetch as unknown as { mock: { calls: Array<[string]> } };
-    expect(new URL(call.mock.calls[0]?.[0] ?? '').searchParams.get('apikey')).toBe(GEOCODER_KEY);
-  });
-
-  it('served: real zone rules, a demo hint, and choosing saves only the district', async () => {
-    fake.search.mockResolvedValue([
-      toponym('Bunyodkor ko‘chasi, 15', 'Toshkent, O‘zbekiston'),
-      toponym('Chilonzor tumani', 'Toshkent, O‘zbekiston'),
-    ]);
-    const { onChoose } = await ready();
-    const result = await confirmPoint();
-
-    expect(fake.search).toHaveBeenCalledTimes(1);
-    expect(fake.search.mock.calls[0]?.[0].text).toBe('69.279700,41.311100');
-    expect(result).toHaveAttribute('data-status', 'served');
-    expect(within(result).getByRole('heading')).toHaveTextContent(
-      'Chilonzor tumaniga yetkazib beramiz',
-    );
-    expect(within(result).getByRole('heading')).toHaveFocus();
-    expect(result).toHaveTextContent('Demo chekka zona');
-    expect(within(result).getByTestId('demo-badge')).toHaveTextContent('Demo');
-    expect(within(result).getByTestId('demo-note')).toHaveTextContent('admin panelda');
-    // farZone: fee 0, no threshold, minimum 100 000, 09:00–21:00, open now.
-    expect(result).toHaveTextContent('YetkazishBepul');
-    expect(result).toHaveTextContent(/100\s000\sso‘m/);
-    expect(result).toHaveTextContent('Bu hududda yo‘q');
-    expect(result).toHaveTextContent('09:00–21:00, hozir ishlayapti');
-
-    fireEvent.click(within(result).getByRole('button', { name: 'Chilonzor tumanini tanlash' }));
-    expect(onChoose).toHaveBeenCalledWith('chilonzor');
-  });
-
-  it('served, Russian: fee and free-delivery threshold in so‘m', async () => {
-    fake.search.mockResolvedValue([toponym('Юнусабадский район', 'Ташкент, Узбекистан')]);
-    await ready({ locale: 'ru' });
-    const result = await confirmPoint('Доставить сюда');
-    expect(within(result).getByRole('heading')).toHaveTextContent(
-      'Доставляем в этот район: Юнусабад',
-    );
-    expect(result).toHaveTextContent(/Доставка15\s000\sсум/);
-    expect(result).toHaveTextContent(/от 300\s000\sсум/);
-    expect(result).toHaveTextContent('Демо');
-  });
-
-  it('a real (non-demo) zone shows no demo hint', async () => {
-    fake.search.mockResolvedValue([toponym('Yunusobod tumani', 'Toshkent')]);
-    await ready({ zones: [zone({ slug: 'markaziy', name_uz: 'Markaziy' })] });
-    const result = await confirmPoint();
-    expect(within(result).queryByTestId('demo-badge')).toBeNull();
-    expect(within(result).queryByTestId('demo-note')).toBeNull();
-  });
-
-  it('not served: says so by name and offers served neighbours', async () => {
-    fake.search.mockResolvedValue([toponym('Yakkasaroy tumani', 'Toshkent')]);
-    const { onChoose } = await ready();
-    const result = await confirmPoint();
-    expect(result).toHaveAttribute('data-status', 'not-served');
-    expect(within(result).getByRole('heading')).toHaveTextContent(
-      'Yakkasaroy tumaniga hozircha yetkazmaymiz',
-    );
-    expect(result).toHaveTextContent('Yaqin tumanlardan biriga yetkazib beramiz:');
-    fireEvent.click(within(result).getByRole('button', { name: 'Mirobod' }));
-    expect(onChoose).toHaveBeenCalledWith('mirobod');
-  });
-
-  it('outside Tashkent: honest, with a way to move the pin or use the list', async () => {
-    fake.search.mockResolvedValue([toponym('Samarqand', 'O‘zbekiston')]);
-    await ready();
-    fake.maps[0]?.update({ location: { center: [66.96, 39.65], zoom: 12 } });
-    const result = await confirmPoint();
-    expect(result).toHaveAttribute('data-status', 'outside');
-    expect(result).toHaveTextContent('Toshkent shahridan tashqarida');
-    fireEvent.click(within(result).getByRole('button', { name: 'Nuqtani o‘zgartirish' }));
-    expect(screen.queryByTestId('map-result')).toBeNull();
-    expect(screen.getByTestId('map-canvas')).toHaveFocus();
-  });
-
-  it('lookup unavailable (403, quota, offline): never claims delivery, sends to the list', async () => {
-    fake.search.mockRejectedValue(new Error('403'));
-    const { onClose, onChoose } = await ready();
-    const result = await confirmPoint();
-    expect(result).toHaveAttribute('data-status', 'lookup-failed');
-    expect(result).toHaveTextContent('Tumanni avtomatik tekshirib bo‘lmadi');
-    expect(result.textContent).not.toMatch(/yetkazib beramiz/);
-    fireEvent.click(within(result).getByRole('button', { name: 'Tumanni ro‘yxatdan tanlash' }));
-    expect(onClose).toHaveBeenCalledTimes(1);
-    expect(onChoose).not.toHaveBeenCalled();
-  });
-
-  it('a Geocoder response without a district falls back to the honest unknown state', async () => {
-    fake.search.mockResolvedValue([]);
-    await ready();
-    const result = await confirmPoint();
-    expect(result).toHaveAttribute('data-status', 'unknown');
-  });
-
-  it('a district the lookup cannot name: asks for the list', async () => {
-    fake.search.mockResolvedValue([toponym('Amir Temur xiyoboni', 'Toshkent')]);
-    await ready();
-    const result = await confirmPoint();
-    expect(result).toHaveAttribute('data-status', 'unknown');
-  });
-
-  it('moving the map while checking discards the stale answer', async () => {
-    let answer: (value: ReturnType<typeof toponym>[]) => void = () => undefined;
-    fake.search.mockReturnValue(
-      new Promise((resolve) => {
-        answer = resolve;
-      }),
-    );
-    await ready();
+describe('AddressPicker: "Deliver here"', () => {
+  it('before the map was moved, asks to place the pin and saves nothing', async () => {
+    const { onSave } = await ready();
     fireEvent.click(screen.getByRole('button', { name: 'Shu yerga yetkazish' }));
-    expect(screen.getByTestId('map-confirm')).toHaveAttribute('aria-busy', 'true');
-    expect(screen.getByTestId('map-confirm')).toHaveTextContent('Tuman aniqlanmoqda…');
-    act(() => fake.listeners[0]?.onActionStart?.());
-    await act(async () => answer([toponym('Chilonzor tumani', 'Toshkent')]));
-    expect(screen.queryByTestId('map-result')).toBeNull();
-    expect(screen.getByTestId('map-confirm')).toHaveTextContent('Shu yerga yetkazish');
-  });
-
-  it('dragging after a result returns to picking', async () => {
-    fake.search.mockResolvedValue([toponym('Chilonzor tumani', 'Toshkent')]);
-    await ready();
-    await confirmPoint();
-    act(() => fake.listeners[0]?.onActionStart?.());
-    expect(screen.queryByTestId('map-result')).toBeNull();
-  });
-
-  it('privacy: the point is not stored, logged, sent to our API or put in the URL', async () => {
-    fake.search.mockResolvedValue([toponym('Chilonzor tumani', 'Toshkent')]);
-    const fetchSpy = vi.mocked(globalThis.fetch);
-    const setItem = vi.spyOn(Storage.prototype, 'setItem');
-    const logs = (['log', 'info', 'warn', 'error', 'debug'] as const).map((level) =>
-      vi.spyOn(console, level),
+    expect(screen.getByTestId('map-place-pin')).toHaveTextContent(
+      'Avval xaritani surib, nuqtani belgilang.',
     );
-    const href = window.location.href;
-    await ready();
-    await confirmPoint();
-    expect(fetchSpy).toHaveBeenCalledOnce();
-    expect(String(fetchSpy.mock.calls[0]?.[0])).toMatch(/^https:\/\/geocode-maps\.yandex\.ru\//);
-    expect(setItem).not.toHaveBeenCalled();
-    for (const log of logs) expect(log).not.toHaveBeenCalled();
-    expect(window.location.href).toBe(href);
-    expect(document.cookie).not.toMatch(/69\.|41\./);
-    expect(document.body.innerHTML).not.toMatch(/69\.2797|41\.3111/);
+    expect(screen.getByRole('alert')).toBe(screen.getByTestId('map-place-pin'));
+    expect(screen.getByTestId('map-canvas')).toHaveFocus();
+    expect(onSave).not.toHaveBeenCalled();
+
+    // Moving the map clears the message.
+    drag([69.2, 41.3]);
+    expect(screen.queryByTestId('map-place-pin')).toBeNull();
+  });
+
+  it('shows field errors (an empty house) and focuses the first one', async () => {
+    geocoder.answer.mockResolvedValue({
+      name: 'Bunyodkor ko‘chasi',
+      components: [{ kind: 'street', name: 'Bunyodkor ko‘chasi' }],
+    });
+    const { onSave } = await ready();
+    drag([69.2, 41.3]);
+    await settle();
+    expect(input('Ko‘cha')).toHaveValue('Bunyodkor ko‘chasi');
+    fireEvent.click(screen.getByRole('button', { name: 'Shu yerga yetkazish' }));
+
+    expect(onSave).not.toHaveBeenCalled();
+    expect(input('Uy')).toHaveAccessibleDescription(/To‘ldirish shart/);
+    expect(input('Uy')).toHaveFocus();
+    expect(input('Ko‘cha')).not.toHaveAccessibleDescription(/To‘ldirish shart/);
+
+    // Typing clears that field's error.
+    fireEvent.change(input('Uy'), { target: { value: '15' } });
+    expect(input('Uy')).not.toHaveAccessibleDescription(/To‘ldirish shart/);
+  });
+
+  it('flags a too-short street and an empty one (Russian copy)', async () => {
+    const { onSave } = await ready({ locale: 'ru' });
+    drag([69.2, 41.3]);
+    await settle();
+    fireEvent.click(screen.getByRole('button', { name: 'Доставить сюда' }));
+    expect(input('Улица')).toHaveFocus();
+    fireEvent.change(input('Улица'), { target: { value: 'a' } });
+    fireEvent.change(input('Дом'), { target: { value: '1' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Доставить сюда' }));
+    expect(input('Улица')).toHaveAccessibleDescription(/2/);
+    expect(onSave).not.toHaveBeenCalled();
+  });
+
+  it('saves the map centre rounded to 6 decimals and the trimmed text', async () => {
+    geocoder.answer.mockResolvedValue(houseResult('Amir Temur ko‘chasi', '15'));
+    const { onSave } = await ready();
+    drag([69.24056251, 41.31108149]);
+    await settle();
+    fireEvent.change(input('Xonadon'), { target: { value: ' 4 ' } });
+    fireEvent.change(input('Podyezd'), { target: { value: '   ' } });
+    fireEvent.change(input('Mo‘ljal yoki izoh'), { target: { value: '  Maktab yonida ' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Shu yerga yetkazish' }));
+
+    expect(onSave).toHaveBeenCalledTimes(1);
+    expect(onSave).toHaveBeenCalledWith({
+      lat: 41.311081,
+      lon: 69.240563,
+      street: 'Amir Temur ko‘chasi',
+      house: '15',
+      apartment: '4',
+      entrance: '',
+      floor: '',
+      landmark: 'Maktab yonida',
+    });
+  });
+});
+
+describe('AddressPicker: editing a saved address', () => {
+  it('starts at its point with its text and does not look anything up until moved', async () => {
+    const { onSave } = await ready({ initial: SAVED });
+    expect(fake.maps[0]?.props.location).toEqual({ center: [69.2401, 41.2995], zoom: 16 });
+    expect(input('Ko‘cha')).toHaveValue('Bunyodkor ko‘chasi');
+    expect(input('Uy')).toHaveValue('7');
+    expect(input('Xonadon')).toHaveValue('12');
+    expect(input('Qavat')).toHaveValue('3');
+
+    await settle(GEOCODE_DEBOUNCE_MS * 5);
+    expect(geocoder.fetch).not.toHaveBeenCalled();
+
+    // The saved point counts as placed: "Deliver here" works right away.
+    fireEvent.click(screen.getByRole('button', { name: 'Shu yerga yetkazish' }));
+    expect(screen.queryByTestId('map-place-pin')).toBeNull();
+    expect(onSave).toHaveBeenCalledWith(SAVED);
+  });
+
+  it('moving it looks the new point up and replaces street and house', async () => {
+    geocoder.answer.mockResolvedValue(houseResult('Navoiy ko‘chasi', '30'));
+    await ready({ initial: SAVED });
+    drag([69.25, 41.32]);
+    await settle();
+    expect(geocoder.answer).toHaveBeenCalledTimes(1);
+    expect(input('Ko‘cha')).toHaveValue('Navoiy ko‘chasi');
+    expect(input('Uy')).toHaveValue('30');
+    // What the customer typed for the door stays.
+    expect(input('Xonadon')).toHaveValue('12');
   });
 });
 
@@ -317,8 +426,9 @@ describe('AddressPicker: keyboard', () => {
     const back = screen.getByRole('button', { name: 'Orqaga' });
     expect(back).toHaveFocus();
     await screen.findByTestId('map-canvas');
+    await waitFor(() => expect(screen.getByTestId('map-confirm')).toBeEnabled());
 
-    const last = screen.getByRole('button', { name: 'Tumanni ro‘yxatdan tanlash' });
+    const last = screen.getByTestId('map-confirm');
     last.focus();
     fireEvent.keyDown(last, { key: 'Tab' });
     expect(back).toHaveFocus();
@@ -329,11 +439,10 @@ describe('AddressPicker: keyboard', () => {
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
-  it('pans with the arrow keys and zooms with +/-, instantly (no animation)', async () => {
-    autoloadYandexScript('load', fake.api);
-    renderPicker();
-    const canvas = await screen.findByTestId('map-canvas');
-    await waitFor(() => expect(fake.maps).toHaveLength(1));
+  it('pans with the arrow keys and zooms with +/-, instantly; a key move is a move', async () => {
+    geocoder.answer.mockResolvedValue(houseResult('Amir Temur ko‘chasi', '1'));
+    await ready();
+    const canvas = screen.getByTestId('map-canvas');
     expect(canvas).toHaveAccessibleName('Xarita. Strelka tugmalari bilan suring.');
     const map = fake.maps[0];
 
@@ -353,6 +462,10 @@ describe('AddressPicker: keyboard', () => {
     expect(map?.zoom).toBe(13);
     fireEvent.keyDown(canvas, { key: '-' });
     expect(map?.zoom).toBe(12);
+
+    await settle();
+    expect(geocoder.answer).toHaveBeenCalledTimes(1);
+    expect(input('Ko‘cha')).toHaveValue('Amir Temur ko‘chasi');
   });
 });
 
@@ -384,9 +497,27 @@ describe('AddressPicker: "My location"', () => {
     Reflect.deleteProperty(navigator, 'geolocation');
   });
 
-  it('never asks for location on its own; when pressed it only moves the map', async () => {
-    const locate = mockGeolocation('ok');
+  it('sits in the bottom actions next to "Deliver here"', async () => {
+    mockGeolocation('ok');
     await ready();
+    const actions = screen.getByTestId('map-actions');
+    expect(within(actions).getByRole('button', { name: 'Mening joylashuvim' })).toBe(
+      screen.getByTestId('map-locate'),
+    );
+    expect(within(actions).getByRole('button', { name: 'Shu yerga yetkazish' })).toBe(
+      screen.getByTestId('map-confirm'),
+    );
+  });
+
+  it('is not offered without geolocation', async () => {
+    await ready();
+    expect(screen.queryByTestId('map-locate')).toBeNull();
+  });
+
+  it('never asks for location on its own; when pressed it moves the map and looks it up', async () => {
+    const locate = mockGeolocation('ok');
+    geocoder.answer.mockResolvedValue(houseResult('Shota Rustaveli ko‘chasi', '21'));
+    const { onSave } = await ready();
     expect(locate).not.toHaveBeenCalled();
 
     fireEvent.click(screen.getByRole('button', { name: 'Mening joylashuvim' }));
@@ -394,20 +525,22 @@ describe('AddressPicker: "My location"', () => {
     expect(fake.maps[0]?.update).toHaveBeenLastCalledWith({
       location: { center: [69.25, 41.3], zoom: 16, duration: 200 },
     });
-    // Used for delivery only after "Deliver here".
-    expect(fake.search).not.toHaveBeenCalled();
-    await confirmPoint();
-    expect(fake.search.mock.calls[0]?.[0].text).toBe('69.250000,41.300000');
+    await settle();
+    expect(geocoder.answer).toHaveBeenCalledWith('69.250000,41.300000');
+    expect(input('Ko‘cha')).toHaveValue('Shota Rustaveli ko‘chasi');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Shu yerga yetkazish' }));
+    expect(onSave).toHaveBeenCalledWith(
+      expect.objectContaining({ lat: 41.3, lon: 69.25, house: '21' }),
+    );
   });
 
   it('explains a denied permission in its own UI; the pin still works', async () => {
     mockGeolocation('denied');
     await ready();
     fireEvent.click(screen.getByRole('button', { name: 'Mening joylashuvim' }));
-    await waitFor(() =>
-      expect(screen.getByTestId('map-locate-status')).toHaveTextContent(
-        'Joylashuvga ruxsat berilmagan.',
-      ),
+    expect(screen.getByTestId('map-status')).toHaveTextContent(
+      'Joylashuvga ruxsat berilmagan. Xaritani qo‘lda suring.',
     );
     expect(screen.getByTestId('map-confirm')).toBeEnabled();
   });
@@ -416,14 +549,36 @@ describe('AddressPicker: "My location"', () => {
     mockGeolocation('unavailable');
     await ready({ locale: 'ru' });
     fireEvent.click(screen.getByRole('button', { name: 'Моё местоположение' }));
-    expect(screen.getByTestId('map-locate-status')).toHaveTextContent(
+    expect(screen.getByTestId('map-status')).toHaveTextContent(
       'Не удалось определить местоположение.',
     );
   });
 });
 
+describe('AddressPicker: privacy', () => {
+  it('the point goes only to the Geocoder: not stored, logged, or put in the URL', async () => {
+    geocoder.answer.mockResolvedValue(houseResult('Amir Temur ko‘chasi', '15'));
+    const setItem = vi.spyOn(Storage.prototype, 'setItem');
+    const logs = (['log', 'info', 'warn', 'error', 'debug'] as const).map((level) =>
+      vi.spyOn(console, level),
+    );
+    const href = window.location.href;
+    await ready();
+    drag([69.2797, 41.3111]);
+    await settle();
+    expect(geocoder.fetch).toHaveBeenCalledOnce();
+    expect(String(geocoder.fetch.mock.calls[0]?.[0])).toMatch(
+      /^https:\/\/geocode-maps\.yandex\.ru\//,
+    );
+    expect(setItem).not.toHaveBeenCalled();
+    for (const log of logs) expect(log).not.toHaveBeenCalled();
+    expect(window.location.href).toBe(href);
+    expect(document.body.innerHTML).not.toMatch(/69\.2797|41\.3111/);
+  });
+});
+
 describe('AddressPicker: inside Telegram', () => {
-  it('drives the native BackButton and hides the MainButton while open', async () => {
+  it('drives the native BackButton', async () => {
     const webApp = makeWebApp();
     installWebApp(webApp);
     const { onClose } = await ready();

@@ -20,10 +20,8 @@ from app.api.deps import SessionDep
 from app.core.config import Settings
 from app.core.errors import ApiError, error_responses
 from app.domain.checkout import (
-    BelowMinimumOrderError,
     CartEmptyError,
     CheckoutError,
-    DistrictNotServedError,
     IdempotencyKeyConflictError,
     InvalidStatusTransitionError,
     OrderInsufficientStockError,
@@ -32,17 +30,13 @@ from app.domain.checkout import (
     OrderProductUnavailableError,
     OrderStatusConflictError,
     PriceChangedError,
-    SlotFullError,
-    SlotRequiredError,
-    SlotUnavailableError,
     TooManyOpenOrdersError,
 )
-from app.domain.delivery import utc_now_from
+from app.domain.tashkent import utc_now_from
 from app.repositories.orders import NewOrder, OrderRepository, SqlAlchemyOrderRepository
 from app.schemas.checkout import (
     CancelOrderRequest,
     CheckoutQuote,
-    CheckoutQuoteRequest,
     CreateOrderRequest,
     OrderDetail,
     OrderPage,
@@ -135,11 +129,7 @@ def to_api_error(exc: CheckoutError) -> ApiError:  # noqa: PLR0911 - one branch 
             current_status=exc.current_status,
         )
     simple: dict[type[CheckoutError], ApiError] = {
-        DistrictNotServedError: ApiError(
-            409, "district_not_served", "No delivery to this district"
-        ),
         CartEmptyError: ApiError(409, "cart_empty", "Cart is empty"),
-        BelowMinimumOrderError: ApiError(409, "below_min_order", "Order is below the minimum"),
         IdempotencyKeyConflictError: ApiError(
             409, "idempotency_key_conflict", "Idempotency key was used for a different order"
         ),
@@ -147,47 +137,30 @@ def to_api_error(exc: CheckoutError) -> ApiError:  # noqa: PLR0911 - one branch 
         TooManyOpenOrdersError: ApiError(
             409, "too_many_open_orders", "Too many orders waiting for confirmation"
         ),
-        SlotRequiredError: ApiError(409, "slot_required", "Choose a delivery slot"),
-        SlotUnavailableError: ApiError(
-            409, "slot_unavailable", "This delivery slot can no longer be booked"
-        ),
-        SlotFullError: ApiError(409, "slot_full", "This delivery slot is full"),
     }
     return simple.get(type(exc), ApiError(500, "internal_error", "Internal server error"))
 
 
 def request_hash(payload: CreateOrderRequest) -> str:
     """Fingerprint of the *validated* request, so cosmetic differences (spacing in the phone
-    number, surrounding whitespace) do not make a retry look like a different order.
-
-    Without a slot the field is left out, so a body that never had one hashes as before."""
-    exclude = {"delivery_slot_id"} if payload.delivery_slot_id is None else None
-    return hashlib.sha256(payload.model_dump_json(exclude=exclude).encode()).hexdigest()
+    number, surrounding whitespace) do not make a retry look like a different order."""
+    return hashlib.sha256(payload.model_dump_json().encode()).hexdigest()
 
 
 @checkout_router.post(
     "/quote",
     response_model=CheckoutQuote,
     dependencies=[Depends(CHECKOUT_QUOTE_LIMIT)],
-    responses=error_responses(401, 403, 409, 422, 429, 503),
+    responses=error_responses(401, 403, 429, 503),
 )
-async def quote(
-    payload: CheckoutQuoteRequest,
-    user: CsrfProtectedUserDep,
-    orders: OrderRepositoryDep,
-    now: NowDep,
-) -> CheckoutQuote:
-    """Re-check the cart (status, current price, stock) and price delivery for a district.
+async def quote(user: CsrfProtectedUserDep, orders: OrderRepositoryDep) -> CheckoutQuote:
+    """Re-check the cart (status, current price, stock). No request body.
 
     Never fails because of the cart's contents: problems are reported in ``issues`` and
-    ``can_place_order``. ``409 district_not_served`` when no active zone covers the district.
-    ``slot_required`` and ``delivery_slots`` say whether (and which) delivery slot to book.
+    ``can_place_order``. ``total_uzs`` equals ``subtotal_uzs``: delivery is by a Yandex Go courier
+    whom the customer pays directly.
     """
-    try:
-        record = await orders.quote(user.id, payload.district, now=now)
-    except CheckoutError as exc:
-        raise to_api_error(exc) from None
-    return CheckoutQuote.from_record(record, now)
+    return CheckoutQuote.from_record(await orders.quote(user.id))
 
 
 @router.post(
@@ -220,22 +193,19 @@ async def create_order(  # noqa: PLR0917 - FastAPI injects every parameter
 
     The same ``Idempotency-Key`` with the same body returns the original order (``200`` and
     ``Idempotent-Replayed: true``); with a different body it is ``409 idempotency_key_conflict``.
-    When the zone has delivery slots, ``delivery_slot_id`` is required (``409 slot_required``) and
-    booked atomically (``409 slot_full`` / ``slot_unavailable``). Without a verified account
+    Delivery is on demand (no zone, hours or slot check). Without a verified account
     phone it is ``409 phone_verification_required`` (unless disabled by configuration).
     """
     settings: Settings = request.app.state.settings
     if settings.checkout_require_verified_phone and not user.phone_verified:
         raise ApiError(409, "phone_verification_required", "Verify your phone number first")
     new_order = NewOrder(
-        district=payload.address.district,
         address=payload.address.model_dump(mode="json"),
         recipient_name=payload.recipient_name,
         recipient_phone=payload.recipient_phone,
         payment_method=payload.payment_method,
         comment=payload.comment,
         expected_total_uzs=payload.expected_total_uzs,
-        delivery_slot_id=payload.delivery_slot_id,
     )
     try:
         created = await orders.create_order(

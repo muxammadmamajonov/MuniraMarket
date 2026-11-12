@@ -1,6 +1,6 @@
 /**
- * SQL seed helpers for the storefront integration tests (catalog, delivery, cart, checkout,
- * orders): the same rows services/api/tests/db_data.py writes, with obviously fake data.
+ * SQL seed helpers for the storefront integration tests (catalog, cart, checkout, orders): the
+ * same rows services/api/tests/db_data.py writes, with obviously fake data.
  */
 import type { Hono } from 'hono';
 import { expect } from 'vitest';
@@ -85,89 +85,6 @@ export async function addProduct(
   return rows[0]!.id;
 }
 
-export interface ZoneOptions {
-  isActive?: boolean;
-  fee?: number;
-  threshold?: number | null;
-  minOrder?: number;
-  opensAt?: string;
-  closesAt?: string;
-  sortOrder?: number;
-}
-
-export async function addZone(
-  db: Database,
-  slug: string,
-  districts: string[],
-  options: ZoneOptions = {},
-): Promise<string> {
-  const { rows } = await db.query<{ id: string }>(
-    `INSERT INTO delivery_zones (id, slug, name_uz, name_ru, delivery_fee_uzs,
-                                 free_delivery_threshold_uzs, min_order_uzs, opens_at, closes_at,
-                                 sort_order, is_active)
-     VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-     RETURNING id::text AS id`,
-    [
-      slug,
-      `Demo ${slug}`,
-      `Демо ${slug}`,
-      options.fee ?? 15_000,
-      options.threshold === undefined ? 300_000 : options.threshold,
-      options.minOrder ?? 50_000,
-      options.opensAt ?? '00:00',
-      options.closesAt ?? '23:59',
-      options.sortOrder ?? 0,
-      options.isActive ?? true,
-    ],
-  );
-  const zoneId = rows[0]!.id;
-  for (const district of districts) {
-    await db.query('INSERT INTO delivery_zone_districts (district, zone_id) VALUES ($1, $2)', [
-      district,
-      zoneId,
-    ]);
-  }
-  return zoneId;
-}
-
-/** A slot `daysAhead` local days from now, with its cutoff an hour before it starts. */
-export async function addSlot(
-  db: Database,
-  zoneId: string,
-  options: {
-    daysAhead?: number;
-    startsAt?: string;
-    endsAt?: string;
-    capacity?: number;
-    reserved?: number;
-    isActive?: boolean;
-    cutoffPassed?: boolean;
-  } = {},
-): Promise<string> {
-  const { rows } = await db.query<{ id: string }>(
-    `WITH d AS (SELECT ((now() AT TIME ZONE 'Asia/Tashkent')::date + $2::int) AS day)
-     INSERT INTO delivery_slots (id, zone_id, slot_date, starts_at, ends_at, capacity,
-                                 reserved_count, cutoff_at, is_active)
-     SELECT gen_random_uuid(), $1, d.day, $3::time, $4::time, $5, $6,
-            CASE WHEN $8 THEN now() - interval '1 minute'
-                 ELSE ((d.day + $3::time) AT TIME ZONE 'Asia/Tashkent') - interval '1 hour' END,
-            $7
-       FROM d
-     RETURNING id::text AS id`,
-    [
-      zoneId,
-      options.daysAhead ?? 1,
-      options.startsAt ?? '10:00',
-      options.endsAt ?? '12:00',
-      options.capacity ?? 5,
-      options.reserved ?? 0,
-      options.isActive ?? true,
-      options.cutoffPassed ?? false,
-    ],
-  );
-  return rows[0]!.id;
-}
-
 export async function connectStaffChat(db: Database, chatId = -1_001_234_567_890): Promise<void> {
   await db.query('INSERT INTO staff_notification_chat (id, chat_id) VALUES (1, $1)', [chatId]);
 }
@@ -217,9 +134,12 @@ export async function addToCart(app: App, who: Customer, productId: string, quan
 
 export const DEMO_PHONE = '+998001234567';
 
+/** A made-up point in Tashkent (WGS84). */
+export const DEMO_POINT = { lat: 41.311081, lon: 69.240562 } as const;
+
 export function orderBody(overrides: Record<string, unknown> = {}): Record<string, unknown> {
   return {
-    address: { district: 'chilonzor', street: "Demo ko'cha", house: '12' },
+    address: { ...DEMO_POINT, street: "Demo ko'cha", house: '12' },
     recipient_name: 'Demo Mijoz',
     recipient_phone: DEMO_PHONE,
     payment_method: 'cash_on_delivery',
@@ -232,8 +152,8 @@ export function newKey(): string {
   return crypto.randomUUID();
 }
 
-export async function quotedTotal(app: App, who: Customer, district = 'chilonzor') {
-  const response = await as(app, who).post('/api/v1/checkout/quote', { district });
+export async function quotedTotal(app: App, who: Customer) {
+  const response = await as(app, who).post('/api/v1/checkout/quote');
   expect(response.status, await response.clone().text()).toBe(200);
   return ((await response.json()) as { total_uzs: number }).total_uzs;
 }

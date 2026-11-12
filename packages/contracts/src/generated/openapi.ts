@@ -159,104 +159,6 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
-  '/api/v1/admin/delivery/slots': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /**
-     * List Slots
-     * @description Slots by date and start time, optionally of one zone and a date range (at most 1000).
-     */
-    get: operations['list_slots_api_v1_admin_delivery_slots_get'];
-    put?: never;
-    /**
-     * Create Slot
-     * @description ``cutoff_at`` may not be after the slot starts (Asia/Tashkent); ``409 slot_exists`` when
-     *     the zone already has a slot starting at that date and time.
-     */
-    post: operations['create_slot_api_v1_admin_delivery_slots_post'];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/api/v1/admin/delivery/slots/{slot_id}': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    post?: never;
-    /**
-     * Delete Slot
-     * @description Only a slot with nothing booked and no order referring to it (``409 slot_in_use``).
-     */
-    delete: operations['delete_slot_api_v1_admin_delivery_slots__slot_id__delete'];
-    options?: never;
-    head?: never;
-    /**
-     * Update Slot
-     * @description Change only the fields sent. ``409 capacity_below_reserved`` below the booked places;
-     *     ``409 slot_in_use`` when moving (date/times) a slot with booked places.
-     */
-    patch: operations['update_slot_api_v1_admin_delivery_slots__slot_id__patch'];
-    trace?: never;
-  };
-  '/api/v1/admin/delivery/zones': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /**
-     * List Zones
-     * @description Every zone (inactive ones too), in display order, with its districts.
-     */
-    get: operations['list_zones_api_v1_admin_delivery_zones_get'];
-    put?: never;
-    /**
-     * Create Zone
-     * @description ``409 district_taken`` (with ``district``) when a district already belongs to a zone.
-     */
-    post: operations['create_zone_api_v1_admin_delivery_zones_post'];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/api/v1/admin/delivery/zones/{zone_id}': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    post?: never;
-    /**
-     * Delete Zone
-     * @description Only a zone no order and no slot refers to (``409 zone_in_use``); else deactivate it.
-     */
-    delete: operations['delete_zone_api_v1_admin_delivery_zones__zone_id__delete'];
-    options?: never;
-    head?: never;
-    /**
-     * Update Zone
-     * @description Change only the fields sent; ``districts`` replaces the zone's whole district set.
-     */
-    patch: operations['update_zone_api_v1_admin_delivery_zones__zone_id__patch'];
-    trace?: never;
-  };
   '/api/v1/admin/orders': {
     parameters: {
       query?: never;
@@ -649,35 +551,13 @@ export interface paths {
     put?: never;
     /**
      * Quote
-     * @description Re-check the cart (status, current price, stock) and price delivery for a district.
+     * @description Re-check the cart (status, current price, stock). No request body.
      *
      *     Never fails because of the cart's contents: problems are reported in ``issues`` and
-     *     ``can_place_order``. ``409 district_not_served`` when no active zone covers the district.
-     *     ``slot_required`` and ``delivery_slots`` say whether (and which) delivery slot to book.
+     *     ``can_place_order``. ``total_uzs`` equals ``subtotal_uzs``: delivery is by a Yandex Go courier
+     *     whom the customer pays directly.
      */
     post: operations['quote_api_v1_checkout_quote_post'];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/api/v1/delivery/zones': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /**
-     * List Zones
-     * @description Active zones with their districts, fees, minimum order and Asia/Tashkent hours.
-     *
-     *     ``is_open_now`` is as of the response; it may be up to a minute stale from a cache.
-     */
-    get: operations['list_zones_api_v1_delivery_zones_get'];
-    put?: never;
-    post?: never;
     delete?: never;
     options?: never;
     head?: never;
@@ -926,8 +806,7 @@ export interface paths {
      *
      *     The same ``Idempotency-Key`` with the same body returns the original order (``200`` and
      *     ``Idempotent-Replayed: true``); with a different body it is ``409 idempotency_key_conflict``.
-     *     When the zone has delivery slots, ``delivery_slot_id`` is required (``409 slot_required``) and
-     *     booked atomically (``409 slot_full`` / ``slot_unavailable``). Without a verified account
+     *     Delivery is on demand (no zone, hours or slot check). Without a verified account
      *     phone it is ``409 phone_verification_required`` (unless disabled by configuration).
      */
     post: operations['create_order_api_v1_orders_post'];
@@ -1088,9 +967,6 @@ export interface components {
        * Format: date-time
        */
       created_at: string;
-      /** Delivery Fee Uzs */
-      delivery_fee_uzs: number;
-      delivery_slot: components['schemas']['OrderDeliverySlot'] | null;
       /** History */
       history: components['schemas']['OrderStatusChange'][];
       /** History Detail */
@@ -1268,9 +1144,7 @@ export interface components {
         | 'insufficient_stock'
         | 'cart_limit_reached'
         | 'cart_item_not_found'
-        | 'district_not_served'
         | 'cart_empty'
-        | 'below_min_order'
         | 'price_changed'
         | 'idempotency_key_conflict'
         | 'order_not_found'
@@ -1290,22 +1164,10 @@ export interface components {
         | 'csv_too_many_rows'
         | 'user_not_found'
         | 'last_admin'
-        | 'cannot_block_self'
-        | 'slot_required'
-        | 'slot_unavailable'
-        | 'slot_full'
-        | 'zone_not_found'
-        | 'zone_in_use'
-        | 'district_taken'
-        | 'slot_not_found'
-        | 'slot_exists'
-        | 'slot_in_use'
-        | 'capacity_below_reserved';
+        | 'cannot_block_self';
       current_status?: components['schemas']['OrderStatus'] | null;
       /** Details */
       details?: components['schemas']['ErrorDetail'][] | null;
-      /** District */
-      district?: string | null;
       /** Message */
       message: string;
       /** Product Id */
@@ -1479,45 +1341,16 @@ export interface components {
     CheckoutQuote: {
       /** Can Place Order */
       can_place_order: boolean;
-      /** Delivery Fee Uzs */
-      delivery_fee_uzs: number;
-      /** Delivery Slots */
-      delivery_slots: components['schemas']['DeliverySlotOption'][];
-      /** Free Delivery Remaining Uzs */
-      free_delivery_remaining_uzs: number | null;
       /** Issues */
-      issues: ('cart_empty' | 'cart_has_issues' | 'below_min_order')[];
+      issues: ('cart_empty' | 'cart_has_issues')[];
       /** Item Count */
       item_count: number;
       /** Items */
       items: components['schemas']['CartLine'][];
-      /** Slot Required */
-      slot_required: boolean;
       /** Subtotal Uzs */
       subtotal_uzs: number;
       /** Total Uzs */
       total_uzs: number;
-      zone: components['schemas']['DeliveryZonePublic'];
-    };
-    /** CheckoutQuoteRequest */
-    CheckoutQuoteRequest: {
-      /**
-       * District
-       * @enum {string}
-       */
-      district:
-        | 'bektemir'
-        | 'chilonzor'
-        | 'mirobod'
-        | 'mirzo_ulugbek'
-        | 'olmazor'
-        | 'sergeli'
-        | 'shayxontohur'
-        | 'uchtepa'
-        | 'yakkasaroy'
-        | 'yangihayot'
-        | 'yashnobod'
-        | 'yunusobod';
     };
     /** ClaimResponse */
     ClaimResponse: {
@@ -1539,8 +1372,6 @@ export interface components {
       address: components['schemas']['DeliveryAddress'];
       /** Comment */
       comment?: string | null;
-      /** Delivery Slot Id */
-      delivery_slot_id?: string | null;
       /** Expected Total Uzs */
       expected_total_uzs: number;
       payment_method: components['schemas']['PaymentMethod'];
@@ -1648,27 +1479,14 @@ export interface components {
        */
       timezone: 'Asia/Tashkent';
     };
-    /** DeliveryAddress */
+    /**
+     * DeliveryAddress
+     * @description Where the Yandex Go courier takes the order: the map point plus what the courier needs to
+     *     find the door.
+     */
     DeliveryAddress: {
       /** Apartment */
       apartment?: string | null;
-      /**
-       * District
-       * @enum {string}
-       */
-      district:
-        | 'bektemir'
-        | 'chilonzor'
-        | 'mirobod'
-        | 'mirzo_ulugbek'
-        | 'olmazor'
-        | 'sergeli'
-        | 'shayxontohur'
-        | 'uchtepa'
-        | 'yakkasaroy'
-        | 'yangihayot'
-        | 'yashnobod'
-        | 'yunusobod';
       /** Entrance */
       entrance?: string | null;
       /** Floor */
@@ -1677,192 +1495,18 @@ export interface components {
       house: string;
       /** Landmark */
       landmark?: string | null;
+      /**
+       * Lat
+       * @description WGS84 latitude, -90..90
+       */
+      lat: number;
+      /**
+       * Lon
+       * @description WGS84 longitude, -180..180
+       */
+      lon: number;
       /** Street */
       street: string;
-    };
-    /** DeliverySlotAdmin */
-    DeliverySlotAdmin: {
-      /** Capacity */
-      capacity: number;
-      /**
-       * Created At
-       * Format: date-time
-       */
-      created_at: string;
-      /**
-       * Cutoff At
-       * Format: date-time
-       */
-      cutoff_at: string;
-      /** Ends At */
-      ends_at: string;
-      /**
-       * Id
-       * Format: uuid
-       */
-      id: string;
-      /** Is Active */
-      is_active: boolean;
-      /** Remaining */
-      remaining: number;
-      /** Reserved Count */
-      reserved_count: number;
-      /**
-       * Slot Date
-       * Format: date
-       */
-      slot_date: string;
-      /** Starts At */
-      starts_at: string;
-      /**
-       * Updated At
-       * Format: date-time
-       */
-      updated_at: string;
-      /**
-       * Zone Id
-       * Format: uuid
-       */
-      zone_id: string;
-    };
-    /** DeliverySlotAdminList */
-    DeliverySlotAdminList: {
-      /** Items */
-      items: components['schemas']['DeliverySlotAdmin'][];
-      /** Truncated */
-      truncated: boolean;
-    };
-    /**
-     * DeliverySlotOption
-     * @description A bookable delivery window offered at checkout (local Asia/Tashkent date and times).
-     */
-    DeliverySlotOption: {
-      /**
-       * Date
-       * Format: date
-       */
-      date: string;
-      /** Ends At */
-      ends_at: string;
-      /**
-       * Id
-       * Format: uuid
-       */
-      id: string;
-      /** Is Full */
-      is_full: boolean;
-      /** Remaining */
-      remaining: number;
-      /** Starts At */
-      starts_at: string;
-    };
-    /** DeliveryZoneAdmin */
-    DeliveryZoneAdmin: {
-      /** Closes At */
-      closes_at: string;
-      /**
-       * Created At
-       * Format: date-time
-       */
-      created_at: string;
-      /** Delivery Fee Uzs */
-      delivery_fee_uzs: number;
-      /** Districts */
-      districts: components['schemas']['District'][];
-      /** Free Delivery Threshold Uzs */
-      free_delivery_threshold_uzs: number | null;
-      /**
-       * Id
-       * Format: uuid
-       */
-      id: string;
-      /** Is Active */
-      is_active: boolean;
-      /** Min Order Uzs */
-      min_order_uzs: number;
-      /** Name Ru */
-      name_ru: string;
-      /** Name Uz */
-      name_uz: string;
-      /** Opens At */
-      opens_at: string;
-      /** Slug */
-      slug: string;
-      /** Sort Order */
-      sort_order: number;
-      /**
-       * Updated At
-       * Format: date-time
-       */
-      updated_at: string;
-    };
-    /** DeliveryZoneAdminList */
-    DeliveryZoneAdminList: {
-      /** Items */
-      items: components['schemas']['DeliveryZoneAdmin'][];
-    };
-    /** DeliveryZoneList */
-    DeliveryZoneList: {
-      /** Items */
-      items: components['schemas']['DeliveryZonePublic'][];
-      /**
-       * Timezone
-       * @default Asia/Tashkent
-       * @constant
-       */
-      timezone: 'Asia/Tashkent';
-    };
-    /** DeliveryZonePublic */
-    DeliveryZonePublic: {
-      /** Closes At */
-      closes_at: string;
-      /** Delivery Fee Uzs */
-      delivery_fee_uzs: number;
-      /** Districts */
-      districts: components['schemas']['District'][];
-      /** Free Delivery Threshold Uzs */
-      free_delivery_threshold_uzs: number | null;
-      /**
-       * Id
-       * Format: uuid
-       */
-      id: string;
-      /** Is Open Now */
-      is_open_now: boolean;
-      /** Min Order Uzs */
-      min_order_uzs: number;
-      /** Name Ru */
-      name_ru: string;
-      /** Name Uz */
-      name_uz: string;
-      /** Opens At */
-      opens_at: string;
-      /** Slug */
-      slug: string;
-    };
-    /** District */
-    District: {
-      /**
-       * Code
-       * @enum {string}
-       */
-      code:
-        | 'bektemir'
-        | 'chilonzor'
-        | 'mirobod'
-        | 'mirzo_ulugbek'
-        | 'olmazor'
-        | 'sergeli'
-        | 'shayxontohur'
-        | 'uchtepa'
-        | 'yakkasaroy'
-        | 'yangihayot'
-        | 'yashnobod'
-        | 'yunusobod';
-      /** Name Ru */
-      name_ru: string;
-      /** Name Uz */
-      name_uz: string;
     };
     /** ErrorDetail */
     ErrorDetail: {
@@ -1930,27 +1574,6 @@ export interface components {
     OrderAddress: {
       /** Apartment */
       apartment: string | null;
-      /**
-       * District
-       * @enum {string}
-       */
-      district:
-        | 'bektemir'
-        | 'chilonzor'
-        | 'mirobod'
-        | 'mirzo_ulugbek'
-        | 'olmazor'
-        | 'sergeli'
-        | 'shayxontohur'
-        | 'uchtepa'
-        | 'yakkasaroy'
-        | 'yangihayot'
-        | 'yashnobod'
-        | 'yunusobod';
-      /** District Name Ru */
-      district_name_ru: string;
-      /** District Name Uz */
-      district_name_uz: string;
       /** Entrance */
       entrance: string | null;
       /** Floor */
@@ -1959,23 +1582,12 @@ export interface components {
       house: string;
       /** Landmark */
       landmark: string | null;
+      /** Lat */
+      lat: number | null;
+      /** Lon */
+      lon: number | null;
       /** Street */
       street: string;
-    };
-    /**
-     * OrderDeliverySlot
-     * @description The booked delivery window (local Asia/Tashkent date, ``HH:MM`` times).
-     */
-    OrderDeliverySlot: {
-      /**
-       * Date
-       * Format: date
-       */
-      date: string;
-      /** Ends At */
-      ends_at: string;
-      /** Starts At */
-      starts_at: string;
     };
     /** OrderDetail */
     OrderDetail: {
@@ -1991,9 +1603,6 @@ export interface components {
        * Format: date-time
        */
       created_at: string;
-      /** Delivery Fee Uzs */
-      delivery_fee_uzs: number;
-      delivery_slot: components['schemas']['OrderDeliverySlot'] | null;
       /** History */
       history: components['schemas']['OrderStatusChange'][];
       /**
@@ -2333,60 +1942,6 @@ export interface components {
     SetLanguageRequest: {
       language: components['schemas']['Language'];
     };
-    /** SlotCreateRequest */
-    SlotCreateRequest: {
-      /** Capacity */
-      capacity: number;
-      /**
-       * Cutoff At
-       * Format: date-time
-       */
-      cutoff_at: string;
-      /**
-       * Ends At
-       * @example 09:00
-       */
-      ends_at: string;
-      /**
-       * Is Active
-       * @default true
-       */
-      is_active: boolean;
-      /**
-       * Slot Date
-       * Format: date
-       */
-      slot_date: string;
-      /**
-       * Starts At
-       * @example 09:00
-       */
-      starts_at: string;
-      /**
-       * Zone Id
-       * Format: uuid
-       */
-      zone_id: string;
-    };
-    /**
-     * SlotUpdateRequest
-     * @description Only the fields sent are changed. Date and times can change only while nothing is booked;
-     *     capacity cannot drop below what is already booked.
-     */
-    SlotUpdateRequest: {
-      /** Capacity */
-      capacity?: number | null;
-      /** Cutoff At */
-      cutoff_at?: string | null;
-      /** Ends At */
-      ends_at?: string | null;
-      /** Is Active */
-      is_active?: boolean | null;
-      /** Slot Date */
-      slot_date?: string | null;
-      /** Starts At */
-      starts_at?: string | null;
-    };
     /**
      * Unit
      * @enum {string}
@@ -2455,102 +2010,6 @@ export interface components {
       msg: string;
       /** Error Type */
       type: string;
-    };
-    /** ZoneCreateRequest */
-    ZoneCreateRequest: {
-      /**
-       * Closes At
-       * @example 09:00
-       */
-      closes_at: string;
-      /** Delivery Fee Uzs */
-      delivery_fee_uzs: number;
-      /** Districts */
-      districts: (
-        | 'bektemir'
-        | 'chilonzor'
-        | 'mirobod'
-        | 'mirzo_ulugbek'
-        | 'olmazor'
-        | 'sergeli'
-        | 'shayxontohur'
-        | 'uchtepa'
-        | 'yakkasaroy'
-        | 'yangihayot'
-        | 'yashnobod'
-        | 'yunusobod'
-      )[];
-      /** Free Delivery Threshold Uzs */
-      free_delivery_threshold_uzs?: number | null;
-      /**
-       * Is Active
-       * @default true
-       */
-      is_active: boolean;
-      /**
-       * Min Order Uzs
-       * @default 0
-       */
-      min_order_uzs: number;
-      /** Name Ru */
-      name_ru: string;
-      /** Name Uz */
-      name_uz: string;
-      /**
-       * Opens At
-       * @example 09:00
-       */
-      opens_at: string;
-      /** Slug */
-      slug: string;
-      /**
-       * Sort Order
-       * @default 0
-       */
-      sort_order: number;
-    };
-    /**
-     * ZoneUpdateRequest
-     * @description Only the fields sent are changed; ``districts`` replaces the whole set.
-     */
-    ZoneUpdateRequest: {
-      /** Closes At */
-      closes_at?: string | null;
-      /** Delivery Fee Uzs */
-      delivery_fee_uzs?: number | null;
-      /** Districts */
-      districts?:
-        | (
-            | 'bektemir'
-            | 'chilonzor'
-            | 'mirobod'
-            | 'mirzo_ulugbek'
-            | 'olmazor'
-            | 'sergeli'
-            | 'shayxontohur'
-            | 'uchtepa'
-            | 'yakkasaroy'
-            | 'yangihayot'
-            | 'yashnobod'
-            | 'yunusobod'
-          )[]
-        | null;
-      /** Free Delivery Threshold Uzs */
-      free_delivery_threshold_uzs?: number | null;
-      /** Is Active */
-      is_active?: boolean | null;
-      /** Min Order Uzs */
-      min_order_uzs?: number | null;
-      /** Name Ru */
-      name_ru?: string | null;
-      /** Name Uz */
-      name_uz?: string | null;
-      /** Opens At */
-      opens_at?: string | null;
-      /** Slug */
-      slug?: string | null;
-      /** Sort Order */
-      sort_order?: number | null;
     };
   };
   responses: never;
@@ -3180,642 +2639,6 @@ export interface operations {
       };
       /** @description Forbidden */
       403: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['ErrorEnvelope'];
-        };
-      };
-      /** @description Too Many Requests */
-      429: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['ErrorEnvelope'];
-        };
-      };
-      /** @description Service Unavailable */
-      503: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['ErrorEnvelope'];
-        };
-      };
-    };
-  };
-  list_slots_api_v1_admin_delivery_slots_get: {
-    parameters: {
-      query?: {
-        zone_id?: string | null;
-        /** @description Local date, inclusive */
-        date_from?: string | null;
-        /** @description Local date, inclusive */
-        date_to?: string | null;
-      };
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['DeliverySlotAdminList'];
-        };
-      };
-      /** @description Unauthorized */
-      401: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['ErrorEnvelope'];
-        };
-      };
-      /** @description Forbidden */
-      403: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['ErrorEnvelope'];
-        };
-      };
-      /** @description Unprocessable Content */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['ErrorEnvelope'];
-        };
-      };
-      /** @description Too Many Requests */
-      429: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['ErrorEnvelope'];
-        };
-      };
-      /** @description Service Unavailable */
-      503: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['ErrorEnvelope'];
-        };
-      };
-    };
-  };
-  create_slot_api_v1_admin_delivery_slots_post: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        'application/json': components['schemas']['SlotCreateRequest'];
-      };
-    };
-    responses: {
-      /** @description Successful Response */
-      201: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['DeliverySlotAdmin'];
-        };
-      };
-      /** @description Unauthorized */
-      401: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['ErrorEnvelope'];
-        };
-      };
-      /** @description Forbidden */
-      403: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['ErrorEnvelope'];
-        };
-      };
-      /** @description Not Found */
-      404: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['ErrorEnvelope'];
-        };
-      };
-      /** @description Conflict */
-      409: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['ErrorEnvelope'];
-        };
-      };
-      /** @description Unprocessable Content */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['ErrorEnvelope'];
-        };
-      };
-      /** @description Too Many Requests */
-      429: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['ErrorEnvelope'];
-        };
-      };
-      /** @description Service Unavailable */
-      503: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['ErrorEnvelope'];
-        };
-      };
-    };
-  };
-  delete_slot_api_v1_admin_delivery_slots__slot_id__delete: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        slot_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      204: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content?: never;
-      };
-      /** @description Unauthorized */
-      401: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['ErrorEnvelope'];
-        };
-      };
-      /** @description Forbidden */
-      403: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['ErrorEnvelope'];
-        };
-      };
-      /** @description Not Found */
-      404: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['ErrorEnvelope'];
-        };
-      };
-      /** @description Conflict */
-      409: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['ErrorEnvelope'];
-        };
-      };
-      /** @description Unprocessable Content */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['ErrorEnvelope'];
-        };
-      };
-      /** @description Too Many Requests */
-      429: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['ErrorEnvelope'];
-        };
-      };
-      /** @description Service Unavailable */
-      503: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['ErrorEnvelope'];
-        };
-      };
-    };
-  };
-  update_slot_api_v1_admin_delivery_slots__slot_id__patch: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        slot_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        'application/json': components['schemas']['SlotUpdateRequest'];
-      };
-    };
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['DeliverySlotAdmin'];
-        };
-      };
-      /** @description Unauthorized */
-      401: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['ErrorEnvelope'];
-        };
-      };
-      /** @description Forbidden */
-      403: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['ErrorEnvelope'];
-        };
-      };
-      /** @description Not Found */
-      404: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['ErrorEnvelope'];
-        };
-      };
-      /** @description Conflict */
-      409: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['ErrorEnvelope'];
-        };
-      };
-      /** @description Unprocessable Content */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['ErrorEnvelope'];
-        };
-      };
-      /** @description Too Many Requests */
-      429: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['ErrorEnvelope'];
-        };
-      };
-      /** @description Service Unavailable */
-      503: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['ErrorEnvelope'];
-        };
-      };
-    };
-  };
-  list_zones_api_v1_admin_delivery_zones_get: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['DeliveryZoneAdminList'];
-        };
-      };
-      /** @description Unauthorized */
-      401: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['ErrorEnvelope'];
-        };
-      };
-      /** @description Forbidden */
-      403: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['ErrorEnvelope'];
-        };
-      };
-      /** @description Too Many Requests */
-      429: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['ErrorEnvelope'];
-        };
-      };
-      /** @description Service Unavailable */
-      503: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['ErrorEnvelope'];
-        };
-      };
-    };
-  };
-  create_zone_api_v1_admin_delivery_zones_post: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        'application/json': components['schemas']['ZoneCreateRequest'];
-      };
-    };
-    responses: {
-      /** @description Successful Response */
-      201: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['DeliveryZoneAdmin'];
-        };
-      };
-      /** @description Unauthorized */
-      401: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['ErrorEnvelope'];
-        };
-      };
-      /** @description Forbidden */
-      403: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['ErrorEnvelope'];
-        };
-      };
-      /** @description Conflict */
-      409: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['ErrorEnvelope'];
-        };
-      };
-      /** @description Unprocessable Content */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['ErrorEnvelope'];
-        };
-      };
-      /** @description Too Many Requests */
-      429: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['ErrorEnvelope'];
-        };
-      };
-      /** @description Service Unavailable */
-      503: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['ErrorEnvelope'];
-        };
-      };
-    };
-  };
-  delete_zone_api_v1_admin_delivery_zones__zone_id__delete: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        zone_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      204: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content?: never;
-      };
-      /** @description Unauthorized */
-      401: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['ErrorEnvelope'];
-        };
-      };
-      /** @description Forbidden */
-      403: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['ErrorEnvelope'];
-        };
-      };
-      /** @description Not Found */
-      404: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['ErrorEnvelope'];
-        };
-      };
-      /** @description Conflict */
-      409: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['ErrorEnvelope'];
-        };
-      };
-      /** @description Unprocessable Content */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['ErrorEnvelope'];
-        };
-      };
-      /** @description Too Many Requests */
-      429: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['ErrorEnvelope'];
-        };
-      };
-      /** @description Service Unavailable */
-      503: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['ErrorEnvelope'];
-        };
-      };
-    };
-  };
-  update_zone_api_v1_admin_delivery_zones__zone_id__patch: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        zone_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        'application/json': components['schemas']['ZoneUpdateRequest'];
-      };
-    };
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['DeliveryZoneAdmin'];
-        };
-      };
-      /** @description Unauthorized */
-      401: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['ErrorEnvelope'];
-        };
-      };
-      /** @description Forbidden */
-      403: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['ErrorEnvelope'];
-        };
-      };
-      /** @description Not Found */
-      404: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['ErrorEnvelope'];
-        };
-      };
-      /** @description Conflict */
-      409: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['ErrorEnvelope'];
-        };
-      };
-      /** @description Unprocessable Content */
-      422: {
         headers: {
           [name: string]: unknown;
         };
@@ -5356,11 +4179,7 @@ export interface operations {
       path?: never;
       cookie?: never;
     };
-    requestBody: {
-      content: {
-        'application/json': components['schemas']['CheckoutQuoteRequest'];
-      };
-    };
+    requestBody?: never;
     responses: {
       /** @description Successful Response */
       200: {
@@ -5387,62 +4206,6 @@ export interface operations {
         };
         content: {
           'application/json': components['schemas']['ErrorEnvelope'];
-        };
-      };
-      /** @description Conflict */
-      409: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['ErrorEnvelope'];
-        };
-      };
-      /** @description Unprocessable Content */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['ErrorEnvelope'];
-        };
-      };
-      /** @description Too Many Requests */
-      429: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['ErrorEnvelope'];
-        };
-      };
-      /** @description Service Unavailable */
-      503: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['ErrorEnvelope'];
-        };
-      };
-    };
-  };
-  list_zones_api_v1_delivery_zones_get: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['DeliveryZoneList'];
         };
       };
       /** @description Too Many Requests */

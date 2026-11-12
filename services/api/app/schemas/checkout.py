@@ -1,12 +1,12 @@
 """Checkout and order request/response models.
 
-The server computes every amount. A client sends the district and address, never prices; it
-sends back only the total it was shown (``expected_total_uzs``) so a change is refused, not
-silently charged. Free-text fields are trimmed, blank optional fields become ``null`` and control
-characters are rejected.
+The server computes every amount. A client sends the delivery address (a map point plus street
+and house), never prices; it sends back only the total it was shown (``expected_total_uzs``) so a
+change is refused, not silently charged. There is no delivery charge: a Yandex Go courier carries
+the order on demand and the customer pays the courier. Free-text fields are trimmed, blank optional
+fields become ``null`` and control characters are rejected.
 """
 
-import datetime as dt
 import re
 import uuid
 from datetime import datetime
@@ -16,7 +16,7 @@ from pydantic import AfterValidator, BaseModel, ConfigDict, Field, StringConstra
 
 from app.domain.cart import CartIssue
 from app.domain.checkout import QuoteIssue, normalize_uz_phone
-from app.domain.delivery import DISTRICT_NAMES, DistrictCode, is_district_code
+from app.domain.geo import COORDINATE_DECIMALS, snapshot_point
 from app.domain.order_status import ALLOWED_TRANSITIONS, OrderStatus, customer_can_cancel
 from app.models.enums import PaymentMethod, Unit, UserRole
 from app.repositories.orders import (
@@ -24,11 +24,9 @@ from app.repositories.orders import (
     OrderRecord,
     OrderSummaryRecord,
     QuoteRecord,
-    SlotSnapshotRecord,
 )
 from app.schemas.cart import CartLine
 from app.schemas.catalog import ProductSummary
-from app.schemas.delivery import DeliverySlotOption, DeliveryZonePublic, hhmm
 
 _CONTROL = re.compile(r"[\x00-\x08\x0b-\x1f\x7f]")
 _CONTROL_OR_NEWLINE = re.compile(r"[\x00-\x1f\x7f]")
@@ -54,10 +52,25 @@ def _blank_to_none(value: str | None) -> str | None:
     return value or None
 
 
+def _six_decimals(value: float) -> float:
+    return round(value, COORDINATE_DECIMALS)
+
+
 def _text(min_length: int, max_length: int) -> StringConstraints:
     return StringConstraints(strip_whitespace=True, min_length=min_length, max_length=max_length)
 
 
+# WGS84 degrees; ``allow_inf_nan=False`` refuses NaN and +/-Infinity.
+Latitude = Annotated[
+    float,
+    Field(ge=-90, le=90, allow_inf_nan=False, description="WGS84 latitude, -90..90"),
+    AfterValidator(_six_decimals),
+]
+Longitude = Annotated[
+    float,
+    Field(ge=-180, le=180, allow_inf_nan=False, description="WGS84 longitude, -180..180"),
+    AfterValidator(_six_decimals),
+]
 Street = Annotated[str, _text(2, 200), AfterValidator(_single_line)]
 House = Annotated[str, _text(1, 32), AfterValidator(_single_line)]
 RecipientName = Annotated[str, _text(2, 100), AfterValidator(_single_line)]
@@ -89,16 +102,14 @@ Phone = Annotated[
 # --- requests -------------------------------------------------------------------------------------
 
 
-class CheckoutQuoteRequest(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    district: DistrictCode
-
-
 class DeliveryAddress(BaseModel):
+    """Where the Yandex Go courier takes the order: the map point plus what the courier needs to
+    find the door."""
+
     model_config = ConfigDict(extra="forbid")
 
-    district: DistrictCode
+    lat: Latitude
+    lon: Longitude
     street: Street
     house: House
     apartment: ShortPart = None
@@ -117,8 +128,6 @@ class CreateOrderRequest(BaseModel):
     comment: Comment = None
     # The ``total_uzs`` of the quote the customer confirmed.
     expected_total_uzs: int = Field(ge=0)
-    # One of the quote's ``delivery_slots``; required when the quote says ``slot_required``.
-    delivery_slot_id: uuid.UUID | None = None
 
 
 class CancelOrderRequest(BaseModel):
@@ -144,20 +153,13 @@ class CheckoutQuote(BaseModel):
     items: list[CartLine]
     item_count: int
     subtotal_uzs: int
-    delivery_fee_uzs: int
+    # Always equal to ``subtotal_uzs``: the courier is paid separately, by the customer.
     total_uzs: int
-    # How much more to add for free delivery; ``0`` once reached, ``null`` if never free here.
-    free_delivery_remaining_uzs: int | None
-    zone: DeliveryZonePublic
     issues: list[QuoteIssue]
     can_place_order: bool
-    # The zone delivers in booked slots: the order must send one ``delivery_slot_id``.
-    slot_required: bool
-    # Active slots of the next 14 days whose cutoff is ahead, by date and time (full ones too).
-    delivery_slots: list[DeliverySlotOption]
 
     @classmethod
-    def from_record(cls, record: QuoteRecord, now: datetime) -> Self:
+    def from_record(cls, record: QuoteRecord) -> Self:
         totals = record.totals
         return cls(
             items=[
@@ -171,14 +173,9 @@ class CheckoutQuote(BaseModel):
             ],
             item_count=totals.cart.item_count,
             subtotal_uzs=totals.subtotal_uzs,
-            delivery_fee_uzs=totals.delivery_fee_uzs,
             total_uzs=totals.total_uzs,
-            free_delivery_remaining_uzs=totals.free_delivery_remaining_uzs,
-            zone=DeliveryZonePublic.from_record(record.zone, now),
             issues=list(totals.issues),
             can_place_order=totals.can_place_order,
-            slot_required=record.slot_required,
-            delivery_slots=[DeliverySlotOption.from_record(slot) for slot in record.slots],
         )
 
 
@@ -195,9 +192,9 @@ class OrderLine(BaseModel):
 
 
 class OrderAddress(BaseModel):
-    district: DistrictCode
-    district_name_uz: str
-    district_name_ru: str
+    # ``null`` only for orders placed before courier delivery (no map point was taken then).
+    lat: float | None
+    lon: float | None
     street: str
     house: str
     apartment: str | None
@@ -207,36 +204,17 @@ class OrderAddress(BaseModel):
 
     @classmethod
     def from_snapshot(cls, snapshot: dict[str, Any]) -> Self:
-        district = snapshot["district"]
-        if not is_district_code(district):  # pragma: no cover - validated on the way in
-            raise ValueError("unknown district in order snapshot")
-        names = DISTRICT_NAMES[district]
+        """Read a stored ``address_snapshot``; keys of the old address shape are ignored."""
+        point = snapshot_point(snapshot)
         return cls(
-            district=district,
-            district_name_uz=names.uz,
-            district_name_ru=names.ru,
+            lat=point.lat if point is not None else None,
+            lon=point.lon if point is not None else None,
             street=snapshot["street"],
             house=snapshot["house"],
             apartment=snapshot.get("apartment"),
             entrance=snapshot.get("entrance"),
             floor=snapshot.get("floor"),
             landmark=snapshot.get("landmark"),
-        )
-
-
-class OrderDeliverySlot(BaseModel):
-    """The booked delivery window (local Asia/Tashkent date, ``HH:MM`` times)."""
-
-    date: dt.date
-    starts_at: str
-    ends_at: str
-
-    @classmethod
-    def from_record(cls, record: SlotSnapshotRecord | None) -> Self | None:
-        if record is None:
-            return None
-        return cls(
-            date=record.slot_date, starts_at=hhmm(record.starts_at), ends_at=hhmm(record.ends_at)
         )
 
 
@@ -252,15 +230,14 @@ class OrderDetail(BaseModel):
     created_at: datetime
     updated_at: datetime
     subtotal_uzs: int
-    delivery_fee_uzs: int
+    # Equal to ``subtotal_uzs`` for new orders. Orders placed while the store still charged for
+    # delivery keep the total charged then (subtotal plus that delivery charge).
     total_uzs: int
     item_count: int
     payment_method: PaymentMethod
     recipient_name: str
     recipient_phone: str
     address: OrderAddress
-    # ``null`` when the zone had no delivery slots.
-    delivery_slot: OrderDeliverySlot | None
     comment: str | None
     cancel_reason: str | None
     items: list[OrderLine]
@@ -276,14 +253,12 @@ class OrderDetail(BaseModel):
             created_at=record.created_at,
             updated_at=record.updated_at,
             subtotal_uzs=record.subtotal_uzs,
-            delivery_fee_uzs=record.delivery_fee_uzs,
             total_uzs=record.total_uzs,
             item_count=record.item_count,
             payment_method=record.payment_method,
             recipient_name=record.recipient_name,
             recipient_phone=record.recipient_phone,
             address=OrderAddress.from_snapshot(record.address),
-            delivery_slot=OrderDeliverySlot.from_record(record.delivery_slot),
             comment=record.comment,
             cancel_reason=record.cancel_reason,
             items=[
@@ -387,10 +362,9 @@ __all__ = [
     "CancelOrderRequest",
     "CartIssue",
     "CheckoutQuote",
-    "CheckoutQuoteRequest",
     "CreateOrderRequest",
     "DeliveryAddress",
-    "OrderDeliverySlot",
+    "OrderAddress",
     "OrderDetail",
     "OrderPage",
     "OrderStatusUpdateRequest",

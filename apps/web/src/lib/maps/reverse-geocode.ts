@@ -1,41 +1,48 @@
-import { matchPlace, type PlaceMatch } from '@/lib/delivery/district-match';
 import { YANDEX_MAPS_GEOCODER_ORIGIN } from './config';
 import type { LngLat } from './yandex-types';
 
 /**
- * Reverse geocoding of one confirmed point with Yandex's Geocoder HTTP API, reduced to a
- * Tashkent district (see `district-match.ts`). The Maps JS API's `search` function needs a
- * **Search API** key, which is a different product; this deliberately uses our dedicated
- * Geocoder key instead.
+ * Reverse geocoding of the map pin with Yandex's Geocoder HTTP API, reduced to the two parts a
+ * courier needs: street and house. The picker fills its form with them so the customer mostly
+ * just confirms. The Maps JS API's `search` needs a separate **Search API** key; this uses our
+ * dedicated Geocoder key instead.
  *
- * Returns `null` whenever the lookup itself is unavailable: no `search` in this SDK, a key
- * without the Search API (403), quota exhausted, offline, a CSP block or a timeout. The caller
- * must then not claim anything about delivery and must ask for the district instead.
+ * Returns `null` whenever the lookup is unavailable or found nothing usable: no key, a key without
+ * the Geocoder product (403), quota exhausted, offline, a CSP block or a timeout. The customer then
+ * types the street and house themselves; the pin is still the delivery point.
  *
- * Privacy: the point goes only to Yandex, in this one request. It is never logged (errors are
- * swallowed without their message, which could echo the request), stored or sent to our API.
+ * Privacy: the point goes to Yandex in this request and to our API only inside the order. It is
+ * never logged (errors are swallowed without their message, which could echo the request).
  */
 
 export const REVERSE_GEOCODE_TIMEOUT_MS = 8000;
 
-/** ~10 cm; more digits add nothing to a district lookup. */
+export interface GeocodedAddress {
+  /** Street (or, without one, the neighbourhood such as a "kvartal"). `''` when unknown. */
+  street: string;
+  /** House number. `''` when unknown. */
+  house: string;
+}
+
+/** ~10 cm; more digits add nothing. */
 function coordinate(value: number): string {
   return value.toFixed(6);
 }
 
-export async function reverseGeocodeDistrict(
+export async function reverseGeocodeAddress(
   point: LngLat,
   { apiKey, timeoutMs = REVERSE_GEOCODE_TIMEOUT_MS }: { apiKey: string; timeoutMs?: number },
-): Promise<PlaceMatch | null> {
+): Promise<GeocodedAddress | null> {
   if (typeof navigator !== 'undefined' && navigator.onLine === false) return null;
 
   const url = new URL('/v1', YANDEX_MAPS_GEOCODER_ORIGIN);
   url.searchParams.set('apikey', apiKey);
   url.searchParams.set('geocode', `${coordinate(point[0])},${coordinate(point[1])}`);
   url.searchParams.set('sco', 'longlat');
-  url.searchParams.set('kind', 'district');
-  // Uzbek is not a Geocoder API locale. The app remains Uzbek; Russian gives the most reliable
-  // canonical district names, which `district-match.ts` understands.
+  // The nearest building: its components carry both the street and the house number.
+  url.searchParams.set('kind', 'house');
+  url.searchParams.set('results', '1');
+  // Uzbek is not a Geocoder API locale; Russian gives the most complete Tashkent street names.
   url.searchParams.set('lang', 'ru_RU');
   url.searchParams.set('format', 'json');
 
@@ -46,16 +53,8 @@ export async function reverseGeocodeDistrict(
     const response = await fetch(url, { signal: controller.signal });
     if (!response.ok) return null;
     const body: unknown = await response.json();
-    const members = isFeatureMembers(body);
-    if (members === null) return null;
-    return matchPlace(
-      members.map((member) => ({
-        properties: {
-          name: member.GeoObject.name,
-          description: member.GeoObject.description,
-        },
-      })),
-    );
+    const found = firstResult(body);
+    return found === null ? null : addressFromResult(found);
   } catch {
     return null;
   } finally {
@@ -63,27 +62,58 @@ export async function reverseGeocodeDistrict(
   }
 }
 
-interface GeocoderMember {
-  GeoObject: { name: string; description: string };
+export interface AddressComponent {
+  kind: string;
+  name: string;
 }
 
-function isFeatureMembers(value: unknown): GeocoderMember[] | null {
-  if (typeof value !== 'object' || value === null) return null;
-  const response = (value as { response?: unknown }).response;
-  if (typeof response !== 'object' || response === null) return null;
-  const collection = (response as { GeoObjectCollection?: unknown }).GeoObjectCollection;
-  if (typeof collection !== 'object' || collection === null) return null;
-  const members = (collection as { featureMember?: unknown }).featureMember;
-  if (!Array.isArray(members)) return null;
-  const parsed: GeocoderMember[] = [];
-  for (const member of members) {
-    if (typeof member !== 'object' || member === null) continue;
-    const object = (member as { GeoObject?: unknown }).GeoObject;
-    if (typeof object !== 'object' || object === null) continue;
-    const { name, description } = object as { name?: unknown; description?: unknown };
-    if (typeof name === 'string' && typeof description === 'string') {
-      parsed.push({ GeoObject: { name, description } });
+export interface GeocoderResult {
+  /** The result's own name, e.g. "улица Бунёдкор, 15" or "9-й квартал, 5". */
+  name: string;
+  /** Address components, most general first. */
+  components: AddressComponent[];
+}
+
+/**
+ * Street and house from the nearest-house result. Without a `street` component (Tashkent
+ * "kvartal" and "massiv" addresses such as "9-й квартал, 5") the result's name, minus its house
+ * number, stands in for the street, as that is how such addresses are written.
+ */
+export function addressFromResult({ name, components }: GeocoderResult): GeocodedAddress | null {
+  const last = (kind: string) =>
+    [...components]
+      .reverse()
+      .find((component) => component.kind === kind)
+      ?.name.trim() ?? '';
+  const house = last('house');
+  let street = last('street');
+  if (street === '') {
+    const suffix = house === '' ? '' : `, ${house}`;
+    const trimmed = name.trim();
+    street = suffix !== '' && trimmed.endsWith(suffix) ? trimmed.slice(0, -suffix.length) : '';
+  }
+  if (street === '' && house === '') return null;
+  return { street, house };
+}
+
+function record(value: unknown): Record<string, unknown> | null {
+  return typeof value === 'object' && value !== null ? (value as Record<string, unknown>) : null;
+}
+
+function firstResult(body: unknown): GeocoderResult | null {
+  const members = record(record(record(body)?.response)?.GeoObjectCollection)?.featureMember;
+  if (!Array.isArray(members) || members.length === 0) return null;
+  const geoObject = record(record(members[0])?.GeoObject);
+  const meta = record(record(geoObject?.metaDataProperty)?.GeocoderMetaData);
+  const raw = record(meta?.Address)?.Components;
+  if (!Array.isArray(raw)) return null;
+  const components: AddressComponent[] = [];
+  for (const item of raw) {
+    const component = record(item);
+    if (typeof component?.kind === 'string' && typeof component.name === 'string') {
+      components.push({ kind: component.kind, name: component.name });
     }
   }
-  return parsed;
+  const name = typeof geoObject?.name === 'string' ? geoObject.name : '';
+  return { name, components };
 }

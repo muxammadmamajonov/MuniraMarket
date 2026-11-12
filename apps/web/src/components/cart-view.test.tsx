@@ -2,11 +2,6 @@ import type { Cart, CartLine, ProductSummary } from '@muniramarket/contracts';
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { LocaleProvider } from '@/i18n/context';
-import { zone } from '@/lib/checkout/test-fixtures';
-import {
-  DISTRICT_STORAGE_ITEM,
-  resetDistrictPreferenceMemory,
-} from '@/lib/delivery/district-preference';
 import { TelegramProvider } from '@/lib/telegram';
 import { installWebApp, makeWebApp, uninstallWebApp } from '@/lib/telegram/test-helpers';
 import { CartView } from './cart-view';
@@ -81,8 +76,6 @@ function renderCart(locale: 'uz' | 'ru' = 'uz') {
 
 afterEach(() => {
   uninstallWebApp();
-  window.localStorage.removeItem(DISTRICT_STORAGE_ITEM);
-  resetDistrictPreferenceMemory();
 });
 
 beforeEach(() => {
@@ -388,39 +381,21 @@ describe('CartView in the Telegram Mini App', () => {
   });
 });
 
-describe('CartView free-delivery progress', () => {
-  function routeApi(zones: unknown) {
-    session.apiFetch.mockImplementation((path: string) =>
-      Promise.resolve(
-        path.startsWith('/delivery/zones') ? respond({ items: zones }) : respond(cart()),
-      ),
-    );
-  }
-
-  it('shows how much is missing for the chosen district, from its zone threshold', async () => {
-    window.localStorage.setItem(DISTRICT_STORAGE_ITEM, 'yunusobod');
-    routeApi([zone({ free_delivery_threshold_uzs: 300000 })]);
+describe('CartView delivery note', () => {
+  it('says the Yandex courier is paid separately, with no fee, threshold or zone lookup', async () => {
+    session.apiFetch.mockResolvedValue(respond(cart()));
     renderCart();
-    const progress = await screen.findByTestId('cart-free-delivery');
-    // 300 000 threshold - 24 000 subtotal.
-    expect(progress).toHaveTextContent('Bepul yetkazish uchun yana 276 000 so‘m qo‘shing');
+    await screen.findByTestId('cart-total');
+    expect(screen.getByText('Yetkazishni Yandex kuryeriga alohida to‘laysiz.')).toBeVisible();
+    expect(document.body.textContent).not.toMatch(/bepul|hudud|zona/i);
+    expect(session.apiFetch).toHaveBeenCalledTimes(1);
+    expect(session.apiFetch).toHaveBeenCalledWith('/cart', { method: 'GET' });
   });
 
-  it('stays hidden without a district, and for a zone without a threshold', async () => {
-    routeApi([zone({ free_delivery_threshold_uzs: 300000 })]);
-    const first = renderCart();
+  it('is localized (ru)', async () => {
+    session.apiFetch.mockResolvedValue(respond(cart()));
+    renderCart('ru');
     await screen.findByTestId('cart-total');
-    expect(screen.queryByTestId('cart-free-delivery')).toBeNull();
-    expect(session.apiFetch).not.toHaveBeenCalledWith('/delivery/zones', expect.anything());
-    first.unmount();
-
-    window.localStorage.setItem(DISTRICT_STORAGE_ITEM, 'yunusobod');
-    routeApi([zone({ free_delivery_threshold_uzs: null })]);
-    renderCart();
-    await screen.findByTestId('cart-total');
-    await waitFor(() =>
-      expect(session.apiFetch).toHaveBeenCalledWith('/delivery/zones', expect.anything()),
-    );
-    expect(screen.queryByTestId('cart-free-delivery')).toBeNull();
+    expect(screen.getByText('Доставку оплачиваете курьеру Яндекса отдельно.')).toBeVisible();
   });
 });

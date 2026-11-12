@@ -1,4 +1,5 @@
 import { fireEvent, screen, waitFor, within } from '@testing-library/react';
+import { formatUZS } from '@muniramarket/ui';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   ORDER_ID,
@@ -26,6 +27,8 @@ afterEach(() => {
 });
 
 const ORDER_PATH = `/api/v1/admin/orders/${ORDER_ID}`;
+/** A formatted ru amount as `toHaveTextContent` sees it (NBSP collapsed to spaces). */
+const rub = (amount: number) => formatUZS(amount, 'ru').replace(/\s+/g, ' ');
 const STATUS_PATH = `${ORDER_PATH}/status`;
 
 const getOrder =
@@ -78,15 +81,13 @@ describe('OrderDetailView: content', () => {
     expect(
       screen.getByText((content) => content.replace(/\s+/g, ' ') === '2 кг × 30 000 сум'),
     ).toBeInTheDocument();
-    // Totals.
-    expect(screen.getByText(money(110000, 'ru'))).toBeInTheDocument();
-    expect(screen.getByText(money(15000, 'ru'))).toBeInTheDocument();
-    expect(screen.getByText(money(125000, 'ru'))).toBeInTheDocument();
+    // Totals: the items sum and the total (equal now that the courier is paid directly).
+    expect(screen.getByText('Сумма товаров').nextElementSibling).toHaveTextContent(rub(110000));
+    expect(screen.getByText('Итого').nextElementSibling).toHaveTextContent(rub(110000));
     // Recipient and structured address.
     expect(screen.getByText('Test Recipient')).toBeInTheDocument();
     expect(screen.getByText('Наличные при получении')).toBeInTheDocument();
     for (const [label, value] of [
-      ['Район', 'Чиланзар'],
       ['Улица', 'Test street'],
       ['Дом', '12'],
       ['Квартира', '34'],
@@ -112,13 +113,13 @@ describe('OrderDetailView: content', () => {
     expect(screen.queryByRole('button', { name: 'Отменить' })).not.toBeInTheDocument();
   });
 
-  it('renders the phone as a tel: link and uses uz names and district', async () => {
+  it('renders the phone as a tel: link and uses uz names', async () => {
     installFakeApi(sessionHandler('admin'), getOrder(orderDetail()));
     renderAdmin(<OrderDetailView id={ORDER_ID} />, 'uz');
     const phone = await screen.findByRole('link', { name: '+998 00 000 00 00' });
     expect(phone).toHaveAttribute('href', 'tel:+998000000000');
     expect(screen.getByText('Test olma')).toBeInTheDocument();
-    expect(screen.getByText('Chilonzor')).toBeInTheDocument();
+    expect(screen.getByText('Ko‘cha').nextElementSibling).toHaveTextContent('Test street');
     expect(screen.getByRole('heading', { name: 'Buyurtma MM-000123' })).toBeInTheDocument();
   });
 
@@ -168,28 +169,55 @@ describe('OrderDetailView: content', () => {
   });
 });
 
-describe('OrderDetailView: delivery slot', () => {
-  it('shows the booked window (date and HH:MM–HH:MM) when there is one, and nothing when not', async () => {
+const YANDEX_HREF =
+  'https://3.redirect.appmetrica.yandex.com/route?end-lat=41.311081&end-lon=69.240562' +
+  '&tariffClass=courier&level=courier&ref=muniramarket' +
+  '&appmetrica_tracking_id=1178268795219780156&lang=uz';
+
+describe('OrderDetailView: Yandex Go courier', () => {
+  it('links to a Yandex Go courier order to the delivery point in a new tab', async () => {
+    installFakeApi(sessionHandler('operator'), getOrder(orderDetail()));
+    renderAdmin(<OrderDetailView id={ORDER_ID} />);
+    const link = await screen.findByRole('link', { name: 'Вызвать Яндекс' });
+    expect(link).toHaveAttribute('href', YANDEX_HREF);
+    expect(link).toHaveAttribute('target', '_blank');
+    expect(link).toHaveAttribute('rel', 'noopener noreferrer');
+    expect(link).toHaveClass('min-h-11');
+  });
+
+  it('labels the link in Uzbek', async () => {
+    installFakeApi(sessionHandler('admin'), getOrder(orderDetail()));
+    renderAdmin(<OrderDetailView id={ORDER_ID} />, 'uz');
+    expect(await screen.findByRole('link', { name: 'Yandex chaqirish' })).toHaveAttribute(
+      'href',
+      YANDEX_HREF,
+    );
+  });
+
+  it('hides the link for a historical order without coordinates', async () => {
     installFakeApi(
       sessionHandler('operator'),
-      getOrder(
-        orderDetail({
-          delivery_slot: { date: '2026-11-02', starts_at: '14:00', ends_at: '16:00' },
-        }),
-      ),
+      getOrder(orderDetail({ address: { ...orderDetail().address, lat: null, lon: null } })),
     );
-    const view = renderAdmin(<OrderDetailView id={ORDER_ID} />);
-    expect(await screen.findByTestId('order-delivery-slot')).toHaveTextContent(
-      '02.11.2026, 14:00–16:00',
-    );
-    expect(screen.getByText('Окно доставки')).toBeInTheDocument();
-    view.unmount();
-    vi.unstubAllGlobals();
-
-    installFakeApi(sessionHandler('operator'), getOrder(orderDetail({ delivery_slot: null })));
     renderAdmin(<OrderDetailView id={ORDER_ID} />);
     await screen.findByText('Test Recipient');
-    expect(screen.queryByTestId('order-delivery-slot')).not.toBeInTheDocument();
+    expect(screen.getByText('Улица').nextElementSibling).toHaveTextContent('Test street');
+    expect(screen.queryByRole('link', { name: 'Вызвать Яндекс' })).not.toBeInTheDocument();
+  });
+
+  it('shows no delivery fee, time window or area, even for a historical order that paid a fee', async () => {
+    installFakeApi(
+      sessionHandler('operator'),
+      getOrder(orderDetail({ subtotal_uzs: 110000, total_uzs: 125000 })),
+    );
+    renderAdmin(<OrderDetailView id={ORDER_ID} />);
+    await screen.findByText('Test Recipient');
+    // The stored total is shown as charged; the fee itself has no line of its own.
+    expect(screen.getByText('Итого').nextElementSibling).toHaveTextContent(rub(125000));
+    expect(screen.queryByText(money(15000, 'ru'))).not.toBeInTheDocument();
+    for (const label of ['Доставка', 'Окно доставки', 'Район']) {
+      expect(screen.queryByText(label)).not.toBeInTheDocument();
+    }
   });
 });
 

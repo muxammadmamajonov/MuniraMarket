@@ -195,7 +195,7 @@ describe('admin api proxy: retry', () => {
   it.each([
     ['POST', ['admin', 'orders', ORDER_ID, 'status']],
     ['PATCH', ['admin', 'catalog', 'products', ORDER_ID]],
-    ['DELETE', ['admin', 'delivery', 'zones', ORDER_ID]],
+    ['DELETE', ['admin', 'catalog', 'categories', ORDER_ID]],
     ['POST', ['admin', 'catalog', 'csv', 'import']],
     ['POST', ['auth', 'logout']],
     ['GET', CALLBACK],

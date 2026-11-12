@@ -4,9 +4,7 @@ import { csvDict } from './sections/csv';
 import { dashboardDict } from './sections/dashboard';
 import { productsDict } from './sections/products';
 import { sharedDict } from './sections/shared';
-import { slotsDict } from './sections/slots';
 import { usersDict } from './sections/users';
-import { zonesDict } from './sections/zones';
 import type { Dictionary } from './types';
 
 export const uz: Dictionary = {
@@ -80,20 +78,19 @@ export const uz: Dictionary = {
     notFoundMessage: 'Bunday buyurtma yo‘q.',
     loading: 'Buyurtma yuklanmoqda…',
     createdAt: 'Yaratilgan',
-    deliverySlot: 'Yetkazib berish oralig‘i',
     payment: 'To‘lov usuli',
     items: { title: 'Mahsulotlar', sku: 'Artikul' },
-    totals: { subtotal: 'Mahsulotlar summasi', delivery: 'Yetkazib berish', total: 'Jami' },
+    totals: { subtotal: 'Mahsulotlar summasi', total: 'Jami' },
     recipient: { title: 'Qabul qiluvchi', name: 'Ism', phone: 'Telefon' },
     address: {
       title: 'Manzil',
-      district: 'Tuman',
       street: 'Ko‘cha',
       house: 'Uy',
       apartment: 'Xonadon',
       entrance: 'Kirish',
       floor: 'Qavat',
       landmark: 'Mo‘ljal',
+      callYandex: 'Yandex chaqirish',
     },
     comment: 'Izoh',
     cancelReason: 'Bekor qilish sababi',
@@ -173,8 +170,6 @@ export const uz: Dictionary = {
   products: productsDict.uz,
   categories: categoriesDict.uz,
   csv: csvDict.uz,
-  zones: zonesDict.uz,
-  slots: slotsDict.uz,
   users: usersDict.uz,
   audit: auditDict.uz,
 };

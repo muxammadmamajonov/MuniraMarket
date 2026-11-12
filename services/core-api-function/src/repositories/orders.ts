@@ -4,21 +4,19 @@
  * Locking (every write is ONE `db.tx`; locks are always taken in this order, so concurrent writers
  * cannot deadlock):
  * 1. the customer's `carts` row (order creation) or the `orders` row (status changes),
- * 2. the affected `products` rows, `FOR UPDATE` in ascending id order,
- * 3. the booked `delivery_slots` row (one conditional `UPDATE`; admin edits lock it the same way,
- *    so an order and a capacity change on one slot serialise on that row).
+ * 2. the affected `products` rows, `FOR UPDATE` in ascending id order.
  *
  * Order creation, under those locks: replay an earlier order with the same `Idempotency-Key`;
  * re-evaluate the cart against current prices, visibility and stock with the same pure function
- * as the quote; refuse unless the cart is clean, the zone serves the district, the minimum order
- * is met and the total equals what the customer was shown; then book the slot, decrement tracked
- * stock (bumping `products.updated_at` like the ORM's `onupdate`), snapshot the lines, write the
+ * as the quote; refuse unless the cart is clean and the total equals what the customer was shown
+ * (delivery is on demand by a Yandex Go courier the customer pays, so there is no zone, fee,
+ * minimum, opening hours or slot to check); then decrement tracked stock (bumping
+ * `products.updated_at` like the ORM's `onupdate`), snapshot the address and the lines, write the
  * status history and the notification outbox rows, and empty the cart.
  *
- * Cancelling (by the customer, or an operator) returns tracked stock and the slot's place, and
- * writes an `order.status_change` audit row (no reason text, no recipient data); so does every
- * other status change. Nothing is ever committed partially: any rule violation rolls the whole
- * transaction back.
+ * Cancelling (by the customer, or an operator) returns tracked stock and writes an
+ * `order.status_change` audit row (no reason text, no recipient data); so does every other status
+ * change. Nothing is ever committed partially: any rule violation rolls the whole transaction back.
  */
 import { randomInt, timingSafeEqual } from 'node:crypto';
 import type pg from 'pg';
@@ -26,9 +24,7 @@ import { AuditEntity, recordAudit } from '../audit.ts';
 import type { Database, Queryable } from '../db.ts';
 import type { LineFacts } from '../domain/cart.ts';
 import {
-  BelowMinimumOrderError,
   CartEmptyError,
-  DistrictNotServedError,
   IdempotencyKeyConflictError,
   InvalidStatusTransitionError,
   MAX_OPEN_ORDERS,
@@ -38,29 +34,17 @@ import {
   OrderProductUnavailableError,
   OrderStatusConflictError,
   PriceChangedError,
-  SlotFullError,
-  SlotRequiredError,
-  SlotUnavailableError,
   TooManyOpenOrdersError,
   buildQuote,
   type CheckoutError,
   type QuoteTotals,
 } from '../domain/checkout.ts';
-import { tashkentDate } from '../domain/delivery.ts';
 import { canTransition, customerCanCancel, type OrderStatus } from '../domain/orderStatus.ts';
 import type { UserRole } from '../http/context.ts';
-import { isoDateSql, isoSql } from '../http/serialize.ts';
+import { tashkentDate } from '../domain/tashkentTime.ts';
+import { isoSql } from '../http/serialize.ts';
 import { getCart, type CartLineRecord } from './cart.ts';
 import type { Unit } from './catalog.ts';
-import {
-  bookableParams,
-  bookableSlot,
-  findZoneForDistrict,
-  hasBookableSlot,
-  offeredSlots,
-  type SlotOptionRecord,
-  type ZoneRecord,
-} from './delivery.ts';
 
 export const ORDER_STATUS_EVENT = 'order.status_changed';
 /** Staff group alert (ADR 0015): new orders and the statuses the shop floor must react to. */
@@ -84,16 +68,15 @@ export type PaymentMethod = (typeof PAYMENT_METHODS)[number];
 // --- records -------------------------------------------------------------------------------------
 
 export interface QuoteRecord {
-  zone: ZoneRecord;
   lines: CartLineRecord[];
   totals: QuoteTotals;
-  /** The zone runs on delivery slots: an order must name one of them. */
-  slotRequired: boolean;
-  slots: SlotOptionRecord[];
 }
 
+/** The validated delivery address; stored as the order's `address_snapshot` (JSONB) as is. */
 export interface DeliveryAddressInput {
-  district: string;
+  /** WGS84, rounded to 6 decimals. */
+  lat: number;
+  lon: number;
   street: string;
   house: string;
   apartment: string | null;
@@ -103,15 +86,12 @@ export interface DeliveryAddressInput {
 }
 
 export interface NewOrder {
-  district: string;
-  /** Structured address; stored as the order's `address_snapshot` (`district` included). */
   address: DeliveryAddressInput;
   recipientName: string;
   recipientPhone: string;
   paymentMethod: PaymentMethod;
   comment: string | null;
   expectedTotalUzs: number;
-  deliverySlotId: string | null;
 }
 
 export interface Actor {
@@ -139,20 +119,12 @@ export interface StatusChangeRecord {
   created_at: string;
 }
 
-/** The booked delivery window as it was when the order was placed. */
-export interface SlotSnapshotRecord {
-  slot_date: string;
-  starts_at: string;
-  ends_at: string;
-}
-
 export interface OrderRecord {
   id: string;
   number: string;
   user_id: string;
   status: OrderStatus;
   subtotal_uzs: number;
-  delivery_fee_uzs: number;
   total_uzs: number;
   item_count: number;
   payment_method: PaymentMethod;
@@ -165,7 +137,6 @@ export interface OrderRecord {
   updated_at: string;
   items: OrderItemRecord[];
   history: StatusChangeRecord[];
-  delivery_slot: SlotSnapshotRecord | null;
 }
 
 export interface OrderSummaryRecord {
@@ -220,7 +191,6 @@ export function firstBlockingError(
     }
   }
   if (totals.issues.includes('cart_empty')) return new CartEmptyError();
-  if (totals.issues.includes('below_min_order')) return new BelowMinimumOrderError();
   return null;
 }
 
@@ -240,22 +210,9 @@ class ReplayRace extends Error {}
 
 // --- checkout ------------------------------------------------------------------------------------
 
-export async function quote(
-  db: Queryable,
-  userId: string,
-  district: string,
-  now: number,
-): Promise<QuoteRecord> {
-  const zone = await findZoneForDistrict(db, district);
-  if (zone === null) throw new DistrictNotServedError();
+export async function quote(db: Queryable, userId: string): Promise<QuoteRecord> {
   const cart = await getCart(db, userId);
-  return {
-    zone,
-    lines: cart.lines,
-    totals: buildQuote(lineFacts(cart.lines), zone.rules),
-    slotRequired: await hasBookableSlot(db, zone.zoneId, now),
-    slots: await offeredSlots(db, zone.zoneId, now),
-  };
+  return { lines: cart.lines, totals: buildQuote(lineFacts(cart.lines)) };
 }
 
 export interface CreateOrderOptions {
@@ -315,18 +272,13 @@ async function createOrderTx(
     productIds.rows.map((row) => row.product_id),
   );
 
-  const zone = await findZoneForDistrict(client, newOrder.district);
-  if (zone === null) throw new DistrictNotServedError();
   const cart = await getCart(client, userId);
-  const totals = buildQuote(lineFacts(cart.lines), zone.rules);
+  const totals = buildQuote(lineFacts(cart.lines));
   const blocking = firstBlockingError(cart.lines, totals);
   if (blocking !== null) throw blocking;
   if (totals.totalUzs !== newOrder.expectedTotalUzs) throw new PriceChangedError(totals.totalUzs);
-  // Last lock of the transaction (after the products): the slot row.
-  const slot = await reserveSlot(client, zone.zoneId, newOrder.deliverySlotId, now);
 
-  const orderId = await insertOrder(client, userId, newOrder, zone, cart.lines, totals, {
-    slot,
+  const orderId = await insertOrder(client, userId, newOrder, cart.lines, totals, {
     idempotencyKey,
     requestHash,
     now,
@@ -461,54 +413,6 @@ async function replay(db: Queryable, orderId: string, requestHash: string): Prom
   return { order: await loadOrder(db, orderId), replayed: true };
 }
 
-/**
- * Book one place in `slotId` (or check that the zone needs none). One conditional `UPDATE`:
- * concurrent orders queue on the row lock and each re-checks `reserved_count < capacity` against
- * the committed count, so the slot is never oversold.
- */
-async function reserveSlot(
-  db: Queryable,
-  zoneId: string,
-  slotId: string | null,
-  now: number,
-): Promise<SlotSnapshotRecord | null> {
-  if (slotId === null) {
-    if (await hasBookableSlot(db, zoneId, now)) throw new SlotRequiredError();
-    return null;
-  }
-  const booked = await db.query<SlotSnapshotRecord>(
-    `UPDATE delivery_slots s
-        SET reserved_count = s.reserved_count + 1, updated_at = now()
-      WHERE s.id = $1 AND s.zone_id = $2 AND ${bookableSlot(3, 4)}
-        AND s.reserved_count < s.capacity
-     RETURNING ${isoDateSql('s.slot_date')} AS slot_date, s.starts_at::text AS starts_at,
-               s.ends_at::text AS ends_at`,
-    [slotId, zoneId, ...bookableParams(now)],
-  );
-  const row = booked.rows[0];
-  if (row !== undefined) return row;
-  // Nothing booked: say why. Only "full" is worth a different message to the customer.
-  const found = await db.query<{ zone_id: string; bookable: boolean }>(
-    `SELECT s.zone_id::text AS zone_id, ${bookableSlot(2, 3)} AS bookable
-       FROM delivery_slots s WHERE s.id = $1`,
-    [slotId, ...bookableParams(now)],
-  );
-  const slot = found.rows[0];
-  if (slot === undefined || slot.zone_id !== zoneId || !slot.bookable) {
-    throw new SlotUnavailableError();
-  }
-  throw new SlotFullError();
-}
-
-/** Give a cancelled order's place back (never below zero). */
-async function releaseSlot(db: Queryable, slotId: string): Promise<void> {
-  await db.query(
-    `UPDATE delivery_slots SET reserved_count = reserved_count - 1, updated_at = now()
-      WHERE id = $1 AND reserved_count > 0`,
-    [slotId],
-  );
-}
-
 async function lockProducts(db: Queryable, productIds: readonly string[]): Promise<void> {
   if (productIds.length === 0) return;
   await db.query('SELECT id FROM products WHERE id = ANY($1::uuid[]) ORDER BY id FOR UPDATE', [
@@ -520,43 +424,29 @@ async function insertOrder(
   client: pg.PoolClient,
   userId: string,
   newOrder: NewOrder,
-  zone: ZoneRecord,
   lines: readonly CartLineRecord[],
   totals: QuoteTotals,
-  options: {
-    slot: SlotSnapshotRecord | null;
-    idempotencyKey: string;
-    requestHash: string;
-    now: number;
-  },
+  options: { idempotencyKey: string; requestHash: string; now: number },
 ): Promise<string> {
-  const { slot } = options;
   for (let attempt = 0; attempt < NUMBER_ATTEMPTS; attempt += 1) {
     await client.query('SAVEPOINT order_insert');
     let orderId: string;
     try {
       const { rows } = await client.query<{ id: string }>(
         `INSERT INTO orders (
-           id, number, user_id, status, subtotal_uzs, delivery_fee_uzs, total_uzs, item_count,
-           payment_method, delivery_zone_id, delivery_slot_id, delivery_slot_date,
-           delivery_slot_starts_at, delivery_slot_ends_at, recipient_name, recipient_phone,
-           address_snapshot, comment, idempotency_key, idempotency_request_hash)
-         VALUES (gen_random_uuid(), $1, $2, 'NEW', $3, $4, $5, $6, $7, $8, $9, $10, $11, $12,
-                 $13, $14, $15::jsonb, $16, $17, $18)
+           id, number, user_id, status, subtotal_uzs, total_uzs, item_count, payment_method,
+           recipient_name, recipient_phone, address_snapshot, comment, idempotency_key,
+           idempotency_request_hash)
+         VALUES (gen_random_uuid(), $1, $2, 'NEW', $3, $4, $5, $6, $7, $8, $9::jsonb, $10, $11,
+                 $12)
          RETURNING id::text AS id`,
         [
           newOrderNumber(options.now),
           userId,
           totals.subtotalUzs,
-          totals.deliveryFeeUzs,
           totals.totalUzs,
           totals.cart.itemCount,
           newOrder.paymentMethod,
-          zone.zoneId,
-          slot !== null ? newOrder.deliverySlotId : null,
-          slot?.slot_date ?? null,
-          slot?.starts_at ?? null,
-          slot?.ends_at ?? null,
           newOrder.recipientName,
           newOrder.recipientPhone,
           JSON.stringify(newOrder.address),
@@ -602,7 +492,6 @@ interface LockedOrder {
   id: string;
   number: string;
   status: OrderStatus;
-  delivery_slot_id: string | null;
 }
 
 async function lockOrder(
@@ -611,8 +500,7 @@ async function lockOrder(
   userId: string | null,
 ): Promise<LockedOrder | null> {
   const { rows } = await db.query<LockedOrder>(
-    `SELECT id::text AS id, number, status::text AS status,
-            delivery_slot_id::text AS delivery_slot_id
+    `SELECT id::text AS id, number, status::text AS status
        FROM orders
       WHERE id = $1 ${userId === null ? '' : 'AND user_id = $2'}
       FOR UPDATE`,
@@ -632,7 +520,6 @@ async function applyStatus(
   const previous = order.status;
   if (target === 'CANCELLED') {
     await restock(db, order.id);
-    if (order.delivery_slot_id !== null) await releaseSlot(db, order.delivery_slot_id);
     await db.query(
       `UPDATE orders SET status = $2::order_status, updated_at = now(), cancel_reason = $3
         WHERE id = $1`,
@@ -706,8 +593,10 @@ async function recordChange(
     total_uzs: number;
     telegram_user_id: number;
     language: string;
+    address: Record<string, unknown>;
   }>(
-    `SELECT o.number, o.total_uzs, u.telegram_user_id, u.language::text AS language
+    `SELECT o.number, o.total_uzs, u.telegram_user_id, u.language::text AS language,
+            o.address_snapshot AS address
        FROM orders o JOIN users u ON u.id = o.user_id
       WHERE o.id = $1`,
     [orderId],
@@ -732,8 +621,10 @@ async function recordChange(
     const groupChatId = staff.rows[0]?.chat_id;
     if (groupChatId !== undefined) {
       // Same transaction as the change: an alert exists iff the change committed. No customer
-      // name, address or phone: staff open the order in the admin.
-      await insertOutbox(db, STAFF_ALERT_EVENT, orderId, {
+      // name, phone or address text: staff open the order in the admin. The one exception: a NEW
+      // order's destination coordinates, which reach the group only inside the Yandex Go courier
+      // button URL (services/telegram/tgcloud/lib/notifications/yandexGo.js), never as text.
+      const alert: Record<string, unknown> = {
         order_id: orderId,
         order_number: row.number,
         status: toStatus,
@@ -741,9 +632,31 @@ async function recordChange(
         total_uzs: row.total_uzs,
         chat_id: groupChatId,
         cancelled_by_customer: toStatus === 'CANCELLED' && actor.role === 'customer',
-      });
+      };
+      const destination = toStatus === 'NEW' ? coordinatesOf(row.address) : null;
+      if (destination !== null) alert['destination'] = destination;
+      await insertOutbox(db, STAFF_ALERT_EVENT, orderId, alert);
     }
   }
+}
+
+function coordinate(value: unknown, limit: number): number | null {
+  return typeof value === 'number' && Number.isFinite(value) && value >= -limit && value <= limit
+    ? value
+    : null;
+}
+
+/**
+ * The map point of a stored `address_snapshot` (port of `snapshot_point` in
+ * services/api/app/domain/geo.py), or `null` when it has no valid coordinates: orders placed
+ * before courier delivery have none (their old address keys are ignored).
+ */
+export function coordinatesOf(
+  snapshot: Readonly<Record<string, unknown>>,
+): { lat: number; lon: number } | null {
+  const lat = coordinate(snapshot['lat'], 90);
+  const lon = coordinate(snapshot['lon'], 180);
+  return lat === null || lon === null ? null : { lat, lon };
 }
 
 async function insertOutbox(
@@ -787,22 +700,11 @@ async function orderPage(
 }
 
 export async function loadOrder(db: Queryable, orderId: string): Promise<OrderRecord> {
-  const found = await db.query<
-    Omit<OrderRecord, 'items' | 'history' | 'delivery_slot' | 'address'> & {
-      address: Record<string, unknown>;
-      slot_date: string | null;
-      slot_starts_at: string | null;
-      slot_ends_at: string | null;
-    }
-  >(
+  const found = await db.query<Omit<OrderRecord, 'items' | 'history'>>(
     `SELECT id::text AS id, number, user_id::text AS user_id, status::text AS status,
-            subtotal_uzs, delivery_fee_uzs, total_uzs, item_count,
-            payment_method::text AS payment_method, recipient_name, recipient_phone,
-            address_snapshot AS address, comment, cancel_reason,
-            ${isoSql('created_at')} AS created_at, ${isoSql('updated_at')} AS updated_at,
-            ${isoDateSql('delivery_slot_date')} AS slot_date,
-            delivery_slot_starts_at::text AS slot_starts_at,
-            delivery_slot_ends_at::text AS slot_ends_at
+            subtotal_uzs, total_uzs, item_count, payment_method::text AS payment_method,
+            recipient_name, recipient_phone, address_snapshot AS address, comment, cancel_reason,
+            ${isoSql('created_at')} AS created_at, ${isoSql('updated_at')} AS updated_at
        FROM orders WHERE id = $1`,
     [orderId],
   );
@@ -822,14 +724,5 @@ export async function loadOrder(db: Queryable, orderId: string): Promise<OrderRe
       ORDER BY order_status_history.created_at, id`,
     [orderId],
   );
-  const { slot_date, slot_starts_at, slot_ends_at, ...rest } = order;
-  return {
-    ...rest,
-    items: items.rows,
-    history: history.rows,
-    delivery_slot:
-      slot_date !== null && slot_starts_at !== null && slot_ends_at !== null
-        ? { slot_date, starts_at: slot_starts_at, ends_at: slot_ends_at }
-        : null,
-  };
+  return { ...order, items: items.rows, history: history.rows };
 }

@@ -15,18 +15,15 @@ made.
 
 The data is the canonical synthetic dataset in ``app.ops.demo_dataset`` without its ``dev_only``
 edge-case rows. Demo rows are recognised by their markers only (no extra column, no migration):
-category and zone slugs start with ``demo-``; a product is demo when its slug starts with
+category slugs start with ``demo-``; a product is demo when its slug starts with
 ``demo-`` AND its SKU with ``DEMO-``. Everything else is real data and is never changed.
 
 ``import`` (one transaction, serialised by an advisory lock):
 
 - refuses when the catalog holds any non-demo category or product, so it can only ever fill an
   empty (or demo-only) catalog;
-- inserts the missing demo categories (with subcategories), products and, when the database has
-  no non-demo delivery zone, the demo delivery zones (``Demo``/``Демо`` names) with their
-  districts. Rows that already exist are left exactly as they are (an admin's edits survive), so
-  a second run writes nothing. No delivery slots (they are dated and would go stale): the demo
-  zones take orders without a slot;
+- inserts the missing demo categories (with subcategories) and products. Rows that already exist
+  are left exactly as they are (an admin's edits survive), so a second run writes nothing;
 - sets the demo photos (``app.ops.demo_images``): storefront paths such as
   ``/products/banan.webp``, or absolute URLs on the origin given by ``--image-base-url`` (or
   ``DEMO_IMAGE_BASE_URL``).
@@ -41,9 +38,7 @@ empty, so an image an admin chose is never replaced and a second run writes noth
   of deleted, so order history keeps its links; the others are deleted (cart lines go with them);
 - demo categories that end up empty are deleted; one still holding an archived demo product is
   deactivated; one that holds real (non-demo) products or subcategories is left untouched,
-  together with its demo ancestors;
-- demo delivery zones release their districts; a zone or slot that orders reference is
-  deactivated and kept, everything else is deleted.
+  together with its demo ancestors.
 
 Each command adds one ``audit_log`` row when they change something. The database URL comes only
 from ``DEMO_IMPORT_DATABASE_URL`` and no part of it is ever printed or logged: unexpected errors are
@@ -87,14 +82,12 @@ from sqlalchemy.pool import NullPool
 from app.audit import AuditActor, AuditEntity, record_audit
 from app.core.config import DEPLOYED_SSL_MODE
 from app.models.catalog import Category, Product
-from app.models.delivery import DeliverySlot, DeliveryZone, DeliveryZoneDistrict
 from app.models.enums import UserRole
-from app.models.order import Order, OrderItem
+from app.models.order import OrderItem
 from app.ops.demo_dataset import (
     SYNTHETIC_BRANDS,
     production_categories,
     production_products,
-    production_zones,
 )
 from app.ops.demo_images import (
     DEMO_CATEGORY_IMAGES,
@@ -145,10 +138,6 @@ def demo_product() -> ColumnElement[bool]:
     return and_(_demo_slug(Product.slug), Product.sku.startswith(DEMO_SKU_PREFIX, autoescape=True))
 
 
-def demo_zone() -> ColumnElement[bool]:
-    return _demo_slug(DeliveryZone.slug)
-
-
 # --- reports --------------------------------------------------------------------------------------
 
 
@@ -158,10 +147,8 @@ class CatalogStatus:
     demo_products: int
     demo_products_archived: int
     demo_products_in_orders: int
-    demo_zones: int
     other_categories: int
     other_products: int
-    other_zones: int
 
     @property
     def import_allowed(self) -> bool:
@@ -173,21 +160,12 @@ class ImportReport:
     applied: bool
     categories_created: int
     products_created: int
-    zones_created: int
-    districts_assigned: int
-    # True when real delivery zones exist, so the demo zones were not added.
-    zones_skipped: bool
     # The origin the photo URLs point at; None = storefront paths (``/products/banan.webp``).
     image_base_url: str | None = None
 
     @property
     def changed(self) -> int:
-        return (
-            self.categories_created
-            + self.products_created
-            + self.zones_created
-            + self.districts_assigned
-        )
+        return self.categories_created + self.products_created
 
 
 @dataclass(frozen=True, slots=True)
@@ -199,11 +177,6 @@ class RemoveReport:
     categories_deactivated: int
     # Demo categories that still hold real products/subcategories: left untouched.
     categories_kept: int
-    zones_deleted: int
-    zones_deactivated: int
-    slots_deleted: int
-    slots_deactivated: int
-    districts_released: int
 
     @property
     def changed(self) -> int:
@@ -212,11 +185,6 @@ class RemoveReport:
             + self.products_archived
             + self.categories_deleted
             + self.categories_deactivated
-            + self.zones_deleted
-            + self.zones_deactivated
-            + self.slots_deleted
-            + self.slots_deactivated
-            + self.districts_released
         )
 
 
@@ -263,10 +231,8 @@ async def _status(session: AsyncSession) -> CatalogStatus:
             session, Product, demo_product(), Product.archived_at.is_not(None)
         ),
         demo_products_in_orders=await _count(session, Product, demo_product(), referenced),
-        demo_zones=await _count(session, DeliveryZone, demo_zone()),
         other_categories=await _count(session, Category, not_(demo_category())),
         other_products=await _count(session, Product, not_(demo_product())),
-        other_zones=await _count(session, DeliveryZone, not_(demo_zone())),
     )
 
 
@@ -348,46 +314,6 @@ async def _insert_products(
     return created
 
 
-async def _insert_zones(session: AsyncSession) -> tuple[int, int]:
-    zones_created = districts_assigned = 0
-    for zone in production_zones():
-        statement = (
-            insert(DeliveryZone)
-            .values(
-                slug=zone.slug,
-                name_uz=zone.name_uz,
-                name_ru=zone.name_ru,
-                delivery_fee_uzs=zone.delivery_fee_uzs,
-                free_delivery_threshold_uzs=zone.free_delivery_threshold_uzs,
-                min_order_uzs=zone.min_order_uzs,
-                opens_at=zone.opens_at,
-                closes_at=zone.closes_at,
-                sort_order=zone.sort_order,
-                is_active=zone.is_active,
-            )
-            .on_conflict_do_nothing()
-            .returning(DeliveryZone.id)
-        )
-        zone_id = (await session.execute(statement)).scalar_one_or_none()
-        if zone_id is None:
-            zone_id = (
-                await session.execute(select(DeliveryZone.id).where(DeliveryZone.slug == zone.slug))
-            ).scalar_one()
-        else:
-            zones_created += 1
-        for district in zone.districts:
-            # A district already mapped (to a demo zone) keeps its mapping.
-            link = (
-                insert(DeliveryZoneDistrict)
-                .values(district=district, zone_id=zone_id)
-                .on_conflict_do_nothing()
-                .returning(DeliveryZoneDistrict.district)
-            )
-            if (await session.execute(link)).scalar_one_or_none() is not None:
-                districts_assigned += 1
-    return zones_created, districts_assigned
-
-
 async def import_demo_catalog(
     session_factory: async_sessionmaker[AsyncSession],
     *,
@@ -414,17 +340,10 @@ async def import_demo_catalog(
             )
         category_ids, categories_created = await _insert_categories(session, image_base_url)
         products_created = await _insert_products(session, category_ids, image_base_url)
-        zones_skipped = status.other_zones > 0
-        zones_created = districts_assigned = 0
-        if not zones_skipped:
-            zones_created, districts_assigned = await _insert_zones(session)
         report = ImportReport(
             applied=apply,
             categories_created=categories_created,
             products_created=products_created,
-            zones_created=zones_created,
-            districts_assigned=districts_assigned,
-            zones_skipped=zones_skipped,
             image_base_url=image_base_url,
         )
         if apply and report.changed:
@@ -436,7 +355,7 @@ async def import_demo_catalog(
                 entity_id="demo",
                 extra={
                     "source": "demo",
-                    "creates": categories_created + products_created + zones_created,
+                    "creates": categories_created + products_created,
                 },
             )
         if apply:
@@ -519,48 +438,6 @@ async def _remove_categories(session: AsyncSession) -> tuple[int, int, int]:
     return deleted, deactivated, len(protected)
 
 
-async def _remove_zones(session: AsyncSession) -> tuple[int, int, int, int, int]:
-    demo_zone_ids = select(DeliveryZone.id).where(demo_zone()).scalar_subquery()
-    slot_in_orders = exists(select(Order.id).where(Order.delivery_slot_id == DeliverySlot.id))
-    slots_deleted = await session.execute(
-        sql_delete(DeliverySlot)
-        .where(DeliverySlot.zone_id.in_(demo_zone_ids), not_(slot_in_orders))
-        .execution_options(synchronize_session=False)
-    )
-    slots_deactivated = await session.execute(
-        update(DeliverySlot)
-        .where(DeliverySlot.zone_id.in_(demo_zone_ids), DeliverySlot.is_active.is_(True))
-        .values(is_active=False)
-        .execution_options(synchronize_session=False)
-    )
-    # Districts are freed for real zones even where a demo zone has to stay (order history).
-    released = await session.execute(
-        sql_delete(DeliveryZoneDistrict)
-        .where(DeliveryZoneDistrict.zone_id.in_(demo_zone_ids))
-        .execution_options(synchronize_session=False)
-    )
-    zone_in_orders = exists(select(Order.id).where(Order.delivery_zone_id == DeliveryZone.id))
-    zone_has_slots = exists(select(DeliverySlot.id).where(DeliverySlot.zone_id == DeliveryZone.id))
-    zones_deleted = await session.execute(
-        sql_delete(DeliveryZone)
-        .where(demo_zone(), not_(zone_in_orders), not_(zone_has_slots))
-        .execution_options(synchronize_session=False)
-    )
-    zones_deactivated = await session.execute(
-        update(DeliveryZone)
-        .where(demo_zone(), DeliveryZone.is_active.is_(True))
-        .values(is_active=False)
-        .execution_options(synchronize_session=False)
-    )
-    return (
-        _rowcount(zones_deleted),
-        _rowcount(zones_deactivated),
-        _rowcount(slots_deleted),
-        _rowcount(slots_deactivated),
-        _rowcount(released),
-    )
-
-
 async def remove_demo_catalog(
     session_factory: async_sessionmaker[AsyncSession], *, apply: bool
 ) -> RemoveReport:
@@ -572,13 +449,6 @@ async def remove_demo_catalog(
         categories_deleted, categories_deactivated, categories_kept = await _remove_categories(
             session
         )
-        (
-            zones_deleted,
-            zones_deactivated,
-            slots_deleted,
-            slots_deactivated,
-            districts_released,
-        ) = await _remove_zones(session)
         report = RemoveReport(
             applied=apply,
             products_deleted=products_deleted,
@@ -586,11 +456,6 @@ async def remove_demo_catalog(
             categories_deleted=categories_deleted,
             categories_deactivated=categories_deactivated,
             categories_kept=categories_kept,
-            zones_deleted=zones_deleted,
-            zones_deactivated=zones_deactivated,
-            slots_deleted=slots_deleted,
-            slots_deactivated=slots_deactivated,
-            districts_released=districts_released,
         )
         if apply and report.changed:
             record_audit(
@@ -601,13 +466,8 @@ async def remove_demo_catalog(
                 entity_id="demo",
                 extra={
                     "source": "demo",
-                    "rows": products_deleted + categories_deleted + zones_deleted + slots_deleted,
-                    "updates": (
-                        products_archived
-                        + categories_deactivated
-                        + zones_deactivated
-                        + slots_deactivated
-                    ),
+                    "rows": products_deleted + categories_deleted,
+                    "updates": products_archived + categories_deactivated,
                 },
             )
         if apply:
@@ -761,7 +621,7 @@ def _dataset_summary() -> str:
     return (
         f"dataset: {len(categories) - subcategories} top-level categories, {subcategories} "
         f"subcategories, {len(production_products())} products, {len(SYNTHETIC_BRANDS)} invented "
-        f"brands, {len(production_zones())} demo delivery zones"
+        "brands"
     )
 
 
@@ -775,9 +635,8 @@ def _format_status(status: CatalogStatus) -> list[str]:
         f"  demo categories: {status.demo_categories}",
         f"  demo products: {status.demo_products} "
         f"({status.demo_products_archived} archived, {status.demo_products_in_orders} in orders)",
-        f"  demo delivery zones: {status.demo_zones}",
-        f"  real (non-demo) categories / products / delivery zones: {status.other_categories} / "
-        f"{status.other_products} / {status.other_zones}",
+        f"  real (non-demo) categories / products: {status.other_categories} / "
+        f"{status.other_products}",
         "  import allowed: "
         + ("yes" if status.import_allowed else "no (the catalog contains real data)"),
     ]
@@ -790,19 +649,8 @@ def _format_import(report: ImportReport) -> list[str]:
         f"  categories created: {report.categories_created}",
         f"  products created: {report.products_created}",
     ]
-    if report.zones_skipped:
-        lines.append("  delivery zones: skipped (real delivery zones exist; left unchanged)")
-    else:
-        lines.append(
-            f"  demo delivery zones created: {report.zones_created} "
-            f"(districts assigned: {report.districts_assigned})"
-        )
     if report.changed == 0:
         lines.append("  nothing to do: the demo catalog is already present")
-    lines.append(
-        "  note: demo zones are placeholders; replace them with the real delivery rules in the "
-        "admin panel before taking real orders"
-    )
     lines.append(f"  image URLs: {_photos_on(report.image_base_url)}")
     if not report.applied:
         lines.append(f'  to apply, re-run with --confirm "{IMPORT_PHRASE}"')
@@ -819,11 +667,6 @@ def _format_remove(report: RemoveReport) -> list[str]:
         f"{report.categories_deactivated}",
         f"  categories left unchanged (hold real products or subcategories): "
         f"{report.categories_kept}",
-        f"  delivery zones deleted: {report.zones_deleted}",
-        f"  delivery zones deactivated (referenced by orders): {report.zones_deactivated}",
-        f"  delivery slots deleted / deactivated: {report.slots_deleted} / "
-        f"{report.slots_deactivated}",
-        f"  districts released: {report.districts_released}",
     ]
     if report.changed == 0:
         lines.append("  nothing to do: no removable demo rows")
