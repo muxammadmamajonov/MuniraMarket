@@ -2,6 +2,7 @@
 
 import { useRouter } from 'next/navigation';
 import { startTransition, useEffect } from 'react';
+import { RouteHeader } from '@/components/route-header';
 import { ErrorView } from '@/components/status-views';
 
 /**
@@ -23,16 +24,19 @@ export default function ErrorPage({
   }, [error]);
 
   return (
-    <main className="flex-1">
-      <ErrorView
-        onRetry={() => {
-          // Re-run the server render, then clear the boundary once fresh data has arrived.
-          startTransition(() => {
-            router.refresh();
-            reset();
-          });
-        }}
-      />
-    </main>
+    <>
+      <RouteHeader kind="error" />
+      <main className="flex-1">
+        <ErrorView
+          onRetry={() => {
+            // Re-run the server render, then clear the boundary once fresh data has arrived.
+            startTransition(() => {
+              router.refresh();
+              reset();
+            });
+          }}
+        />
+      </main>
+    </>
   );
 }

@@ -469,7 +469,7 @@ describe('CheckoutView: quote', () => {
     expect(submitButton()).toBeDisabled();
   });
 
-  it('flags lines that cannot be bought and links back to the cart', async () => {
+  it('flags lines that cannot be bought, with no in-page back link (Telegram BackButton goes to the cart)', async () => {
     routes['POST /checkout/quote'] = () =>
       respond(
         quote({
@@ -482,10 +482,7 @@ describe('CheckoutView: quote', () => {
     await loaded();
     await pickDistrict();
     expect(screen.getByTestId('cart-issues')).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Savatga qaytish' })).toHaveAttribute(
-      'href',
-      '/uz/cart',
-    );
+    expect(screen.queryByRole('link', { name: /Savat/ })).toBeNull();
     expect(submitButton()).toBeDisabled();
   });
 

@@ -266,7 +266,6 @@ export interface Dictionary {
       hint: string;
       action: string;
     };
-    backToCart: string;
     optional: string;
     sections: {
       delivery: string;
@@ -418,7 +417,6 @@ export interface Dictionary {
     status: Record<OrderStatus, string>;
     payment: Record<PaymentMethod, string>;
     detail: {
-      back: string;
       /** `{number}` */
       loadingLabel: string;
       placedTitle: string;
@@ -608,10 +606,26 @@ export interface Dictionary {
   };
   catalogPage: {
     title: string;
-    /** Under the title: how many categories. `{count}` */
-    count: string;
     emptyTitle: string;
     emptyHint: string;
+  };
+  /**
+   * Page titles shown in the header slot (Telegram's own top row in fullscreen), so they must be
+   * short: the slot is about 120px wide on a 320px phone and longer text is cut with an ellipsis.
+   * Category and product pages use their own names instead.
+   */
+  pageTitles: {
+    catalog: string;
+    search: string;
+    cart: string;
+    checkout: string;
+    orders: string;
+    order: string;
+    profile: string;
+    help: string;
+    signIn: string;
+    notFound: string;
+    error: string;
   };
   language: {
     label: string;
