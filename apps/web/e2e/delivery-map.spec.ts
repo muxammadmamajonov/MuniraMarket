@@ -31,23 +31,14 @@ type Answer = 'chilonzor' | 'bektemir' | 'samarkand' | 'fail';
 
 /**
  * A tiny `ymaps3`: a map whose centre the test can move (`__mapStub.pan`, which fires the
- * gesture listener like a drag), and `search` answering from `__mapStub.answer`. Every search
- * text is recorded in `__mapStub.searches`.
+ * gesture listener like a drag). District lookup itself is intercepted at the Geocoder HTTP
+ * endpoint below, so this test never needs Yandex Search API access.
  */
 const STUB_SDK = String.raw`
 (() => {
   const stub = (window.__mapStub = window.__mapStub || {});
-  stub.searches = [];
   stub.listeners = [];
   stub.maps = [];
-  const answers = {
-    chilonzor: [
-      { properties: { name: 'Bunyodkor ko‘chasi, 15', description: 'Toshkent, O‘zbekiston' } },
-      { properties: { name: 'Chilonzor tumani', description: 'Toshkent, O‘zbekiston' } },
-    ],
-    bektemir: [{ properties: { name: 'Бектемирский район', description: 'Ташкент, Узбекистан' } }],
-    samarkand: [{ properties: { name: 'Самарканд', description: 'Узбекистан' } }],
-  };
   class YMap {
     constructor(element, props) {
       this.element = element;
@@ -81,18 +72,28 @@ const STUB_SDK = String.raw`
     YMapDefaultSchemeLayer: class {},
     YMapDefaultFeaturesLayer: class {},
     getDefaultConfig: () => ({ setApikeys() {} }),
-    search: (options) => {
-      stub.searches.push(options.text);
-      const answer = stub.answer || 'chilonzor';
-      if (answer === 'fail') return Promise.reject(new Error('403 Forbidden'));
-      return Promise.resolve(answers[answer] || []);
-    },
   };
 })();
 `;
 
-async function stubYandex(page: Page, answer: Answer = 'chilonzor'): Promise<string[]> {
+const GEOCODER_MEMBERS: Record<
+  Exclude<Answer, 'fail'>,
+  Array<{ name: string; description: string }>
+> = {
+  chilonzor: [
+    { name: 'Bunyodkor ko‘chasi, 15', description: 'Toshkent, O‘zbekiston' },
+    { name: 'Chilonzor tumani', description: 'Toshkent, O‘zbekiston' },
+  ],
+  bektemir: [{ name: 'Бектемирский район', description: 'Ташкент, Узбекистан' }],
+  samarkand: [{ name: 'Самарканд', description: 'Узбекистан' }],
+};
+
+async function stubYandex(
+  page: Page,
+  answer: Answer = 'chilonzor',
+): Promise<{ blocked: string[]; geocodes: string[] }> {
   const blocked: string[] = [];
+  const geocodes: string[] = [];
   await page.route(/^https:\/\/([^/]+\.)?(yandex\.(ru|net|com|uz)|yastatic\.net)\//, (route) => {
     const url = new URL(route.request().url());
     if (url.origin === 'https://api-maps.yandex.ru' && url.pathname === '/v3/') {
@@ -101,10 +102,21 @@ async function stubYandex(page: Page, answer: Answer = 'chilonzor'): Promise<str
     blocked.push(url.origin);
     return route.abort();
   });
-  await page.addInitScript((value) => {
-    (window as unknown as { __mapStub: { answer: string } }).__mapStub = { answer: value };
-  }, answer);
-  return blocked;
+  await page.route('https://geocode-maps.yandex.ru/v1**', (route) => {
+    geocodes.push(route.request().url());
+    if (answer === 'fail') return route.fulfill({ status: 403, body: '{}' });
+    return route.fulfill({
+      contentType: 'application/json',
+      json: {
+        response: {
+          GeoObjectCollection: {
+            featureMember: GEOCODER_MEMBERS[answer].map((member) => ({ GeoObject: member })),
+          },
+        },
+      },
+    });
+  });
+  return { blocked, geocodes };
 }
 
 async function browseAnonymously(page: Page): Promise<void> {
@@ -155,18 +167,12 @@ async function expectNoHorizontalScroll(page: Page): Promise<void> {
   expect(overflow, `page scrolls sideways by ${String(overflow)}px`).toBeLessThanOrEqual(0);
 }
 
-async function searches(page: Page): Promise<string[]> {
-  return page.evaluate(
-    () => (window as unknown as { __mapStub: { searches: string[] } }).__mapStub.searches,
-  );
-}
-
 test.beforeEach(async ({ page }) => browseAnonymously(page));
 
 test('served: pick a point, "Deliver here", real zone rules, choose the district', async ({
   page,
 }) => {
-  const blocked = await stubYandex(page, 'chilonzor');
+  const { blocked, geocodes } = await stubYandex(page, 'chilonzor');
   const own = recordOwnRequests(page);
   await page.goto('/uz');
   const picker = await openMap(page);
@@ -175,7 +181,7 @@ test('served: pick a point, "Deliver here", real zone rules, choose the district
     picker.getByRole('img', { name: 'Yetkazish nuqtasi xarita markazida' }),
   ).toBeVisible();
   // Nothing is looked up before the customer confirms.
-  expect(await searches(page)).toEqual([]);
+  expect(geocodes).toEqual([]);
   await page.evaluate(() =>
     (window as unknown as { __mapStub: { pan: (c: number[]) => void } }).__mapStub.pan([
       69.2041, 41.2856,
@@ -193,7 +199,8 @@ test('served: pick a point, "Deliver here", real zone rules, choose the district
   await expect(result).toContainText(/100\s000\sso‘m/);
   await expect(result).toContainText(/500\s000\sso‘m dan/);
   await expect(result).toContainText('09:00–20:00');
-  expect(await searches(page)).toEqual(['69.204100,41.285600']);
+  expect(geocodes).toHaveLength(1);
+  expect(geocodes[0]).toContain('geocode=69.204100%2C41.285600');
   await shot(page, 'map-served-uz');
   await expectNoHorizontalScroll(page);
 
@@ -306,7 +313,7 @@ test.describe('geolocation', () => {
   }) => {
     await context.grantPermissions(['geolocation']);
     await context.setGeolocation({ latitude: 41.2856, longitude: 69.2041 });
-    await stubYandex(page, 'chilonzor');
+    const { geocodes } = await stubYandex(page, 'chilonzor');
     await page.goto('/uz');
     const picker = await openMap(page);
     await picker.getByRole('button', { name: 'Mening joylashuvim' }).click();
@@ -319,10 +326,10 @@ test.describe('geolocation', () => {
         ),
       )
       .toEqual([69.2041, 41.2856]);
-    expect(await searches(page)).toEqual([]);
+    expect(geocodes).toEqual([]);
     await picker.getByRole('button', { name: 'Shu yerga yetkazish' }).click();
     await expect(picker.getByTestId('map-result')).toHaveAttribute('data-status', 'served');
-    expect(await searches(page)).toEqual(['69.204100,41.285600']);
+    expect(geocodes).toHaveLength(1);
   });
 });
 

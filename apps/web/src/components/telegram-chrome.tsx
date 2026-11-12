@@ -36,8 +36,9 @@ export function isCheckoutPath(pathname: string): boolean {
  * - MainButton: hidden by default; pages that use it (product, cart, checkout) claim it
  *   themselves with `useMainButton`.
  * - Theme: mirrors Telegram's theme colours onto the design tokens.
- * - Fullscreen (phones only): requested once on the first tap, see `armFullscreenOnFirstGesture`;
- *   a refusal or an old client leaves the expanded mode. Vertical swipes scroll instead of closing.
+ * - Fullscreen (phones only): requested once at launch. Older clients which cannot accept that
+ *   request get one first-touch fallback. A refusal leaves the expanded mode. Vertical swipes
+ *   scroll instead of closing.
  * - Safe areas: mirrors `safeAreaInset` / `contentSafeAreaInset` (and their change events) onto
  *   the CSS variables the shell pads by (see `lib/telegram/safe-area.ts`).
  */

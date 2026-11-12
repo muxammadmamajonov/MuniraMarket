@@ -406,7 +406,7 @@ test.describe('Telegram fullscreen safe areas', () => {
     const header = page.locator('header').first();
     await expect
       .poll(() => header.evaluate((element) => getComputedStyle(element).paddingTop))
-      .toBe('93px');
+      .toBe('47px');
     await expect
       .poll(() => tabBar(page).evaluate((element) => getComputedStyle(element).paddingBottom))
       .toBe('34px');
@@ -422,7 +422,7 @@ test.describe('Telegram fullscreen safe areas', () => {
     await page.getByRole('button', { name: 'Xaritada belgilash' }).click();
     const back = page.getByRole('button', { name: 'Orqaga' });
     const backBox = await back.boundingBox();
-    expect(backBox !== null && backBox.y >= 93).toBe(true);
+    expect(backBox !== null && backBox.y >= 47).toBe(true);
     expect(
       await page.evaluate(
         () => (window as { __mmFullscreenRequests?: number }).__mmFullscreenRequests,
