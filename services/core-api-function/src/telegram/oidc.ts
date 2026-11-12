@@ -25,6 +25,9 @@ export const MAX_ID_TOKEN_BYTES = 16 * 1024;
 const B64URL_RE = /^[A-Za-z0-9_-]+$/;
 const KID_RE = /^[A-Za-z0-9._:-]{1,128}$/;
 const CODE_RE = /^[A-Za-z0-9._~+/=-]{1,1024}$/;
+// Telegram currently sends `id` as a JSON string for some OIDC clients. Accept only the
+// canonical decimal form, so IDs remain exact after conversion to JavaScript's number type.
+const TELEGRAM_USER_ID_RE = /^[1-9]\d{0,15}$/;
 const MAX_NAME_LENGTH = 255;
 const MAX_USERNAME_LENGTH = 64;
 
@@ -294,6 +297,23 @@ function intClaim(claims: Record<string, unknown>, name: string): number {
   return value;
 }
 
+function telegramUserIdClaim(claims: Record<string, unknown>): number {
+  const value = claims['id'];
+  if (
+    typeof value === 'number' &&
+    Number.isInteger(value) &&
+    value > 0 &&
+    Number.isSafeInteger(value)
+  ) {
+    return value;
+  }
+  if (typeof value === 'string' && TELEGRAM_USER_ID_RE.test(value)) {
+    const id = Number(value);
+    if (Number.isSafeInteger(id)) return id;
+  }
+  throw new OidcError('claim_id_invalid');
+}
+
 function optionalText(claims: Record<string, unknown>, name: string, max: number): string | null {
   const value = claims[name];
   if (typeof value !== 'string') return null;
@@ -361,10 +381,7 @@ export function verifyIdToken(
     throw new OidcError('nonce_mismatch');
   }
 
-  const telegramUserId = intClaim(claims, 'id');
-  if (telegramUserId <= 0 || !Number.isSafeInteger(telegramUserId)) {
-    throw new OidcError('claim_id_invalid');
-  }
+  const telegramUserId = telegramUserIdClaim(claims);
   const firstName =
     optionalText(claims, 'given_name', MAX_NAME_LENGTH) ??
     optionalText(claims, 'name', MAX_NAME_LENGTH);
