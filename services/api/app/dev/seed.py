@@ -5,10 +5,11 @@ demo dataset in ``app.ops.demo_dataset`` (also used, minus its ``dev_only`` rows
 operator-run production demo import ``app.ops.demo_catalog``): a realistic mock Tashkent grocery
 catalog (9 top-level categories, about 45 products in uz and ru, plausible so'm prices) so the demo
 looks like a real store, yet everything is made up: the synthetic markers are the ``DEMO-NNNN``
-SKUs, the ``demo-`` slugs, invented brand names (``SYNTHETIC_BRANDS``, never a real trademark) and
-no image URLs (the web app shows a placeholder; images will live in R2). It is safe to run
-repeatedly: rows are upserted by slug and an unchanged row is not touched, so a second run changes
-nothing. A demo product an admin has archived is left alone (not reactivated, not updated).
+SKUs, the ``demo-`` slugs and invented brand names (``SYNTHETIC_BRANDS``, never a real trademark).
+Products and categories get the demo stock photos (``app.ops.demo_images``): the bare storefront
+path (``/products/banan.webp``), or an absolute URL when ``DEMO_IMAGE_BASE_URL`` is set. It is safe
+to run repeatedly: rows are upserted by slug and an unchanged row is not touched, so a second run
+changes nothing. A demo product an admin has archived is left alone (not reactivated, not updated).
 
 The data deliberately includes the edge cases the catalog and cart must handle: products with an
 old price, untracked stock, low stock, out-of-stock products, a very long product name, an inactive
@@ -30,6 +31,7 @@ new days, and ``reserved_count`` is never touched (capacity never drops below it
 
 import asyncio
 import logging
+import os
 import sys
 import uuid
 from collections.abc import Iterable
@@ -53,6 +55,12 @@ from app.ops.demo_dataset import (
     SeedCategory,
     SeedProduct,
     SeedZone,
+)
+from app.ops.demo_images import (
+    IMAGE_BASE_URL_ENV,
+    category_image_url,
+    product_image_url,
+    validate_image_base_url,
 )
 
 __all__ = [
@@ -151,7 +159,9 @@ def _differs(
     )
 
 
-async def _seed_categories(session: AsyncSession) -> tuple[dict[str, uuid.UUID], int]:
+async def _seed_categories(
+    session: AsyncSession, image_base_url: str | None
+) -> tuple[dict[str, uuid.UUID], int]:
     ids: dict[str, uuid.UUID] = {}
     written = 0
     for category in DEMO_CATEGORIES:
@@ -160,7 +170,7 @@ async def _seed_categories(session: AsyncSession) -> tuple[dict[str, uuid.UUID],
             "parent_id": ids[category.parent_slug] if category.parent_slug else None,
             "name_uz": category.name_uz,
             "name_ru": category.name_ru,
-            "image_url": None,
+            "image_url": category_image_url(category.slug, image_base_url),
             "sort_order": category.sort_order,
             "is_active": category.is_active,
         }
@@ -178,7 +188,9 @@ async def _seed_categories(session: AsyncSession) -> tuple[dict[str, uuid.UUID],
     return ids, written
 
 
-async def _seed_products(session: AsyncSession, category_ids: dict[str, uuid.UUID]) -> int:
+async def _seed_products(
+    session: AsyncSession, category_ids: dict[str, uuid.UUID], image_base_url: str | None
+) -> int:
     written = 0
     for product in DEMO_PRODUCTS:
         values = {
@@ -194,7 +206,7 @@ async def _seed_products(session: AsyncSession, category_ids: dict[str, uuid.UUI
             "price_uzs": product.price_uzs,
             "old_price_uzs": product.old_price_uzs,
             "stock_quantity": product.stock_quantity,
-            "image_url": None,
+            "image_url": product_image_url(product.slug, image_base_url),
             "is_active": product.is_active,
         }
         statement = insert(Product).values(**values)
@@ -278,16 +290,20 @@ async def _seed_slots(session: AsyncSession, today: date) -> int:
 
 
 async def seed(
-    session_factory: async_sessionmaker[AsyncSession], *, today: date | None = None
+    session_factory: async_sessionmaker[AsyncSession],
+    *,
+    today: date | None = None,
+    image_base_url: str | None = None,
 ) -> SeedResult:
     """Upsert the demo catalog, delivery zones and slots in one transaction.
 
     ``today`` (the local Asia/Tashkent date the slots start from) defaults to the current one.
+    ``image_base_url`` (a validated origin) makes the photo URLs absolute; ``None`` keeps paths.
     """
     day = today if today is not None else tashkent_date(datetime.now(UTC))
     async with session_factory() as session:
-        category_ids, categories_written = await _seed_categories(session)
-        products_written = await _seed_products(session, category_ids)
+        category_ids, categories_written = await _seed_categories(session, image_base_url)
+        products_written = await _seed_products(session, category_ids, image_base_url)
         zones_written = await _seed_zones(session)
         slots_written = await _seed_slots(session, day)
         await session.commit()
@@ -308,9 +324,11 @@ async def main() -> int:
         sys.stderr.write(f"{exc}\n")
         return 2
 
+    raw_base = os.environ.get(IMAGE_BASE_URL_ENV, "").strip()
+    image_base_url = validate_image_base_url(raw_base) if raw_base else None
     engine = create_engine(settings)
     try:
-        result = await seed(create_session_factory(engine))
+        result = await seed(create_session_factory(engine), image_base_url=image_base_url)
     finally:
         await engine.dispose()
     logger.info(

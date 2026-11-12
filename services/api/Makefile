@@ -32,11 +32,13 @@ seed:
 
 # Operator-run, never automatic: the synthetic demo catalog for an EMPTY staging/production
 # catalog. Reads DEMO_IMPORT_DATABASE_URL (the migrator URL, from the secret store) from the
-# environment and never prints it. ACTION=status|import|remove; import/remove are dry runs unless
-# CONFIRM="IMPORT DEMO CATALOG" / CONFIRM="REMOVE DEMO CATALOG" is given.
+# environment and never prints it. ACTION=status|import|remove|images; import/remove/images are dry
+# runs unless CONFIRM="IMPORT DEMO CATALOG" / "REMOVE DEMO CATALOG" / "SET DEMO IMAGES" is given.
+# IMAGE_BASE_URL=https://<storefront host> (import, images) makes the demo photo URLs absolute.
 ACTION ?= status
 demo-catalog:
-	uv run python -m app.ops.demo_catalog $(ACTION) $(if $(CONFIRM),--confirm "$(CONFIRM)",)
+	uv run python -m app.ops.demo_catalog $(ACTION) $(if $(CONFIRM),--confirm "$(CONFIRM)",) \
+		$(if $(IMAGE_BASE_URL),--image-base-url "$(IMAGE_BASE_URL)",)
 
 # Local development only: `make set-role TG=<telegram_user_id> ROLE=operator` (user must exist;
 # add CREATE=1 to create a placeholder user first).

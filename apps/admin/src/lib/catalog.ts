@@ -75,8 +75,12 @@ export function indentedLabel(name: string, depth: number): string {
   return `${' '.repeat(depth)}${depth > 0 ? '↳ ' : ''}${name}`;
 }
 
+/** The storefront's own photos, the one relative form the API accepts (see `validate_image_url`). */
+const STOREFRONT_PHOTO_PATH = /^\/(?:products|categories)\/[a-z0-9]+(?:-[a-z0-9]+)*\.webp$/;
+
 /** Mirrors `validate_image_url` of the API (the server stays the authority and never fetches it). */
 export function isValidImageUrl(raw: string): boolean {
+  if (STOREFRONT_PHOTO_PATH.test(raw)) return true;
   if (raw.length === 0 || raw.length > 2048) return false;
   if (/[\s\u0000-\u001f\u007f]/.test(raw) || !/^[\x20-\x7e]+$/.test(raw)) return false;
   let url: URL;

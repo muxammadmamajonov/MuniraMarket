@@ -16,6 +16,7 @@ import {
 import { useSession } from '@/lib/session';
 import { useHaptics } from '@/lib/telegram';
 import { MinusIcon, PlusIcon } from './icons';
+import { PHOTO_SIZES } from '@/lib/photo';
 import { ProductImage } from './product-image';
 import { FOCUS_RING, PRESS } from './ui-classes';
 
@@ -73,6 +74,7 @@ export function ProductTile({ product }: ProductTileProps) {
             src={product.image_url}
             name={name}
             toneKey={product.category_id}
+            sizes={PHOTO_SIZES.tile}
             className="rounded-2xl"
           />
         </div>
