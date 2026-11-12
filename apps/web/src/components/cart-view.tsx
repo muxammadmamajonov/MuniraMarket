@@ -1,30 +1,30 @@
 'use client';
 
 import type { Cart, CartLine } from '@muniramarket/contracts';
-import {
-  Button,
-  EmptyState,
-  ErrorState,
-  QuantityStepper,
-  Skeleton,
-  formatUZS,
-} from '@muniramarket/ui';
+import type { DeliveryZone } from '@muniramarket/contracts';
+import { Button, ErrorState, QuantityStepper, Skeleton, formatUZS } from '@muniramarket/ui';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useState } from 'react';
 import { useI18n } from '@/i18n/context';
 import { formatMessage } from '@/i18n/format';
 import { getCart, removeCartItem, updateCartItem } from '@/lib/api/cart';
+import { getDeliveryZones } from '@/lib/api/delivery';
 import { ApiRequestError } from '@/lib/api/errors';
 import { useCartSettled, useCartSync } from '@/lib/cart';
 import { localizedName, maxQuantityFor } from '@/lib/catalog';
 import { retryAfterSeconds } from '@/lib/checkout/failures';
+import { zoneForDistrict } from '@/lib/checkout/zones';
+import { useDistrictPreference } from '@/lib/delivery/district-preference';
 import { useSession } from '@/lib/session';
 import { useMainButton } from '@/lib/telegram';
 import { useCooldown } from '@/lib/use-cooldown';
+import { EmptyPanel } from './empty-panel';
+import { FreeDeliveryProgress } from './free-delivery-progress';
+import { BagIcon, TrashIcon } from './icons';
 import { ProductImage } from './product-image';
 import { SignInPrompt } from './sign-in-prompt';
-import { LINK_BUTTON_PRIMARY } from './ui-classes';
+import { FOCUS_RING, GROUP, LINK_BUTTON_PRIMARY, PRESS, ROWS } from './ui-classes';
 
 /** A note under the lines: a message, or "wait a moment" (shown only for as long as the wait lasts). */
 type Notice = { kind: 'text'; text: string } | { kind: 'rate_limited' };
@@ -43,6 +43,10 @@ export function CartView() {
   const syncCart = useCartSync();
   const cartSettled = useCartSettled();
   const [load, setLoad] = useState<Load>({ kind: 'loading' });
+  // Free-delivery progress: only for a district the customer already chose, and only when that
+  // district's zone really has a threshold. A failed lookup just hides the bar.
+  const [district] = useDistrictPreference();
+  const [zones, setZones] = useState<DeliveryZone[] | null>(null);
   const [busyProduct, setBusyProduct] = useState<string | null>(null);
   const [notice, setNotice] = useState<Notice | null>(null);
   // A 429 on a quantity change or a removal: every line is locked until `Retry-After` has passed.
@@ -77,6 +81,19 @@ export function CartView() {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     void fetchCart();
   }, [status, fetchCart]);
+
+  useEffect(() => {
+    if (status !== 'authenticated' || district === null) return;
+    let live = true;
+    getDeliveryZones(apiFetch)
+      .then((list) => {
+        if (live) setZones(list.items);
+      })
+      .catch(() => undefined);
+    return () => {
+      live = false;
+    };
+  }, [status, district, apiFetch]);
 
   const mutate = useCallback(
     async (productId: string, action: () => Promise<Cart>) => {
@@ -143,14 +160,12 @@ export function CartView() {
   if (cart === null) return null;
   if (cart.items.length === 0) {
     return (
-      <EmptyState
+      <EmptyPanel
+        icon={<BagIcon />}
         title={dict.cart.empty}
         description={dict.cart.emptyHint}
         action={
-          <Link
-            href={`/${locale}`}
-            className="inline-flex min-h-11 items-center rounded-xl bg-primary px-4 font-semibold text-primary-foreground hover:bg-primary-hover"
-          >
+          <Link href={`/${locale}`} className={LINK_BUTTON_PRIMARY}>
             {dict.cart.continueShopping}
           </Link>
         }
@@ -158,9 +173,22 @@ export function CartView() {
     );
   }
 
+  const zone = district === null || zones === null ? null : zoneForDistrict(zones, district);
+  const threshold = zone?.free_delivery_threshold_uzs ?? null;
+
   return (
-    <div className="flex flex-col gap-4">
-      <ul className="flex flex-col gap-3" aria-label={dict.cart.title}>
+    <div className="flex flex-col gap-3">
+      {threshold !== null && threshold > 0 && !cart.has_issues ? (
+        <div className={`${GROUP} p-4`}>
+          <FreeDeliveryProgress
+            threshold={threshold}
+            remaining={Math.max(0, threshold - cart.subtotal_uzs)}
+            testId="cart-free-delivery"
+          />
+        </div>
+      ) : null}
+
+      <ul className={`${GROUP} ${ROWS} flex flex-col px-4`} aria-label={dict.cart.title}>
         {cart.items.map((line) => (
           <CartLineItem
             key={line.product.id}
@@ -176,32 +204,31 @@ export function CartView() {
         ))}
       </ul>
 
-      <div aria-live="polite">
+      <div aria-live="polite" className="empty:hidden">
         {noticeText !== null ? (
-          <p role="alert" className="text-sm font-medium text-danger">
+          <p role="alert" className="px-1 text-sm font-medium text-danger">
             {noticeText}
           </p>
         ) : null}
         {cart.has_issues ? (
-          <p className="text-sm text-muted-foreground">{dict.cart.issuesNote}</p>
+          <p className="px-1 text-sm text-muted-foreground">{dict.cart.issuesNote}</p>
         ) : null}
       </div>
 
-      <section
-        aria-label={dict.cart.total}
-        className="flex flex-col gap-2 rounded-xl border border-border bg-surface p-4"
-      >
-        <p className="flex justify-between text-muted-foreground">
+      <section aria-label={dict.cart.total} className={`${GROUP} flex flex-col gap-2 p-4`}>
+        <p className="flex justify-between gap-3 text-muted-foreground">
           <span>{formatMessage(dict.cart.itemCount, { count: cart.item_count })}</span>
+          <span data-money data-testid="cart-subtotal">
+            {formatUZS(cart.subtotal_uzs, locale)}
+          </span>
         </p>
-        <p className="flex justify-between">
-          <span>{dict.cart.subtotal}</span>
-          <span data-testid="cart-subtotal">{formatUZS(cart.subtotal_uzs, locale)}</span>
-        </p>
-        <p className="flex justify-between text-lg font-bold">
+        <p className="flex items-baseline justify-between gap-3 text-xl font-bold tracking-[-0.01em]">
           <span>{dict.cart.total}</span>
-          <span data-testid="cart-total">{formatUZS(cart.total_uzs, locale)}</span>
+          <span data-money data-testid="cart-total">
+            {formatUZS(cart.total_uzs, locale)}
+          </span>
         </p>
+        <p className="text-sm text-muted-foreground">{dict.cart.deliveryAtCheckout}</p>
         {canCheckout ? (
           <Link
             href={checkoutHref}
@@ -211,7 +238,12 @@ export function CartView() {
             {dict.cart.checkout}
           </Link>
         ) : (
-          <Button size="lg" disabled className="mt-2" data-testid="checkout-link">
+          <Button
+            size="lg"
+            disabled
+            className="mt-2 min-h-13 rounded-2xl"
+            data-testid="checkout-link"
+          >
             {dict.cart.checkout}
           </Button>
         )}
@@ -223,9 +255,19 @@ export function CartView() {
 function CartSkeleton({ label }: { label: string }) {
   return (
     <div role="status" aria-label={label} className="flex flex-col gap-3">
-      <Skeleton className="h-24 w-full" />
-      <Skeleton className="h-24 w-full" />
-      <Skeleton className="h-28 w-full" />
+      <div className={`${GROUP} flex flex-col gap-4 p-4`}>
+        {[0, 1].map((index) => (
+          <div key={index} className="flex gap-3">
+            <Skeleton className="size-[72px] shrink-0 rounded-2xl" />
+            <div className="flex flex-1 flex-col gap-2 pt-1">
+              <Skeleton className="h-4 w-3/4" />
+              <Skeleton className="h-3.5 w-1/3" />
+              <Skeleton className="mt-1 h-11 w-32 rounded-full" />
+            </div>
+          </div>
+        ))}
+      </div>
+      <Skeleton className="h-40 w-full rounded-3xl bg-surface" />
     </div>
   );
 }
@@ -255,23 +297,42 @@ function CartLineItem({ line, busy, onQuantity, onRemove }: CartLineItemProps) {
     <li
       data-testid="cart-line"
       data-issue={line.issue ?? undefined}
-      className="flex gap-3 rounded-xl border border-border bg-surface p-3"
+      className="flex gap-3 py-3.5"
     >
-      <ProductImage
-        src={product.image_url}
-        name={name}
-        toneKey={product.category_id}
-        className="w-20 shrink-0 self-start"
-      />
-      <div className="flex min-w-0 flex-1 flex-col gap-2">
-        <Link
-          href={`/${locale}/p/${encodeURIComponent(product.slug)}`}
-          className="line-clamp-2 font-medium hover:underline"
-        >
-          {name}
-        </Link>
+      <Link
+        href={`/${locale}/p/${encodeURIComponent(product.slug)}`}
+        tabIndex={-1}
+        aria-hidden="true"
+        className="shrink-0 self-start"
+      >
+        <ProductImage
+          src={product.image_url}
+          name={name}
+          toneKey={product.category_id}
+          className={`w-[72px] rounded-2xl ${hasIssue ? 'opacity-50 grayscale' : ''}`}
+        />
+      </Link>
+      <div className="flex min-w-0 flex-1 flex-col gap-1">
+        <div className="flex items-start gap-2">
+          <Link
+            href={`/${locale}/p/${encodeURIComponent(product.slug)}`}
+            data-user-text
+            className={`line-clamp-2 min-w-0 flex-1 rounded-md leading-5 font-medium hover:underline ${FOCUS_RING}`}
+          >
+            {name}
+          </Link>
+          <button
+            type="button"
+            disabled={busy}
+            onClick={onRemove}
+            aria-label={`${dict.cart.remove}: ${name}`}
+            className={`-mt-2.5 -mr-2.5 inline-flex size-11 shrink-0 items-center justify-center rounded-full text-muted-foreground hover:bg-surface-muted hover:text-danger disabled:cursor-not-allowed disabled:opacity-40 ${PRESS} ${FOCUS_RING}`}
+          >
+            <TrashIcon width={19} height={19} />
+          </button>
+        </div>
         <p className="text-sm text-muted-foreground">
-          {formatUZS(product.price_uzs, locale)} / {dict.units[product.unit]}
+          <span data-money>{formatUZS(product.price_uzs, locale)}</span> / {dict.units[product.unit]}
         </p>
 
         {issueText !== null ? (
@@ -280,7 +341,7 @@ function CartLineItem({ line, busy, onQuantity, onRemove }: CartLineItemProps) {
           </p>
         ) : null}
 
-        <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="mt-1.5 flex flex-wrap items-center justify-between gap-2">
           <QuantityStepper
             value={line.quantity}
             min={1}
@@ -290,22 +351,14 @@ function CartLineItem({ line, busy, onQuantity, onRemove }: CartLineItemProps) {
             label={`${dict.product.quantity}: ${name}`}
             decreaseLabel={dict.product.decrease}
             increaseLabel={dict.product.increase}
+            className="h-11 rounded-full border-0 bg-surface-muted [&_button]:rounded-full [&_button]:text-lg"
           />
           {hasIssue ? null : (
-            <span className="font-semibold" data-testid="line-total">
+            <span data-money className="text-[17px] font-bold" data-testid="line-total">
               {formatUZS(line.line_total_uzs, locale)}
             </span>
           )}
         </div>
-        <Button
-          variant="secondary"
-          disabled={busy}
-          onClick={onRemove}
-          aria-label={`${dict.cart.remove}: ${name}`}
-          className="self-start text-sm"
-        >
-          {dict.cart.remove}
-        </Button>
       </div>
     </li>
   );

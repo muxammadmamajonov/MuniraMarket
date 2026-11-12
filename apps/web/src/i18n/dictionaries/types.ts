@@ -189,6 +189,10 @@ export interface Dictionary {
     sku: string;
     brand: string;
     description: string;
+    /** Heading of the product's details block (description, SKU, brand). */
+    about: string;
+    /** `{count}`: how much of this product the cart already holds (units of its own measure). */
+    inCart: string;
     category: string;
     inStock: string;
     outOfStock: string;
@@ -223,6 +227,8 @@ export interface Dictionary {
     empty: string;
     emptyHint: string;
     continueShopping: string;
+    /** Under the cart total: the delivery fee depends on the district, priced at checkout. */
+    deliveryAtCheckout: string;
     /** `{count}` */
     itemCount: string;
     subtotal: string;

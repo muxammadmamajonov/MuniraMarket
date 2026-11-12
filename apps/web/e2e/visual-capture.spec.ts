@@ -62,6 +62,12 @@ test('capture every customer page', async ({ page }) => {
     }),
   );
 
+  // A customer who already picked a district (the home chooser shows it, the cart can show free
+  // delivery progress).
+  await page.addInitScript(() =>
+    window.localStorage.setItem('mm.delivery-district.v1', 'yunusobod'),
+  );
+
   const categories = (await (await page.request.get('/api/v1/categories')).json()) as {
     items: Array<{ slug: string; children: Array<{ slug: string }> }>;
   };

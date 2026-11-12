@@ -4,8 +4,10 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { AddToCart } from '@/components/add-to-cart';
+import { ChevronRightIcon } from '@/components/icons';
 import { PageContainer } from '@/components/page-container';
 import { ProductImage } from '@/components/product-image';
+import { GROUP, ROWS, SECTION_TITLE } from '@/components/ui-classes';
 import { getDictionary } from '@/i18n';
 import { fetchProduct } from '@/lib/api/server';
 import {
@@ -43,47 +45,61 @@ export default async function ProductPage({ params }: PageProps<'/[locale]/p/[sl
   const state = stockState(product);
   const oldPrice = previousPrice(product);
 
+  const stockTone =
+    state.kind === 'out'
+      ? 'bg-surface-muted text-muted-foreground'
+      : state.kind === 'low'
+        ? 'bg-warning-soft text-warning'
+        : 'bg-surface text-foreground';
+  const hasBrand = product.brand !== null && product.brand !== '';
+
   return (
     <main className="flex-1">
-      <PageContainer className="grid gap-6 py-6 md:grid-cols-2">
+      <PageContainer className="grid gap-5 py-4 md:grid-cols-2 md:gap-8 md:py-6">
         <ProductImage
           src={product.image_url}
           name={name}
           toneKey={product.category_id}
-          className="max-w-md rounded-2xl"
+          className="w-full rounded-3xl max-md:aspect-[6/5] md:max-w-md"
         />
 
-        <div className="flex flex-col gap-4">
-          <p className="text-sm text-muted-foreground">
-            {dict.product.category}:{' '}
+        <div className="flex min-w-0 flex-col gap-4">
+          <div className="flex flex-col gap-1.5">
             <Link
               href={`/${locale}/c/${encodeURIComponent(product.category.slug)}`}
-              className="underline underline-offset-2"
+              aria-label={`${dict.product.category}: ${localizedName(product.category, locale)}`}
+              className="inline-flex min-h-8 items-center gap-0.5 self-start rounded-md text-sm font-medium text-muted-foreground hover:text-foreground focus-visible:outline-2 focus-visible:outline-focus"
             >
               {localizedName(product.category, locale)}
+              <ChevronRightIcon aria-hidden="true" width={14} height={14} />
             </Link>
-          </p>
-          <h1 className="text-2xl font-bold tracking-tight">{name}</h1>
+            <h1 data-user-text className="text-[24px] leading-[30px] font-bold tracking-[-0.02em] text-balance">
+              {name}
+            </h1>
+          </div>
 
-          <p className="flex flex-wrap items-baseline gap-x-2 text-2xl">
-            <Price
-              amount={product.price_uzs}
-              {...(oldPrice === null ? {} : { oldAmount: oldPrice })}
-              locale={locale}
-              data-testid="product-price"
-              currentLabel={dict.product.priceCurrentLabel}
-              oldLabel={dict.product.priceOldLabel}
-            />
-            <span className="text-base text-muted-foreground">/ {dict.units[product.unit]}</span>
-          </p>
-
-          <p
-            data-testid="stock-state"
-            data-stock={state.kind}
-            className={state.kind === 'in' ? 'text-sm' : 'text-sm font-medium'}
-          >
-            {stockLabel(state, dict)}
-          </p>
+          <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
+            <p className="flex flex-wrap items-baseline gap-x-2 text-[28px] leading-8 font-bold tracking-[-0.02em]">
+              <Price
+                amount={product.price_uzs}
+                {...(oldPrice === null ? {} : { oldAmount: oldPrice })}
+                locale={locale}
+                data-testid="product-price"
+                currentLabel={dict.product.priceCurrentLabel}
+                oldLabel={dict.product.priceOldLabel}
+              />
+              <span className="text-base font-medium tracking-normal text-muted-foreground">
+                / {dict.units[product.unit]}
+              </span>
+            </p>
+            <p
+              data-testid="stock-state"
+              data-stock={state.kind}
+              className={`inline-flex min-h-8 items-center rounded-full px-3 text-sm font-semibold ${stockTone}`}
+            >
+              {stockLabel(state, dict)}
+            </p>
+          </div>
 
           <AddToCart
             product={{
@@ -94,25 +110,35 @@ export default async function ProductPage({ params }: PageProps<'/[locale]/p/[sl
             }}
           />
 
-          <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-sm">
-            <dt className="text-muted-foreground">{dict.product.sku}</dt>
-            <dd data-testid="product-sku">{product.sku}</dd>
-            {product.brand !== null && product.brand !== '' ? (
-              <>
-                <dt className="text-muted-foreground">{dict.product.brand}</dt>
-                <dd>{product.brand}</dd>
-              </>
+          <section
+            aria-labelledby="details-heading"
+            className={`${GROUP} flex flex-col gap-3 p-4`}
+          >
+            <h2 id="details-heading" className={SECTION_TITLE}>
+              {dict.product.about}
+            </h2>
+            {description !== null ? (
+              <p data-user-text className="whitespace-pre-line text-foreground/80">
+                {description}
+              </p>
             ) : null}
-          </dl>
-
-          {description !== null ? (
-            <section aria-labelledby="description-heading" className="flex flex-col gap-1">
-              <h2 id="description-heading" className="font-semibold">
-                {dict.product.description}
-              </h2>
-              <p className="whitespace-pre-line text-muted-foreground">{description}</p>
-            </section>
-          ) : null}
+            <dl className={`${ROWS} flex flex-col text-sm`}>
+              <div className="flex justify-between gap-3 py-2.5 first:pt-0">
+                <dt className="text-muted-foreground">{dict.product.sku}</dt>
+                <dd data-testid="product-sku" className="font-medium tabular-nums">
+                  {product.sku}
+                </dd>
+              </div>
+              {hasBrand ? (
+                <div className="flex justify-between gap-3 py-2.5 last:pb-0">
+                  <dt className="text-muted-foreground">{dict.product.brand}</dt>
+                  <dd data-user-text className="min-w-0 text-right font-medium">
+                    {product.brand}
+                  </dd>
+                </div>
+              ) : null}
+            </dl>
+          </section>
         </div>
       </PageContainer>
     </main>
