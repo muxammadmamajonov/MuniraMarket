@@ -33,13 +33,14 @@ export interface UserPublic {
   language_confirmed: boolean;
   phone_verified: boolean;
   phone_hint: string | null;
+  birth_date: string | null;
 }
 
 const COLUMNS = `id::text AS id, telegram_user_id, first_name, last_name, username,
   language::text AS language, role::text AS role, is_blocked,
   language_confirmed_at IS NOT NULL AS language_confirmed,
-  phone_verified_at IS NOT NULL AS phone_verified,
-  CASE WHEN phone_verified_at IS NOT NULL THEN phone END AS phone`;
+  phone_verified_at IS NOT NULL AS phone_verified, phone,
+  to_char(birth_date, 'YYYY-MM-DD') AS birth_date`;
 
 /** Only the last four digits stay readable; enough for the owner to recognise the number. */
 export function phoneHint(phone: string | null | undefined): string | null {
@@ -70,14 +71,18 @@ export function userPublic(user: UserRecord): UserPublic {
     role: user.role,
     language_confirmed: user.language_confirmed,
     phone_verified: user.phone_verified,
-    phone_hint: user.phone_verified ? phoneHint(user.phone) : null,
+    // Any stored number, verified or typed in the profile (`phone_verified` tells which).
+    phone_hint: phoneHint(user.phone),
+    birth_date: user.birth_date,
   };
 }
 
 /**
  * Insert or refresh the user in one atomic statement (committed on its own). The language is
  * taken from Telegram only when the user is first created, so a language picked inside the shop
- * is not overwritten on every sign-in.
+ * is not overwritten on every sign-in. Likewise the name: once the user edited it in the shop
+ * (`name_edited_at`), Telegram no longer overwrites `first_name` / `last_name`; `username` is
+ * always refreshed.
  */
 export async function upsertFromTelegram(
   db: SqlRunner,
@@ -87,8 +92,12 @@ export async function upsertFromTelegram(
   const { rows } = await db.query<UserRecord>(
     `INSERT INTO users (telegram_user_id, first_name, last_name, username, language)
      VALUES ($1, $2, $3, $4, $5::language)
-     ON CONFLICT (telegram_user_id) DO UPDATE SET first_name = EXCLUDED.first_name,
-       last_name = EXCLUDED.last_name, username = EXCLUDED.username, updated_at = now()
+     ON CONFLICT (telegram_user_id) DO UPDATE SET
+       first_name = CASE WHEN users.name_edited_at IS NULL THEN EXCLUDED.first_name
+                         ELSE users.first_name END,
+       last_name = CASE WHEN users.name_edited_at IS NULL THEN EXCLUDED.last_name
+                        ELSE users.last_name END,
+       username = EXCLUDED.username, updated_at = now()
      RETURNING ${COLUMNS}`,
     [
       profile.telegramUserId,
@@ -162,6 +171,59 @@ export async function recordTelegramPhone(
        phone_verification_method = 'telegram_contact', updated_at = now()
      WHERE telegram_user_id = $1 RETURNING ${COLUMNS}`,
     [telegramUserId, phone],
+  );
+  return rows[0] ?? null;
+}
+
+/** `PATCH /me`: only the keys the request contained (`undefined` = not sent). */
+export interface ProfileUpdate {
+  first_name?: string;
+  last_name?: string | null;
+  /** `YYYY-MM-DD`, or null to clear. */
+  birth_date?: string | null;
+  /** Normalised `+998XXXXXXXXX`, or null to remove the phone (and its verification). */
+  phone?: string | null;
+}
+
+/**
+ * Apply `PATCH /me` in one atomic UPDATE (port of `update_profile`). Writing either name part
+ * marks the name as user-edited. A phone equal to the stored one changes nothing (its
+ * verification is kept); a different number is stored unverified; null removes the phone and
+ * its verification. Every `CASE` reads the row as it was before this statement.
+ */
+export async function updateProfile(
+  db: SqlRunner,
+  userId: string,
+  changes: ProfileUpdate,
+): Promise<UserRecord | null> {
+  const params: unknown[] = [userId];
+  const sets = ['updated_at = now()'];
+  const param = (value: unknown): string => {
+    params.push(value);
+    return `$${params.length}`;
+  };
+  if (changes.first_name !== undefined) sets.push(`first_name = ${param(changes.first_name)}`);
+  if (changes.last_name !== undefined) sets.push(`last_name = ${param(changes.last_name)}`);
+  if (changes.first_name !== undefined || changes.last_name !== undefined) {
+    sets.push('name_edited_at = now()');
+  }
+  if (changes.birth_date !== undefined) {
+    sets.push(`birth_date = ${param(changes.birth_date)}::date`);
+  }
+  if (changes.phone === null) {
+    sets.push('phone = NULL', 'phone_verified_at = NULL', 'phone_verification_method = NULL');
+  } else if (changes.phone !== undefined) {
+    // One explicit type for the parameter (it is both assigned and compared).
+    const phone = `${param(changes.phone)}::text`;
+    sets.push(
+      `phone = ${phone}`,
+      `phone_verified_at = CASE WHEN phone = ${phone} THEN phone_verified_at END`,
+      `phone_verification_method = CASE WHEN phone = ${phone} THEN phone_verification_method END`,
+    );
+  }
+  const { rows } = await db.query<UserRecord>(
+    `UPDATE users SET ${sets.join(', ')} WHERE id = $1::uuid RETURNING ${COLUMNS}`,
+    params,
   );
   return rows[0] ?? null;
 }

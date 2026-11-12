@@ -1,18 +1,20 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useI18n } from '@/i18n/context';
 import { formatAddressLine, type Address } from '@/lib/address/address';
+import { savedToAddress } from '@/lib/address/saved';
 import { useDeliveryAddress } from '@/lib/address/storage';
 import { useHaptics } from '@/lib/telegram';
-import { AddressPicker } from './address-picker';
+import { AddressChooser, useSavedAddresses } from './address-chooser';
 import { ChevronRightIcon, PinIcon } from './icons';
 import { FOCUS_RING, PRESS } from './ui-classes';
 
 /**
  * The delivery address at the top of the storefront. Never blocks browsing: the catalog is right
- * below it either way. Tapping it opens the map picker straight away (no list or sheet in
- * between); the saved address is what checkout starts from.
+ * below it either way. Tapping it offers the account's saved addresses first (when there are any)
+ * and otherwise opens the map picker straight away; the chosen address is what checkout starts
+ * from.
  */
 export function DeliveryAddressCard() {
   const { dict } = useI18n();
@@ -21,6 +23,16 @@ export function DeliveryAddressCard() {
   const [open, setOpen] = useState(false);
   const [announcement, setAnnouncement] = useState('');
   const haptics = useHaptics();
+  const { items: saved } = useSavedAddresses();
+
+  // Nothing chosen on this device yet but a saved default: show that one (once).
+  const prefilled = useRef(false);
+  useEffect(() => {
+    if (!ready || prefilled.current || saved === null) return;
+    prefilled.current = true;
+    const preferred = saved.find((item) => item.is_default) ?? saved[0];
+    if (address === null && preferred !== undefined) setAddress(savedToAddress(preferred));
+  }, [ready, saved, address, setAddress]);
 
   const save = (next: Address) => {
     setAddress(next);
@@ -79,7 +91,13 @@ export function DeliveryAddressCard() {
         <span className="sr-only">{line === null ? '' : t.change}</span>
         <ChevronRightIcon aria-hidden="true" className="shrink-0 text-muted-foreground" />
       </button>
-      <AddressPicker open={open} onClose={() => setOpen(false)} initial={address} onSave={save} />
+      <AddressChooser
+        open={open}
+        onClose={() => setOpen(false)}
+        current={address}
+        saved={saved}
+        onChoose={save}
+      />
       <p aria-live="polite" className="sr-only">
         {announcement}
       </p>

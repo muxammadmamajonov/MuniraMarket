@@ -14,6 +14,7 @@ from app.api import admin_deps as admin_routes
 from app.api import auth_deps
 from app.api.deps import get_session
 from app.api.routes import cart as cart_routes
+from app.api.routes import me as me_routes
 from app.api.routes import orders as order_routes
 from app.core.clock import Clock, system_clock
 from app.main import create_app
@@ -133,6 +134,7 @@ RATE_LIMITS = (
     admin_routes.ADMIN_IP_LIMIT,
     admin_routes.ADMIN_READ_LIMIT,
     admin_routes.ADMIN_WRITE_LIMIT,
+    me_routes.PREFERENCES_WRITE_LIMIT,
 )
 
 

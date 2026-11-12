@@ -9,8 +9,8 @@ import { buildSignedInitData, type FakeTelegramUser } from './telegram-init-data
  * - the language picked in the bot's first-start buttons (played by the signed bot stand-in) is
  *   the account language, and the storefront URL follows it; Profile is the only place to change
  *   it and there is no switch in the header;
- * - the phone is shared from the Mini App profile (`requestContact`), arrives through the bot,
- *   and the profile shows the masked verified number; checkout asks for it before ordering;
+ * - the phone is shared from Profile › Personal details (`requestContact`), arrives through the
+ *   bot, and the page shows the masked verified number; checkout asks for it before ordering;
  * - Telegram fullscreen is requested at launch on phones and degrades when refused;
  * - the branded sign-in screen in a plain browser; 320px / 390px / desktop / dark layouts.
  *
@@ -70,8 +70,10 @@ test.describe.serial('profile, language and phone', () => {
 
     await page.goto('/ru/profile');
     await expect(page.getByTestId('profile-name')).toHaveText('Munira Profil');
+    await page.getByTestId('profile-language-row').click();
+    await expect(page).toHaveURL(/\/ru\/profile\/language$/);
     await page.getByRole('radio', { name: 'O‘zbekcha' }).click();
-    await expect(page).toHaveURL(/\/uz\/profile$/);
+    await expect(page).toHaveURL(/\/uz\/profile\/language$/);
     await expect(page.getByRole('radio', { name: 'O‘zbekcha' })).toHaveAttribute(
       'aria-checked',
       'true',
@@ -93,23 +95,29 @@ test.describe.serial('profile, language and phone', () => {
       return true;
     });
 
-    await page.goto('/uz/profile');
-    const card = page.getByTestId('phone-card-profile');
-    await expect(card).toContainText('Telefon raqami');
-    const share = card.getByRole('button', { name: 'Raqamni Telegram orqali ulashish' });
+    await page.goto('/uz/profile/personal');
+    await expect(page.getByTestId('phone-value')).toHaveText('Raqam qo‘shilmagan');
+    await page.getByTestId('phone-change').click();
+    const sheet = page.getByTestId('phone-sheet');
+    const share = sheet.getByTestId('phone-share');
+    await expect(share).toHaveText(/Telegram raqamimni ulashish/);
 
     await share.click();
-    await expect(card).toContainText('Raqam ulashilmadi');
+    await expect(sheet).toContainText('Raqam ulashilmadi');
 
     declined = false;
     await share.click();
-    await expect(card).toContainText('Raqamingiz tasdiqlandi.', { timeout: 15_000 });
+    // The sheet closes by itself once the bot has stored the number.
+    await expect(page.getByTestId('personal-notice')).toHaveText('Saqlandi', { timeout: 15_000 });
+    await expect(sheet).toHaveCount(0);
     const digits = demoPhoneFor(PHONE_USER).slice(-4);
-    await expect(card).toContainText(`${digits.slice(0, 2)} ${digits.slice(2)}`);
-    await expect(card).toContainText('Tasdiqlangan');
+    await expect(page.getByTestId('phone-value')).toContainText(
+      `${digits.slice(0, 2)} ${digits.slice(2)}`,
+    );
+    await expect(page.getByTestId('phone-state')).toHaveText('Tasdiqlangan');
     // Only the masked hint is ever on the page.
     expect(await page.content()).not.toContain(demoPhoneFor(PHONE_USER));
-    await expect(card.getByRole('button', { name: 'Raqamni yangilash' })).toBeVisible();
+    await expect(page.getByTestId('phone-change')).toHaveText('O‘zgartirish');
   });
 });
 

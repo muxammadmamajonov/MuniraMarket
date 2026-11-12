@@ -1,5 +1,6 @@
 """Import every model so ``Base.metadata`` is complete (Alembic autogenerate relies on it)."""
 
+from app.models.address import UserAddress
 from app.models.audit import AuditLog
 from app.models.cart import Cart, CartItem
 from app.models.catalog import Category, Product
@@ -29,4 +30,5 @@ __all__ = [
     "ServiceRequestNonce",
     "StaffNotificationChat",
     "User",
+    "UserAddress",
 ]

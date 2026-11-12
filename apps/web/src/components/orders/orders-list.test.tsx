@@ -23,11 +23,15 @@ function pageOf(items: ReturnType<typeof orderSummary>[], extra: Record<string, 
   return { items, page: 1, page_size: 10, total: items.length, total_pages: 1, ...extra };
 }
 
-function renderList(page = 1, locale: 'uz' | 'ru' = 'uz') {
+function renderList(
+  page = 1,
+  locale: 'uz' | 'ru' = 'uz',
+  statusGroup: 'all' | 'active' | 'delivering' | 'done' | 'cancelled' = 'all',
+) {
   return render(
     <LocaleProvider locale={locale}>
       <TelegramProvider>
-        <OrdersList page={page} />
+        <OrdersList page={page} statusGroup={statusGroup} />
       </TelegramProvider>
     </LocaleProvider>,
   );
@@ -238,5 +242,45 @@ describe('OrdersList', () => {
         method: 'GET',
       }),
     );
+  });
+
+  it('asks the server for the selected status group', async () => {
+    session.apiFetch.mockResolvedValue(respond(pageOf([orderSummary()])));
+    renderList(1, 'uz', 'delivering');
+    await screen.findAllByTestId('order-card');
+    expect(session.apiFetch).toHaveBeenCalledWith(
+      '/orders?page=1&page_size=10&status_group=delivering',
+      { method: 'GET' },
+    );
+  });
+
+  it('shows up to four product photos and +N for the rest', async () => {
+    const thumb = (n: number) => ({
+      product_id: `p${String(n)}`,
+      name_uz: `Mahsulot ${String(n)}`,
+      name_ru: `Товар ${String(n)}`,
+      image_url: n === 2 ? null : `https://img.example/p${String(n)}.jpg`,
+    });
+    session.apiFetch.mockResolvedValue(
+      respond(pageOf([orderSummary({ item_count: 7, thumbnails: [1, 2, 3, 4].map(thumb) })])),
+    );
+    renderList();
+    const thumbs = await screen.findByTestId('order-thumbnails');
+    expect(thumbs).toHaveAttribute('aria-hidden', 'true');
+    expect(thumbs.querySelectorAll('img')).toHaveLength(3);
+    expect(thumbs).toHaveTextContent('+3');
+  });
+
+  it.each([
+    ['active', 'Faol buyurtmalar yo‘q'],
+    ['delivering', 'Yo‘ldagi buyurtmalar yo‘q'],
+    ['done', 'Yakunlangan buyurtmalar yo‘q'],
+    ['cancelled', 'Bekor qilingan buyurtmalar yo‘q'],
+  ] as const)('each tab has its own empty state (%s)', async (group, title) => {
+    session.apiFetch.mockResolvedValue(respond(pageOf([])));
+    renderList(1, 'uz', group);
+    expect(await screen.findByText(title)).toBeInTheDocument();
+    // Only "all" sends the customer to the catalog.
+    expect(screen.queryByRole('link', { name: 'Katalogga o‘tish' })).toBeNull();
   });
 });

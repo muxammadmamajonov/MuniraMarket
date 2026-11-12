@@ -1,3 +1,4 @@
+import type { OrderStatus } from './enums';
 import type { components } from './generated/openapi';
 
 /**
@@ -20,6 +21,35 @@ export const API_V1_PREFIX = '/api/v1';
  */
 export type UserPublic = Schemas['UserPublic'];
 export type SetLanguageRequest = Schemas['SetLanguageRequest'];
+
+// -- Profile (session required; writes also CSRF) ---------------------------------------------
+
+/**
+ * `PATCH /api/v1/me` body: only the keys sent change; at least one key (an empty object is 422).
+ * `first_name` (1-64) cannot be null; `last_name` (0-64, blank -> null), `birth_date`
+ * (`YYYY-MM-DD`, 1900-01-01..today in Asia/Tashkent) and `phone` are cleared with `null`. `phone`
+ * accepts `+998XXXXXXXXX`, `998XXXXXXXXX` or the 9 national digits (spaces, `-`, `(`, `)`
+ * ignored); a number different from the stored one is saved UNVERIFIED (`phone_verified: false`,
+ * only the bot's shared contact verifies), the same number keeps its verification. Editing the
+ * name stops Telegram sign-ins from overwriting it. Response: `{user: UserPublic}`.
+ */
+export type UpdateProfileRequest = Schemas['UpdateProfileRequest'];
+
+/** One saved delivery address (`/api/v1/me/addresses`). */
+export type SavedAddress = Schemas['SavedAddress'];
+
+/**
+ * `POST /api/v1/me/addresses` and `PUT /api/v1/me/addresses/{id}` (full replacement) body: the
+ * `DeliveryAddress` fields and rules, plus `label` (0-32, blank -> null) and `is_default`
+ * (`true` makes it the default; `false` on the default leaves none; omitted keeps it; the first
+ * address is always the default). At most 10 addresses (`409 address_limit_reached`); another
+ * user's or a missing id is `404 address_not_found`. `DELETE` is 204 and promotes the most
+ * recently updated remaining address when the default is deleted.
+ */
+export type SavedAddressRequest = Schemas['SavedAddressRequest'];
+
+/** `GET /api/v1/me/addresses`: the default first, then the most recently updated. */
+export type SavedAddressList = Schemas['SavedAddressList'];
 
 /**
  * Login response and `GET /auth/session`. `csrf_token` is kept in memory by the client and sent as
@@ -159,7 +189,13 @@ export type OrderStatusChange = Schemas['OrderStatusChange'];
  */
 export type OrderDetail = Schemas['OrderDetail'];
 
+/** One of an order's first (up to 4) lines; `image_url` is the product's CURRENT image or null. */
+export type OrderThumbnail = Schemas['OrderThumbnail'];
+
 export type OrderSummary = Schemas['OrderSummary'];
+
+/** `GET /api/v1/orders?status_group=` (default `all`); `total`/`total_pages` count the group. */
+export type OrderStatusGroup = Schemas['OrderStatusGroup'];
 
 /** `GET /api/v1/orders` and `GET /api/v1/admin/orders`. */
 export type OrderPage = Schemas['OrderPage'];
@@ -258,6 +294,9 @@ export const API_ERROR_CODES = [
   'order_status_conflict',
   'too_many_open_orders',
   'phone_verification_required',
+  // profile: saved addresses
+  'address_not_found',
+  'address_limit_reached',
   // Back office (phase 4).
   'slug_taken',
   'sku_taken',
@@ -289,3 +328,37 @@ export const PRODUCT_SORTS = [
 export type MissingProductSorts = Exclude<ProductSort, (typeof PRODUCT_SORTS)[number]>;
 const assertAllProductSortsListed: [MissingProductSorts] extends [never] ? true : never = true;
 void assertAllProductSortsListed;
+
+export const ORDER_STATUS_GROUPS = [
+  'all',
+  'active',
+  'delivering',
+  'done',
+  'cancelled',
+] as const satisfies readonly OrderStatusGroup[];
+
+/** Compile error here means the API added a status group that `ORDER_STATUS_GROUPS` lacks. */
+export type MissingOrderStatusGroups = Exclude<
+  OrderStatusGroup,
+  (typeof ORDER_STATUS_GROUPS)[number]
+>;
+const assertAllOrderStatusGroupsListed: [MissingOrderStatusGroups] extends [never] ? true : never =
+  true;
+void assertAllOrderStatusGroupsListed;
+
+/** The order statuses each `status_group` lists (as the API filters them). */
+export const ORDER_STATUS_GROUP_STATUSES = {
+  all: [
+    'NEW',
+    'CONFIRMED',
+    'PICKING',
+    'READY_FOR_DELIVERY',
+    'OUT_FOR_DELIVERY',
+    'DELIVERED',
+    'CANCELLED',
+  ],
+  active: ['NEW', 'CONFIRMED', 'PICKING', 'READY_FOR_DELIVERY'],
+  delivering: ['OUT_FOR_DELIVERY'],
+  done: ['DELIVERED'],
+  cancelled: ['CANCELLED'],
+} as const satisfies Record<OrderStatusGroup, readonly OrderStatus[]>;

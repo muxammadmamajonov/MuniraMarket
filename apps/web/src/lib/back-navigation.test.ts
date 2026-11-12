@@ -49,6 +49,10 @@ describe('logicalParent', () => {
     expect(logicalParent('/uz/search')).toBe('/uz/catalog');
     expect(logicalParent('/uz/checkout')).toBe('/uz/cart');
     expect(logicalParent('/uz/orders/abc')).toBe('/uz/orders');
+    expect(logicalParent('/uz/profile/personal')).toBe('/uz/profile');
+    expect(logicalParent('/uz/profile/addresses')).toBe('/uz/profile');
+    expect(logicalParent('/ru/profile/addresses/new')).toBe('/ru/profile/addresses');
+    expect(logicalParent('/ru/profile/addresses/abc/')).toBe('/ru/profile/addresses');
     expect(logicalParent('/uz/orders')).toBe('/uz/profile');
     expect(logicalParent('/ru/help')).toBe('/ru/profile');
     expect(logicalParent('/uz/auth/telegram')).toBe('/uz');
@@ -102,6 +106,12 @@ describe('staticTitleFor', () => {
     expect(staticTitleFor('/uz/orders', uz)).toBe('Buyurtmalar');
     expect(staticTitleFor('/uz/orders/1', uz)).toBe('Buyurtma');
     expect(staticTitleFor('/uz/profile', uz)).toBe('Profil');
+    expect(staticTitleFor('/uz/profile/personal', uz)).toBe('Ma’lumotlar');
+    expect(staticTitleFor('/uz/profile/addresses', uz)).toBe('Manzillarim');
+    expect(staticTitleFor('/uz/profile/addresses/new', uz)).toBe('Yangi manzil');
+    expect(staticTitleFor('/ru/profile/addresses/abc', ru)).toBe('Адрес');
+    expect(staticTitleFor('/ru/profile/language', ru)).toBe('Язык');
+    expect(staticTitleFor('/uz/profile/unknown', uz)).toBeNull();
     expect(staticTitleFor('/uz/search', uz)).toBe('Qidiruv');
     expect(staticTitleFor('/ru/catalog', ru)).toBe('Каталог');
     expect(staticTitleFor('/ru/help', ru)).toBe('Помощь');

@@ -73,3 +73,28 @@ def ensure_transition(
 ) -> None:
     if not can_transition(current, target, cancel_reason=cancel_reason):
         raise InvalidOrderTransitionError(f"Cannot move order from {current} to {target}")
+
+
+class OrderStatusGroup(StrEnum):
+    """Tabs of the customer's order history (``GET /orders?status_group=``)."""
+
+    ALL = "all"
+    ACTIVE = "active"
+    DELIVERING = "delivering"
+    DONE = "done"
+    CANCELLED = "cancelled"
+
+
+# The statuses each group lists; ``ALL`` lists every status.
+ORDER_STATUS_GROUP_STATUSES: dict[OrderStatusGroup, tuple[OrderStatus, ...]] = {
+    OrderStatusGroup.ALL: tuple(OrderStatus),
+    OrderStatusGroup.ACTIVE: (
+        OrderStatus.NEW,
+        OrderStatus.CONFIRMED,
+        OrderStatus.PICKING,
+        OrderStatus.READY_FOR_DELIVERY,
+    ),
+    OrderStatusGroup.DELIVERING: (OrderStatus.OUT_FOR_DELIVERY,),
+    OrderStatusGroup.DONE: (OrderStatus.DELIVERED,),
+    OrderStatusGroup.CANCELLED: (OrderStatus.CANCELLED,),
+}

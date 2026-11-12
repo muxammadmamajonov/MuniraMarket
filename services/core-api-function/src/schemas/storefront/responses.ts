@@ -10,6 +10,7 @@ import {
   type OrderStatus,
 } from '../../domain/orderStatus.ts';
 import type { UserRole } from '../../http/context.ts';
+import type { SavedAddressRecord } from '../../repositories/addresses.ts';
 import type { CartLineRecord, CartRecord } from '../../repositories/cart.ts';
 import type {
   CategoryNodeRecord,
@@ -248,10 +249,36 @@ export function orderPage(record: OrderPageRecord, page: number, pageSize: numbe
       total_uzs: item.total_uzs,
       item_count: item.item_count,
       created_at: item.created_at,
+      thumbnails: item.thumbnails.map((thumbnail) => ({
+        product_id: thumbnail.product_id,
+        name_uz: thumbnail.name_uz,
+        name_ru: thumbnail.name_ru,
+        image_url: thumbnail.image_url,
+      })),
     })),
     page,
     page_size: pageSize,
     total: record.total,
     total_pages: Math.ceil(record.total / pageSize),
+  };
+}
+
+// --- saved addresses -----------------------------------------------------------------------------
+
+export function savedAddress(record: SavedAddressRecord) {
+  return {
+    id: record.id,
+    label: record.label,
+    lat: record.lat,
+    lon: record.lon,
+    street: record.street,
+    house: record.house,
+    apartment: record.apartment,
+    entrance: record.entrance,
+    floor: record.floor,
+    landmark: record.landmark,
+    is_default: record.is_default,
+    created_at: record.created_at,
+    updated_at: record.updated_at,
   };
 }

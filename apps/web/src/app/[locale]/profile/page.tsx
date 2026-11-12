@@ -14,7 +14,7 @@ export default async function ProfilePage({ params }: PageProps<'/[locale]/profi
     <>
       <SiteHeader locale={locale} dict={dict} title={dict.pageTitles.profile} />
       <main className="flex-1">
-        <PageContainer className="flex max-w-xl flex-col gap-4 py-4">
+        <PageContainer className="flex max-w-xl flex-col gap-6 py-4">
           <ProfileView />
         </PageContainer>
       </main>

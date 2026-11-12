@@ -32,7 +32,7 @@ from app.domain.checkout import (
     OrderStatusConflictError,
     PriceChangedError,
 )
-from app.domain.order_status import OrderStatus
+from app.domain.order_status import OrderStatus, OrderStatusGroup
 from app.models.enums import UserRole
 from app.repositories.orders import (
     Actor,
@@ -41,6 +41,7 @@ from app.repositories.orders import (
     OrderPageRecord,
     OrderRecord,
     OrderSummaryRecord,
+    OrderThumbnailRecord,
     QuoteRecord,
 )
 from app.repositories.users import UserRecord
@@ -104,9 +105,20 @@ class FakeOrderRepository:
         return CreatedOrder(order=self.order, replayed=self.replayed)
 
     async def list_for_user(
-        self, user_id: uuid.UUID, *, page: int, page_size: int
+        self,
+        user_id: uuid.UUID,
+        *,
+        page: int,
+        page_size: int,
+        status_group: OrderStatusGroup = OrderStatusGroup.ALL,
     ) -> OrderPageRecord:
-        self._record("list_for_user", user_id=user_id, page=page, page_size=page_size)
+        self._record(
+            "list_for_user",
+            user_id=user_id,
+            page=page,
+            page_size=page_size,
+            status_group=status_group,
+        )
         return self.page
 
     async def get_for_user(self, user_id: uuid.UUID, order_id: uuid.UUID) -> OrderRecord | None:
@@ -597,10 +609,90 @@ async def test_list_orders_paginates(
     body = response.json()
     assert (body["page"], body["page_size"], body["total"], body["total_pages"]) == (2, 20, 41, 3)
     assert body["items"][0]["number"] == "261031-ABCDEF"
-    assert orders.calls == [("list_for_user", {"user_id": user.id, "page": 2, "page_size": 20})]
+    assert body["items"][0]["thumbnails"] == []
+    assert orders.calls == [
+        (
+            "list_for_user",
+            {"user_id": user.id, "page": 2, "page_size": 20, "status_group": OrderStatusGroup.ALL},
+        )
+    ]
 
     assert (await client.get(ORDERS)).status_code == 200
-    assert orders.calls[-1] == ("list_for_user", {"user_id": user.id, "page": 1, "page_size": 20})
+    assert orders.calls[-1] == (
+        "list_for_user",
+        {"user_id": user.id, "page": 1, "page_size": 20, "status_group": OrderStatusGroup.ALL},
+    )
+
+
+@pytest.mark.parametrize("group", ["all", "active", "delivering", "done", "cancelled"])
+async def test_list_orders_filters_by_status_group(
+    client: httpx.AsyncClient, orders: FakeOrderRepository, user: UserRecord, group: str
+) -> None:
+    response = await client.get(ORDERS, params={"status_group": group})
+    assert response.status_code == 200, response.text
+    assert orders.calls == [
+        (
+            "list_for_user",
+            {
+                "user_id": user.id,
+                "page": 1,
+                "page_size": 20,
+                "status_group": OrderStatusGroup(group),
+            },
+        )
+    ]
+
+
+@pytest.mark.parametrize("group", ["ACTIVE", "open", ""])
+async def test_list_orders_refuses_unknown_status_group(
+    client: httpx.AsyncClient, orders: FakeOrderRepository, group: str
+) -> None:
+    body = error_of(
+        await client.get(ORDERS, params={"status_group": group}), 422, "validation_error"
+    )
+    assert body["details"][0]["loc"] == ["query", "status_group"]
+    assert orders.calls == []
+
+
+async def test_list_orders_returns_thumbnails(
+    client: httpx.AsyncClient, orders: FakeOrderRepository
+) -> None:
+    product_id = uuid.uuid4()
+    orders.page = OrderPageRecord(
+        items=(
+            OrderSummaryRecord(
+                id=ORDER_ID,
+                number="261031-ABCDEF",
+                status=OrderStatus.DELIVERED,
+                total_uzs=50_000,
+                item_count=2,
+                created_at=CREATED_AT,
+                thumbnails=(
+                    OrderThumbnailRecord(
+                        product_id=product_id,
+                        name_uz="Non",
+                        name_ru="Хлеб",
+                        image_url="https://img.example.com/non.webp",
+                    ),
+                    OrderThumbnailRecord(
+                        product_id=None, name_uz="Sut", name_ru="Молоко", image_url=None
+                    ),
+                ),
+            ),
+        ),
+        total=1,
+    )
+    response = await client.get(ORDERS)
+    assert response.status_code == 200
+    assert response.json()["items"][0]["thumbnails"] == [
+        {
+            "product_id": str(product_id),
+            "name_uz": "Non",
+            "name_ru": "Хлеб",
+            "image_url": "https://img.example.com/non.webp",
+        },
+        {"product_id": None, "name_uz": "Sut", "name_ru": "Молоко", "image_url": None},
+    ]
 
 
 @pytest.mark.parametrize(

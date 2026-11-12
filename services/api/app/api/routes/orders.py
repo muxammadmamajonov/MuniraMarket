@@ -32,6 +32,7 @@ from app.domain.checkout import (
     PriceChangedError,
     TooManyOpenOrdersError,
 )
+from app.domain.order_status import OrderStatusGroup
 from app.domain.tashkent import utc_now_from
 from app.repositories.orders import NewOrder, OrderRepository, SqlAlchemyOrderRepository
 from app.schemas.checkout import (
@@ -237,9 +238,17 @@ async def list_orders(
     orders: OrderRepositoryDep,
     page: Annotated[int, Query(ge=1, le=MAX_PAGE)] = 1,
     page_size: Annotated[int, Query(ge=1, le=MAX_PAGE_SIZE)] = DEFAULT_PAGE_SIZE,
+    status_group: OrderStatusGroup = OrderStatusGroup.ALL,
 ) -> OrderPage:
-    """The signed-in customer's orders, newest first."""
-    record = await orders.list_for_user(user.id, page=page, page_size=page_size)
+    """The signed-in customer's orders, newest first, optionally one tab of the history.
+
+    ``status_group``: ``active`` (NEW, CONFIRMED, PICKING, READY_FOR_DELIVERY), ``delivering``
+    (OUT_FOR_DELIVERY), ``done`` (DELIVERED), ``cancelled`` (CANCELLED) or ``all``; ``total`` and
+    ``total_pages`` count that group only.
+    """
+    record = await orders.list_for_user(
+        user.id, page=page, page_size=page_size, status_group=status_group
+    )
     return OrderPage.from_record(record, page=page, page_size=page_size)
 
 

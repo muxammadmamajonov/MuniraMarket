@@ -45,9 +45,13 @@ export function isCheckoutPath(pathname: string): boolean {
 export function logicalParent(pathname: string): string {
   const locale = localeFromPathname(pathname);
   if (locale === null) return '/';
-  const [, section, id] = segments(pathname);
+  const [, section, id, sub] = segments(pathname);
   const home = `/${locale}`;
   switch (section) {
+    case 'profile':
+      // /profile/addresses/<id|new> -> the list; every other profile page -> the hub.
+      if (id === 'addresses' && sub !== undefined) return `${home}/profile/addresses`;
+      return `${home}/profile`;
     case 'c':
     case 'p':
     case 'search':
@@ -124,11 +128,29 @@ export function staticTitleFor(pathname: string, dict: Dictionary): string | nul
     case 'orders':
       return id === undefined ? t.orders : t.order;
     case 'profile':
-      return t.profile;
+      return profileTitle(segments(pathname).slice(2), t);
     case 'help':
       return t.help;
     case 'auth':
       return t.signIn;
+    default:
+      return null;
+  }
+}
+
+/** Titles of `/profile` and its sub-pages (`personal`, `addresses[/new|/<id>]`, `language`). */
+function profileTitle(rest: string[], t: Dictionary['pageTitles']): string | null {
+  const [page, id] = rest;
+  switch (page) {
+    case undefined:
+      return t.profile;
+    case 'personal':
+      return t.personal;
+    case 'language':
+      return t.language;
+    case 'addresses':
+      if (id === undefined) return t.addresses;
+      return id === 'new' ? t.newAddress : t.address;
     default:
       return null;
   }

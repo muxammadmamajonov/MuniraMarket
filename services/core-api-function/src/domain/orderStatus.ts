@@ -83,3 +83,18 @@ export function ensureTransition(
 export function allowedTransitionsOf(current: OrderStatus): OrderStatus[] {
   return ORDER_STATUSES.filter((status) => ALLOWED_TRANSITIONS[current].has(status));
 }
+
+/** Tabs of the customer's order history (`GET /orders?status_group=`). */
+export const ORDER_STATUS_GROUPS = ['all', 'active', 'delivering', 'done', 'cancelled'] as const;
+export type OrderStatusGroup = (typeof ORDER_STATUS_GROUPS)[number];
+
+/** The statuses each group lists; `all` lists every status. */
+export const ORDER_STATUS_GROUP_STATUSES: Readonly<
+  Record<OrderStatusGroup, readonly OrderStatus[]>
+> = {
+  all: ORDER_STATUSES,
+  active: ['NEW', 'CONFIRMED', 'PICKING', 'READY_FOR_DELIVERY'],
+  delivering: ['OUT_FOR_DELIVERY'],
+  done: ['DELIVERED'],
+  cancelled: ['CANCELLED'],
+};

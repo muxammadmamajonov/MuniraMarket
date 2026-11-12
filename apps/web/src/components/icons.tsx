@@ -187,3 +187,42 @@ export const TrashIcon = (props: IconProps) => (
     <path d="M4 7h16M10 11v6M14 11v6M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12M9 7V4h6v3" />
   </Icon>
 );
+
+/** Personal details: an ID card. */
+export const IdCardIcon = (props: IconProps) => (
+  <Icon {...props}>
+    <rect x="3" y="5" width="18" height="14" rx="2.5" />
+    <circle cx="9" cy="11" r="2" />
+    <path d="M5.8 16a3.4 3.4 0 0 1 6.4 0M14.5 10h3.5M14.5 13.5h3.5" />
+  </Icon>
+);
+
+export const CalendarIcon = (props: IconProps) => (
+  <Icon {...props}>
+    <rect x="3.5" y="5" width="17" height="15.5" rx="2.5" />
+    <path d="M3.5 10h17M8 3v4M16 3v4" />
+  </Icon>
+);
+
+/** A work address. */
+export const BriefcaseIcon = (props: IconProps) => (
+  <Icon {...props}>
+    <rect x="3" y="7" width="18" height="13" rx="2.5" />
+    <path d="M9 7V5.5A1.5 1.5 0 0 1 10.5 4h3A1.5 1.5 0 0 1 15 5.5V7M3 12.5h18" />
+  </Icon>
+);
+
+/** Sign out: a door with an arrow. */
+export const LogOutIcon = (props: IconProps) => (
+  <Icon {...props}>
+    <path d="M14 4h3.5A2.5 2.5 0 0 1 20 6.5v11a2.5 2.5 0 0 1-2.5 2.5H14" />
+    <path d="M10 8l-4 4 4 4M6 12h10" />
+  </Icon>
+);
+
+/** The default (main) saved address. */
+export const StarIcon = (props: IconProps) => (
+  <Icon {...props}>
+    <path d="m12 3.8 2.5 5.1 5.6.8-4 3.9.9 5.6-5-2.6-5 2.6.9-5.6-4-3.9 5.6-.8z" />
+  </Icon>
+);

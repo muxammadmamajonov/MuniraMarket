@@ -12,6 +12,7 @@ import { ConfigError, parseBotConfig, parseServiceConfig, readConfigRows } from 
  * @property {(params: Record<string, unknown>) => Promise<unknown>} sendMessage
  * @property {(params: Record<string, unknown>) => Promise<unknown>} answerCallbackQuery
  * @property {(params: Record<string, unknown>) => Promise<unknown>} editMessageText
+ * @property {(params: Record<string, unknown>) => Promise<unknown>} deleteMessage
  */
 
 /**

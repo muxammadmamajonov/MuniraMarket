@@ -54,6 +54,7 @@ export function userWithRole(role: UserRole): UserPublic {
     role,
     language_confirmed: true,
     phone_verified: false,
+    birth_date: null,
   };
 }
 
@@ -119,6 +120,7 @@ export function orderSummary(overrides: Partial<OrderSummary> = {}): OrderSummar
     item_count: 3,
     total_uzs: 125000,
     created_at: '2026-10-31T09:05:00Z',
+    thumbnails: [],
     ...overrides,
   };
 }

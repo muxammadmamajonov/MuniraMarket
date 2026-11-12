@@ -2,7 +2,15 @@ import { describe, expect, it } from 'vitest';
 import {
   API_ERROR_CODES,
   API_V1_PREFIX,
+  ORDER_STATUS_GROUPS,
+  ORDER_STATUS_GROUP_STATUSES,
   PRODUCT_SORTS,
+  type OrderStatusGroup,
+  type OrderThumbnail,
+  type SavedAddress,
+  type SavedAddressList,
+  type SavedAddressRequest,
+  type UpdateProfileRequest,
   type Cart,
   type SessionResponse,
   type HealthResponse,
@@ -50,6 +58,7 @@ describe('api contract', () => {
       language_confirmed: false,
       phone_verified: false,
       phone_hint: null,
+      birth_date: null,
     };
     const request: TelegramInitDataAuthRequest = { init_data: 'query_id=x' };
     const response: TelegramInitDataAuthResponse = { user, csrf_token: 'csrf' };
@@ -64,6 +73,49 @@ describe('api contract', () => {
     expect(API_ERROR_CODES).toContain('csrf_failed');
     expect(API_ERROR_CODES).toContain('insufficient_stock');
     expect(new Set(API_ERROR_CODES).size).toBe(API_ERROR_CODES.length);
+  });
+
+  it('profile, address and order list shapes compile as documented', () => {
+    const patch: UpdateProfileRequest = { first_name: 'Aziza', birth_date: null, phone: null };
+    const body: SavedAddressRequest = {
+      lat: 41.311081,
+      lon: 69.240562,
+      street: 'Amir Temur',
+      house: '1',
+      label: 'Uy',
+      is_default: true,
+    };
+    const saved: SavedAddress = {
+      id: '0b9d2c5e-0000-4000-8000-000000000001',
+      label: 'Uy',
+      lat: 41.311081,
+      lon: 69.240562,
+      street: 'Amir Temur',
+      house: '1',
+      apartment: null,
+      entrance: null,
+      floor: null,
+      landmark: null,
+      is_default: true,
+      created_at: '2026-11-13T00:00:00Z',
+      updated_at: '2026-11-13T00:00:00Z',
+    };
+    const list: SavedAddressList = { items: [saved] };
+    const thumbnail: OrderThumbnail = {
+      product_id: null,
+      name_uz: 'Non',
+      name_ru: 'Хлеб',
+      image_url: null,
+    };
+    const group: OrderStatusGroup = 'delivering';
+    expect(patch.first_name).toBe('Aziza');
+    expect(body.is_default).toBe(true);
+    expect(list.items[0]?.is_default).toBe(true);
+    expect(thumbnail.image_url).toBeNull();
+    expect(ORDER_STATUS_GROUP_STATUSES[group]).toEqual(['OUT_FOR_DELIVERY']);
+    expect(ORDER_STATUS_GROUPS).toEqual(['all', 'active', 'delivering', 'done', 'cancelled']);
+    expect(API_ERROR_CODES).toContain('address_not_found');
+    expect(API_ERROR_CODES).toContain('address_limit_reached');
   });
 
   it('lists the product sort keys', () => {
@@ -83,6 +135,7 @@ describe('api contract', () => {
         language_confirmed: false,
         phone_verified: false,
         phone_hint: null,
+        birth_date: null,
       },
       csrf_token: 'x',
     };

@@ -145,6 +145,14 @@ export function orderSummary(overrides: Partial<OrderSummary> = {}): OrderSummar
     total_uzs: 75000,
     item_count: 4,
     created_at: '2026-10-31T21:30:00Z',
+    thumbnails: [
+      {
+        product_id: '7c1e2d3f-4a5b-4c6d-8e9f-0a1b2c3d4e5f',
+        name_uz: 'Demo olma',
+        name_ru: 'Демо яблоко',
+        image_url: null,
+      },
+    ],
     ...overrides,
   };
 }

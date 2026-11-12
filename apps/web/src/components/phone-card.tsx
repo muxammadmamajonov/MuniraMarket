@@ -21,7 +21,9 @@ export interface PhoneCardProps {
 }
 
 /**
- * The account phone. It is never typed: inside the Mini App the customer shares it with
+ * The verified account phone, as checkout asks for it (Profile › Personal details has the full
+ * editor, where a number can also be typed, unverified). Here it is never typed: inside the Mini
+ * App the customer shares it with
  * Telegram's own consent popup (`requestContact`), Telegram sends the contact to the bot, the bot
  * stores it through the Core API, and this card waits for the session to say `phone_verified`.
  * In a browser the same happens in the bot chat (`/start phone`).

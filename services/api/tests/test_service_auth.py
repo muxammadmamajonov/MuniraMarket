@@ -315,6 +315,7 @@ async def test_signed_session_upserts_user(
         "language_confirmed",
         "phone_verified",
         "phone_hint",
+        "birth_date",
     }
     assert users.upserts == [
         TelegramProfile(123456789, "Aziza", "K", "aziza", "ru"),
