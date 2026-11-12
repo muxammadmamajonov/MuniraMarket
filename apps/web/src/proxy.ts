@@ -1,7 +1,7 @@
 import { LOCALE_COOKIE, negotiateLocale } from '@muniramarket/contracts';
 import { NextResponse, type NextRequest } from 'next/server';
 import { buildContentSecurityPolicy, generateNonce } from './lib/csp';
-import { readYandexMapsApiKey } from './lib/maps/config';
+import { readYandexMapsGeocoderApiKey, readYandexMapsJavaScriptApiKey } from './lib/maps/config';
 import { localeFromPathname } from './i18n/switch-locale';
 
 /**
@@ -20,7 +20,8 @@ export function proxy(request: NextRequest) {
     const csp = buildContentSecurityPolicy({
       nonce: generateNonce(),
       isDevelopment: process.env.NODE_ENV === 'development',
-      yandexMaps: readYandexMapsApiKey() !== null,
+      yandexMaps: readYandexMapsJavaScriptApiKey() !== null,
+      yandexGeocoder: readYandexMapsGeocoderApiKey() !== null,
     });
     const requestHeaders = new Headers(request.headers);
     requestHeaders.set('Content-Security-Policy', csp);

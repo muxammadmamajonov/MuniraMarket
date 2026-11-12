@@ -18,24 +18,23 @@ list. It never guesses.
 
 ## Configuration
 
-| Setting               | Where                                      | Notes                                                                                                                                                                   |
-| --------------------- | ------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `YANDEX_MAPS_API_KEY` | runtime env of the web app (Worker secret) | Read by `config.ts`; must be UUID-shaped or the map is disabled. Reaches the browser in the script URL, so it is protected by the referrer restriction, not by secrecy. |
-| Never commit the key  | `.env.example` keeps an empty value        | CI and the E2E specs never use a real key (see below).                                                                                                                  |
+| Setting                          | Where                                      | Notes                                                                                                                                                   |
+| -------------------------------- | ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `YANDEX_MAPS_JAVASCRIPT_API_KEY` | runtime env of the web app (Worker secret) | Loads the map script. It reaches the browser in the script URL, so it is protected by HTTP Referer restriction, not secrecy.                            |
+| `YANDEX_MAPS_GEOCODER_API_KEY`   | runtime env of the web app (Worker secret) | Authorizes `ymaps3.search` for the one confirmed-point reverse-geocoding request. It reaches the browser too, so receives the same Referer restriction. |
+| Never commit either key          | `.env.example` keeps empty values          | CI and the E2E specs never use real keys (see below).                                                                                                   |
 
-Without a valid key, nothing is loaded from Yandex, the CSP does not list Yandex hosts, and the
-map step shows its own "use the list" fallback.
+Without the JavaScript key, nothing is loaded from Yandex, the CSP does not list Yandex hosts, and
+the map step shows its own "use the list" fallback. Without the Geocoder key, the map remains
+available but a customer must pick a district from the list.
 
 ## What the key needs in the Yandex Developer Dashboard
 
-- **Product**: "JavaScript API and HTTP Geocoder" (one key covers the v3 map script).
-- **Search (reverse geocoding)**: the v3 reference says `ymaps3.search` needs an API key for the
-  Search API set with `ymaps3.getDefaultConfig().setApikeys({ search })`. We pass the same
-  `YANDEX_MAPS_API_KEY`. **Unverified**: whether Yandex accepts the JavaScript API key for
-  `search` on every plan. If it does not (HTTP 403 from the search endpoint), the map still works
-  and the delivery check falls back to the list. The fix then is a key with geosearch enabled; it
-  would need its own env var passed through `MapsConfigProvider` (the root layout) and handed to
-  `reverseGeocodeDistrict` instead of the map key. Check this against the dashboard before launch.
+- **Products**: create separate keys for **JavaScript API** and **Geocoder API**. The JavaScript
+  key loads the v3 map; the Geocoder key is set with
+  `ymaps3.getDefaultConfig().setApikeys({ search })` for reverse geocoding.
+- **HTTP Referer restriction**: give both keys the exact production storefront entry
+  `muniramarket.uz` (no scheme, path or trailing slash). The admin hostname does not use Maps.
 - **HTTP Referer restriction**: list every origin that serves the storefront (production domain,
   staging domain, `localhost:3000` only on a development key). The Telegram Mini App loads the
   same origin inside Telegram's WebView, so no extra entry is needed for it.
@@ -52,14 +51,15 @@ map step shows its own "use the list" fallback.
 
 ## CSP
 
-`lib/csp.ts` adds, only when a key is configured (`yandexMaps === true`), using the constants in
-`config.ts`:
+`lib/csp.ts` adds map hosts only when the JavaScript key is configured (`yandexMaps === true`), and
+adds the reverse-geocoding host only when the Geocoder key is also configured (`yandexGeocoder ===
+true`), using the constants in `config.ts`:
 
 - `script-src https://api-maps.yandex.ru` (`YANDEX_MAPS_API_ORIGIN`, for browsers without
   `'strict-dynamic'`);
-- `connect-src https://api-maps.yandex.ru https://*.maps.yandex.net https://search-maps.yandex.ru`
-  (`YANDEX_MAPS_API_ORIGIN`, `YANDEX_MAPS_DATA_ORIGIN`, and `YANDEX_MAPS_SEARCH_ORIGIN`, the
-  geosearch host `ymaps3.search` calls, per the v3 CSP requirements);
+- `connect-src https://api-maps.yandex.ru https://*.maps.yandex.net`, plus
+  `https://search-maps.yandex.ru` only with the Geocoder key (`YANDEX_MAPS_API_ORIGIN`,
+  `YANDEX_MAPS_DATA_ORIGIN`, and `YANDEX_MAPS_SEARCH_ORIGIN`);
 - `worker-src 'self' blob:` (vector tile workers); images are covered by `img-src https:`.
 
 Without a key none of these hosts appear (`csp.test.ts` checks both cases). If a real-key test

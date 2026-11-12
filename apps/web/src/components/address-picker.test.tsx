@@ -12,18 +12,21 @@ import { AddressPicker, TASHKENT_CENTER } from './address-picker';
 
 // Placeholder shape only; jsdom never fetches the script and the SDK is a fake.
 const KEY = '00000000-0000-4000-8000-000000000000';
+const GEOCODER_KEY = '11111111-1111-4111-8111-111111111111';
 
 // Served: yunusobod, mirobod (demo central zone), chilonzor (demo outer zone, free delivery).
 const ZONES: DeliveryZone[] = [zone(), farZone()];
 
 function renderPicker({
   apiKey = KEY,
+  geocoderApiKey = apiKey,
   locale = 'uz',
   onClose = vi.fn(),
   onChoose = vi.fn(),
   zones = ZONES,
 }: {
   apiKey?: string | null;
+  geocoderApiKey?: string | null;
   locale?: 'uz' | 'ru';
   onClose?: () => void;
   onChoose?: (code: string) => void;
@@ -32,7 +35,7 @@ function renderPicker({
   const view = render(
     <LocaleProvider locale={locale}>
       <TelegramProvider>
-        <MapsConfigProvider apiKey={apiKey}>
+        <MapsConfigProvider apiKey={apiKey} geocoderApiKey={geocoderApiKey}>
           <button>trigger</button>
           <AddressPicker open onClose={onClose} zones={zones} onChoose={onChoose} />
         </MapsConfigProvider>
@@ -148,6 +151,13 @@ describe('AddressPicker: the map and the centre pin', () => {
 });
 
 describe('AddressPicker: delivery result after "Deliver here"', () => {
+  it('uses the dedicated Geocoder key for a confirmed point', async () => {
+    fake.search.mockResolvedValue([toponym('Yunusobod tumani', 'Toshkent, O‘zbekiston')]);
+    await ready({ geocoderApiKey: GEOCODER_KEY });
+    await confirmPoint();
+    expect(fake.setApikeys).toHaveBeenCalledWith({ search: GEOCODER_KEY });
+  });
+
   it('served: real zone rules, a demo hint, and choosing saves only the district', async () => {
     fake.search.mockResolvedValue([
       toponym('Bunyodkor ko‘chasi, 15', 'Toshkent, O‘zbekiston'),

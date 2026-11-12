@@ -39,8 +39,9 @@ operator's records and the deploy environment, never into this repository.
       `CORE_API_FUNCTION_SECRET`, `SERVICE_AUTH_KEYS` (with a `scheduler:<≥32 bytes>` entry),
       `TELEGRAM_BOT_TOKEN`, `TELEGRAM_OIDC_CLIENT_SECRET` (infra/cloudflare/README.md). There is
       no `REDIS_URL`, no hand-set `DATABASE_URL` and no second (admin) bot token.
-- [ ] `YANDEX_MAPS_API_KEY` is a `muniramarket-web` Worker secret only and is restricted in Yandex
-      to `muniramarket.uz`; the admin Worker has no secrets.
+- [ ] `YANDEX_MAPS_JAVASCRIPT_API_KEY` and `YANDEX_MAPS_GEOCODER_API_KEY` are `muniramarket-web`
+      Worker secrets only, each restricted in Yandex to `muniramarket.uz`; the admin Worker has no
+      secrets.
 - [ ] `node infra/cloudflare/scripts/validate-deploy-env.mts --mode production` passes;
       `neon config plan` shows only `coreapi`; `APP_RELEASE` names the commit; the Function secret
       `MM_APP_DATABASE_URL` (pooled endpoint, `mm_app`, its own password, `sslmode=require`) is set

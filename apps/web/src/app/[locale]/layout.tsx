@@ -11,7 +11,7 @@ import { TelegramChrome } from '@/components/telegram-chrome';
 import { getDictionary } from '@/i18n';
 import { LocaleProvider } from '@/i18n/context';
 import { CartProvider } from '@/lib/cart';
-import { readYandexMapsApiKey } from '@/lib/maps/config';
+import { readYandexMapsGeocoderApiKey, readYandexMapsJavaScriptApiKey } from '@/lib/maps/config';
 import { MapsConfigProvider } from '@/lib/maps/use-yandex-maps';
 import { SessionProvider } from '@/lib/session';
 import { TELEGRAM_WEB_APP_SCRIPT_URL, TelegramProvider } from '@/lib/telegram';
@@ -67,7 +67,8 @@ export default async function RootLayout({ children, params }: LayoutProps<'/[lo
   const dict = getDictionary(locale);
   // Read per request like the other runtime settings; `null` (unset or malformed) keeps the map
   // picker in its custom "map unavailable" state and nothing is ever loaded from Yandex.
-  const mapsApiKey = readYandexMapsApiKey();
+  const mapsApiKey = readYandexMapsJavaScriptApiKey();
+  const geocoderApiKey = readYandexMapsGeocoderApiKey();
 
   return (
     <html lang={locale}>
@@ -87,7 +88,7 @@ export default async function RootLayout({ children, params }: LayoutProps<'/[lo
                 <TelegramChrome />
                 <LocaleSync />
                 <CartProvider>
-                  <MapsConfigProvider apiKey={mapsApiKey}>
+                  <MapsConfigProvider apiKey={mapsApiKey} geocoderApiKey={geocoderApiKey}>
                     {/* Bottom padding: the home indicator / Telegram's bottom inset, plus the mobile
                       tab bar while it is shown (`--mm-nav-h`, see globals.css). */}
                     <div className="flex min-h-dvh flex-col pb-[calc(var(--mm-inset-bottom)+var(--mm-nav-h))]">
