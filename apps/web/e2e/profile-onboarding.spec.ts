@@ -120,13 +120,13 @@ test('fullscreen is requested once when the Mini App opens on phones', async ({ 
   await expect(page.getByRole('banner')).toBeVisible();
   await expect.poll(() => fullscreenRequests(page)).toBe(1);
   await expect(page.locator('html')).toHaveAttribute('data-tg-fullscreen', '');
-  // The logo sits below Telegram's controls, centred in the content safe area.
+  // Telegram owns its native Close / title / menu row. The web wordmark is deliberately hidden
+  // in fullscreen instead of rendering a second header below those controls.
   const header = page.getByRole('banner');
-  const box = await header.getByRole('link').first().boundingBox();
-  const width = page.viewportSize()?.width ?? 0;
-  expect(box).not.toBeNull();
-  expect(box!.y).toBeGreaterThanOrEqual(46 + 47 - 1);
-  expect(Math.abs(box!.x + box!.width / 2 - width / 2)).toBeLessThan(24);
+  await expect(header.getByRole('link')).toHaveCount(0);
+  await expect
+    .poll(() => header.evaluate((element) => getComputedStyle(element).paddingTop))
+    .toBe('47px');
 
   await tap(page);
   expect(await fullscreenRequests(page)).toBe(1);

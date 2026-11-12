@@ -7,6 +7,7 @@ import { localeFromPathname } from '@/i18n/switch-locale';
 import {
   armFullscreenOnFirstGesture,
   disableVerticalSwipes,
+  isMobileTelegram,
   requestFullscreenOnce,
   useBackButton,
   useTelegram,
@@ -63,6 +64,7 @@ export function TelegramChrome() {
 
   useEffect(() => {
     disableVerticalSwipes(webApp);
+    if (!isMobileTelegram(webApp)) return;
     // Request on launch: pressing the bot's Open App / menu button was the user gesture. This
     // avoids the initial compact sheet seen on iOS. A client that rejects it still gets one
     // first-touch retry for compatibility with older Telegram builds.
