@@ -216,8 +216,9 @@ describe('OrdersList', () => {
     expect(total.className).toContain('shrink-0');
     expect(card.innerHTML).not.toContain('truncate');
     expect(card).toHaveTextContent('4950 товаров');
-    // Press feedback is :active-based (touch has no hover) and the card is a 44px+ target.
-    expect(card.className).toContain('active:scale-[0.97]');
+    // Press feedback is :active-based (touch has no hover): a row in a grouped list highlights
+    // instead of shrinking. The row is a 44px+ target.
+    expect(card.className).toContain('active:bg-surface-muted');
     expect(card.className).toContain('min-h-11');
   });
 

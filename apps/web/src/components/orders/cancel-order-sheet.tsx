@@ -136,7 +136,7 @@ export function CancelOrderSheet({
                   setReason(clampChars(text, REASON_MAX));
                   setTouched(true);
                 }}
-                className={`min-h-11 rounded-full border border-border bg-surface px-4 text-left text-sm font-medium hover:bg-surface-muted disabled:opacity-50 ${PRESS} ${FOCUS_RING}`}
+                className={`min-h-11 rounded-full bg-surface-muted px-4 text-left text-sm font-medium hover:bg-surface-muted disabled:opacity-50 ${PRESS} ${FOCUS_RING}`}
               >
                 {text}
               </button>
