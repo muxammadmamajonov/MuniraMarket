@@ -58,6 +58,7 @@ describe('id_token verification', () => {
     expect(verify(signer.token(claims({ given_name: ' ', name: 'Full Name' }))).firstName).toBe(
       'Full Name',
     );
+    expect(verify(signer.token(claims({ id: '4242' }))).telegramUserId).toBe(4242);
   });
 
   it.each([
@@ -68,7 +69,9 @@ describe('id_token verification', () => {
     [{ iat: NOW + 61 }, 'iat_in_future'],
     [{ nonce: 'other' }, 'nonce_mismatch'],
     [{ id: 0 }, 'claim_id_invalid'],
-    [{ id: '42' }, 'claim_id_invalid'],
+    [{ id: '004242' }, 'claim_id_invalid'],
+    [{ id: 'not-a-telegram-id' }, 'claim_id_invalid'],
+    [{ id: '9007199254740992' }, 'claim_id_invalid'],
     [{ given_name: undefined, name: undefined }, 'claim_name_missing'],
   ])('checks claims %o', (override, expected) => {
     expect(reason(() => verify(signer.token(claims(override))))).toBe(expected);
