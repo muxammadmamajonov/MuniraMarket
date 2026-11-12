@@ -213,10 +213,8 @@ describe('OrderDetailView: content', () => {
     routes[`GET /orders/${ID}`] = () => apiError('order_not_found', 404);
     renderDetail();
     expect(await screen.findByText('Buyurtma topilmadi')).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Barcha buyurtmalar' })).toHaveAttribute(
-      'href',
-      '/uz/orders',
-    );
+    // No in-page back link: Telegram's BackButton (or the browser's) leads back to the list.
+    expect(screen.queryByRole('link')).toBeNull();
     expect(screen.queryByTestId('order-number')).toBeNull();
   });
 

@@ -2,7 +2,6 @@
 
 import type { OrderDetail, OrderLine, OrderStatus } from '@muniramarket/contracts';
 import { Button, EmptyState, ErrorState, Skeleton, formatUZS } from '@muniramarket/ui';
-import Link from 'next/link';
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { useI18n } from '@/i18n/context';
 import { formatDateTime } from '@/i18n/date';
@@ -13,14 +12,7 @@ import { useSession } from '@/lib/session';
 import { CheckIcon } from '../icons';
 import { SignInPrompt } from '../sign-in-prompt';
 import { StatusBadge } from '../status-badge';
-import {
-  CARD,
-  LINK_BUTTON_PRIMARY,
-  LINK_BUTTON_SECONDARY,
-  PAGE_TITLE,
-  ROWS,
-  SECTION_TITLE,
-} from '../ui-classes';
+import { CARD, PAGE_TITLE, ROWS, SECTION_TITLE } from '../ui-classes';
 import { CancelOrderSheet } from './cancel-order-sheet';
 
 type Load =
@@ -262,11 +254,6 @@ export function OrderDetailView({ id, placed, found = false }: OrderDetailViewPr
       <EmptyState
         title={dict.orders.detail.notFoundTitle}
         description={dict.orders.detail.notFoundMessage}
-        action={
-          <Link href={`/${locale}/orders`} className={LINK_BUTTON_PRIMARY}>
-            {dict.orders.detail.back}
-          </Link>
-        }
       />
     );
   }
@@ -313,9 +300,10 @@ export function OrderDetailView({ id, placed, found = false }: OrderDetailViewPr
 
       <header className="flex flex-col gap-2">
         <div className="flex items-start justify-between gap-3">
-          <h1 data-user-text data-testid="order-number" className={`min-w-0 ${PAGE_TITLE}`}>
+          {/* h2: the header holds the page's h1 ("Order"); this is the order's own name. */}
+          <h2 data-user-text data-testid="order-number" className={`min-w-0 ${PAGE_TITLE}`}>
             {formatMessage(dict.orders.orderNumber, { number: order.number })}
-          </h1>
+          </h2>
           <StatusBadge
             status={order.status}
             label={dict.orders.status[order.status]}
@@ -400,22 +388,17 @@ export function OrderDetailView({ id, placed, found = false }: OrderDetailViewPr
         </div>
       </div>
 
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <Link href={`/${locale}/orders`} className={LINK_BUTTON_SECONDARY}>
-          {d.back}
-        </Link>
-        {order.can_cancel ? (
-          <Button
-            variant="secondary"
-            size="lg"
-            onClick={() => setSheetOpen(true)}
-            data-testid="cancel-order"
-            className="min-h-12 rounded-2xl border-transparent bg-surface text-danger"
-          >
-            {dict.orders.cancel.button}
-          </Button>
-        ) : null}
-      </div>
+      {order.can_cancel ? (
+        <Button
+          variant="secondary"
+          size="lg"
+          onClick={() => setSheetOpen(true)}
+          data-testid="cancel-order"
+          className="min-h-12 rounded-2xl border-transparent bg-surface text-danger sm:self-end"
+        >
+          {dict.orders.cancel.button}
+        </Button>
+      ) : null}
 
       <CancelOrderSheet
         open={sheetOpen}

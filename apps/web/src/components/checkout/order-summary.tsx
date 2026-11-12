@@ -2,12 +2,11 @@
 
 import type { Cart, CartLine, CheckoutQuote } from '@muniramarket/contracts';
 import { formatUZS } from '@muniramarket/ui';
-import Link from 'next/link';
 import { useI18n } from '@/i18n/context';
 import { formatMessage, formatPlural } from '@/i18n/format';
 import { localizedName } from '@/lib/catalog';
 import type { QuoteState } from '@/lib/checkout/use-checkout';
-import { CARD, ERROR_TEXT, LINK_BUTTON_SECONDARY, SECTION_TITLE } from '../ui-classes';
+import { CARD, ERROR_TEXT, SECTION_TITLE } from '../ui-classes';
 import { RetryButton } from './retry-button';
 
 export interface OrderSummaryProps {
@@ -129,14 +128,9 @@ export function OrderSummary({
           <p className="text-sm text-muted-foreground">{t.calculating}</p>
         ) : null}
         {issues.includes('cart_has_issues') ? (
-          <div className="flex flex-col items-start gap-2">
-            <p role="alert" className={ERROR_TEXT} data-testid="cart-issues">
-              {t.cartIssues}
-            </p>
-            <Link href={`/${locale}/cart`} className={LINK_BUTTON_SECONDARY}>
-              {dict.checkout.backToCart}
-            </Link>
-          </div>
+          <p role="alert" className={ERROR_TEXT} data-testid="cart-issues">
+            {t.cartIssues}
+          </p>
         ) : null}
         {quote.kind === 'failed' ? (
           // `data-field="quote"`: where a refused submit moves focus when the cart could not be
