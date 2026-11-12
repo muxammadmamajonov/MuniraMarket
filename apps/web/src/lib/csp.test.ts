@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { buildContentSecurityPolicy, generateNonce } from './csp';
-import { YANDEX_MAPS_SEARCH_ORIGIN } from './maps/config';
+import { YANDEX_MAPS_SEARCH_ORIGIN, YANDEX_MAPS_STATIC_ORIGIN } from './maps/config';
 
 function directive(policy: string, name: string): string[] {
   const part = policy.split('; ').find((entry) => entry.startsWith(`${name} `));
@@ -86,6 +86,7 @@ describe('buildContentSecurityPolicy', () => {
   it('with only a Maps key, allows only the official map hosts', () => {
     const withMaps = buildContentSecurityPolicy({ nonce, yandexMaps: true });
     expect(directive(withMaps, 'script-src')).toContain('https://api-maps.yandex.ru');
+    expect(directive(withMaps, 'style-src')).toContain(YANDEX_MAPS_STATIC_ORIGIN);
     expect(directive(withMaps, 'connect-src')).toEqual([
       "'self'",
       'https://api-maps.yandex.ru',
@@ -93,6 +94,7 @@ describe('buildContentSecurityPolicy', () => {
     ]);
     expect(directive(withMaps, 'connect-src')).not.toContain(YANDEX_MAPS_SEARCH_ORIGIN);
     expect(YANDEX_MAPS_SEARCH_ORIGIN).toBe('https://search-maps.yandex.ru');
+    expect(YANDEX_MAPS_STATIC_ORIGIN).toBe('https://yastatic.net');
     expect(directive(withMaps, 'worker-src')).toEqual(["'self'", 'blob:']);
     expect(directive(withMaps, 'frame-src')).toEqual(["'none'"]);
     expect(directive(withMaps, 'script-src')).not.toContain("'unsafe-inline'");
