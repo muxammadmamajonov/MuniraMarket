@@ -983,6 +983,11 @@ describe('CheckoutView in the Telegram Mini App', () => {
     const { webApp, state } = trackedWebApp();
     let release: (response: Response) => void = () => undefined;
     routes['POST /orders'] = () => new Promise<Response>((resolve) => (release = resolve));
+    // The quote is requested as soon as the cart loads; hold it so the label before the total
+    // is known can be checked without racing the response.
+    let releaseQuote: (response: Response) => void = () => undefined;
+    routes['POST /checkout/quote'] = () =>
+      new Promise<Response>((resolve) => (releaseQuote = resolve));
     renderCheckout();
     await loaded();
 
@@ -991,6 +996,13 @@ describe('CheckoutView in the Telegram Mini App', () => {
     expect(state.text).toBe('Buyurtma berish');
     expect(state.disabled).toBe(true);
     expect(screen.getByTestId('fix-fields')).toBeInTheDocument();
+
+    // With the quote in, the label carries the total; still disabled until the form is valid.
+    await act(async () => {
+      releaseQuote(respond(quote()));
+    });
+    await waitFor(() => expect(state.text).toBe(`Buyurtma berish — 60${NB}000${NB}so‘m`));
+    expect(state.disabled).toBe(true);
 
     await fillValid();
     await waitFor(() => expect(state.disabled).toBe(false));
