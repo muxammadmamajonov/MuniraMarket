@@ -1,6 +1,6 @@
 /**
  * Order creation, idempotency, concurrency, customer reads and cancellation over HTTP against the
- * Alembic schema (port of test_orders_integration.py and test_slot_reservation_integration.py).
+ * Alembic schema (port of test_orders_integration.py).
  */
 import { beforeEach, describe, expect, it } from 'vitest';
 import type { Database } from '../../src/db.ts';
@@ -13,11 +13,10 @@ import {
 } from '../helpers/harness.ts';
 import {
   DEMO_PHONE,
+  DEMO_POINT,
   addCategory,
   addProduct,
-  addSlot,
   addToCart,
-  addZone,
   as,
   connectStaffChat,
   customer,
@@ -41,7 +40,6 @@ describe.skipIf(!hasDatabase)('orders', () => {
   const app = createTestApp({ db });
   let me: Customer;
   let category: string;
-  let zone: string;
 
   const count = async (sql: string, params: unknown[] = []) =>
     Number((await db.query<{ n: number }>(sql, params)).rows[0]!.n);
@@ -77,7 +75,6 @@ describe.skipIf(!hasDatabase)('orders', () => {
     await resetDatabase(db);
     me = await customer(db);
     category = await addCategory(db, 'orders-cat');
-    zone = await addZone(db, 'demo-markaziy', ['chilonzor', 'olmazor']);
   });
 
   it('creates an order: stock, snapshots, cart, history and the outbox row', async () => {
@@ -94,12 +91,18 @@ describe.skipIf(!hasDatabase)('orders', () => {
     await addToCart(app, me, tracked, 2);
     await addToCart(app, me, untracked, 3);
     const total = await quotedTotal(app, me);
-    expect(total).toBe(95_000);
+    expect(total).toBe(80_000);
 
     const response = await placeOrder(app, me, total, {
       recipient_phone: '+998 00 123-45-67',
       comment: ' Demo izoh ',
-      address: { district: 'chilonzor', street: " Demo ko'cha ", house: '7', floor: '' },
+      address: {
+        lat: 41.31108149,
+        lon: '69.240562',
+        street: " Demo ko'cha ",
+        house: '7',
+        floor: '',
+      },
     });
     expect(response.status).toBe(201);
     expect(response.headers.get('cache-control')).toBe('no-store');
@@ -112,14 +115,12 @@ describe.skipIf(!hasDatabase)('orders', () => {
       'created_at',
       'updated_at',
       'subtotal_uzs',
-      'delivery_fee_uzs',
       'total_uzs',
       'item_count',
       'payment_method',
       'recipient_name',
       'recipient_phone',
       'address',
-      'delivery_slot',
       'comment',
       'cancel_reason',
       'items',
@@ -130,19 +131,36 @@ describe.skipIf(!hasDatabase)('orders', () => {
     expect(order).toMatchObject({
       status: 'NEW',
       subtotal_uzs: 80_000,
-      delivery_fee_uzs: 15_000,
-      total_uzs: 95_000,
+      total_uzs: 80_000,
       item_count: 5,
       payment_method: 'cash_on_delivery',
       recipient_phone: DEMO_PHONE,
       comment: 'Demo izoh',
       cancel_reason: null,
       can_cancel: true,
-      delivery_slot: null,
+    });
+    expect(order['address']).toEqual({
+      lat: 41.311081,
+      lon: 69.240562,
+      street: "Demo ko'cha",
+      house: '7',
+      apartment: null,
+      entrance: null,
+      floor: null,
+      landmark: null,
+    });
+    expect(Object.keys(order['address'] as Json)).toEqual([
+      'lat',
+      'lon',
+      'street',
+      'house',
+      'apartment',
+      'entrance',
+      'floor',
+      'landmark',
+    ]);
+    expect(order).toMatchObject({
       address: {
-        district: 'chilonzor',
-        district_name_uz: 'Chilonzor',
-        district_name_ru: 'Чиланзарский',
         street: "Demo ko'cha",
         house: '7',
         apartment: null,
@@ -167,11 +185,20 @@ describe.skipIf(!hasDatabase)('orders', () => {
     expect(await stockOf(db, tracked)).toBe(8);
     expect(await stockOf(db, untracked)).toBeNull();
     expect(await count('SELECT count(*)::int8 AS n FROM cart_items')).toBe(0);
-    const stored = await db.query<{ zone: string; hash: string }>(
-      'SELECT delivery_zone_id::text AS zone, idempotency_request_hash AS hash FROM orders WHERE id = $1',
+    const stored = await db.query<{ address: Json; hash: string }>(
+      'SELECT address_snapshot AS address, idempotency_request_hash AS hash FROM orders WHERE id = $1',
       [order.id],
     );
-    expect(stored.rows[0]!.zone).toBe(zone);
+    expect(stored.rows[0]!.address).toEqual({
+      lat: 41.311081,
+      lon: 69.240562,
+      street: "Demo ko'cha",
+      house: '7',
+      apartment: null,
+      entrance: null,
+      floor: null,
+      landmark: null,
+    });
     expect(stored.rows[0]!.hash).toHaveLength(64);
 
     expect(await history(order.id)).toEqual([
@@ -195,7 +222,7 @@ describe.skipIf(!hasDatabase)('orders', () => {
       order_number: order.number,
       status: 'NEW',
       locale: 'uz',
-      total_uzs: 95_000,
+      total_uzs: 80_000,
       chat_id: me.user.telegram_user_id,
     });
     const serialized = JSON.stringify(message!.payload);
@@ -204,7 +231,8 @@ describe.skipIf(!hasDatabase)('orders', () => {
       DEMO_PHONE.slice(4),
       "Demo ko'cha",
       'Demo Mijoz',
-      'chilonzor',
+      '41.311',
+      '69.240',
       'Demo izoh',
     ]) {
       expect(serialized).not.toContain(personal);
@@ -227,12 +255,22 @@ describe.skipIf(!hasDatabase)('orders', () => {
     expect(first.status).toBe(201);
     const created = (await first.json()) as Json;
 
-    // Cosmetic differences hash the same (validated, normalised body).
+    // Cosmetic differences hash the same (validated, normalised body), coordinate digits beyond
+    // the sixth decimal included.
     const replay = await placeOrder(
       app,
       me,
       total,
-      { recipient_phone: '+998 00 123 45 67', recipient_name: ' Demo Mijoz ' },
+      {
+        recipient_phone: '+998 00 123 45 67',
+        recipient_name: ' Demo Mijoz ',
+        address: {
+          lat: DEMO_POINT.lat + 1e-8,
+          lon: String(DEMO_POINT.lon),
+          street: " Demo ko'cha ",
+          house: '12',
+        },
+      },
       key,
     );
     expect(replay.status).toBe(200);
@@ -241,6 +279,17 @@ describe.skipIf(!hasDatabase)('orders', () => {
     expect(await stockOf(db, apple)).toBe(3);
 
     await errorOf(await placeOrder(app, me, total + 1, {}, key), 409, 'idempotency_key_conflict');
+    const moved = {
+      ...DEMO_POINT,
+      lat: DEMO_POINT.lat + 0.001,
+      street: "Demo ko'cha",
+      house: '12',
+    };
+    await errorOf(
+      await placeOrder(app, me, total, { address: moved }, key),
+      409,
+      'idempotency_key_conflict',
+    );
     expect(await count('SELECT count(*)::int8 AS n FROM orders')).toBe(1);
   });
 
@@ -333,14 +382,14 @@ describe.skipIf(!hasDatabase)('orders', () => {
     const total = await quotedTotal(app, me);
     await db.query('UPDATE products SET price_uzs = 35000 WHERE id = $1', [apple]);
     const changed = await errorOf(await placeOrder(app, me, total), 409, 'price_changed');
-    expect(changed['total_uzs']).toBe(85_000);
+    expect(changed['total_uzs']).toBe(70_000);
 
     await db.query('UPDATE products SET stock_quantity = 1 WHERE id = $1', [apple]);
-    const short = await errorOf(await placeOrder(app, me, 85_000), 409, 'insufficient_stock');
+    const short = await errorOf(await placeOrder(app, me, 70_000), 409, 'insufficient_stock');
     expect(short).toMatchObject({ product_id: apple, available_quantity: 1 });
 
     await db.query('UPDATE products SET is_active = false WHERE id = $1', [apple]);
-    const inactive = await errorOf(await placeOrder(app, me, 85_000), 409, 'product_inactive');
+    const inactive = await errorOf(await placeOrder(app, me, 70_000), 409, 'product_inactive');
     expect(inactive['product_id']).toBe(apple);
 
     expect(await count('SELECT count(*)::int8 AS n FROM orders')).toBe(0);
@@ -348,22 +397,79 @@ describe.skipIf(!hasDatabase)('orders', () => {
     expect(await count('SELECT count(*)::int8 AS n FROM cart_items')).toBe(1);
   });
 
-  it('refuses an empty cart, an unserved district, and caps open orders', async () => {
-    await errorOf(await placeOrder(app, me, 15_000), 409, 'cart_empty');
+  it('refuses an empty cart and caps open orders; no zone, minimum or hours', async () => {
+    await errorOf(await placeOrder(app, me, 0), 409, 'cart_empty');
+    const apple = await addProduct(db, category, 'apple', { price: 1_000, stock: null });
+    await addToCart(app, me, apple, 1);
+    // Anywhere on the map, any amount: delivery is a Yandex Go courier on demand.
+    const far = await placeOrder(app, me, 1_000, {
+      address: { lat: -33.8688, lon: 151.2093, street: 'Demo', house: '1' },
+    });
+    expect(far.status, await far.clone().text()).toBe(201);
+    for (let i = 0; i < 4; i += 1) {
+      await addToCart(app, me, apple, 1);
+      await place(app, me);
+    }
+    await addToCart(app, me, apple, 1);
+    await errorOf(await placeOrder(app, me, 1_000), 409, 'too_many_open_orders');
+  });
+
+  it('validates the address: coordinates required and in range, no unknown keys', async () => {
     const apple = await addProduct(db, category, 'apple', { price: 50_000, stock: null });
     await addToCart(app, me, apple, 1);
-    await errorOf(
-      await placeOrder(app, me, 65_000, {
-        address: { district: 'sergeli', street: 'Demo', house: '1' },
-      }),
-      409,
-      'district_not_served',
+    const invalid = async (address: Json, loc: string[]) => {
+      const error = await errorOf(
+        await placeOrder(app, me, 50_000, { address }),
+        422,
+        'validation_error',
+      );
+      expect((error['details'] as { loc: string[] }[]).map((d) => d.loc)).toEqual([loc]);
+    };
+    const base = { street: 'Demo', house: '1' };
+    await invalid({ ...base, lon: DEMO_POINT.lon }, ['body', 'address', 'lat']);
+    await invalid({ ...base, lat: DEMO_POINT.lat }, ['body', 'address', 'lon']);
+    await invalid({ ...base, ...DEMO_POINT, lat: 90.5 }, ['body', 'address', 'lat']);
+    await invalid({ ...base, ...DEMO_POINT, lon: -181 }, ['body', 'address', 'lon']);
+    await invalid({ ...base, ...DEMO_POINT, lat: 'north' }, ['body', 'address', 'lat']);
+    await invalid({ ...base, ...DEMO_POINT, area: 'old-client' }, ['body', 'address', 'area']);
+    expect(await count('SELECT count(*)::int8 AS n FROM orders')).toBe(0);
+  });
+
+  it('reads an order placed before courier delivery (no coordinates, fee kept in the total)', async () => {
+    const { rows } = await db.query<{ id: string }>(
+      `INSERT INTO orders (id, number, user_id, status, subtotal_uzs, total_uzs, payment_method,
+                           recipient_name, recipient_phone, address_snapshot, idempotency_key,
+                           idempotency_request_hash, item_count)
+       VALUES (gen_random_uuid(), '261001-ABCDEF', $1, 'DELIVERED', 60000, 75000,
+               'cash_on_delivery', 'Demo Mijoz', $2, $3::jsonb, 'legacy-key-0000001', $4, 1)
+       RETURNING id::text AS id`,
+      [
+        me.user.id,
+        DEMO_PHONE,
+        JSON.stringify({
+          area: 'old-client',
+          street: "Demo ko'cha",
+          house: '12',
+          apartment: null,
+          entrance: null,
+          floor: '3',
+          landmark: null,
+        }),
+        'a'.repeat(64),
+      ],
     );
-    for (let i = 0; i < 5; i += 1) {
-      await place(app, me);
-      await addToCart(app, me, apple, 1);
-    }
-    await errorOf(await placeOrder(app, me, 65_000), 409, 'too_many_open_orders');
+    const order = (await (await as(app, me).get(`${ORDERS}/${rows[0]!.id}`)).json()) as Json;
+    expect(order).toMatchObject({ subtotal_uzs: 60_000, total_uzs: 75_000 });
+    expect(order['address']).toEqual({
+      lat: null,
+      lon: null,
+      street: "Demo ko'cha",
+      house: '12',
+      apartment: null,
+      entrance: null,
+      floor: '3',
+      landmark: null,
+    });
   });
 
   it('cancels while NEW or CONFIRMED: restocks, writes history, outbox and staff alert', async () => {
@@ -373,14 +479,16 @@ describe.skipIf(!hasDatabase)('orders', () => {
     const order = await place(app, me);
     expect(await stockOf(db, apple)).toBe(3);
     const staffNew = (await outbox(order.id)).find((m) => m.event_type === 'order.staff_alert');
+    // The drop-off point travels only with the NEW alert (for the Yandex Go courier button).
     expect(staffNew?.payload).toEqual({
       order_id: order.id,
       order_number: order['number'],
       status: 'NEW',
       previous_status: null,
-      total_uzs: 75_000,
+      total_uzs: 60_000,
       chat_id: -100_500,
       cancelled_by_customer: false,
+      destination: DEMO_POINT,
     });
 
     await errorOf(
@@ -421,6 +529,7 @@ describe.skipIf(!hasDatabase)('orders', () => {
       chat_id: -100_500,
     });
     expect(messages[3]!.payload['cancel_reason']).toBeUndefined();
+    expect(messages[3]!.payload['destination']).toBeUndefined();
 
     const audit = await db.query<{ details: Json; actor_role: string }>(
       "SELECT details, actor_role::text AS actor_role FROM audit_log WHERE action = 'order.status_change'",
@@ -507,75 +616,5 @@ describe.skipIf(!hasDatabase)('orders', () => {
     };
     expect(second.items.map((o) => o['id'])).toEqual([ids[0]]);
     await errorOf(await as(app, me).get(`${ORDERS}?page_size=51`), 422, 'validation_error');
-  });
-
-  describe('delivery slots', () => {
-    it('requires a slot, books it with a snapshot, and replays do not book again', async () => {
-      const slot = await addSlot(db, zone, {
-        daysAhead: 1,
-        startsAt: '10:00',
-        endsAt: '12:00',
-        capacity: 2,
-      });
-      const apple = await addProduct(db, category, 'apple', { price: 60_000, stock: null });
-      await addToCart(app, me, apple, 1);
-      const total = await quotedTotal(app, me);
-      await errorOf(await placeOrder(app, me, total), 409, 'slot_required');
-      await errorOf(
-        await placeOrder(app, me, total, { delivery_slot_id: crypto.randomUUID() }),
-        409,
-        'slot_unavailable',
-      );
-      const key = newKey();
-      const created = await placeOrder(
-        app,
-        me,
-        total,
-        { delivery_slot_id: slot.toUpperCase() },
-        key,
-      );
-      expect(created.status).toBe(201);
-      const body = (await created.json()) as Json;
-      expect(body['delivery_slot']).toEqual({
-        date: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
-        starts_at: '10:00',
-        ends_at: '12:00',
-      });
-      const replay = await placeOrder(app, me, total, { delivery_slot_id: slot }, key);
-      expect(replay.status).toBe(200);
-      const reserved = async () =>
-        (
-          await db.query<{ n: number }>(
-            'SELECT reserved_count AS n FROM delivery_slots WHERE id = $1',
-            [slot],
-          )
-        ).rows[0]!.n;
-      expect(await reserved()).toBe(1);
-
-      // Cancelling gives the place back exactly once.
-      await as(app, me).post(`${ORDERS}/${body['id'] as string}/cancel`, {
-        reason: "Fikrim o'zgardi",
-      });
-      expect(await reserved()).toBe(0);
-    });
-
-    it('refuses a full slot and never overbooks under concurrency', async () => {
-      const slot = await addSlot(db, zone, { daysAhead: 1, capacity: 2 });
-      const apple = await addProduct(db, category, 'apple', { price: 60_000, stock: null });
-      const buyers = await Promise.all(Array.from({ length: 5 }, () => customer(db)));
-      for (const buyer of buyers) await addToCart(app, buyer, apple, 1);
-      const responses = await Promise.all(
-        buyers.map((buyer) => placeOrder(app, buyer, 75_000, { delivery_slot_id: slot })),
-      );
-      expect(responses.filter((r) => r.status === 201)).toHaveLength(2);
-      for (const response of responses.filter((r) => r.status !== 201)) {
-        await errorOf(response, 409, 'slot_full');
-      }
-      const { rows } = await db.query<{ n: number }>(
-        'SELECT reserved_count AS n FROM delivery_slots WHERE id = $1',
-        [slot],
-      );
-      expect(rows[0]!.n).toBe(2);
-    });
   });
 });

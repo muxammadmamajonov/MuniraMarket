@@ -1,23 +1,29 @@
-import type { DistrictCode } from '@muniramarket/contracts';
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { LocaleProvider } from '@/i18n/context';
+import type { Address } from '@/lib/address/address';
+import { ADDRESS_STORAGE_ITEM, resetDeliveryAddressMemory } from '@/lib/address/storage';
 import { ApiRequestError } from '@/lib/api/errors';
 import {
   WORST,
+  address,
   apiError,
   cart,
-  farZone,
   line,
   order,
   product,
   quote,
   respond,
-  slotOption,
-  slotQuote,
-  zone,
 } from '@/lib/checkout/test-fixtures';
 import { isValidIdempotencyKey } from '@/lib/checkout/idempotency';
+import {
+  autoloadYandexScript,
+  houseResult,
+  makeYMaps,
+  mockGeocoderFetch,
+} from '@/lib/maps/test-helpers';
+import { MapsConfigProvider } from '@/lib/maps/use-yandex-maps';
+import { resetYandexMapsLoader } from '@/lib/maps/yandex-loader';
 import { TelegramProvider } from '@/lib/telegram';
 import { installWebApp, makeWebApp, uninstallWebApp } from '@/lib/telegram/test-helpers';
 import type { TelegramWebApp } from '@/lib/telegram/types';
@@ -54,22 +60,7 @@ let routes: Record<string, Handler> = {};
 function defaultRoutes(): Record<string, Handler> {
   return {
     'GET /cart': () => respond(cart()),
-    'GET /delivery/zones': () => respond({ items: [zone(), farZone()], timezone: 'Asia/Tashkent' }),
-    'POST /checkout/quote': (init) => {
-      const { district } = JSON.parse(String(init.body)) as { district: DistrictCode };
-      return respond(
-        district === 'chilonzor'
-          ? quote({
-              zone: farZone(),
-              delivery_fee_uzs: 0,
-              total_uzs: 60000,
-              issues: ['below_min_order'],
-              can_place_order: false,
-              free_delivery_remaining_uzs: null,
-            })
-          : quote(),
-      );
-    },
+    'POST /checkout/quote': () => respond(quote()),
     'POST /orders': () => respond(order(), 201),
   };
 }
@@ -131,45 +122,72 @@ function pressMainButton(webApp: TelegramWebApp) {
   handler();
 }
 
-function renderCheckout(locale: 'uz' | 'ru' = 'uz') {
+// Placeholder shape only; jsdom never fetches the script and the SDK is a fake.
+const MAPS_KEY = '00000000-0000-4000-8000-000000000000';
+
+/** `maps`: with a Yandex Maps key (the picker then shows the fake map instead of its fallback). */
+function renderCheckout(locale: 'uz' | 'ru' = 'uz', { maps = false }: { maps?: boolean } = {}) {
+  const key = maps ? MAPS_KEY : null;
   return render(
     <LocaleProvider locale={locale}>
       <TelegramProvider>
-        <CheckoutView />
+        <MapsConfigProvider apiKey={key} geocoderApiKey={key}>
+          <CheckoutView />
+        </MapsConfigProvider>
       </TelegramProvider>
     </LocaleProvider>,
   );
 }
 
-async function loaded() {
-  await screen.findByLabelText('Tuman');
+/** The address the customer saved earlier on this device (the home card or a past checkout). */
+const SAVED: Address = address({ apartment: '' });
+
+function saveAddress(value: Address | null) {
+  if (value === null) window.localStorage.removeItem(ADDRESS_STORAGE_ITEM);
+  else window.localStorage.setItem(ADDRESS_STORAGE_ITEM, JSON.stringify(value));
+  resetDeliveryAddressMemory();
 }
+
+async function loaded(name = 'Buyurtmani rasmiylashtirish') {
+  await screen.findByRole('form', { name });
+}
+
+/** Waits until the cart has been priced (the summary is no longer busy). */
+async function quoted() {
+  await waitFor(() => {
+    expect(calls('POST', '/checkout/quote').length).toBeGreaterThan(0);
+    expect(screen.getByTestId('checkout-total').closest('section')).toHaveAttribute(
+      'aria-busy',
+      'false',
+    );
+  });
+}
+
+const addressButton = () =>
+  document.querySelector<HTMLButtonElement>('button[data-field="address"]') as HTMLButtonElement;
 
 function type(label: string | RegExp, value: string) {
   fireEvent.change(screen.getByLabelText(label), { target: { value } });
 }
 
-/** Opens the custom district select and clicks the option with this value. */
-function chooseDistrict(label: string, code: DistrictCode) {
-  fireEvent.click(screen.getByRole('combobox', { name: label }));
-  const option = screen.getAllByRole('option').find((el) => el.dataset.value === code);
-  if (option === undefined) throw new Error(`no district option ${code}`);
-  fireEvent.click(option);
-}
-
-async function pickDistrict(code: DistrictCode = 'yunusobod') {
-  chooseDistrict('Tuman', code);
-  await waitFor(() => expect(screen.getByTestId('checkout-total').textContent).not.toBe('—'));
-}
-
-/** Fills everything that is required (the name and the +998 prefix are prefilled). */
+/**
+ * Fills everything that is required. The address comes from the device (saved in `beforeEach`),
+ * the name is prefilled from the session; the phone and the payment method are entered here.
+ */
 async function fillValid() {
-  await pickDistrict();
-  type('Ko‘cha', 'Demo ko‘cha');
-  type('Uy', '12');
+  await quoted();
   type('Telefon raqami', '+998 00 123-45-67');
   fireEvent.click(screen.getByRole('radio', { name: 'Yetkazilganda naqd pul' }));
 }
+
+/** The order body as `fillValid` produces it with the saved address. */
+const VALID_BODY = {
+  address: { lat: 41.311081, lon: 69.240562, street: 'Demo ko‘cha', house: '12' },
+  recipient_name: 'Ali Valiyev',
+  recipient_phone: '+998001234567',
+  payment_method: 'cash_on_delivery',
+  expected_total_uzs: 60000,
+};
 
 const submitButton = () => within(screen.getByTestId('submit-bar')).getByRole('button');
 
@@ -179,6 +197,7 @@ beforeEach(() => {
   session.user = { id: USER_ID, first_name: 'Ali', last_name: 'Valiyev', phone_verified: true };
   window.sessionStorage.clear();
   window.localStorage.clear();
+  saveAddress(SAVED);
   session.apiFetch.mockReset();
   session.retry.mockReset();
   routes = defaultRoutes();
@@ -192,6 +211,10 @@ beforeEach(() => {
 afterEach(() => {
   uninstallWebApp();
   vi.restoreAllMocks();
+  resetYandexMapsLoader();
+  delete window.ymaps3;
+  document.body.style.overflow = '';
+  resetDeliveryAddressMemory();
 });
 
 describe('CheckoutView: states', () => {
@@ -211,7 +234,7 @@ describe('CheckoutView: states', () => {
     expect(calls('GET', '/cart')).toHaveLength(0);
   });
 
-  it('shows a skeleton while the cart and zones load', () => {
+  it('shows a skeleton while the cart loads', () => {
     routes['GET /cart'] = () => new Promise<Response>(() => undefined);
     renderCheckout();
     expect(screen.getByRole('status', { name: 'Buyurtma tayyorlanmoqda…' })).toBeInTheDocument();
@@ -223,7 +246,8 @@ describe('CheckoutView: states', () => {
     renderCheckout();
     expect(await screen.findByText('Savatingiz bo‘sh')).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Katalogga o‘tish' })).toHaveAttribute('href', '/uz');
-    expect(screen.queryByLabelText('Tuman')).toBeNull();
+    expect(screen.queryByRole('form')).toBeNull();
+    expect(calls('POST', '/checkout/quote')).toHaveLength(0);
   });
 
   it('offers a retry when loading fails', async () => {
@@ -242,27 +266,31 @@ describe('CheckoutView: states', () => {
     expect(session.retry).toHaveBeenCalled();
   });
 
-  it('is localized (ru) including the zone group labels', async () => {
+  it('is localized (ru)', async () => {
     renderCheckout('ru');
-    await screen.findByRole('combobox', { name: 'Район' });
-    expect(screen.getByText('Адрес доставки')).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('combobox', { name: 'Район' }));
-    const group = screen.getByRole('group', {
-      name: `Демо центральная зона — доставка 15${NB}000${NB}сум`,
-    });
-    expect(within(group).getByRole('option', { name: 'Юнусабад' })).toBeInTheDocument();
+    await loaded('Оформление заказа');
+    expect(screen.getByRole('heading', { name: /Адрес доставки/ })).toBeInTheDocument();
+    expect(screen.getByTestId('checkout-address')).toHaveTextContent('Demo ko‘cha, 12');
+    expect(screen.getByRole('button', { name: 'Изменить' })).toBe(addressButton());
+    expect(screen.getByTestId('checkout-courier-note')).toHaveTextContent(
+      'Заказ привезёт курьер Яндекса. Доставку вы оплачиваете курьеру при получении.',
+    );
   });
 });
 
 describe('CheckoutView: the form', () => {
-  it('preselects nothing, prefills the name and the +998 prefix, and sets mobile input hints', async () => {
+  it('without a saved address: asks to choose one, prefills the name and the +998 prefix', async () => {
+    saveAddress(null);
     renderCheckout();
     await loaded();
 
-    expect(screen.getByRole('combobox', { name: 'Tuman' })).toHaveTextContent('Tumanni tanlang');
-    expect(screen.getByRole('combobox', { name: 'Tuman' }).tagName).toBe('BUTTON');
-    expect(document.querySelector('select')).toBeNull();
-    expect(document.querySelector<HTMLInputElement>('input[name="district"]')?.value).toBe('');
+    expect(screen.queryByTestId('checkout-address')).toBeNull();
+    expect(screen.getByRole('button', { name: 'Manzilni xaritada tanlash' })).toBe(addressButton());
+    expect(addressButton()).toHaveAttribute('aria-haspopup', 'dialog');
+    // No area or time-window pickers and no street inputs: the address is chosen on the map.
+    expect(screen.queryByRole('combobox')).toBeNull();
+    expect(screen.queryByRole('radiogroup', { name: /vaqt/i })).toBeNull();
+    expect(screen.queryByLabelText('Ko‘cha')).toBeNull();
     expect(screen.getByLabelText('Ism')).toHaveValue('Ali Valiyev');
     expect(screen.getByRole('radio', { name: 'Yetkazilganda naqd pul' })).not.toBeChecked();
     expect(screen.getByRole('radio', { name: 'Yetkazilganda karta orqali' })).not.toBeChecked();
@@ -274,95 +302,106 @@ describe('CheckoutView: the form', () => {
     expect(phone).toHaveAttribute('autocomplete', 'tel');
     expect(phone).toHaveAttribute('enterkeyhint', 'next');
     expect(screen.getByLabelText('Ism')).toHaveAttribute('autocomplete', 'name');
-    expect(screen.getByLabelText('Ko‘cha')).toHaveAttribute('autocomplete', 'address-line1');
   });
 
-  it('preselects the district saved on the storefront and prices it right away', async () => {
-    window.localStorage.setItem('mm.delivery-district.v1', 'yunusobod');
+  it('starts from the address saved on this device, on one line with its landmark', async () => {
+    saveAddress(address({ entrance: '2', floor: '5', landmark: 'Metro yonida' }));
     renderCheckout();
     await loaded();
+    const shown = screen.getByTestId('checkout-address');
+    expect(shown).toHaveTextContent('Demo ko‘cha, 12, 34-xonadon, 2-podyezd, 5-qavat');
+    expect(shown).toHaveTextContent('Metro yonida');
+    expect(screen.getByRole('button', { name: 'O‘zgartirish' })).toBe(addressButton());
+    // The coordinates are never shown.
+    expect(document.body.textContent).not.toMatch(/41\.311081|69\.240562/);
+  });
+
+  it('chooses the address on the map, remembers it on this device, and does not re-quote', async () => {
+    saveAddress(null);
+    const fake = makeYMaps();
+    const geocoder = mockGeocoderFetch();
+    geocoder.answer.mockResolvedValue(houseResult('Amir Temur ko‘chasi', '15'));
+    autoloadYandexScript('load', fake.api);
+    renderCheckout('uz', { maps: true });
+    await loaded();
+    await quoted();
+
+    fireEvent.click(addressButton());
+    const picker = await screen.findByTestId('address-picker');
+    await within(picker).findByTestId('map-canvas');
+    await waitFor(() => expect(fake.maps).toHaveLength(1));
+    act(() => {
+      fake.listeners[0]?.onActionStart?.();
+      fake.maps[0]?.update({ location: { center: [69.24056251, 41.31108149], zoom: 16 } });
+      fake.listeners[0]?.onActionEnd?.();
+    });
     await waitFor(() =>
-      expect(screen.getByRole('combobox', { name: 'Tuman' })).toHaveTextContent('Yunusobod'),
+      expect(within(picker).getByRole('textbox', { name: /^Uy/ })).toHaveValue('15'),
     );
-    const quote = session.apiFetch.mock.calls.find(([path]) => path === '/checkout/quote');
-    expect(JSON.parse(String(quote?.[1]?.body))).toEqual({ district: 'yunusobod' });
-  });
+    fireEvent.click(within(picker).getByRole('button', { name: 'Shu yerga yetkazish' }));
 
-  it('ignores a saved district that no active zone serves', async () => {
-    window.localStorage.setItem('mm.delivery-district.v1', 'bektemir');
-    renderCheckout();
-    await loaded();
-    expect(screen.getByRole('combobox', { name: 'Tuman' })).toHaveTextContent('Tumanni tanlang');
-    expect(session.apiFetch.mock.calls.some(([path]) => path === '/checkout/quote')).toBe(false);
-  });
+    expect(screen.getByTestId('checkout-address')).toHaveTextContent('Amir Temur ko‘chasi, 15');
+    expect(JSON.parse(window.localStorage.getItem(ADDRESS_STORAGE_ITEM) ?? 'null')).toMatchObject({
+      lat: 41.311081,
+      lon: 69.240563,
+      street: 'Amir Temur ko‘chasi',
+      house: '15',
+    });
+    // The quote does not depend on the address.
+    expect(calls('POST', '/checkout/quote')).toHaveLength(1);
 
-  it('remembers a district picked at checkout as the storefront district (code only)', async () => {
-    renderCheckout();
-    await loaded();
-    await pickDistrict('mirobod');
-    expect(window.localStorage.getItem('mm.delivery-district.v1')).toBe('mirobod');
-    expect(Object.keys(window.localStorage)).toEqual(['mm.delivery-district.v1']);
-  });
-
-  it('groups deliverable districts by zone with the fee, and lists no other districts', async () => {
-    renderCheckout();
-    await loaded();
-    fireEvent.click(screen.getByRole('combobox', { name: 'Tuman' }));
-    const listbox = screen.getByRole('listbox', { name: 'Tuman' });
-    const groups = within(listbox).getAllByRole('group');
-    expect(groups.map((g) => g.getAttribute('aria-labelledby')).every(Boolean)).toBe(true);
-    expect(
-      groups.map(
-        (g) => document.getElementById(g.getAttribute('aria-labelledby') ?? '')?.textContent,
-      ),
-    ).toEqual([
-      `Demo markaziy zona — yetkazish 15${NB}000${NB}so‘m`,
-      'Demo chekka zona — yetkazish Bepul',
-    ]);
-    const options = screen.getAllByRole('option').map((o) => o.textContent);
-    expect(options).toEqual(['Yunusobod', 'Mirobod', 'Chilonzor']);
+    type('Telefon raqami', '+998 00 123-45-67');
+    fireEvent.click(screen.getByRole('radio', { name: 'Yetkazilganda naqd pul' }));
+    fireEvent.click(submitButton());
+    await waitFor(() => expect(orderPosts()).toHaveLength(1));
+    expect(bodyOf(0).address).toEqual({
+      lat: 41.311081,
+      lon: 69.240563,
+      street: 'Amir Temur ko‘chasi',
+      house: '15',
+    });
+    // Only the Geocoder saw the point before the order; our API only inside the order.
+    expect(calls('POST', '/checkout/quote')[0]?.[1]?.body).toBeUndefined();
   });
 
   it('caps every field at the server limit and wraps long user text', async () => {
     renderCheckout();
     await loaded();
-    expect(screen.getByLabelText('Ko‘cha')).toHaveAttribute('maxlength', '200');
-    expect(screen.getByLabelText('Uy')).toHaveAttribute('maxlength', '32');
-    expect(screen.getByLabelText(/Xonadon/)).toHaveAttribute('maxlength', '16');
-    expect(screen.getByLabelText(/Qavat/)).toHaveAttribute('maxlength', '8');
     expect(screen.getByLabelText('Ism')).toHaveAttribute('maxlength', '100');
     expect(screen.getByLabelText(/Kuryer uchun izoh/)).toHaveAttribute('maxlength', '500');
     // Every control can shrink inside a grid cell (min-w-0) and user text may break anywhere.
-    for (const label of ['Ko‘cha', 'Uy', 'Ism', 'Telefon raqami']) {
+    for (const label of ['Ism', 'Telefon raqami']) {
       const input = screen.getByLabelText(label);
       expect(input.className).toContain('min-w-0');
       expect(input).toHaveAttribute('data-user-text');
     }
   });
 
-  it('keeps worst-case user text intact in the fields', async () => {
+  it('keeps worst-case user text intact in the fields and the address line', async () => {
+    saveAddress(address({ street: WORST.street, landmark: WORST.landmark }));
     renderCheckout();
     await loaded();
-    type('Ko‘cha', WORST.street);
-    type(/Mo‘ljal/, WORST.landmark);
     type('Ism', WORST.recipientName);
     type(/Kuryer uchun izoh/, WORST.comment);
-    expect(screen.getByLabelText('Ko‘cha')).toHaveValue(WORST.street);
     expect(screen.getByLabelText('Ism')).toHaveValue(WORST.recipientName);
     expect(screen.getByText('500/500')).toBeInTheDocument();
+    const shown = screen.getByTestId('checkout-address');
+    const line = within(shown).getByText(new RegExp(`^${WORST.street}`));
+    expect(line.className).toContain('[overflow-wrap:anywhere]');
+    expect(within(shown).getByText(WORST.landmark).className).toContain('[overflow-wrap:anywhere]');
   });
 
-  it('shows validation errors per field after a submit attempt and focuses the first', async () => {
+  it('requires an address: the error sits under the address button, which gets focus', async () => {
+    saveAddress(null);
     renderCheckout();
     await loaded();
     fireEvent.click(submitButton());
 
-    await waitFor(() => expect(screen.getByRole('combobox', { name: 'Tuman' })).toHaveFocus());
+    await waitFor(() => expect(addressButton()).toHaveFocus());
     expect(orderPosts()).toHaveLength(0);
-    expect(screen.getByRole('combobox', { name: 'Tuman' })).toHaveAttribute('aria-invalid', 'true');
-    expect(screen.getByLabelText('Ko‘cha')).toHaveAttribute('aria-invalid', 'true');
-    expect(screen.getAllByText('To‘ldirish shart').length).toBeGreaterThanOrEqual(5);
-    expect(screen.getByLabelText('Ko‘cha')).toHaveAccessibleDescription('To‘ldirish shart');
+    expect(addressButton()).toHaveAccessibleDescription('To‘ldirish shart');
+    expect(screen.getAllByText('To‘ldirish shart').length).toBeGreaterThanOrEqual(3);
+    expect(screen.getByLabelText('Telefon raqami')).toHaveAttribute('aria-invalid', 'true');
     expect(screen.getByRole('group', { name: 'To‘lov usuli' })).toHaveAccessibleDescription(
       /To‘ldirish shart/,
     );
@@ -372,101 +411,68 @@ describe('CheckoutView: the form', () => {
     expect(screen.getByText(/\+998 XX XXX XX XX/)).toBeInTheDocument();
   });
 
+  it('flags a saved address that is no longer complete (no house) and sends nothing', async () => {
+    saveAddress(address({ house: '' }));
+    renderCheckout();
+    await loaded();
+    await fillValid();
+    fireEvent.click(submitButton());
+    await waitFor(() => expect(addressButton()).toHaveFocus());
+    expect(addressButton()).toHaveAccessibleDescription('Maydonni tekshiring');
+    expect(orderPosts()).toHaveLength(0);
+  });
+
   it('reports a malformed value once the field is left, but "required" only after a submit', async () => {
     renderCheckout();
     await loaded();
     // Leaving an empty field must not insert an error row (it could shift the next tap target).
-    fireEvent.blur(screen.getByLabelText('Ko‘cha'));
+    type('Ism', '');
+    fireEvent.blur(screen.getByLabelText('Ism'));
     expect(screen.queryByText('To‘ldirish shart')).toBeNull();
     // A value that is present but wrong is reported straight away.
-    type('Ko‘cha', 'a');
-    fireEvent.blur(screen.getByLabelText('Ko‘cha'));
+    type('Ism', 'a');
+    fireEvent.blur(screen.getByLabelText('Ism'));
     expect(screen.getByText('Kamida 2 ta belgi kiriting')).toBeInTheDocument();
   });
 });
 
 describe('CheckoutView: quote', () => {
-  it('prices the cart for the chosen district and shows the server totals', async () => {
+  it('prices the cart once after loading, with no body, and shows the server total', async () => {
     renderCheckout();
     await loaded();
-    expect(screen.getByTestId('checkout-total').textContent).toBe('—');
-    expect(screen.getByTestId('checkout-delivery')).toHaveTextContent('Tumanni tanlang');
+    await quoted();
+    const requests = calls('POST', '/checkout/quote');
+    expect(requests).toHaveLength(1);
+    expect(requests[0]?.[1]?.body).toBeUndefined();
 
-    await pickDistrict('yunusobod');
-    const request = calls('POST', '/checkout/quote')[0]?.[1];
-    expect(JSON.parse(String(request?.body))).toEqual({ district: 'yunusobod' });
-    expect(screen.getByTestId('checkout-subtotal').textContent).toBe(uzs(60000));
-    expect(screen.getByTestId('checkout-delivery').textContent).toBe(uzs(15000));
-    expect(screen.getByTestId('checkout-total').textContent).toBe(uzs(75000));
-    expect(screen.getByTestId('free-delivery-hint').textContent).toBe(
-      `Bepul yetkazish uchun yana 240${NB}000${NB}so‘m qo‘shing`,
-    );
+    // No delivery fee, subtotal-vs-fee split or free-delivery hint: the total is the goods.
+    expect(screen.getByTestId('checkout-total').textContent).toBe(uzs(60000));
+    expect(screen.queryByTestId('checkout-subtotal')).toBeNull();
+    expect(screen.queryByTestId('checkout-delivery')).toBeNull();
+    expect(screen.queryByTestId('free-delivery-hint')).toBeNull();
     expect(screen.getAllByTestId('summary-line')).toHaveLength(1);
     expect(screen.getByText('4 ta mahsulot')).toBeInTheDocument();
   });
 
-  it('shows "Bepul" when the delivery fee is 0, never "0 so‘m"', async () => {
-    routes['POST /checkout/quote'] = () =>
-      respond(quote({ delivery_fee_uzs: 0, total_uzs: 60000, free_delivery_remaining_uzs: 0 }));
+  it('says the Yandex courier brings the order and is paid on receipt', async () => {
     renderCheckout();
     await loaded();
-    await pickDistrict();
-    expect(screen.getByTestId('checkout-delivery').textContent).toBe('Bepul');
-    expect(screen.getByText('Yetkazib berish bepul')).toBeInTheDocument();
-  });
-
-  it('shows "Бесплатно" in Russian', async () => {
-    routes['POST /checkout/quote'] = () =>
-      respond(quote({ delivery_fee_uzs: 0, total_uzs: 60000, free_delivery_remaining_uzs: null }));
-    renderCheckout('ru');
-    await screen.findByRole('combobox', { name: 'Район' });
-    chooseDistrict('Район', 'yunusobod');
-    await waitFor(() =>
-      expect(screen.getByTestId('checkout-delivery').textContent).toBe('Бесплатно'),
+    expect(screen.getByTestId('checkout-courier-note')).toHaveTextContent(
+      'Buyurtmani Yandex kuryeri olib keladi. Yetkazish narxini qabul qilganingizda kuryerga to‘laysiz.',
     );
+    expect(document.body.textContent).not.toMatch(/bepul|hudud|zona|minimal buyurtma/i);
   });
 
-  it('re-quotes when the district changes and ignores a slow answer for the old one', async () => {
-    let releaseFirst: (response: Response) => void = () => undefined;
-    let n = 0;
-    routes['POST /checkout/quote'] = (init) => {
-      n += 1;
-      if (n === 1) return new Promise<Response>((resolve) => (releaseFirst = resolve));
-      const { district } = JSON.parse(String(init.body)) as { district: string };
-      return respond(
-        quote({
-          zone: farZone(),
-          delivery_fee_uzs: 0,
-          total_uzs: 111000,
-          issues: [],
-          can_place_order: true,
-          subtotal_uzs: 111000,
-          free_delivery_remaining_uzs: null,
-          ...(district === '' ? {} : {}),
-        }),
-      );
-    };
+  it('shows the server total as it is (total equals subtotal)', async () => {
+    routes['POST /checkout/quote'] = () =>
+      respond(quote({ subtotal_uzs: 123000, total_uzs: 123000 }));
     renderCheckout();
     await loaded();
-    chooseDistrict('Tuman', 'yunusobod');
-    chooseDistrict('Tuman', 'chilonzor');
-    await waitFor(() => expect(screen.getByTestId('checkout-total').textContent).toBe(uzs(111000)));
-
-    await act(async () => {
-      releaseFirst(respond(quote({ total_uzs: 75000 })));
-    });
-    expect(screen.getByTestId('checkout-total').textContent).toBe(uzs(111000));
-    expect(calls('POST', '/checkout/quote')).toHaveLength(2);
-  });
-
-  it('reports the minimum order and blocks submitting', async () => {
-    renderCheckout();
-    await loaded();
-    await pickDistrict('chilonzor');
-    expect(screen.getByTestId('below-min').textContent).toContain(
-      `minimal buyurtma: 100${NB}000${NB}so‘m`,
+    await quoted();
+    expect(screen.getByTestId('checkout-total').textContent).toBe(uzs(123000));
+    expect(within(screen.getByTestId('submit-bar')).getByTestId('bar-total').textContent).toBe(
+      uzs(123000),
     );
-    expect(submitButton()).toBeDisabled();
   });
 
   it('flags lines that cannot be bought and links back to the cart', async () => {
@@ -480,47 +486,13 @@ describe('CheckoutView: quote', () => {
       );
     renderCheckout();
     await loaded();
-    await pickDistrict();
+    await quoted();
     expect(screen.getByTestId('cart-issues')).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Savatga qaytish' })).toHaveAttribute(
       'href',
       '/uz/cart',
     );
     expect(submitButton()).toBeDisabled();
-  });
-
-  it('notes that a closed zone still takes the order, with the opening time', async () => {
-    routes['POST /checkout/quote'] = () =>
-      respond(quote({ zone: zone({ is_open_now: false, opens_at: '09:00' }) }));
-    renderCheckout();
-    await loaded();
-    await pickDistrict();
-    expect(screen.getByTestId('zone-closed')).toHaveTextContent(
-      'Buyurtma qabul qilinadi va 09:00 dan boshlab yetkaziladi.',
-    );
-    expect(submitButton()).toBeEnabled();
-  });
-
-  it('shows the zone hours, minimum and free-delivery threshold under the select', async () => {
-    renderCheckout();
-    await loaded();
-    await pickDistrict();
-    const description =
-      screen.getByRole('combobox', { name: 'Tuman' }).getAttribute('aria-describedby') ?? '';
-    const hint = document.getElementById(description.split(' ').pop() ?? '');
-    expect(hint).toHaveTextContent('09:00–21:00');
-    expect(hint?.textContent).toContain(`Minimal buyurtma: 50${NB}000${NB}so‘m`);
-    expect(hint?.textContent).toContain(`300${NB}000${NB}so‘m dan boshlab yetkazish bepul`);
-  });
-
-  it('says so when the district cannot be served and keeps the form usable', async () => {
-    routes['POST /checkout/quote'] = () => apiError('district_not_served', 409);
-    renderCheckout();
-    await loaded();
-    chooseDistrict('Tuman', 'yunusobod');
-    expect(
-      await screen.findByText('Bu tumanga yetkazib berilmaydi. Boshqa tuman tanlang.'),
-    ).toBeInTheDocument();
   });
 });
 
@@ -537,30 +509,23 @@ describe('CheckoutView: placing the order (browser)', () => {
     const init = orderPosts()[0]?.[1];
     expect(init?.method).toBe('POST');
     expect(isValidIdempotencyKey(keyOf(0) ?? '')).toBe(true);
-    expect(bodyOf(0)).toEqual({
-      address: { district: 'yunusobod', street: 'Demo ko‘cha', house: '12' },
-      recipient_name: 'Ali Valiyev',
-      recipient_phone: '+998001234567',
-      payment_method: 'cash_on_delivery',
-      expected_total_uzs: 75000,
-    });
+    // Exactly these keys: a point and the door details, nothing about areas or time windows.
+    expect(bodyOf(0)).toEqual(VALID_BODY);
   });
 
   it('sends optional fields and the comment when they are filled in', async () => {
+    saveAddress(address({ entrance: '2', floor: '5', landmark: ' Metro ' }));
     renderCheckout();
     await loaded();
     await fillValid();
-    type(/Xonadon/, '34');
-    type(/Kirish/, '2');
-    type(/Qavat/, '5');
-    type(/Mo‘ljal/, 'Metro');
     type(/Kuryer uchun izoh/, 'Eshik oldiga qoldiring');
     fireEvent.click(screen.getByRole('radio', { name: 'Yetkazilganda karta orqali' }));
     fireEvent.click(submitButton());
     await waitFor(() => expect(orderPosts()).toHaveLength(1));
     expect(bodyOf(0)).toMatchObject({
       address: {
-        district: 'yunusobod',
+        lat: 41.311081,
+        lon: 69.240562,
         street: 'Demo ko‘cha',
         house: '12',
         apartment: '34',
@@ -606,7 +571,7 @@ describe('CheckoutView: placing the order (browser)', () => {
     const failure = await screen.findByTestId('submit-failure');
     expect(failure).toHaveAttribute('data-failure', 'network');
     expect(failure).toHaveTextContent('Internet aloqasi yo‘q');
-    expect(screen.getByLabelText('Ko‘cha')).toHaveValue('Demo ko‘cha');
+    expect(screen.getByTestId('checkout-address')).toHaveTextContent('Demo ko‘cha, 12');
     expect(screen.getByRole('radio', { name: 'Yetkazilganda naqd pul' })).toBeChecked();
     expect(nav.replace).not.toHaveBeenCalled();
 
@@ -633,18 +598,18 @@ describe('CheckoutView: placing the order (browser)', () => {
     expect(keyOf(1)).toBe(keyOf(0));
 
     await waitFor(() => expect(submitButton()).toBeEnabled());
-    type('Ko‘cha', 'Boshqa ko‘cha');
+    type('Ism', 'Boshqa Ism');
     fireEvent.click(submitButton());
     await waitFor(() => expect(orderPosts()).toHaveLength(3));
     expect(keyOf(2)).not.toBe(keyOf(0));
-    expect(bodyOf(2).address.street).toBe('Boshqa ko‘cha');
+    expect(bodyOf(2).recipient_name).toBe('Boshqa Ism');
   });
 
   it('shows old and new total on price_changed and needs an explicit confirm with a new key', async () => {
     let first = true;
     let priceMoved = false;
     routes['POST /checkout/quote'] = () =>
-      respond(priceMoved ? quote({ total_uzs: 81000, delivery_fee_uzs: 21000 }) : quote());
+      respond(priceMoved ? quote({ subtotal_uzs: 81000, total_uzs: 81000 }) : quote());
     routes['POST /orders'] = (init) => {
       if (first) {
         first = false;
@@ -665,7 +630,7 @@ describe('CheckoutView: placing the order (browser)', () => {
     fireEvent.click(submitButton());
 
     const notice = await screen.findByTestId('price-changed');
-    expect(within(notice).getByTestId('price-was').textContent).toBe(uzs(75000));
+    expect(within(notice).getByTestId('price-was').textContent).toBe(uzs(60000));
     expect(within(notice).getByTestId('price-now').textContent).toBe(uzs(81000));
     // Nothing is sent on the customer's behalf.
     expect(orderPosts()).toHaveLength(1);
@@ -697,12 +662,12 @@ describe('CheckoutView: placing the order (browser)', () => {
     // The quote on screen is now stale; prices moved in the meantime.
     offset = 61_000;
     routes['POST /checkout/quote'] = () =>
-      respond(quote({ total_uzs: 78000, delivery_fee_uzs: 18000 }));
+      respond(quote({ subtotal_uzs: 78000, total_uzs: 78000 }));
     fireEvent.click(submitButton());
 
     const notice = await screen.findByTestId('price-changed');
     expect(calls('POST', '/checkout/quote')).toHaveLength(2);
-    expect(within(notice).getByTestId('price-was').textContent).toBe(uzs(75000));
+    expect(within(notice).getByTestId('price-was').textContent).toBe(uzs(60000));
     expect(within(notice).getByTestId('price-now').textContent).toBe(uzs(78000));
     expect(orderPosts()).toHaveLength(0);
   });
@@ -746,7 +711,7 @@ describe('CheckoutView: placing the order (browser)', () => {
       'href',
       '/uz/orders',
     );
-    expect(screen.getByLabelText('Ko‘cha')).toHaveValue('Demo ko‘cha');
+    expect(screen.getByTestId('checkout-address')).toHaveTextContent('Demo ko‘cha, 12');
   });
 
   it('explains an inactive product and links back to the cart', async () => {
@@ -773,17 +738,18 @@ describe('CheckoutView: placing the order (browser)', () => {
     await fillValid();
     fireEvent.click(submitButton());
 
-    await waitFor(() => expect(screen.getByLabelText('Ko‘cha')).toHaveFocus());
-    expect(screen.getByLabelText('Ko‘cha')).toHaveAccessibleDescription('Maydonni tekshiring');
+    // Any address part (point or text) maps onto the address step, which comes first.
+    await waitFor(() => expect(addressButton()).toHaveFocus());
+    expect(addressButton()).toHaveAccessibleDescription('Maydonni tekshiring');
     expect(screen.getByLabelText('Telefon raqami')).toHaveAttribute('aria-invalid', 'true');
-    expect(screen.getByLabelText('Uy')).not.toHaveAttribute('aria-invalid');
+    expect(screen.getByLabelText('Ism')).not.toHaveAttribute('aria-invalid');
     expect(screen.getByTestId('submit-failure')).toHaveTextContent(
       'Ba’zi maydonlarni to‘g‘rilang.',
     );
 
     // Editing the field clears its server error.
-    type('Ko‘cha', 'Yangi ko‘cha');
-    expect(screen.getByLabelText('Ko‘cha')).not.toHaveAttribute('aria-invalid');
+    type('Telefon raqami', '+998 00 123-45-68');
+    expect(screen.getByLabelText('Telefon raqami')).not.toHaveAttribute('aria-invalid');
   });
 
   it('waits out a rate limit: shows the seconds and disables the button', async () => {
@@ -806,7 +772,7 @@ describe('CheckoutView: placing the order (browser)', () => {
     fireEvent.click(submitButton());
     expect(await screen.findByTestId('submit-failure')).toHaveAttribute('data-failure', 'session');
     expect(session.retry).toHaveBeenCalled();
-    expect(screen.getByLabelText('Ko‘cha')).toHaveValue('Demo ko‘cha');
+    expect(screen.getByTestId('checkout-address')).toHaveTextContent('Demo ko‘cha, 12');
   });
 
   it('recovers from an idempotency key conflict with a fresh key', async () => {
@@ -840,7 +806,7 @@ describe('CheckoutView: an attempt that outlives a reload (sessionStorage)', () 
     status: 'NEW',
     created_at: new Date().toISOString(),
     item_count: 4,
-    total_uzs: 75000,
+    total_uzs: 60000,
     ...overrides,
   });
 
@@ -860,10 +826,11 @@ describe('CheckoutView: an attempt that outlives a reload (sessionStorage)', () 
   it('retries the same body after a reload with the SAME key', async () => {
     await timeOutThenReload();
     const stored = window.sessionStorage.getItem(ATTEMPT) ?? '';
-    expect(JSON.parse(stored)).toMatchObject({ key: keyOf(0), owner: USER_ID, totalUzs: 75000 });
+    expect(JSON.parse(stored)).toMatchObject({ key: keyOf(0), owner: USER_ID, totalUzs: 60000 });
     // The stored attempt carries no personal data: only a hash of the body.
     expect(stored).not.toContain('998001234567');
     expect(stored).not.toContain('Demo');
+    expect(stored).not.toContain('41.31');
 
     routes['POST /orders'] = () => respond(order(), 200, { 'Idempotent-Replayed': 'true' });
     renderCheckout();
@@ -885,7 +852,7 @@ describe('CheckoutView: an attempt that outlives a reload (sessionStorage)', () 
     renderCheckout();
     await loaded();
     await fillValid();
-    type('Uy', '14');
+    type('Ism', 'Boshqa Ism');
     fireEvent.click(submitButton());
     await waitFor(() => expect(nav.replace).toHaveBeenCalledOnce());
     expect(keyOf(1)).not.toBe(keyOf(0));
@@ -988,6 +955,8 @@ describe('CheckoutView: an attempt that outlives a reload (sessionStorage)', () 
 
 describe('CheckoutView: submit control', () => {
   it('renders a sticky bottom bar in a browser, padded by the safe-area inset, with the total', async () => {
+    let release: (response: Response) => void = () => undefined;
+    routes['POST /checkout/quote'] = () => new Promise<Response>((resolve) => (release = resolve));
     renderCheckout();
     await loaded();
     const bar = screen.getByTestId('submit-bar');
@@ -1000,8 +969,10 @@ describe('CheckoutView: submit control', () => {
     expect(submitButton()).toHaveTextContent('Buyurtma berish');
     expect(within(bar).queryByTestId('bar-total')).toBeNull();
 
-    await pickDistrict();
-    expect(within(bar).getByTestId('bar-total').textContent).toBe(uzs(75000));
+    await act(async () => {
+      release(respond(quote()));
+    });
+    expect(within(bar).getByTestId('bar-total').textContent).toBe(uzs(60000));
     expect(submitButton().textContent).toBe('Buyurtma berish');
     expect(submitButton().className).toContain('active:scale');
   });
@@ -1023,7 +994,7 @@ describe('CheckoutView in the Telegram Mini App', () => {
 
     await fillValid();
     await waitFor(() => expect(state.disabled).toBe(false));
-    expect(state.text).toBe(`Buyurtma berish — 75${NB}000${NB}so‘m`);
+    expect(state.text).toBe(`Buyurtma berish — 60${NB}000${NB}so‘m`);
     expect(screen.queryByTestId('fix-fields')).toBeNull();
 
     act(() => pressMainButton(webApp));
@@ -1062,15 +1033,31 @@ describe('CheckoutView in the Telegram Mini App', () => {
 
   it('keeps the MainButton disabled while the order cannot be placed', async () => {
     const { state } = trackedWebApp();
+    routes['POST /checkout/quote'] = () =>
+      respond(
+        quote({
+          items: [line({ issue: 'insufficient_stock' })],
+          issues: ['cart_has_issues'],
+          can_place_order: false,
+        }),
+      );
     renderCheckout();
     await loaded();
-    await pickDistrict('chilonzor');
-    type('Ko‘cha', 'Demo ko‘cha');
-    type('Uy', '1');
-    type('Telefon raqami', '+998001234567');
-    fireEvent.click(screen.getByRole('radio', { name: 'Yetkazilganda naqd pul' }));
-    await waitFor(() => expect(screen.getByTestId('below-min')).toBeInTheDocument());
+    await fillValid();
+    await waitFor(() => expect(screen.getByTestId('cart-issues')).toBeInTheDocument());
+    await waitFor(() => expect(state.visible).toBe(true));
     expect(state.disabled).toBe(true);
+  });
+
+  it('keeps the MainButton disabled without an address', async () => {
+    saveAddress(null);
+    const { state } = trackedWebApp();
+    renderCheckout();
+    await loaded();
+    await fillValid();
+    await waitFor(() => expect(state.visible).toBe(true));
+    expect(state.disabled).toBe(true);
+    expect(screen.getByTestId('fix-fields')).toBeInTheDocument();
   });
 
   it('switches the MainButton to the confirm action after a price change, and haptics report errors', async () => {
@@ -1078,7 +1065,7 @@ describe('CheckoutView in the Telegram Mini App', () => {
     let first = true;
     let priceMoved = false;
     routes['POST /checkout/quote'] = () =>
-      respond(priceMoved ? quote({ total_uzs: 81000, delivery_fee_uzs: 21000 }) : quote());
+      respond(priceMoved ? quote({ subtotal_uzs: 81000, total_uzs: 81000 }) : quote());
     routes['POST /orders'] = () => {
       if (first) {
         first = false;
@@ -1141,14 +1128,12 @@ describe('CheckoutView: worst-case data (break-ui)', () => {
           items,
           item_count: 4950,
           subtotal_uzs: WORST.hugeTotal,
-          delivery_fee_uzs: 0,
           total_uzs: WORST.hugeTotal,
-          free_delivery_remaining_uzs: 0,
         }),
       );
     renderCheckout();
     await loaded();
-    await pickDistrict();
+    await quoted();
 
     expect(screen.getAllByTestId('summary-line')).toHaveLength(50);
     const firstName = screen.getAllByTestId('summary-line')[0]?.querySelector('p');
@@ -1176,8 +1161,6 @@ describe('CheckoutView: worst-case data (break-ui)', () => {
     for (const [count, text] of counts) {
       routes['POST /checkout/quote'] = () => respond(quote({ items, item_count: count }));
       const { unmount } = renderCheckout('ru');
-      await screen.findByRole('combobox', { name: 'Район' });
-      chooseDistrict('Район', 'yunusobod');
       expect(await screen.findByText(text)).toBeInTheDocument();
       unmount();
       session.apiFetch.mockClear();
@@ -1188,7 +1171,7 @@ describe('CheckoutView: worst-case data (break-ui)', () => {
     routes['POST /checkout/quote'] = () => respond(quote({ item_count: 1 }));
     renderCheckout();
     await loaded();
-    await pickDistrict();
+    await quoted();
     expect(screen.getByText('1 ta mahsulot')).toBeInTheDocument();
   });
 
@@ -1204,517 +1187,6 @@ describe('CheckoutView: worst-case data (break-ui)', () => {
     const value = (screen.getByLabelText('Ism') as HTMLInputElement).value;
     expect(Array.from(value).length).toBeLessThanOrEqual(100);
     expect(value.startsWith('Александра')).toBe(true);
-  });
-});
-
-// ---------------------------------------------------------------------------------------------
-// Delivery slots. The zone with slots is `demo-chekka` (district chilonzor, plus olmazor here so a
-// district change inside one zone can be tested); the zone without slots is yunusobod's.
-// ---------------------------------------------------------------------------------------------
-
-const SLOT = {
-  todayLow: '5a000000-0000-4000-8000-000000000001',
-  todayFull: '5a000000-0000-4000-8000-000000000002',
-  tomorrow: '5a000000-0000-4000-8000-000000000003',
-  later: '5a000000-0000-4000-8000-000000000004',
-} as const;
-
-/** A quote for the slot zone: clears the 100 000 minimum, so only the slot can block the order. */
-function chekkaQuote(overrides: Parameters<typeof slotQuote>[0] = {}) {
-  return slotQuote({
-    zone: farZone(),
-    subtotal_uzs: 120000,
-    delivery_fee_uzs: 0,
-    total_uzs: 120000,
-    free_delivery_remaining_uzs: null,
-    ...overrides,
-  });
-}
-
-function chekkaZone() {
-  return zone({
-    ...farZone(),
-    districts: [
-      { code: 'chilonzor', name_uz: 'Chilonzor', name_ru: 'Чиланзар' },
-      { code: 'olmazor', name_uz: 'Olmazor', name_ru: 'Олмазор' },
-    ],
-  });
-}
-
-const slotGroup = () => screen.getByRole('radiogroup', { name: 'Yetkazish vaqti' });
-const slotTile = (id: string) =>
-  screen
-    .getAllByTestId('delivery-slot-option')
-    .find((element) => element.getAttribute('data-slot-id') === id) as HTMLElement;
-const dayTab = (date: string) =>
-  screen
-    .getAllByRole('tab')
-    .find((element) => element.getAttribute('data-date') === date) as HTMLElement;
-/** Like a customer: open the window's day first when another day is shown, then tap the window. */
-const pickSlot = (id: string) => {
-  const tile = slotTile(id);
-  const date = tile.closest('[data-day]')?.getAttribute('data-day');
-  if (date !== null && date !== undefined) {
-    if (screen.getByRole('tabpanel').getAttribute('data-day') !== date)
-      fireEvent.click(dayTab(date));
-  }
-  fireEvent.click(tile);
-};
-const checkedSlots = () =>
-  screen.queryAllByRole('radio', { name: /\d\d:\d\d–\d\d:\d\d/ }).filter((radio) => {
-    return (radio as HTMLInputElement).checked;
-  });
-
-/** District picked, then everything else a valid order needs, except the delivery window. */
-async function fillValidForSlotZone(district: DistrictCode = 'chilonzor') {
-  await pickDistrict(district);
-  type('Ko‘cha', 'Demo ko‘cha');
-  type('Uy', '12');
-  type('Telefon raqami', '+998 00 123-45-67');
-  fireEvent.click(screen.getByRole('radio', { name: 'Yetkazilganda naqd pul' }));
-}
-
-describe('CheckoutView: delivery slots', () => {
-  beforeEach(() => {
-    // 10:00 in Tashkent on 31 October 2026. Only `Date` is faked, so waitFor keeps working.
-    vi.useFakeTimers({ toFake: ['Date'] });
-    vi.setSystemTime(new Date('2026-10-31T05:00:00Z'));
-    routes['GET /delivery/zones'] = () =>
-      respond({ items: [zone(), chekkaZone()], timezone: 'Asia/Tashkent' });
-    routes['POST /checkout/quote'] = (init) => {
-      const { district } = JSON.parse(String(init.body)) as { district: DistrictCode };
-      return respond(district === 'yunusobod' ? quote() : chekkaQuote());
-    };
-  });
-  afterEach(() => {
-    vi.useRealTimers();
-  });
-
-  it('shows no picker for a zone without slots, and sends no slot', async () => {
-    renderCheckout();
-    await loaded();
-    await fillValid();
-    expect(screen.queryByTestId('delivery-slots')).toBeNull();
-    expect(screen.queryByRole('radiogroup', { name: 'Yetkazish vaqti' })).toBeNull();
-    expect(screen.queryByTestId('submit-reason')).toBeNull();
-    fireEvent.click(submitButton());
-    await waitFor(() => expect(orderPosts()).toHaveLength(1));
-    expect(bodyOf(0)).not.toHaveProperty('delivery_slot_id');
-  });
-
-  it('shows the picker once the district is chosen, grouped by day with full windows disabled', async () => {
-    renderCheckout();
-    await loaded();
-    expect(screen.queryByTestId('delivery-slots')).toBeNull();
-    await pickDistrict('chilonzor');
-
-    expect(slotGroup()).toBeInTheDocument();
-    const days = screen.getAllByRole('tab');
-    expect(days.map((day) => day.getAttribute('data-date'))).toEqual([
-      '2026-10-31',
-      '2026-11-01',
-      '2026-11-03',
-    ]);
-    expect(days[0]).toHaveTextContent('Bugun');
-    expect(days[1]).toHaveTextContent('Ertaga');
-    expect(days[2]).toHaveTextContent('Seshanba');
-    // The first day with a free window is shown; the others' windows are one tap away.
-    expect(screen.getByRole('tabpanel')).toHaveAttribute('data-day', '2026-10-31');
-    expect(
-      screen.getByRole('radio', { name: 'Bugun, 31.10, 10:00–12:00' }),
-    ).toHaveAccessibleDescription('2 ta joy qoldi');
-    const full = screen.getByRole('radio', { name: 'Bugun, 31.10, 12:00–14:00' });
-    expect(full).toBeDisabled();
-    expect(full).toHaveAccessibleDescription('To‘lgan');
-    // Nothing is preselected: the customer chooses.
-    expect(checkedSlots()).toHaveLength(0);
-  });
-
-  it('blocks submitting until a window is chosen, and says why next to the button', async () => {
-    renderCheckout();
-    await loaded();
-    await fillValidForSlotZone();
-
-    expect(submitButton()).toBeDisabled();
-    const reason = screen.getByTestId('submit-reason');
-    expect(reason).toHaveTextContent('Buyurtma berish uchun yetkazish vaqtini tanlang.');
-    expect(submitButton()).toHaveAccessibleDescription(reason.textContent ?? '');
-    fireEvent.submit(screen.getByRole('form', { name: 'Buyurtmani rasmiylashtirish' }));
-    expect(orderPosts()).toHaveLength(0);
-
-    pickSlot(SLOT.tomorrow);
-    expect(submitButton()).toBeEnabled();
-    expect(screen.queryByTestId('submit-reason')).toBeNull();
-  });
-
-  it('refuses to pick a full window', async () => {
-    renderCheckout();
-    await loaded();
-    await fillValidForSlotZone();
-    pickSlot(SLOT.todayFull);
-    expect(checkedSlots()).toHaveLength(0);
-    expect(submitButton()).toBeDisabled();
-  });
-
-  it('sends the chosen window as delivery_slot_id, and shows it in the summary', async () => {
-    renderCheckout();
-    await loaded();
-    await fillValidForSlotZone();
-    pickSlot(SLOT.tomorrow);
-    expect(screen.getByTestId('checkout-slot-summary')).toHaveTextContent(
-      'Yetkazish vaqtiErtaga, 01.11 · 10:00–12:00',
-    );
-    expect(screen.getByRole('radio', { name: 'Ertaga, 01.11, 10:00–12:00' })).toBeChecked();
-
-    fireEvent.click(submitButton());
-    await waitFor(() => expect(nav.replace).toHaveBeenCalledOnce());
-    expect(orderPosts()).toHaveLength(1);
-    expect(bodyOf(0)).toEqual({
-      address: { district: 'chilonzor', street: 'Demo ko‘cha', house: '12' },
-      recipient_name: 'Ali Valiyev',
-      recipient_phone: '+998001234567',
-      payment_method: 'cash_on_delivery',
-      delivery_slot_id: SLOT.tomorrow,
-      expected_total_uzs: 120000,
-    });
-  });
-
-  it('keeps the idempotency key for the same window and changes it when the window changes', async () => {
-    routes['POST /orders'] = () => apiError('internal_error', 500);
-    renderCheckout();
-    await loaded();
-    await fillValidForSlotZone();
-    pickSlot(SLOT.tomorrow);
-
-    fireEvent.click(submitButton());
-    await waitFor(() => expect(orderPosts()).toHaveLength(1));
-    await screen.findByTestId('submit-failure');
-    await waitFor(() => expect(submitButton()).toBeEnabled());
-
-    // Same body again: a retry, so the same key.
-    fireEvent.click(submitButton());
-    await waitFor(() => expect(orderPosts()).toHaveLength(2));
-    expect(keyOf(1)).toBe(keyOf(0));
-    expect(bodyOf(1).delivery_slot_id).toBe(SLOT.tomorrow);
-
-    // Another window is another order body: the server would answer 409 idempotency_key_conflict
-    // for the old key, so it must be a new one.
-    await waitFor(() => expect(submitButton()).toBeEnabled());
-    pickSlot(SLOT.later);
-    fireEvent.click(submitButton());
-    await waitFor(() => expect(orderPosts()).toHaveLength(3));
-    expect(bodyOf(2).delivery_slot_id).toBe(SLOT.later);
-    expect(keyOf(2)).not.toBe(keyOf(0));
-    expect(isValidIdempotencyKey(keyOf(2) ?? '')).toBe(true);
-  });
-
-  it.each([
-    ['slot_full', 'full', 'Bu vaqt oralig‘i to‘lib qoldi. Boshqa vaqtni tanlang.'],
-    ['slot_unavailable', 'unavailable', 'Bu vaqt endi mavjud emas. Boshqa vaqtni tanlang.'],
-    ['slot_required', 'required', 'Buyurtma berish uchun yetkazish vaqtini tanlang.'],
-  ])(
-    'on 409 %s: re-quotes, clears the choice, explains it by the picker and needs a new key',
-    async (code, reason, message) => {
-      let refused = true;
-      routes['POST /orders'] = () => {
-        if (refused) {
-          refused = false;
-          return apiError(code, 409);
-        }
-        return respond(order(), 201);
-      };
-      renderCheckout();
-      await loaded();
-      await fillValidForSlotZone();
-      pickSlot(SLOT.tomorrow);
-      const quotesBefore = calls('POST', '/checkout/quote').length;
-
-      fireEvent.click(submitButton());
-      const notice = await screen.findByTestId('slot-notice');
-      expect(notice).toHaveAttribute('data-reason', reason);
-      expect(notice).toHaveTextContent(message);
-      // Next to the picker, not in the general failure area.
-      expect(screen.getByTestId('delivery-slots')).toContainElement(notice);
-      expect(screen.queryByTestId('submit-failure')).toBeNull();
-      // Re-quoted, selection cleared, order blocked again.
-      await waitFor(() =>
-        expect(calls('POST', '/checkout/quote').length).toBeGreaterThan(quotesBefore),
-      );
-      await waitFor(() => expect(checkedSlots()).toHaveLength(0));
-      expect(submitButton()).toBeDisabled();
-      // The picker takes focus so a keyboard or screen-reader user lands on the problem.
-      await waitFor(() => expect(slotGroup()).toHaveFocus());
-      expect(orderPosts()).toHaveLength(1);
-
-      // Choosing the very same window again must not reuse the refused request's key.
-      pickSlot(SLOT.tomorrow);
-      expect(screen.queryByTestId('slot-notice')).toBeNull();
-      fireEvent.click(submitButton());
-      await waitFor(() => expect(nav.replace).toHaveBeenCalledOnce());
-      expect(orderPosts()).toHaveLength(2);
-      expect(bodyOf(1)).toEqual(bodyOf(0));
-      expect(keyOf(1)).not.toBe(keyOf(0));
-    },
-  );
-
-  it('offers the refreshed windows after slot_full (the full one is now disabled)', async () => {
-    let refused = false;
-    routes['POST /orders'] = () => {
-      refused = true;
-      return apiError('slot_full', 409);
-    };
-    routes['POST /checkout/quote'] = () =>
-      respond(
-        chekkaQuote(
-          refused
-            ? {
-                delivery_slots: [
-                  slotOption({
-                    id: SLOT.tomorrow,
-                    date: '2026-11-01',
-                    is_full: true,
-                    remaining: 0,
-                  }),
-                  slotOption({
-                    id: SLOT.later,
-                    date: '2026-11-03',
-                    starts_at: '16:00',
-                    ends_at: '18:00',
-                  }),
-                ],
-              }
-            : {},
-        ),
-      );
-    renderCheckout();
-    await loaded();
-    await fillValidForSlotZone();
-    pickSlot(SLOT.tomorrow);
-    fireEvent.click(submitButton());
-    await screen.findByTestId('slot-notice');
-    await waitFor(() =>
-      expect(screen.getByRole('radio', { name: 'Ertaga, 01.11, 10:00–12:00' })).toBeDisabled(),
-    );
-    expect(checkedSlots()).toHaveLength(0);
-    expect(screen.queryByRole('radio', { name: 'Bugun, 31.10, 10:00–12:00' })).toBeNull();
-  });
-
-  it('does not ask the server when the chosen window vanished from a stale quote', async () => {
-    renderCheckout();
-    await loaded();
-    await fillValidForSlotZone();
-    pickSlot(SLOT.tomorrow);
-    // The window disappears server-side, and the quote on screen is now older than a minute.
-    routes['POST /checkout/quote'] = () =>
-      respond(
-        chekkaQuote({ delivery_slots: [slotOption({ id: SLOT.later, date: '2026-11-03' })] }),
-      );
-    vi.setSystemTime(new Date('2026-10-31T05:02:00Z'));
-
-    fireEvent.click(submitButton());
-    const notice = await screen.findByTestId('slot-notice');
-    expect(notice).toHaveAttribute('data-reason', 'unavailable');
-    expect(orderPosts()).toHaveLength(0);
-    expect(checkedSlots()).toHaveLength(0);
-    expect(submitButton()).toBeDisabled();
-  });
-
-  it('says the window filled up when a stale quote shows the chosen window as full', async () => {
-    renderCheckout();
-    await loaded();
-    await fillValidForSlotZone();
-    pickSlot(SLOT.tomorrow);
-    routes['POST /checkout/quote'] = () =>
-      respond(
-        chekkaQuote({
-          delivery_slots: [
-            slotOption({ id: SLOT.tomorrow, date: '2026-11-01', is_full: true, remaining: 0 }),
-          ],
-        }),
-      );
-    vi.setSystemTime(new Date('2026-10-31T05:02:00Z'));
-    fireEvent.click(submitButton());
-    expect(await screen.findByTestId('slot-notice')).toHaveAttribute('data-reason', 'full');
-    expect(orderPosts()).toHaveLength(0);
-  });
-
-  it('keeps the choice and the picker while the same zone is re-quoted for another district', async () => {
-    renderCheckout();
-    await loaded();
-    await fillValidForSlotZone('chilonzor');
-    pickSlot(SLOT.tomorrow);
-
-    let release: (response: Response) => void = () => undefined;
-    routes['POST /checkout/quote'] = () => new Promise<Response>((resolve) => (release = resolve));
-    chooseDistrict('Tuman', 'olmazor');
-
-    // While the new quote is on its way the windows stay (dimmed and inert), so the list does not
-    // vanish under the customer's finger.
-    await waitFor(() =>
-      expect(screen.getByTestId('delivery-slots')).toHaveAttribute('aria-busy', 'true'),
-    );
-    expect(screen.getByRole('radio', { name: 'Ertaga, 01.11, 10:00–12:00' })).toBeChecked();
-    for (const radio of screen.getAllByRole('radio', { name: /\d\d:\d\d–\d\d:\d\d/ })) {
-      expect(radio).toBeDisabled();
-    }
-    await act(async () => {
-      release(respond(chekkaQuote()));
-    });
-    await waitFor(() =>
-      expect(screen.getByTestId('delivery-slots')).toHaveAttribute('aria-busy', 'false'),
-    );
-    expect(screen.getByRole('radio', { name: 'Ertaga, 01.11, 10:00–12:00' })).toBeChecked();
-    expect(submitButton()).toBeEnabled();
-    expect(calls('POST', '/checkout/quote').at(-1)?.[1]?.body).toBe(
-      JSON.stringify({ district: 'olmazor' }),
-    );
-  });
-
-  it('clears a choice the new quote no longer offers', async () => {
-    renderCheckout();
-    await loaded();
-    await fillValidForSlotZone('chilonzor');
-    pickSlot(SLOT.tomorrow);
-
-    routes['POST /checkout/quote'] = () =>
-      respond(
-        chekkaQuote({
-          delivery_slots: [slotOption({ id: SLOT.later, date: '2026-11-03', starts_at: '16:00' })],
-        }),
-      );
-    chooseDistrict('Tuman', 'olmazor');
-    await waitFor(() => expect(screen.getAllByTestId('delivery-slot-option')).toHaveLength(1));
-    expect(checkedSlots()).toHaveLength(0);
-    expect(screen.queryByTestId('checkout-slot-summary')).toBeNull();
-    expect(submitButton()).toBeDisabled();
-  });
-
-  it('drops the picker and the choice when the district has no slots, and sends none', async () => {
-    renderCheckout();
-    await loaded();
-    await fillValidForSlotZone('chilonzor');
-    pickSlot(SLOT.tomorrow);
-
-    chooseDistrict('Tuman', 'yunusobod');
-    await waitFor(() => expect(screen.queryByTestId('delivery-slots')).toBeNull());
-    expect(submitButton()).toBeEnabled();
-    fireEvent.click(submitButton());
-    await waitFor(() => expect(orderPosts()).toHaveLength(1));
-    expect(bodyOf(0)).not.toHaveProperty('delivery_slot_id');
-    expect(bodyOf(0).address.district).toBe('yunusobod');
-  });
-
-  it('does not bring back a choice from another zone when the customer returns', async () => {
-    renderCheckout();
-    await loaded();
-    await fillValidForSlotZone('chilonzor');
-    pickSlot(SLOT.tomorrow);
-    await pickDistrict('yunusobod');
-    chooseDistrict('Tuman', 'chilonzor');
-    await waitFor(() => expect(screen.getByTestId('delivery-slots')).toBeInTheDocument());
-    await waitFor(() =>
-      expect(screen.getByTestId('delivery-slots')).toHaveAttribute('aria-busy', 'false'),
-    );
-    expect(checkedSlots()).toHaveLength(0);
-    expect(submitButton()).toBeDisabled();
-  });
-
-  it('allows ordering without a window when the zone makes it optional', async () => {
-    routes['POST /checkout/quote'] = () => respond(chekkaQuote({ slot_required: false }));
-    renderCheckout();
-    await loaded();
-    await fillValidForSlotZone();
-    expect(slotGroup()).not.toHaveAttribute('aria-required');
-    expect(submitButton()).toBeEnabled();
-
-    pickSlot(SLOT.tomorrow);
-    fireEvent.click(screen.getByTestId('slot-clear'));
-    expect(checkedSlots()).toHaveLength(0);
-    fireEvent.click(submitButton());
-    await waitFor(() => expect(orderPosts()).toHaveLength(1));
-    expect(bodyOf(0)).not.toHaveProperty('delivery_slot_id');
-  });
-
-  it('keeps the order blocked and explains it when every window is full', async () => {
-    routes['POST /checkout/quote'] = () =>
-      respond(
-        chekkaQuote({
-          delivery_slots: [slotOption({ id: SLOT.tomorrow, is_full: true, remaining: 0 })],
-        }),
-      );
-    renderCheckout();
-    await loaded();
-    await fillValidForSlotZone();
-    expect(screen.getByTestId('slots-none')).toBeInTheDocument();
-    expect(submitButton()).toBeDisabled();
-  });
-
-  it('works in Russian', async () => {
-    renderCheckout('ru');
-    await screen.findByRole('combobox', { name: 'Район' });
-    chooseDistrict('Район', 'chilonzor');
-    await screen.findByRole('radiogroup', { name: 'Время доставки' });
-    expect(screen.getByRole('tab', { name: /Завтра, 01\.11/ })).toBeInTheDocument();
-    expect(screen.getByRole('radio', { name: 'Сегодня, 31.10, 10:00–12:00' })).toBeInTheDocument();
-    expect(screen.getByTestId('submit-reason')).toHaveTextContent(
-      'Выберите время доставки, чтобы оформить заказ.',
-    );
-  });
-});
-
-describe('CheckoutView in the Telegram Mini App: delivery slots', () => {
-  beforeEach(() => {
-    vi.useFakeTimers({ toFake: ['Date'] });
-    vi.setSystemTime(new Date('2026-10-31T05:00:00Z'));
-    routes['GET /delivery/zones'] = () =>
-      respond({ items: [zone(), chekkaZone()], timezone: 'Asia/Tashkent' });
-    routes['POST /checkout/quote'] = (init) => {
-      const { district } = JSON.parse(String(init.body)) as { district: DistrictCode };
-      return respond(district === 'yunusobod' ? quote() : chekkaQuote());
-    };
-  });
-  afterEach(() => {
-    vi.useRealTimers();
-  });
-
-  it('keeps the MainButton disabled, with an inline reason, until a window is chosen', async () => {
-    const { webApp, state } = trackedWebApp();
-    renderCheckout();
-    await loaded();
-    await fillValidForSlotZone();
-
-    await waitFor(() => expect(screen.getByTestId('slot-reason')).toBeInTheDocument());
-    expect(screen.getByTestId('slot-reason')).toHaveTextContent(
-      'Buyurtma berish uchun yetkazish vaqtini tanlang.',
-    );
-    expect(screen.queryByTestId('submit-bar')).toBeNull();
-    expect(state.disabled).toBe(true);
-    act(() => pressMainButton(webApp));
-    expect(orderPosts()).toHaveLength(0);
-
-    pickSlot(SLOT.later);
-    await waitFor(() => expect(state.disabled).toBe(false));
-    expect(screen.queryByTestId('slot-reason')).toBeNull();
-    expect(state.text).toBe(`Buyurtma berish — 120${NB}000${NB}so‘m`);
-
-    act(() => pressMainButton(webApp));
-    await waitFor(() => expect(nav.replace).toHaveBeenCalled());
-    expect(bodyOf(0).delivery_slot_id).toBe(SLOT.later);
-  });
-
-  it('disables the MainButton again after the server refuses the window', async () => {
-    const { webApp, state } = trackedWebApp();
-    routes['POST /orders'] = () => apiError('slot_full', 409);
-    renderCheckout();
-    await loaded();
-    await fillValidForSlotZone();
-    pickSlot(SLOT.tomorrow);
-    await waitFor(() => expect(state.disabled).toBe(false));
-    act(() => pressMainButton(webApp));
-
-    await screen.findByTestId('slot-notice');
-    await waitFor(() => expect(state.disabled).toBe(true));
-    expect(webApp.HapticFeedback?.notificationOccurred).toHaveBeenCalledWith('error');
   });
 });
 
@@ -1827,11 +1299,8 @@ describe('CheckoutView: a rate-limited order (429)', () => {
   it('speaks Russian', async () => {
     routes['POST /orders'] = () => apiError('rate_limited', 429, {}, { 'Retry-After': '4' });
     renderCheckout('ru');
-    await screen.findByRole('combobox', { name: 'Район' });
-    chooseDistrict('Район', 'yunusobod');
-    await waitFor(() => expect(screen.getByTestId('checkout-total').textContent).not.toBe('—'));
-    fireEvent.change(screen.getByLabelText('Улица'), { target: { value: 'Тест' } });
-    fireEvent.change(screen.getByLabelText('Дом'), { target: { value: '1' } });
+    await loaded('Оформление заказа');
+    await quoted();
     fireEvent.change(screen.getByLabelText('Номер телефона'), {
       target: { value: '+998 00 123-45-67' },
     });
@@ -1851,14 +1320,11 @@ describe('CheckoutView: a quote that could not be fetched', () => {
     vi.useRealTimers();
   });
 
-  async function pickDistrictWithoutQuote() {
-    chooseDistrict('Tuman', 'yunusobod');
+  async function withoutQuote() {
     await screen.findByTestId('quote-error');
   }
 
   function fillRest() {
-    type('Ko‘cha', 'Demo ko‘cha');
-    type('Uy', '12');
     type('Telefon raqami', '+998 00 123-45-67');
     fireEvent.click(screen.getByRole('radio', { name: 'Yetkazilganda naqd pul' }));
   }
@@ -1871,14 +1337,14 @@ describe('CheckoutView: a quote that could not be fetched', () => {
     };
     renderCheckout();
     await loaded();
-    await pickDistrictWithoutQuote();
+    await withoutQuote();
     expect(quoteError()).toHaveAttribute('data-failure', 'network');
     expect(quoteError()).toHaveTextContent('Narxni hisoblab bo‘lmadi.');
 
     failing = false;
     fireEvent.click(retryInside(quoteError()));
-    await waitFor(() => expect(screen.getByTestId('checkout-total').textContent).not.toBe('—'));
-    expect(screen.queryByTestId('quote-error')).toBeNull();
+    await waitFor(() => expect(screen.queryByTestId('quote-error')).toBeNull());
+    expect(screen.getByTestId('checkout-total').textContent).toBe(uzs(60000));
     expect(calls('POST', '/checkout/quote')).toHaveLength(2);
   });
 
@@ -1888,7 +1354,7 @@ describe('CheckoutView: a quote that could not be fetched', () => {
     };
     renderCheckout();
     await loaded();
-    await pickDistrictWithoutQuote();
+    await withoutQuote();
     fillRest();
     fireEvent.click(submitButton());
     await waitFor(() => expect(quoteError()).toHaveFocus());
@@ -1907,7 +1373,7 @@ describe('CheckoutView: a quote that could not be fetched', () => {
       limited ? apiError('rate_limited', 429, {}, { 'Retry-After': '2' }) : respond(quote());
     renderCheckout();
     await loaded();
-    await pickDistrictWithoutQuote();
+    await withoutQuote();
     expect(quoteError()).toHaveAttribute('data-failure', 'rate_limited');
     expect(quoteError()).toHaveTextContent(
       'Juda ko‘p urinish. 2 soniyadan keyin qayta urinib ko‘ring.',
@@ -1925,18 +1391,9 @@ describe('CheckoutView: a quote that could not be fetched', () => {
     expect(retry).toBeEnabled();
     limited = false;
     fireEvent.click(retry);
-    await waitFor(() => expect(screen.getByTestId('checkout-total').textContent).not.toBe('—'));
+    await waitFor(() => expect(screen.queryByTestId('quote-error')).toBeNull());
     expect(calls('POST', '/checkout/quote')).toHaveLength(2);
     expect(submitButton()).toBeEnabled();
-  });
-
-  it('keeps the district error without a retry (retrying would not help)', async () => {
-    routes['POST /checkout/quote'] = () => apiError('district_not_served', 422);
-    renderCheckout();
-    await loaded();
-    await pickDistrictWithoutQuote();
-    expect(quoteError()).toHaveAttribute('data-failure', 'district_not_served');
-    expect(within(quoteError()).queryByRole('button')).toBeNull();
   });
 
   it('gives the Telegram MainButton a way out: it stays disabled, the retry brings it back', async () => {
@@ -1948,7 +1405,7 @@ describe('CheckoutView: a quote that could not be fetched', () => {
     };
     renderCheckout();
     await loaded();
-    await pickDistrictWithoutQuote();
+    await withoutQuote();
     fillRest();
     await waitFor(() => expect(state.visible).toBe(true));
     expect(state.disabled).toBe(true);

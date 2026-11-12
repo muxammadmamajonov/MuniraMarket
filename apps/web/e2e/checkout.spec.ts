@@ -1,29 +1,26 @@
 import { expect, test, type Page } from '@playwright/test';
 import {
+  DEMO_ADDRESS,
   emptyCart,
   installTelegramStub,
   mainButton,
   pressMainButton,
   requireBotToken,
+  seedDeliveryAddress,
   trackCspViolations,
   uzs,
 } from './support';
 import { buildSignedInitData, type FakeTelegramUser } from './telegram-init-data';
 
-/** Opens the custom district listbox and clicks the option with this value (`data-value`). */
-async function chooseDistrict(page: Page, code: string): Promise<void> {
-  await page.getByRole('combobox', { name: 'Tuman' }).click();
-  await page.locator(`[role="option"][data-value="${code}"]`).click();
-}
-
 /**
- * Checkout flow: product -> cart (MainButton "Rasmiylashtirish") -> checkout (district, address,
+ * Checkout flow: product -> cart (MainButton "Rasmiylashtirish") -> checkout (saved map address,
  * phone, payment; MainButton "Buyurtma berish") -> order page with the number and status NEW ->
- * order history -> cancel.
+ * order history -> cancel. A Yandex Go courier delivers and is paid by the customer, so the total
+ * is the cart's subtotal: no delivery line and no delivery-time step.
  *
- * Seed data (`services/api/app/dev/seed.py`): zone `demo-markaziy` serves `yunusobod` with a
- * 50 000 minimum, a 15 000 fee and free delivery from 300 000; `demo-olma` costs 15 000 per kg
- * with 120 in stock. Four kilos (60 000) clear the minimum and stay below the free threshold.
+ * Seed data (`services/api/app/dev/seed.py`): `demo-olma` costs 15 000 per kg with 120 in stock.
+ * The delivery address is the one the map picker would have saved on this device
+ * (`seedDeliveryAddress`); the map itself is covered by `delivery-map.spec.ts`.
  *
  * Each test signs in as its own fake Telegram user so that specs running in parallel never share
  * a cart. Phone and address are obviously fake demo data.
@@ -37,6 +34,7 @@ function user(id: number, username: string): FakeTelegramUser {
 
 async function signIn(page: Page, who: FakeTelegramUser): Promise<() => Promise<string[]>> {
   await installTelegramStub(page, buildSignedInitData({ botToken: requireBotToken(), user: who }));
+  await seedDeliveryAddress(page);
   return trackCspViolations(page);
 }
 
@@ -70,10 +68,6 @@ test('check out: cart -> delivery details -> order with status NEW -> history ->
 
   const unitPrice = await productPrice(page, 'demo-olma');
   const subtotal = 4 * unitPrice;
-  expect(
-    subtotal,
-    'seed prices changed: 4 kg must clear the 50 000 minimum',
-  ).toBeGreaterThanOrEqual(50_000);
 
   await emptyCart(page);
   await addToCart(page, 'demo-olma', 4);
@@ -88,39 +82,22 @@ test('check out: cart -> delivery details -> order with status NEW -> history ->
   await page.getByTestId('checkout-link').click();
   await expect(page).toHaveURL(/\/uz\/checkout$/);
 
-  // Checkout: nothing is preselected; the name comes from the session, the phone starts at +998.
-  const district = page.getByRole('combobox', { name: 'Tuman' });
-  await expect(district).toBeVisible({ timeout: 15_000 });
-  await expect(district).toHaveText('Tumanni tanlang');
+  // Checkout: the saved address is shown; the name comes from the session, the phone starts at
+  // +998, the payment method is not preselected.
+  const address = page.getByTestId('checkout-address');
+  await expect(address).toContainText('Demo ko‘cha, 12, 34-xonadon', { timeout: 15_000 });
+  await expect(page.getByRole('button', { name: 'O‘zgartirish' })).toBeVisible();
   await expect(page.getByLabel('Ism')).toHaveValue('Checkout Tester');
   await expect(page.getByLabel('Telefon raqami')).toHaveValue('+998 ');
   // The submit control is the MainButton: visible but disabled while the form is incomplete.
   await expect.poll(() => mainButton(page)).toMatchObject({ visible: true, disabled: true });
   expect(await pressMainButton(page)).toBe(false);
 
-  // Delivery price comes from the server quote for the district.
-  const zones = (await (await page.request.get('/api/v1/delivery/zones')).json()) as {
-    items: Array<{
-      districts: Array<{ code: string }>;
-      delivery_fee_uzs: number;
-      free_delivery_threshold_uzs: number | null;
-    }>;
-  };
-  const zone = zones.items.find((item) => item.districts.some((d) => d.code === 'yunusobod'));
-  expect(zone, 'the seed zone for yunusobod').toBeDefined();
-  const fee =
-    zone?.free_delivery_threshold_uzs != null && subtotal >= zone.free_delivery_threshold_uzs
-      ? 0
-      : (zone?.delivery_fee_uzs ?? 0);
+  // The total is the subtotal; delivery is paid to the Yandex courier, said in one line.
+  await expect(page.getByTestId('checkout-total')).toHaveText(uzs(subtotal));
+  await expect(page.getByTestId('checkout-courier-note')).toContainText('Yandex kuryeri');
+  await expect(page.getByText(/Bepul/)).toHaveCount(0);
 
-  await chooseDistrict(page, 'yunusobod');
-  await expect(page.getByTestId('checkout-subtotal')).toHaveText(uzs(subtotal));
-  await expect(page.getByTestId('checkout-delivery')).toHaveText(fee === 0 ? 'Bepul' : uzs(fee));
-  await expect(page.getByTestId('checkout-total')).toHaveText(uzs(subtotal + fee));
-
-  await page.getByLabel('Ko‘cha').fill('Demo ko‘cha');
-  await page.getByLabel('Uy', { exact: true }).fill('12');
-  await page.getByLabel('Xonadon').fill('34');
   await page.getByLabel('Telefon raqami').fill('+998 00 123-45-67');
   await page.locator('label', { hasText: 'Yetkazilganda naqd pul' }).click();
   await expect(page.getByRole('radio', { name: 'Yetkazilganda naqd pul' })).toBeChecked();
@@ -131,7 +108,7 @@ test('check out: cart -> delivery details -> order with status NEW -> history ->
     .toMatchObject({
       visible: true,
       disabled: false,
-      text: `Buyurtma berish — ${uzs(subtotal + fee)}`,
+      text: `Buyurtma berish — ${uzs(subtotal)}`,
     });
 
   // Place it. Two quick taps must still create exactly one order (checked below through history).
@@ -145,9 +122,9 @@ test('check out: cart -> delivery details -> order with status NEW -> history ->
   const number = numberText.replace(/^Buyurtma № /, '');
   expect(number).not.toBe('');
   await expect(page.locator('[data-status="NEW"]').first()).toHaveText('Yangi');
-  await expect(page.getByTestId('order-total')).toHaveText(uzs(subtotal + fee));
+  await expect(page.getByTestId('order-total')).toHaveText(uzs(subtotal));
   await expect(page.getByRole('region', { name: 'Yetkazib berish manzili' })).toContainText(
-    'Yunusobod',
+    DEMO_ADDRESS.street,
   );
   await expect(page.getByTestId('order-line')).toHaveCount(1);
   const orderUrl = page.url();
@@ -157,7 +134,7 @@ test('check out: cart -> delivery details -> order with status NEW -> history ->
   const card = page.getByTestId('order-card').filter({ hasText: number });
   await expect(card).toHaveCount(1);
   await expect(card.locator('[data-status="NEW"]')).toHaveText('Yangi');
-  await expect(card.getByTestId('order-total')).toHaveText(uzs(subtotal + fee));
+  await expect(card.getByTestId('order-total')).toHaveText(uzs(subtotal));
   await card.click();
   await expect(page).toHaveURL(orderUrl.replace('?placed=1', ''));
   await expect(page.getByTestId('placed-banner')).toHaveCount(0);
@@ -208,15 +185,14 @@ test('the proxy forwards Idempotency-Key, reports replays, and serves no back-of
   });
   expect(added.status()).toBe(200);
 
-  const quote = await page.request.post('/api/v1/checkout/quote', {
-    headers: write,
-    data: { district: 'yunusobod' },
-  });
+  const quote = await page.request.post('/api/v1/checkout/quote', { headers: write });
   expect(quote.status()).toBe(200);
-  const total = ((await quote.json()) as { total_uzs: number }).total_uzs;
+  const priced = (await quote.json()) as { total_uzs: number; subtotal_uzs: number };
+  expect(priced.total_uzs).toBe(priced.subtotal_uzs);
+  const total = priced.total_uzs;
 
   const body = {
-    address: { district: 'yunusobod', street: 'Demo ko‘cha', house: '1' },
+    address: { lat: DEMO_ADDRESS.lat, lon: DEMO_ADDRESS.lon, street: 'Demo ko‘cha', house: '1' },
     recipient_name: 'Idempotency Tester',
     recipient_phone: '+998 00 123 45 67',
     payment_method: 'cash_on_delivery',

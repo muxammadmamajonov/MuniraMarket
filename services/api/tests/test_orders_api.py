@@ -1,4 +1,4 @@
-"""Checkout, order, admin and delivery-zone routes against fake repositories (no database).
+"""Checkout, order and admin order routes against fake repositories (no database).
 
 Like ``tests/test_cart_api.py``, most tests override ``get_current_user`` / ``require_csrf`` and
 the module-level rate-limit dependencies through ``app.dependency_overrides``. The session and
@@ -8,7 +8,7 @@ CSRF wiring is additionally checked end to end with a real (in-memory) session.
 import dataclasses
 import uuid
 from collections.abc import Callable
-from datetime import UTC, date, datetime, time
+from datetime import UTC, datetime
 from typing import Any
 
 import httpx
@@ -18,15 +18,11 @@ from sqlalchemy.exc import IntegrityError
 
 from app.api import admin_deps as admin_routes
 from app.api import auth_deps
-from app.api.routes import catalog as catalog_routes
-from app.api.routes import delivery as delivery_routes
 from app.api.routes import orders as order_routes
 from app.core.errors import ApiError, log_unhandled_exception
 from app.domain.checkout import (
-    BelowMinimumOrderError,
     CartEmptyError,
     CheckoutError,
-    DistrictNotServedError,
     IdempotencyKeyConflictError,
     InvalidStatusTransitionError,
     OrderInsufficientStockError,
@@ -35,13 +31,9 @@ from app.domain.checkout import (
     OrderProductUnavailableError,
     OrderStatusConflictError,
     PriceChangedError,
-    SlotFullError,
-    SlotRequiredError,
-    SlotUnavailableError,
 )
 from app.domain.order_status import OrderStatus
 from app.models.enums import UserRole
-from app.repositories.delivery import SlotOptionRecord, ZoneRecord
 from app.repositories.orders import (
     Actor,
     CreatedOrder,
@@ -50,10 +42,8 @@ from app.repositories.orders import (
     OrderRecord,
     OrderSummaryRecord,
     QuoteRecord,
-    SlotSnapshotRecord,
 )
 from app.repositories.users import UserRecord
-from app.schemas.checkout import CreateOrderRequest
 from tests.auth_helpers import TRUSTED_ORIGIN, build_app, cookie_header, http_client, login
 from tests.catalog_factories import make_line, make_product, make_user
 from tests.conftest import FakeClock, FakeUserRepository
@@ -62,14 +52,12 @@ from tests.order_factories import (
     DEMO_PHONE,
     make_order,
     make_quote,
-    make_zone,
     order_body,
 )
 
 QUOTE = "/api/v1/checkout/quote"
 ORDERS = "/api/v1/orders"
 ADMIN = "/api/v1/admin/orders"
-ZONES = "/api/v1/delivery/zones"
 KEY = "test-idempotency-key-0001"
 ORDER_ID = uuid.uuid4()
 
@@ -92,8 +80,8 @@ class FakeOrderRepository:
         if self.error is not None:
             raise self.error
 
-    async def quote(self, user_id: uuid.UUID, district: str, *, now: datetime) -> QuoteRecord:
-        self._record("quote", user_id=user_id, district=district, now=now)
+    async def quote(self, user_id: uuid.UUID) -> QuoteRecord:
+        self._record("quote", user_id=user_id)
         return self.quote_record
 
     async def create_order(
@@ -164,17 +152,6 @@ class FakeOrderRepository:
         return [name for name, _ in self.calls]
 
 
-class FakeZoneRepository:
-    def __init__(self, zones: list[ZoneRecord]) -> None:
-        self.zones = zones
-
-    async def list_active(self) -> list[ZoneRecord]:
-        return self.zones
-
-    async def find_for_district(self, district: str) -> ZoneRecord | None:  # pragma: no cover
-        return next((zone for zone in self.zones if district in zone.districts), None)
-
-
 async def _allow() -> None:
     return None
 
@@ -237,76 +214,37 @@ def error_of(response: httpx.Response, status: int, code: str) -> dict[str, Any]
 
 
 async def test_quote(
-    client: httpx.AsyncClient, orders: FakeOrderRepository, user: UserRecord, clock: FakeClock
+    client: httpx.AsyncClient, orders: FakeOrderRepository, user: UserRecord
 ) -> None:
-    response = await client.post(QUOTE, json={"district": "chilonzor"})
+    response = await client.post(QUOTE)
     assert response.status_code == 200, response.text
     assert response.headers["cache-control"] == "no-store"
     body = response.json()
+    assert set(body) == {
+        "items",
+        "item_count",
+        "subtotal_uzs",
+        "total_uzs",
+        "issues",
+        "can_place_order",
+    }
     assert body["subtotal_uzs"] == 50_000
-    assert body["delivery_fee_uzs"] == 15_000
-    assert body["total_uzs"] == 65_000
-    assert body["free_delivery_remaining_uzs"] == 250_000
+    # No delivery charge: the customer pays the Yandex Go courier directly.
+    assert body["total_uzs"] == 50_000
     assert body["item_count"] == 2
     assert body["issues"] == []
     assert body["can_place_order"] is True
-    assert body["zone"]["districts"] == [
-        {"code": "chilonzor", "name_uz": "Chilonzor", "name_ru": "Чиланзарский"},
-        {"code": "olmazor", "name_uz": "Olmazor", "name_ru": "Алмазарский"},
-    ]
-    assert body["zone"]["opens_at"] == "09:00"
     assert set(body["items"][0]) == {"product", "quantity", "line_total_uzs", "issue"}
-    # A zone without delivery slots.
-    assert (body["slot_required"], body["delivery_slots"]) == (False, [])
-    assert orders.calls == [
-        (
-            "quote",
-            {
-                "user_id": user.id,
-                "district": "chilonzor",
-                "now": datetime.fromtimestamp(clock.now, tz=UTC),
-            },
-        )
-    ]
+    assert orders.calls == [("quote", {"user_id": user.id})]
 
 
-async def test_quote_lists_delivery_slots(
-    client: httpx.AsyncClient, orders: FakeOrderRepository
+async def test_quote_ignores_a_request_body(
+    client: httpx.AsyncClient, orders: FakeOrderRepository, user: UserRecord
 ) -> None:
-    open_slot = SlotOptionRecord(
-        id=uuid.uuid4(),
-        slot_date=date(2026, 11, 1),
-        starts_at=time(10, 0),
-        ends_at=time(13, 0),
-        capacity=5,
-        reserved_count=2,
-    )
-    full_slot = dataclasses.replace(
-        open_slot, id=uuid.uuid4(), starts_at=time(15, 0), ends_at=time(18, 30), reserved_count=5
-    )
-    orders.quote_record = dataclasses.replace(
-        orders.quote_record, slot_required=True, slots=(open_slot, full_slot)
-    )
-    body = (await client.post(QUOTE, json={"district": "chilonzor"})).json()
-    assert body["slot_required"] is True
-    assert body["delivery_slots"] == [
-        {
-            "id": str(open_slot.id),
-            "date": "2026-11-01",
-            "starts_at": "10:00",
-            "ends_at": "13:00",
-            "remaining": 3,
-            "is_full": False,
-        },
-        {
-            "id": str(full_slot.id),
-            "date": "2026-11-01",
-            "starts_at": "15:00",
-            "ends_at": "18:30",
-            "remaining": 0,
-            "is_full": True,
-        },
-    ]
+    # The quote has no request body; anything an old client still sends is not read.
+    response = await client.post(QUOTE, json={"region": "chilonzor"})
+    assert response.status_code == 200, response.text
+    assert orders.calls == [("quote", {"user_id": user.id})]
 
 
 async def test_quote_reports_problems_instead_of_failing(
@@ -318,32 +256,22 @@ async def test_quote_reports_problems_instead_of_failing(
             make_line(make_product(price_uzs=99_000), is_available=False),
         )
     )
-    response = await client.post(QUOTE, json={"district": "chilonzor"})
+    response = await client.post(QUOTE)
     assert response.status_code == 200
     body = response.json()
-    assert body["issues"] == ["cart_has_issues", "below_min_order"]
+    assert body["issues"] == ["cart_has_issues"]
     assert body["can_place_order"] is False
+    assert (body["subtotal_uzs"], body["total_uzs"]) == (30_000, 30_000)
     assert [line["issue"] for line in body["items"]] == [None, "product_inactive"]
 
 
-async def test_quote_zone_open_now_uses_the_app_clock(
-    client: httpx.AsyncClient, orders: FakeOrderRepository, clock: FakeClock
+async def test_quote_of_an_empty_cart(
+    client: httpx.AsyncClient, orders: FakeOrderRepository
 ) -> None:
-    clock.now = datetime(2026, 10, 31, 4, 0, tzinfo=UTC).timestamp()  # 09:00 in Tashkent
-    assert (await client.post(QUOTE, json={"district": "chilonzor"})).json()["zone"]["is_open_now"]
-    clock.now = datetime(2026, 10, 31, 16, 0, tzinfo=UTC).timestamp()  # 21:00 in Tashkent
-    body = (await client.post(QUOTE, json={"district": "chilonzor"})).json()
-    assert body["zone"]["is_open_now"] is False
-
-
-@pytest.mark.parametrize(
-    "body", [{"district": "tashkent"}, {}, {"district": "chilonzor", "total_uzs": 1}]
-)
-async def test_quote_validates_the_district(
-    client: httpx.AsyncClient, orders: FakeOrderRepository, body: dict[str, Any]
-) -> None:
-    error_of(await client.post(QUOTE, json=body), 422, "validation_error")
-    assert orders.calls == []
+    orders.quote_record = make_quote(())
+    body = (await client.post(QUOTE)).json()
+    assert body["issues"] == ["cart_empty"]
+    assert (body["subtotal_uzs"], body["total_uzs"], body["can_place_order"]) == (0, 0, False)
 
 
 # --- create ---------------------------------------------------------------------------------------
@@ -363,7 +291,28 @@ async def test_create_order(
     assert body["id"] == str(ORDER_ID)
     assert body["status"] == "NEW"
     assert body["can_cancel"] is True
-    assert body["address"]["district_name_uz"] == "Chilonzor"
+    assert body["address"]["lat"] == 41.311081
+    assert body["address"]["lon"] == 69.240562
+    assert set(body) == {
+        "id",
+        "number",
+        "status",
+        "created_at",
+        "updated_at",
+        "subtotal_uzs",
+        "total_uzs",
+        "item_count",
+        "payment_method",
+        "recipient_name",
+        "recipient_phone",
+        "address",
+        "comment",
+        "cancel_reason",
+        "items",
+        "history",
+        "can_cancel",
+    }
+    assert body["subtotal_uzs"] == body["total_uzs"] == 50_000
     assert body["history"] == [{"status": "NEW", "at": "2026-10-31T07:00:00Z"}]
 
     [(name, call)] = orders.calls
@@ -373,12 +322,12 @@ async def test_create_order(
     assert len(call["request_hash"]) == 64
     assert call["now"] == datetime.fromtimestamp(clock.now, tz=UTC)
     new_order: NewOrder = call["new_order"]
-    assert new_order.district == "chilonzor"
     assert new_order.recipient_phone == DEMO_PHONE
     assert new_order.comment == "Demo izoh"
-    assert new_order.expected_total_uzs == 65_000
+    assert new_order.expected_total_uzs == 50_000
     assert new_order.address == {
-        "district": "chilonzor",
+        "lat": 41.311081,
+        "lon": 69.240562,
         "street": "Demo ko'cha",
         "house": "12",
         "apartment": None,
@@ -386,42 +335,39 @@ async def test_create_order(
         "floor": None,
         "landmark": None,
     }
-    assert new_order.delivery_slot_id is None
-    assert body["delivery_slot"] is None
 
 
-async def test_create_order_with_a_delivery_slot(
+async def test_create_order_rounds_coordinates_to_six_decimals(
     client: httpx.AsyncClient, orders: FakeOrderRepository
 ) -> None:
-    slot_id = uuid.uuid4()
-    orders.order = make_order(
-        id=ORDER_ID,
-        delivery_slot=SlotSnapshotRecord(
-            slot_date=date(2026, 11, 2), starts_at=time(9, 30), ends_at=time(12, 0)
-        ),
-    )
-    response = await create(client, order_body(delivery_slot_id=str(slot_id)))
-    assert response.status_code == 201, response.text
-    assert response.json()["delivery_slot"] == {
-        "date": "2026-11-02",
-        "starts_at": "09:30",
-        "ends_at": "12:00",
-    }
+    address = {"lat": 41.3110814999, "lon": -69.24056249, "street": "Demo ko'cha", "house": "12"}
+    assert (await create(client, order_body(address=address))).status_code == 201
     [(_, call)] = orders.calls
-    assert call["new_order"].delivery_slot_id == slot_id
-    # The same order without a slot is a different request (an idempotency conflict, not a
-    # replay), while the hash of a body that never had a slot is unchanged.
-    assert call["request_hash"] != order_routes.request_hash(
-        CreateOrderRequest.model_validate(order_body())
+    assert (call["new_order"].address["lat"], call["new_order"].address["lon"]) == (
+        41.311081,
+        -69.240562,
     )
 
 
-async def test_create_order_validates_the_slot_id(
+async def test_order_detail_of_an_order_placed_before_courier_delivery(
     client: httpx.AsyncClient, orders: FakeOrderRepository
 ) -> None:
-    for slot in ("not-a-uuid", 42):
-        error_of(await create(client, order_body(delivery_slot_id=slot)), 422, "validation_error")
-    assert orders.calls == []
+    # Old snapshot shape: no coordinates, an area key that is ignored, a delivery charge still
+    # included in the total.
+    legacy = {"region": "chilonzor", "street": "Demo ko'cha", "house": "12"}
+    orders.order = make_order(id=ORDER_ID, address=legacy, subtotal_uzs=50_000, total_uzs=65_000)
+    body = (await client.get(f"{ORDERS}/{ORDER_ID}")).json()
+    assert body["address"] == {
+        "lat": None,
+        "lon": None,
+        "street": "Demo ko'cha",
+        "house": "12",
+        "apartment": None,
+        "entrance": None,
+        "floor": None,
+        "landmark": None,
+    }
+    assert (body["subtotal_uzs"], body["total_uzs"]) == (50_000, 65_000)
 
 
 async def test_replay_is_200_with_the_replay_header(
@@ -443,7 +389,12 @@ async def test_equivalent_bodies_send_the_same_request_hash(
         client,
         {
             **order_body(recipient_phone="+998 00 123 45 67", recipient_name=" Demo Mijoz "),
-            "address": {"street": " Demo ko'cha", "house": "12 ", "district": "chilonzor"},
+            "address": {
+                "street": " Demo ko'cha",
+                "house": "12 ",
+                "lon": 69.240562,
+                "lat": 41.311081,
+            },
         },
     )
     await create(client, order_body(expected_total_uzs=70_000))
@@ -486,8 +437,24 @@ async def test_valid_idempotency_keys(
     [
         order_body(total_uzs=1),
         order_body(recipient_phone="998001234567"),
-        order_body(address={"district": "tashkent", "street": "Demo ko'cha", "house": "1"}),
-        order_body(address={"district": "chilonzor", "street": "Demo\nko'cha", "house": "1"}),
+        # An address without a map point, or with any unknown key (an area code), is refused.
+        order_body(address={"region": "chilonzor", "street": "Demo ko'cha", "house": "1"}),
+        order_body(
+            address={
+                "lat": 41.3,
+                "lon": 69.2,
+                "region": "chilonzor",
+                "street": "Demo ko'cha",
+                "house": "1",
+            }
+        ),
+        order_body(address={"lat": 41.3, "lon": 69.2, "street": "Demo\nko'cha", "house": "1"}),
+        order_body(address={"lat": 91, "lon": 69.2, "street": "Demo ko'cha", "house": "1"}),
+        order_body(address={"lat": 41.3, "lon": -180.5, "street": "Demo ko'cha", "house": "1"}),
+        order_body(address={"lat": "x", "lon": 69.2, "street": "Demo ko'cha", "house": "1"}),
+        order_body(address={"lat": None, "lon": 69.2, "street": "Demo ko'cha", "house": "1"}),
+        order_body(address={"lon": 69.2, "street": "Demo ko'cha", "house": "1"}),
+        order_body(window_id=str(uuid.uuid4())),
         order_body(expected_total_uzs=-1),
         {},
     ],
@@ -507,9 +474,7 @@ async def test_create_rejects_invalid_bodies_without_echoing_them(
 PRODUCT_ID = uuid.uuid4()
 
 CREATE_ERRORS: list[tuple[CheckoutError, int, dict[str, Any]]] = [
-    (DistrictNotServedError("bektemir"), 409, {"code": "district_not_served"}),
     (CartEmptyError(), 409, {"code": "cart_empty"}),
-    (BelowMinimumOrderError(), 409, {"code": "below_min_order"}),
     (IdempotencyKeyConflictError(), 409, {"code": "idempotency_key_conflict"}),
     (
         OrderProductUnavailableError(PRODUCT_ID),
@@ -522,9 +487,6 @@ CREATE_ERRORS: list[tuple[CheckoutError, int, dict[str, Any]]] = [
         {"code": "insufficient_stock", "product_id": str(PRODUCT_ID), "available_quantity": 0},
     ),
     (PriceChangedError(80_000), 409, {"code": "price_changed", "total_uzs": 80_000}),
-    (SlotRequiredError(), 409, {"code": "slot_required"}),
-    (SlotUnavailableError(), 409, {"code": "slot_unavailable"}),
-    (SlotFullError(), 409, {"code": "slot_full"}),
 ]
 
 
@@ -543,18 +505,6 @@ async def test_create_errors(
     body = response.json()["error"]
     assert {key: value for key, value in body.items() if key != "message"} == expected
     assert body["message"]
-
-
-async def test_quote_district_not_served(
-    client: httpx.AsyncClient, orders: FakeOrderRepository
-) -> None:
-    orders.error = DistrictNotServedError("bektemir")
-    response = await client.post(QUOTE, json={"district": "bektemir"})
-    assert response.json() == {
-        "error": {"code": "district_not_served", "message": "No delivery to this district"}
-    }
-    assert response.status_code == 409
-    assert response.headers["cache-control"] == "no-store"
 
 
 @pytest.mark.parametrize(
@@ -634,7 +584,7 @@ async def test_list_orders_paginates(
                 id=ORDER_ID,
                 number="261031-ABCDEF",
                 status=OrderStatus.NEW,
-                total_uzs=65_000,
+                total_uzs=50_000,
                 item_count=2,
                 created_at=CREATED_AT,
             ),
@@ -710,7 +660,7 @@ async def test_cancel_needs_a_reason(
 
 def _customer_requests(client: httpx.AsyncClient) -> list[Any]:
     return [
-        client.post(QUOTE, json={"district": "chilonzor"}),
+        client.post(QUOTE),
         create(client),
         client.get(ORDERS),
         client.get(f"{ORDERS}/{ORDER_ID}"),
@@ -746,7 +696,7 @@ async def test_writes_require_csrf_but_reads_do_not(
     assert (await client.get(ORDERS)).status_code == 200
     assert (await client.get(f"{ORDERS}/{ORDER_ID}")).status_code == 200
     for response in (
-        await client.post(QUOTE, json={"district": "chilonzor"}),
+        await client.post(QUOTE),
         await create(client),
         await client.post(f"{ORDERS}/{ORDER_ID}/cancel", json={"reason": "Fikrim o'zgardi"}),
     ):
@@ -765,7 +715,7 @@ async def test_each_route_uses_its_own_rate_limit(
     routes: list[tuple[Callable[..., Any], Callable[[], Any]]] = [
         (
             order_routes.CHECKOUT_QUOTE_LIMIT,
-            lambda: client.post(QUOTE, json={"district": "olmazor"}),
+            lambda: client.post(QUOTE),
         ),
         (order_routes.ORDER_CREATE_LIMIT, lambda: create(client)),
         (order_routes.ORDER_READ_LIMIT, lambda: client.get(ORDERS)),
@@ -843,7 +793,7 @@ async def test_real_session_and_csrf_wiring(clock: FakeClock) -> None:
             {**csrf, "Origin": "https://evil.example"},
         ):
             for response in (
-                await client.post(QUOTE, json={"district": "chilonzor"}, headers=headers),
+                await client.post(QUOTE, headers=headers),
                 await client.post(
                     ORDERS, json=order_body(), headers={**headers, "Idempotency-Key": KEY}
                 ),
@@ -855,9 +805,7 @@ async def test_real_session_and_csrf_wiring(clock: FakeClock) -> None:
                 assert response.headers["cache-control"] == "no-store"
         assert repository.names() == ["list_for_user"]
 
-        assert (
-            await client.post(QUOTE, json={"district": "chilonzor"}, headers=csrf)
-        ).status_code == 200
+        assert (await client.post(QUOTE, headers=csrf)).status_code == 200
         response = await client.post(
             ORDERS, json=order_body(), headers={**csrf, "Idempotency-Key": KEY}
         )
@@ -983,56 +931,6 @@ async def test_admin_status_body_validation(
     assert orders.calls == []
 
 
-# --- delivery zones (public) ----------------------------------------------------------------------
-
-
-async def test_delivery_zones_are_public_and_cached(
-    app: FastAPI, client: httpx.AsyncClient, clock: FakeClock
-) -> None:
-    zones = [
-        make_zone(slug="demo-a", districts=frozenset({"yunusobod", "mirobod"})),
-        make_zone(
-            slug="demo-b",
-            districts=frozenset({"sergeli"}),
-            free_delivery_threshold_uzs=None,
-            opens_at=time(10, 0),
-        ),
-    ]
-    app.dependency_overrides[delivery_routes.get_delivery_zone_repository] = lambda: (
-        FakeZoneRepository(zones)
-    )
-    clock.now = datetime(2026, 10, 31, 4, 30, tzinfo=UTC).timestamp()  # 09:30 in Tashkent
-    response = await client.get(ZONES)
-    assert response.status_code == 200
-    assert response.headers["cache-control"] == "public, max-age=60"
-    assert "set-cookie" not in response.headers
-    body = response.json()
-    assert body["timezone"] == "Asia/Tashkent"
-    assert [zone["slug"] for zone in body["items"]] == ["demo-a", "demo-b"]
-    first, second = body["items"]
-    # Districts come in the documented, stable order.
-    assert [district["code"] for district in first["districts"]] == ["mirobod", "yunusobod"]
-    assert (first["is_open_now"], second["is_open_now"]) == (True, False)
-    assert second["free_delivery_threshold_uzs"] is None
-    assert second["opens_at"] == "10:00"
-
-
-async def test_delivery_zones_rate_limit_is_not_cached(
-    app: FastAPI, client: httpx.AsyncClient
-) -> None:
-    app.dependency_overrides[catalog_routes.CATALOG_IP_LIMIT] = _raiser(
-        ApiError(
-            429,
-            "rate_limited",
-            "Too many requests",
-            headers={"Retry-After": "9", "Cache-Control": "no-store"},
-        )
-    )
-    response = await client.get(ZONES)
-    error_of(response, 429, "rate_limited")
-    assert response.headers["cache-control"] == "no-store"
-
-
 # --- OpenAPI --------------------------------------------------------------------------------------
 
 
@@ -1045,7 +943,9 @@ async def test_openapi_documents_checkout(client: httpx.AsyncClient) -> None:
     assert header["in"] == "header"
     assert header["required"] is True
     assert "/api/v1/admin/orders/{order_id}/status" in paths
-    assert "/api/v1/delivery/zones" in paths
+    assert not any(path.startswith("/api/v1/delivery") for path in paths)
+    assert not any(path.startswith("/api/v1/admin/delivery") for path in paths)
+    assert "requestBody" not in paths["/api/v1/checkout/quote"]["post"]
     error_body = spec["components"]["schemas"]["ApiErrorBody"]["properties"]
     assert {"product_id", "total_uzs", "current_status", "available_quantity"} <= set(error_body)
 

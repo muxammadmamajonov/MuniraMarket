@@ -60,12 +60,10 @@ import * as internalStaffChat from './internalStaffChat.ts';
 import * as internalMaintenance from './internalMaintenance.ts';
 import * as internalScheduler from './internalScheduler.ts';
 import * as catalog from './catalog.ts';
-import * as delivery from './delivery.ts';
 import * as me from './me.ts';
 import * as cart from './cart.ts';
 import * as orders from './orders.ts';
 import * as adminOrders from './adminOrders.ts';
-import * as adminDelivery from './adminDelivery.ts';
 import * as adminDashboard from './adminDashboard.ts';
 import * as adminCatalog from './adminCatalog.ts';
 import * as adminCsv from './adminCsv.ts';
@@ -82,12 +80,10 @@ const MODULES: ReadonlyArray<{ register(router: Router): void }> = [
   internalMaintenance,
   internalScheduler,
   catalog,
-  delivery,
   me,
   cart,
   orders,
   adminOrders,
-  adminDelivery,
   adminDashboard,
   adminCatalog,
   adminCsv,

@@ -1,6 +1,7 @@
-# ADR 0009 — Checkout, delivery zones, idempotent orders and stock
+# ADR 0009 — Checkout, idempotent orders and stock
 
-- Status: accepted
+- Status: accepted; the delivery-pricing part is superseded by
+  [ADR 0017](0017-yandex-go-courier-delivery.md)
 
 ## Context
 
@@ -11,12 +12,9 @@ total and pressing "order".
 
 ## Decision
 
-- **Zones by district.** A delivery zone is a set of whole Tashkent districts
-  (`delivery_zone_districts`, the district is the primary key, so a district is in at most one
-  zone) with a flat fee, an optional free-delivery threshold, a minimum order and local
-  Asia/Tashkent hours. No geocoding or map API. Inactive zones do not deliver. Orders are accepted
-  around the clock; outside hours they are delivered from the next opening. Pricing and matching
-  are pure functions (`app/domain/delivery.py`, `app/domain/checkout.py`).
+- **Delivery pricing.** Originally per-area zones with fees, thresholds, minimums, hours and
+  booked windows; replaced by on-demand Yandex Go courier delivery paid by the customer
+  (ADR 0017). Pricing is pure functions (`app/domain/checkout.py`).
 - **One evaluation for quote and order.** `POST /checkout/quote` and `POST /orders` run the same
   function over the live cart (product active + visible category, current price, tracked stock).
   The quote reports problems instead of failing; the order refuses them. The client sends back the
@@ -58,7 +56,7 @@ total and pressing "order".
 
 - Concurrent orders for the last units are serialised per product: exactly the available
   quantity sells, the rest get `409 insufficient_stock`.
-- Money columns are integer UZS with `total = subtotal + delivery_fee` and
-  `line_total = unit_price × quantity` enforced by the database.
+- Money columns are integer UZS with `total >= subtotal` (equal for every order since ADR 0017)
+  and `line_total = unit_price × quantity` enforced by the database.
 - Payment is cash/card on delivery only; online payment is a later phase and will need its own
   ADR (provider, webhooks, refunds).

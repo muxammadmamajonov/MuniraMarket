@@ -61,11 +61,11 @@ describe('OrderDetailView: content', () => {
     expect(lines[0]).toHaveTextContent('Demo olma');
     expect(lines[0]?.textContent).toContain(`4 × 15${NB}000${NB}so‘m / kg`);
     expect(lines[0]?.textContent).toContain(`60${NB}000${NB}so‘m`);
-    expect(screen.getByTestId('order-delivery').textContent).toBe(`15${NB}000${NB}so‘m`);
-    expect(screen.getByTestId('order-total').textContent).toBe(`75${NB}000${NB}so‘m`);
+    // No delivery fee line: the customer pays the Yandex courier, so the total is the goods.
+    expect(screen.getByTestId('order-total').textContent).toBe(`60${NB}000${NB}so‘m`);
+    expect(screen.queryByTestId('order-delivery')).toBeNull();
 
     const delivery = screen.getByRole('region', { name: 'Yetkazib berish manzili' });
-    expect(delivery).toHaveTextContent('Yunusobod');
     expect(delivery).toHaveTextContent('Demo ko‘cha');
     expect(delivery).toHaveTextContent('34');
     // Empty optional parts are left out rather than shown as dashes.
@@ -82,47 +82,40 @@ describe('OrderDetailView: content', () => {
     expect(screen.queryByTestId('placed-banner')).toBeNull();
   });
 
-  it('shows the booked delivery window with its date, and leaves the row out without one', async () => {
-    routes[`GET /orders/${ID}`] = () =>
-      respond(
-        order({ delivery_slot: { date: '2026-11-03', starts_at: '16:00', ends_at: '18:00' } }),
-      );
-    const first = renderDetail(true);
-    const slot = await screen.findByTestId('order-slot');
-    expect(slot).toHaveTextContent('Yetkazish vaqti');
-    expect(slot).toHaveTextContent('03.11.2026, 16:00–18:00');
-    // It belongs to the delivery section, next to the address.
-    expect(screen.getByRole('region', { name: 'Yetkazib berish manzili' })).toContainElement(slot);
+  it('says the Yandex courier brings the order and is paid for delivery (uz, ru)', async () => {
+    const first = renderDetail();
+    const note = await screen.findByTestId('order-courier-note');
+    expect(note).toHaveTextContent('Yandex kuryeri olib keladi. Yetkazish kuryerga to‘lanadi.');
+    expect(screen.getByRole('region', { name: 'Yetkazib berish manzili' })).toContainElement(note);
+    // Coordinates are for the courier link (staff side), never shown to the customer.
+    expect(document.body.textContent).not.toMatch(/41\.311081|69\.240562/);
     first.unmount();
 
-    routes[`GET /orders/${ID}`] = () => respond(order());
-    renderDetail();
-    await screen.findByTestId('order-number');
-    expect(screen.queryByTestId('order-slot')).toBeNull();
-    expect(screen.queryByText('Yetkazish vaqti')).toBeNull();
+    renderDetail(false, 'ru');
+    expect(await screen.findByTestId('order-courier-note')).toHaveTextContent(
+      'Привезёт курьер Яндекса. Доставка оплачивается курьеру.',
+    );
   });
 
-  it('localizes the delivery window (ru) and drops seconds from the times', async () => {
+  it('shows the total of an order placed before coordinates were stored', async () => {
+    // Older orders: no point in the snapshot, and the total still includes the fee charged then.
     routes[`GET /orders/${ID}`] = () =>
-      respond(
-        order({
-          delivery_slot: { date: '2026-11-03', starts_at: '09:00:00', ends_at: '11:30:00' },
-        }),
-      );
-    renderDetail(false, 'ru');
-    const slot = await screen.findByTestId('order-slot');
-    expect(slot).toHaveTextContent('Время доставки');
-    expect(slot).toHaveTextContent('03.11.2026, 09:00–11:30');
+      respond(order({ total_uzs: 75000, address: { ...order().address, lat: null, lon: null } }));
+    renderDetail();
+    expect((await screen.findByTestId('order-total')).textContent).toBe(`75${NB}000${NB}so‘m`);
+    expect(screen.getByRole('region', { name: 'Yetkazib berish manzili' })).toHaveTextContent(
+      'Demo ko‘cha',
+    );
   });
 
   it('uses the snapshot names in the current locale (ru)', async () => {
     renderDetail(false, 'ru');
     expect(await screen.findByText('Демо яблоко')).toBeInTheDocument();
-    expect(screen.getByText('Юнусабад')).toBeInTheDocument();
+    expect(screen.getByRole('region', { name: 'Адрес доставки' })).toHaveTextContent('Demo ko‘cha');
     expect(screen.getByRole('region', { name: 'Способ оплаты' })).toHaveTextContent(
       'Наличными при получении',
     );
-    expect(screen.getByTestId('order-total').textContent).toBe(`75${NB}000${NB}сум`);
+    expect(screen.getByTestId('order-total').textContent).toBe(`60${NB}000${NB}сум`);
   });
 
   it('shows the success banner only after placing (?placed=1)', async () => {
@@ -146,12 +139,6 @@ describe('OrderDetailView: content', () => {
   it('says it in Russian too', async () => {
     renderDetail(true, 'ru', true);
     expect(await screen.findByTestId('placed-banner')).toHaveTextContent('Мы нашли ваш заказ');
-  });
-
-  it('says "Bepul" for a free delivery', async () => {
-    routes[`GET /orders/${ID}`] = () => respond(order({ delivery_fee_uzs: 0, total_uzs: 60000 }));
-    renderDetail();
-    expect((await screen.findByTestId('order-delivery')).textContent).toBe('Bepul');
   });
 
   it('shows the comment and the timeline with Tashkent times, marking the current step', async () => {
@@ -446,14 +433,12 @@ describe('OrderDetailView: worst-case data (break-ui)', () => {
           items,
           item_count: 4950,
           subtotal_uzs: WORST.hugeTotal,
-          delivery_fee_uzs: 0,
           total_uzs: WORST.hugeTotal,
           recipient_name: WORST.recipientName,
           comment: WORST.comment,
           address: {
-            district: 'yunusobod',
-            district_name_uz: 'Yunusobod',
-            district_name_ru: 'Юнусабад',
+            lat: 41.311081,
+            lon: 69.240562,
             street: WORST.street,
             house: 'x'.repeat(32),
             apartment: 'x'.repeat(16),
@@ -475,7 +460,6 @@ describe('OrderDetailView: worst-case data (break-ui)', () => {
     expect(total.textContent).toBe('9 999 999 000 сум');
     expect(total).toHaveAttribute('data-money');
     expect(total.className).toContain('shrink-0');
-    expect(screen.getByTestId('order-delivery').textContent).toBe('Бесплатно');
 
     // Everything the customer typed wraps anywhere and can shrink in its grid cell.
     const street = within(screen.getByRole('region', { name: 'Адрес доставки' })).getByText(

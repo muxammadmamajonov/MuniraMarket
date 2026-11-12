@@ -1,9 +1,9 @@
 """Back-office access control shared by every ``/admin/**`` router.
 
 Two roles reach the back office. ``operator`` works orders (and reads the dashboard); ``admin``
-additionally manages the catalog, delivery zones and slots, users, CSV import/export and reads the
-audit log. The role is re-read from the database on every request (``CurrentUserDep``), so a
-demotion or block takes effect immediately, and it is checked **before** any entity is read, so a
+additionally manages the catalog, users, CSV import/export and reads the audit log. The role is
+re-read from the database on every request (``CurrentUserDep``), so a demotion or block takes
+effect immediately, and it is checked **before** any entity is read, so a
 wrong role gets the same ``403 forbidden`` for existing and unknown ids. The admin web app is not
 a security boundary: this API enforces every rule on its own.
 

@@ -1,5 +1,7 @@
 import { expect, test } from '@playwright/test';
 import {
+  ADDRESS_STORAGE_ITEM,
+  DEMO_ADDRESS,
   emptyCart,
   installTelegramStub,
   mainButton,
@@ -105,22 +107,28 @@ test('add from the home grid, step the quantity, then continue to the cart', asy
       .getByRole('status'),
   ).toHaveText('2', { timeout: 15_000 });
 
-  // Delivery district picked on the storefront carries into checkout, where the server prices it
-  // (checkout stays the authority; this reuses the sign-in above to stay inside the login limit).
-  const district = page.getByTestId('delivery-district').filter({ visible: true });
-  await district.getByRole('button', { name: 'Yetkazib berish manzilini tanlang' }).click();
-  const sheet = page.getByRole('dialog', { name: 'Yetkazib berish manzili' });
-  await sheet.getByText('Yunusobod', { exact: true }).click();
-  await sheet.getByRole('button', { name: 'Tanlash' }).click();
-  await expect(district).toHaveAttribute('data-district', 'yunusobod');
+  // The delivery address card opens the map picker straight away (no list or sheet in between).
+  // CI loads no Yandex script, so the picker shows its own fallback; Back closes it.
+  const card = page.getByTestId('delivery-address').filter({ visible: true });
+  await card.getByRole('button', { name: 'Yetkazish manzilini tanlang' }).click();
+  const picker = page.getByRole('dialog', { name: 'Yetkazish manzili' });
+  await expect(picker).toBeVisible();
+  await picker.getByRole('button', { name: 'Orqaga' }).first().click();
+  await expect(picker).toHaveCount(0);
+
+  // A saved address carries into checkout; the quote no longer depends on it (no request body).
+  await page.evaluate(([key, value]) => window.localStorage.setItem(key, value), [
+    ADDRESS_STORAGE_ITEM,
+    JSON.stringify(DEMO_ADDRESS),
+  ] as const);
   const quote = page.waitForRequest(
     (request) => request.url().endsWith('/api/v1/checkout/quote') && request.method() === 'POST',
   );
   await page.goto('/uz/checkout');
-  await expect(page.getByRole('combobox', { name: 'Tuman' })).toHaveText('Yunusobod', {
+  await expect(page.getByTestId('checkout-address')).toContainText('Demo ko‘cha', {
     timeout: 15_000,
   });
-  expect((await quote).postDataJSON()).toEqual({ district: 'yunusobod' });
+  expect((await quote).postData()).toBeNull();
   // Checkout is a focused flow: no tab bar competing with the MainButton / submit control.
   await expect(page.getByTestId('bottom-nav')).toHaveCount(0);
 

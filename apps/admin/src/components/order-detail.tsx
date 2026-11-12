@@ -1,9 +1,11 @@
 'use client';
 
-import type {
-  AdminOrderDetail,
-  OrderStatus,
-  OrderStatusUpdateRequest,
+import {
+  yandexGoCourierUrl,
+  type AdminOrderDetail,
+  type OrderAddress,
+  type OrderStatus,
+  type OrderStatusUpdateRequest,
 } from '@muniramarket/contracts';
 import { Button, EmptyState, ErrorState, Skeleton, formatUZS } from '@muniramarket/ui';
 import Link from 'next/link';
@@ -12,10 +14,11 @@ import { useI18n } from '@/i18n/context';
 import { formatMessage } from '@/i18n/format';
 import { readErrorMessage } from '@/lib/api/error-messages';
 import { ApiRequestError, readJson } from '@/lib/api/errors';
-import { formatDateTime, formatSlotWindow, telHref } from '@/lib/format';
+import { formatDateTime, telHref } from '@/lib/format';
 import { ordersHref } from '@/lib/orders';
 import { useSession } from '@/lib/session';
 import { CancelDialog } from './cancel-dialog';
+import { LINK_BUTTON_PRIMARY } from './ui/classes';
 import { StatusBadge } from './status-badge';
 
 type Loaded =
@@ -49,15 +52,22 @@ function Fields({ rows }: { rows: Array<[label: string, value: ReactNode]> }) {
   );
 }
 
+/**
+ * Yandex Go courier link to the delivery point, or `null` for orders placed before addresses had
+ * coordinates (and for coordinates the builder rejects).
+ */
+function courierUrl(address: OrderAddress): string | null {
+  const { lat, lon } = address;
+  return lat === null || lon === null ? null : yandexGoCourierUrl({ lat, lon });
+}
+
 function OrderBody({ order }: { order: AdminOrderDetail }) {
   const { dict, locale } = useI18n();
   const a = dict.order.address;
-  const districtName =
-    locale === 'ru' ? order.address.district_name_ru : order.address.district_name_uz;
   const phone = telHref(order.recipient_phone);
+  const yandexUrl = courierUrl(order.address);
 
   const addressRows: Array<[string, ReactNode]> = [
-    [a.district, districtName],
     [a.street, order.address.street],
     [a.house, order.address.house],
   ];
@@ -103,10 +113,6 @@ function OrderBody({ order }: { order: AdminOrderDetail }) {
             <div className="flex justify-between gap-4">
               <dt className="text-muted-foreground">{dict.order.totals.subtotal}</dt>
               <dd>{formatUZS(order.subtotal_uzs, locale)}</dd>
-            </div>
-            <div className="flex justify-between gap-4">
-              <dt className="text-muted-foreground">{dict.order.totals.delivery}</dt>
-              <dd>{formatUZS(order.delivery_fee_uzs, locale)}</dd>
             </div>
             <div className="flex justify-between gap-4 text-lg font-bold">
               <dt>{dict.order.totals.total}</dt>
@@ -161,26 +167,22 @@ function OrderBody({ order }: { order: AdminOrderDetail }) {
                 ),
               ],
               [dict.order.payment, dict.payment[order.payment_method]],
-              ...(order.delivery_slot === null || order.delivery_slot === undefined
-                ? []
-                : ([
-                    [
-                      dict.order.deliverySlot,
-                      <span key="slot" data-testid="order-delivery-slot" className="tabular">
-                        {formatSlotWindow(
-                          order.delivery_slot.date,
-                          order.delivery_slot.starts_at,
-                          order.delivery_slot.ends_at,
-                        )}
-                      </span>,
-                    ],
-                  ] satisfies Array<[string, ReactNode]>)),
               [dict.order.createdAt, formatDateTime(order.created_at)],
             ]}
           />
         </Card>
         <Card title={a.title}>
           <Fields rows={addressRows} />
+          {yandexUrl === null ? null : (
+            <a
+              href={yandexUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className={LINK_BUTTON_PRIMARY}
+            >
+              {a.callYandex}
+            </a>
+          )}
         </Card>
         {order.comment !== null && order.comment !== '' ? (
           <Card title={dict.order.comment}>

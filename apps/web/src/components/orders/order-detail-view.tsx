@@ -5,11 +5,10 @@ import { Button, EmptyState, ErrorState, Skeleton, formatUZS } from '@muniramark
 import Link from 'next/link';
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { useI18n } from '@/i18n/context';
-import { formatDateTime, formatSlotDate } from '@/i18n/date';
+import { formatDateTime } from '@/i18n/date';
 import { formatMessage, formatPlural } from '@/i18n/format';
 import { ApiRequestError } from '@/lib/api/errors';
 import { getOrder } from '@/lib/api/orders';
-import { slotWindow } from '@/lib/checkout/slots';
 import { useSession } from '@/lib/session';
 import { CheckIcon } from '../icons';
 import { SignInPrompt } from '../sign-in-prompt';
@@ -284,7 +283,6 @@ export function OrderDetailView({ id, placed, found = false }: OrderDetailViewPr
   const { order } = load;
   const d = dict.orders.detail;
   const { address } = order;
-  const districtName = locale === 'ru' ? address.district_name_ru : address.district_name_uz;
 
   return (
     <div className="flex min-w-0 flex-col gap-3">
@@ -356,20 +354,6 @@ export function OrderDetailView({ id, placed, found = false }: OrderDetailViewPr
               ))}
             </ul>
             <div className="flex flex-col gap-1.5 border-t border-hairline pt-3">
-              <p className="flex items-baseline justify-between gap-3">
-                <span>{d.subtotal}</span>
-                <span data-money className="shrink-0">
-                  {formatUZS(order.subtotal_uzs, locale)}
-                </span>
-              </p>
-              <p className="flex items-baseline justify-between gap-3">
-                <span>{d.deliveryFee}</span>
-                <span data-money data-testid="order-delivery" className="shrink-0">
-                  {order.delivery_fee_uzs === 0
-                    ? d.free
-                    : formatUZS(order.delivery_fee_uzs, locale)}
-                </span>
-              </p>
               <p className="flex items-baseline justify-between gap-3 text-lg font-bold">
                 <span>{d.total}</span>
                 <span data-money data-testid="order-total" className="shrink-0">
@@ -383,14 +367,6 @@ export function OrderDetailView({ id, placed, found = false }: OrderDetailViewPr
         <div className="flex min-w-0 flex-col gap-3">
           <Section id="order-delivery" title={d.deliveryHeading}>
             <dl className="flex flex-col gap-1.5">
-              {order.delivery_slot === null ? null : (
-                <Fact
-                  label={d.slot}
-                  value={`${formatSlotDate(order.delivery_slot.date)}, ${slotWindow(order.delivery_slot)}`}
-                  testId="order-slot"
-                />
-              )}
-              <Fact label={d.district} value={districtName} />
               <Fact label={d.street} value={address.street} />
               <Fact label={d.house} value={address.house} />
               <Fact label={d.apartment} value={address.apartment} />
@@ -398,6 +374,9 @@ export function OrderDetailView({ id, placed, found = false }: OrderDetailViewPr
               <Fact label={d.floor} value={address.floor} />
               <Fact label={d.landmark} value={address.landmark} />
             </dl>
+            <p className="text-sm text-muted-foreground" data-testid="order-courier-note">
+              {d.courierNote}
+            </p>
           </Section>
 
           <Section id="order-recipient" title={d.recipientHeading}>

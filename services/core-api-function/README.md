@@ -1,6 +1,6 @@
 # Core API — Neon Function `coreapi`
 
-The production Core API: catalog, cart, checkout, orders, delivery, profile/auth (Telegram Mini
+The production Core API: catalog, cart, checkout, orders, profile/auth (Telegram Mini
 App `initData` and OIDC), admin back office, internal Telegram/order-group routes, audit and
 maintenance. Hono + `pg` on Node.js 24, deployed as the Neon Function with the permanent slug
 `coreapi` ([`/neon.ts`](../../neon.ts)). Design: [ADR 0016](../../architecture/0016-core-api-on-neon-functions.md).

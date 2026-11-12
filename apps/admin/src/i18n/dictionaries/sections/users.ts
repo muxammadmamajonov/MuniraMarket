@@ -56,7 +56,7 @@ export const usersDict: Record<Locale, UsersDict> = {
     roleDialog: {
       title: 'Rolni o‘zgartirish',
       description:
-        '{name} uchun yangi rolni tanlang. Rol darhol kuchga kiradi: administrator katalog, yetkazib berish va foydalanuvchilarni boshqara oladi.',
+        '{name} uchun yangi rolni tanlang. Rol darhol kuchga kiradi: administrator katalog va foydalanuvchilarni boshqara oladi.',
       select: 'Yangi rol',
       confirm: 'Rolni o‘zgartirish',
       unchanged: 'Joriy rol: {role}. Boshqa rolni tanlang.',
@@ -98,7 +98,7 @@ export const usersDict: Record<Locale, UsersDict> = {
     roleDialog: {
       title: 'Смена роли',
       description:
-        'Выберите новую роль для {name}. Она вступает в силу сразу: администратор управляет каталогом, доставкой и пользователями.',
+        'Выберите новую роль для {name}. Она вступает в силу сразу: администратор управляет каталогом и пользователями.',
       select: 'Новая роль',
       confirm: 'Сменить роль',
       unchanged: 'Текущая роль: {role}. Выберите другую.',

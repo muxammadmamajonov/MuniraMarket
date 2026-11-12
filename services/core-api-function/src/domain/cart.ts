@@ -94,8 +94,8 @@ export function evaluateLine(facts: LineFacts): EvaluatedLine {
 }
 
 /**
- * Evaluate every line, then total only the valid ones. `totalUzs` equals the subtotal (delivery
- * is priced by the checkout quote).
+ * Evaluate every line, then total only the valid ones. `totalUzs` equals the subtotal (the store
+ * charges nothing for delivery: the customer pays the Yandex Go courier).
  */
 export function evaluateCart(lines: readonly LineFacts[]): {
   lines: EvaluatedLine[];

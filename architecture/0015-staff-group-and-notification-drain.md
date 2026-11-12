@@ -2,6 +2,8 @@
 
 - Status: accepted
 - Builds on: [0008](0008-order-notification-outbox.md), [0003](0003-service-auth-contract.md)
+- Updated by: [0017](0017-yandex-go-courier-delivery.md) (a NEW-order alert carries the delivery
+  point inside a "Yandex chaqirish" button)
 
 ## Context
 

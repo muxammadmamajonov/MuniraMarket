@@ -9,8 +9,6 @@ export interface SubmitBarProps {
   label: string;
   busy: boolean;
   disabled: boolean;
-  /** Why the button is disabled, when the customer can fix it (for example no delivery time). */
-  reason?: string | null;
 }
 
 /**
@@ -20,7 +18,7 @@ export interface SubmitBarProps {
  *
  * Inside Telegram this is not rendered: the native MainButton is the submit control there.
  */
-export function SubmitBar({ total, label, busy, disabled, reason = null }: SubmitBarProps) {
+export function SubmitBar({ total, label, busy, disabled }: SubmitBarProps) {
   const { dict } = useI18n();
   return (
     <div
@@ -28,11 +26,6 @@ export function SubmitBar({ total, label, busy, disabled, reason = null }: Submi
       className="fixed inset-x-0 bottom-0 z-30 border-t border-hairline bg-background/95 backdrop-blur-md pb-(--mm-inset-bottom) pl-(--mm-inset-left) pr-(--mm-inset-right)"
     >
       <div className="mx-auto flex w-full max-w-5xl flex-wrap items-center justify-between gap-x-4 gap-y-2 px-4 py-3 sm:px-6">
-        {reason === null ? null : (
-          <p id="submit-reason" data-testid="submit-reason" className="w-full text-sm font-medium">
-            {reason}
-          </p>
-        )}
         {total === null ? null : (
           <p className="flex shrink-0 flex-col leading-tight">
             <span className="text-sm text-muted-foreground">{dict.checkout.summary.total}</span>
@@ -46,7 +39,6 @@ export function SubmitBar({ total, label, busy, disabled, reason = null }: Submi
           size="lg"
           disabled={disabled}
           aria-busy={busy}
-          aria-describedby={reason === null ? undefined : 'submit-reason'}
           className="min-w-0 grow basis-44"
         >
           {busy ? dict.checkout.placing : label}

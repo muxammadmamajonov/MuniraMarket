@@ -4,9 +4,7 @@ import { csvDict } from './sections/csv';
 import { dashboardDict } from './sections/dashboard';
 import { productsDict } from './sections/products';
 import { sharedDict } from './sections/shared';
-import { slotsDict } from './sections/slots';
 import { usersDict } from './sections/users';
-import { zonesDict } from './sections/zones';
 import type { Dictionary } from './types';
 
 export const ru: Dictionary = {
@@ -79,20 +77,19 @@ export const ru: Dictionary = {
     notFoundMessage: 'Такого заказа нет.',
     loading: 'Загрузка заказа…',
     createdAt: 'Создан',
-    deliverySlot: 'Окно доставки',
     payment: 'Способ оплаты',
     items: { title: 'Товары', sku: 'Артикул' },
-    totals: { subtotal: 'Сумма товаров', delivery: 'Доставка', total: 'Итого' },
+    totals: { subtotal: 'Сумма товаров', total: 'Итого' },
     recipient: { title: 'Получатель', name: 'Имя', phone: 'Телефон' },
     address: {
       title: 'Адрес',
-      district: 'Район',
       street: 'Улица',
       house: 'Дом',
       apartment: 'Квартира',
       entrance: 'Подъезд',
       floor: 'Этаж',
       landmark: 'Ориентир',
+      callYandex: 'Вызвать Яндекс',
     },
     comment: 'Комментарий',
     cancelReason: 'Причина отмены',
@@ -172,8 +169,6 @@ export const ru: Dictionary = {
   products: productsDict.ru,
   categories: categoriesDict.ru,
   csv: csvDict.ru,
-  zones: zonesDict.ru,
-  slots: slotsDict.ru,
   users: usersDict.ru,
   audit: auditDict.ru,
 };

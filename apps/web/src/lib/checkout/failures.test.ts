@@ -54,18 +54,37 @@ describe('classifyCheckoutError', () => {
     ['product_inactive', { kind: 'product_inactive' }],
     ['product_not_found', { kind: 'product_inactive' }],
     ['cart_empty', { kind: 'cart_empty' }],
-    ['below_min_order', { kind: 'below_min_order' }],
-    ['district_not_served', { kind: 'district_not_served' }],
     ['too_many_open_orders', { kind: 'too_many_open_orders' }],
+    ['phone_verification_required', { kind: 'phone_verification_required' }],
     ['account_blocked', { kind: 'blocked' }],
     ['idempotency_key_conflict', { kind: 'key_conflict' }],
     ['session_required', { kind: 'session' }],
+    ['unauthorized', { kind: 'session' }],
     ['csrf_failed', { kind: 'session' }],
     ['network_error', { kind: 'network' }],
     ['internal_error', { kind: 'server' }],
     ['service_unavailable', { kind: 'server' }],
   ] as const)('maps %s', (code, expected) => {
     expect(classifyCheckoutError(error({ status: 409, code, message: 'x' }))).toEqual(expected);
+  });
+
+  it('maps validation details of the address (point or text) onto the one address field', () => {
+    const failure = classifyCheckoutError(
+      error({
+        status: 422,
+        code: 'validation_error',
+        message: 'x',
+        details: [
+          { loc: ['body', 'address', 'lat'], msg: 'bad' },
+          { loc: ['body', 'address', 'house'], msg: 'bad' },
+        ],
+      }),
+    );
+    expect(failure).toEqual({
+      kind: 'validation',
+      fields: { address: { kind: 'invalid' } },
+      unmapped: 0,
+    });
   });
 
   it('maps validation details onto fields', () => {
@@ -116,22 +135,5 @@ describe('isRetrySafe', () => {
     expect(isRetrySafe({ kind: 'price_changed', newTotal: 1 })).toBe(false);
     expect(isRetrySafe({ kind: 'insufficient_stock', available: 1 })).toBe(false);
     expect(isRetrySafe({ kind: 'key_conflict' })).toBe(false);
-  });
-});
-
-describe('classifyCheckoutError: delivery slots', () => {
-  it.each([
-    ['slot_full', 'full'],
-    ['slot_unavailable', 'unavailable'],
-    ['slot_required', 'required'],
-  ] as const)('maps %s to a slot failure (%s)', (code, reason) => {
-    expect(classifyCheckoutError(error({ status: 409, code, message: 'x' }))).toEqual({
-      kind: 'slot',
-      reason,
-    });
-  });
-
-  it('never offers a blind retry of the same request for a slot failure', () => {
-    expect(isRetrySafe({ kind: 'slot', reason: 'full' })).toBe(false);
   });
 });

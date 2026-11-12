@@ -29,7 +29,6 @@ from tests.db_data import (
     add_category,
     add_product,
     add_user,
-    add_zone,
     build_app,
 )
 from tests.db_support import INTEGRATION_MARKS
@@ -372,7 +371,6 @@ async def test_concurrent_imports_of_the_same_new_sku(shop: Shop) -> None:
 
 async def place_order(shop: Shop, sku: str, quantity: int) -> dict[str, Any]:
     """A customer orders ``quantity`` of ``sku`` through the storefront API."""
-    await add_zone(shop.factory, f"demo-{uuid.uuid4().hex[:8]}", ["chilonzor"])
     customer = await add_user(shop.factory)
     async with shop.factory() as session:
         product = (await session.execute(select(Product).where(Product.sku == sku))).scalar_one()
@@ -383,7 +381,7 @@ async def place_order(shop: Shop, sku: str, quantity: int) -> dict[str, Any]:
             "/api/v1/cart/items", json={"product_id": str(product.id), "quantity": quantity}
         )
         assert added.status_code == 200, added.text
-        total = product.price_uzs * quantity + 15_000
+        total = product.price_uzs * quantity
         response = await client.post(
             "/api/v1/orders",
             json=order_body(expected_total_uzs=total),
@@ -400,7 +398,7 @@ async def test_import_of_a_file_exported_before_an_order_is_stale(shop: Shop) ->
     stock_before, stamp_before = await shop.product_state("DEMO-OLMA")
     assert stock_before == 5
 
-    await place_order(shop, "DEMO-OLMA", 5)  # 60 000 + delivery: above the 50 000 minimum
+    await place_order(shop, "DEMO-OLMA", 5)
     stock_after, stamp_after = await shop.product_state("DEMO-OLMA")
     assert stock_after == 0
     assert stamp_after > stamp_before  # the order's stock decrement bumped updated_at

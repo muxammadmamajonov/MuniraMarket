@@ -177,6 +177,56 @@ describe('parseStaffAlertPayload', () => {
   it.each([null, [], 'x', 1])('rejects a non-object payload %j', (value) => {
     expect(parseStaffAlertPayload(value)).toBeNull();
   });
+
+  it('keeps a valid destination of a NEW order', () => {
+    expect(
+      parseStaffAlertPayload(staffPayload({ destination: { lat: 41.311081, lon: 69.240562 } })),
+    ).toEqual({
+      kind: 'staff_alert',
+      chatId: GROUP_ID,
+      orderNumber: '261031-7KQ2MX',
+      status: 'NEW',
+      previousStatus: null,
+      totalUzs: 125000,
+      cancelledByCustomer: false,
+      destination: { lat: 41.311081, lon: 69.240562 },
+    });
+    // Extra keys inside the destination are not carried over.
+    expect(
+      parseStaffAlertPayload(staffPayload({ destination: { lat: -90, lon: 180, street: 'x' } }))
+        ?.destination,
+    ).toEqual({ lat: -90, lon: 180 });
+  });
+
+  it.each([
+    ['a string latitude', { lat: '41.3', lon: 69.2 }],
+    ['an out-of-range latitude', { lat: 91, lon: 69.2 }],
+    ['an out-of-range longitude', { lat: 41.3, lon: -180.1 }],
+    ['a missing longitude', { lat: 41.3 }],
+    ['an array', [41.3, 69.2]],
+    ['null', null],
+    ['a string', '41.3,69.2'],
+  ])('drops %s destination but keeps the alert', (_label, destination) => {
+    const alert = parseStaffAlertPayload(staffPayload({ destination }));
+    expect(alert).toMatchObject({
+      kind: 'staff_alert',
+      status: 'NEW',
+      orderNumber: '261031-7KQ2MX',
+    });
+    expect(alert).not.toHaveProperty('destination');
+  });
+
+  it('drops a destination on any status other than NEW', () => {
+    const alert = parseStaffAlertPayload(
+      staffPayload({
+        status: 'CANCELLED',
+        previous_status: 'NEW',
+        destination: { lat: 41.311081, lon: 69.240562 },
+      }),
+    );
+    expect(alert).toMatchObject({ status: 'CANCELLED' });
+    expect(alert).not.toHaveProperty('destination');
+  });
 });
 
 describe('drainOrderNotifications', () => {

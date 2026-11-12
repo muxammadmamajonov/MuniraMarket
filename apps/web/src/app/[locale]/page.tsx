@@ -3,7 +3,7 @@ import { notFound } from 'next/navigation';
 import Link from 'next/link';
 import { CartBar } from '@/components/cart-bar';
 import { CategoryRail } from '@/components/category-rail';
-import { DeliveryDistrict } from '@/components/delivery-district';
+import { DeliveryAddressCard } from '@/components/delivery-address-card';
 import { DeliveryInfo } from '@/components/delivery-info';
 import { EmptyPanel } from '@/components/empty-panel';
 import { BasketIcon, ChevronRightIcon } from '@/components/icons';
@@ -13,7 +13,7 @@ import { SearchForm } from '@/components/search-form';
 import { SessionNotice } from '@/components/session-notice';
 import { FOCUS_RING, PRESS } from '@/components/ui-classes';
 import { getDictionary } from '@/i18n';
-import { fetchCategories, fetchDeliveryZones, fetchProducts } from '@/lib/api/server';
+import { fetchCategories, fetchProducts } from '@/lib/api/server';
 
 const NEWEST_COUNT = 24;
 
@@ -22,10 +22,9 @@ export default async function HomePage({ params }: PageProps<'/[locale]'>) {
   if (!isLocale(locale)) notFound();
   const dict = getDictionary(locale);
 
-  const [categories, newest, zones] = await Promise.all([
+  const [categories, newest] = await Promise.all([
     fetchCategories(),
     fetchProducts({ sort: 'newest', page: 1, pageSize: NEWEST_COUNT }),
-    fetchDeliveryZones(),
   ]);
   const empty = categories.length === 0 && newest.items.length === 0;
 
@@ -35,8 +34,8 @@ export default async function HomePage({ params }: PageProps<'/[locale]'>) {
         {/* The wordmark in the header is the visible name; this keeps one heading per page. */}
         <h1 className="sr-only">{dict.home.title}</h1>
 
-        {/* Delivery first, but never in the way: the catalog below works without a district. */}
-        <DeliveryDistrict zones={zones} />
+        {/* Delivery first, but never in the way: the catalog below works without an address. */}
+        <DeliveryAddressCard />
         <SearchForm locale={locale} dict={dict} />
 
         {empty ? (

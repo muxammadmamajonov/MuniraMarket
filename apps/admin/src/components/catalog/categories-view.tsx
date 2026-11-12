@@ -181,7 +181,7 @@ function CategoryDialog({
         setErrors(next);
         setFormError(dict.validation.summary);
       } else {
-        setFormError(writeErrorMessage(dict, locale, error));
+        setFormError(writeErrorMessage(dict, error));
       }
     });
   };
@@ -317,7 +317,7 @@ export function CategoriesView() {
         jsonInit('PATCH', { is_active: !category.is_active }),
       );
       if (result.ok) resource.reload();
-      else setRowError(writeErrorMessage(dict, locale, result.error));
+      else setRowError(writeErrorMessage(dict, result.error));
     });
 
   const remove = async (category: AdminCategory): Promise<string | null> => {
@@ -326,7 +326,7 @@ export function CategoriesView() {
       `/admin/categories/${encodeURIComponent(category.id)}`,
       jsonInit('DELETE'),
     );
-    if (!result.ok) return writeErrorMessage(dict, locale, result.error);
+    if (!result.ok) return writeErrorMessage(dict, result.error);
     setNotice(copy.deleted);
     resource.reload();
     return null;

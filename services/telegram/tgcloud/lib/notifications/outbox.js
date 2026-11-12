@@ -14,6 +14,7 @@
  * from a payload (names, order numbers, chat ids) is ever logged or put into an error code.
  */
 import { isOrderStatus } from '../i18n.js';
+import { isGeoPoint } from './yandexGo.js';
 
 export const ORDER_STATUS_CHANGED = 'order.status_changed';
 export const ORDER_STAFF_ALERT = 'order.staff_alert';
@@ -104,6 +105,12 @@ export function parseOrderStatusPayload(payload) {
 /**
  * Strictly validates an `order.staff_alert` payload. `chat_id` must be a group/supergroup id
  * (negative); `previous_status` is null for a new order. Unknown extra keys are ignored.
+ *
+ * `destination` (`{lat, lon}`, optional) is the delivery point of a `NEW` order; it only ever
+ * becomes the Yandex Go button URL. It is validated strictly (finite numbers, WGS84 range), but a
+ * bad or misplaced one (missing, malformed, or on any status other than `NEW`) only drops the
+ * button: the alert text itself is what staff must not miss, so it is still delivered. Nothing
+ * invalid can reach the URL.
  * @param {unknown} payload
  * @returns {import('./transport.js').StaffAlertNotification | null} null when malformed
  */
@@ -117,6 +124,7 @@ export function parseStaffAlertPayload(payload) {
     total_uzs: totalUzs,
     chat_id: chatId,
     cancelled_by_customer: cancelledByCustomer,
+    destination,
   } = payload;
   if (typeof orderId !== 'string' || !UUID_RE.test(orderId)) return null;
   if (
@@ -138,7 +146,8 @@ export function parseStaffAlertPayload(payload) {
     return null;
   }
   if (typeof cancelledByCustomer !== 'boolean') return null;
-  return {
+  /** @type {import('./transport.js').StaffAlertNotification} */
+  const alert = {
     kind: 'staff_alert',
     chatId,
     orderNumber,
@@ -147,6 +156,10 @@ export function parseStaffAlertPayload(payload) {
     totalUzs,
     cancelledByCustomer,
   };
+  if (status === 'NEW' && isGeoPoint(destination)) {
+    alert.destination = { lat: destination.lat, lon: destination.lon };
+  }
+  return alert;
 }
 
 /**

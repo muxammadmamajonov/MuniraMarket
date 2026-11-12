@@ -24,7 +24,7 @@ import type { Router } from './index.ts';
 
 export const PUBLIC_CACHE = 'public, max-age=60';
 
-/** Router-level dependency shared with /delivery: the per-IP limit, before any database work. */
+/** Router-level dependency: the per-IP limit, before any database work. */
 export async function catalogIpLimit(c: Ctx): Promise<void> {
   await rateLimit(c, RULES.CATALOG_IP, 'ip');
 }

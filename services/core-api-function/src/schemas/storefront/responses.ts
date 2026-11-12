@@ -1,17 +1,9 @@
 /**
  * Response bodies with the reference's exact field order, names and nulls (ports of the
- * `from_record` builders in services/api/app/schemas/{catalog,cart,delivery,checkout}.py).
+ * `from_record` builders in services/api/app/schemas/{catalog,cart,checkout}.py).
  */
 import { evaluateCart, isInStock, type CartIssue } from '../../domain/cart.ts';
 import type { QuoteIssue } from '../../domain/checkout.ts';
-import {
-  DISTRICT_CODES,
-  DISTRICT_NAMES,
-  TASHKENT_TIMEZONE,
-  hhmm,
-  isDistrictCode,
-  isOpenAt,
-} from '../../domain/delivery.ts';
 import {
   allowedTransitionsOf,
   customerCanCancel,
@@ -27,16 +19,11 @@ import type {
   Unit,
 } from '../../repositories/catalog.ts';
 import {
-  slotRemaining,
-  type SlotOptionRecord,
-  type ZoneRecord,
-} from '../../repositories/delivery.ts';
-import type {
-  OrderPageRecord,
-  OrderRecord,
-  PaymentMethod,
-  QuoteRecord,
-  SlotSnapshotRecord,
+  coordinatesOf,
+  type OrderPageRecord,
+  type OrderRecord,
+  type PaymentMethod,
+  type QuoteRecord,
 } from '../../repositories/orders.ts';
 
 // --- catalog -------------------------------------------------------------------------------------
@@ -170,92 +157,39 @@ export function cartBody(record: CartRecord) {
   };
 }
 
-// --- delivery ------------------------------------------------------------------------------------
-
-export function deliveryZone(zone: ZoneRecord, now: number) {
-  return {
-    id: zone.zoneId,
-    slug: zone.slug,
-    name_uz: zone.nameUz,
-    name_ru: zone.nameRu,
-    delivery_fee_uzs: zone.rules.deliveryFeeUzs,
-    free_delivery_threshold_uzs: zone.rules.freeDeliveryThresholdUzs,
-    min_order_uzs: zone.rules.minOrderUzs,
-    opens_at: hhmm(zone.rules.opensAt),
-    closes_at: hhmm(zone.rules.closesAt),
-    is_open_now: isOpenAt(zone.rules, now),
-    // Stable, documented order.
-    districts: DISTRICT_CODES.filter((code) => zone.districts.has(code)).map((code) => ({
-      code,
-      name_uz: DISTRICT_NAMES[code].uz,
-      name_ru: DISTRICT_NAMES[code].ru,
-    })),
-  };
-}
-
-export function deliveryZoneList(zones: readonly ZoneRecord[], now: number) {
-  return { items: zones.map((zone) => deliveryZone(zone, now)), timezone: TASHKENT_TIMEZONE };
-}
-
-export function deliverySlotOption(slot: SlotOptionRecord) {
-  const remaining = slotRemaining(slot);
-  return {
-    id: slot.id,
-    date: slot.slotDate,
-    starts_at: hhmm(slot.startsAt),
-    ends_at: hhmm(slot.endsAt),
-    remaining,
-    is_full: remaining === 0,
-  };
-}
-
 // --- checkout / orders ---------------------------------------------------------------------------
 
-export function checkoutQuote(record: QuoteRecord, now: number) {
+export function checkoutQuote(record: QuoteRecord) {
   const totals = record.totals;
   return {
     items: cartLines(record.lines, totals.lines),
     item_count: totals.cart.itemCount,
     subtotal_uzs: totals.subtotalUzs,
-    delivery_fee_uzs: totals.deliveryFeeUzs,
     total_uzs: totals.totalUzs,
-    free_delivery_remaining_uzs: totals.freeDeliveryRemainingUzs,
-    zone: deliveryZone(record.zone, now),
     issues: [...totals.issues] as QuoteIssue[],
     can_place_order: totals.canPlaceOrder,
-    slot_required: record.slotRequired,
-    delivery_slots: record.slots.map(deliverySlotOption),
   };
 }
 
+/**
+ * The stored address snapshot. `lat`/`lon` are `null` only for orders placed before addresses
+ * had coordinates; any other key of an old snapshot is ignored.
+ */
 function orderAddress(snapshot: Record<string, unknown>) {
-  const district = snapshot['district'];
-  if (typeof district !== 'string' || !isDistrictCode(district)) {
-    throw new Error('unknown district in order snapshot');
-  }
   const optional = (key: string): string | null => {
     const value = snapshot[key];
     return typeof value === 'string' ? value : null;
   };
+  const point = coordinatesOf(snapshot);
   return {
-    district,
-    district_name_uz: DISTRICT_NAMES[district].uz,
-    district_name_ru: DISTRICT_NAMES[district].ru,
+    lat: point?.lat ?? null,
+    lon: point?.lon ?? null,
     street: snapshot['street'] as string,
     house: snapshot['house'] as string,
     apartment: optional('apartment'),
     entrance: optional('entrance'),
     floor: optional('floor'),
     landmark: optional('landmark'),
-  };
-}
-
-function orderDeliverySlot(record: SlotSnapshotRecord | null) {
-  if (record === null) return null;
-  return {
-    date: record.slot_date,
-    starts_at: hhmm(record.starts_at),
-    ends_at: hhmm(record.ends_at),
   };
 }
 
@@ -267,14 +201,12 @@ export function orderDetail(record: OrderRecord) {
     created_at: record.created_at,
     updated_at: record.updated_at,
     subtotal_uzs: record.subtotal_uzs,
-    delivery_fee_uzs: record.delivery_fee_uzs,
     total_uzs: record.total_uzs,
     item_count: record.item_count,
     payment_method: record.payment_method as PaymentMethod,
     recipient_name: record.recipient_name,
     recipient_phone: record.recipient_phone,
     address: orderAddress(record.address),
-    delivery_slot: orderDeliverySlot(record.delivery_slot),
     comment: record.comment,
     cancel_reason: record.cancel_reason,
     items: record.items.map((item) => ({

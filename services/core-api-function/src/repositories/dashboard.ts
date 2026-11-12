@@ -4,7 +4,7 @@
  */
 
 import type { Database } from '../db.ts';
-import { tashkentDate, tashkentInstant } from '../domain/delivery.ts';
+import { tashkentDate, tashkentInstant } from '../domain/tashkentTime.ts';
 
 export interface DashboardRecord {
   day: string;

@@ -18,9 +18,7 @@ import type {
   PermissionDict,
   ValidationDict,
 } from './sections/shared';
-import type { SlotsDict } from './sections/slots';
 import type { UsersDict } from './sections/users';
-import type { ZonesDict } from './sections/zones';
 
 /**
  * Shape every dictionary must satisfy. `uz.ts` and `ru.ts` are both typed as `Dictionary`, so a
@@ -90,20 +88,20 @@ export interface Dictionary {
     notFoundMessage: string;
     loading: string;
     createdAt: string;
-    deliverySlot: string;
     payment: string;
     items: { title: string; sku: string };
-    totals: { subtotal: string; delivery: string; total: string };
+    totals: { subtotal: string; total: string };
     recipient: { title: string; name: string; phone: string };
     address: {
       title: string;
-      district: string;
       street: string;
       house: string;
       apartment: string;
       entrance: string;
       floor: string;
       landmark: string;
+      /** External link that opens Yandex Go with a courier order to the delivery point. */
+      callYandex: string;
     };
     comment: string;
     cancelReason: string;
@@ -143,8 +141,6 @@ export interface Dictionary {
   products: ProductsDict;
   categories: CategoriesDict;
   csv: CsvDict;
-  zones: ZonesDict;
-  slots: SlotsDict;
   users: UsersDict;
   audit: AuditDict;
 }

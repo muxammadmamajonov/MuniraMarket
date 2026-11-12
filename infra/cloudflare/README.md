@@ -143,9 +143,10 @@ Cloudflare sets `CF-Connecting-IP`; the apps forward it as `X-Forwarded-For`
 writes `X-Forwarded-For` itself. The Function trusts that header because every request it serves
 carries the gateway secret; a request without it is rejected before anything else happens.
 
-The storefront's optional map step reads `YANDEX_MAPS_JAVASCRIPT_API_KEY` and
+The storefront's address picker reads `YANDEX_MAPS_JAVASCRIPT_API_KEY` and
 `YANDEX_MAPS_GEOCODER_API_KEY` at runtime. They are web Worker secrets, but necessarily become
 visible to browsers in Yandex requests. Restrict each in the Yandex console by HTTP Referer to
 the storefront domain; never put them in Git or the admin/gateway Worker. Without the JavaScript
-key the picker shows "map unavailable"; without the Geocoder key the map works but the customer
-must choose a district from the list.
+key the picker shows "map unavailable" and no address can be chosen (every order needs a map
+point, so it is required in production); without the Geocoder key the map works and the customer
+types street and house.

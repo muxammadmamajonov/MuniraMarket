@@ -148,6 +148,52 @@ describe('createTelegramBotTransport: staff alerts', () => {
     );
   });
 
+  it('adds the Yandex Go courier button only when the alert has a destination', async () => {
+    const api = createRecordingApi();
+    const transport = createTelegramBotTransport({ api });
+    const withDestination = alert({
+      status: 'NEW',
+      previousStatus: null,
+      cancelledByCustomer: false,
+      destination: { lat: 41.311081, lon: 69.240562 },
+    });
+    await expect(transport.deliver(withDestination)).resolves.toEqual({ outcome: 'delivered' });
+    await expect(
+      transport.deliver(alert({ status: 'NEW', previousStatus: null, cancelledByCustomer: false })),
+    ).resolves.toEqual({ outcome: 'delivered' });
+    expect(api.calls).toHaveLength(2);
+    const [first, second] = api.calls.map((call) => call.params);
+    expect(first.chat_id).toBe(GROUP_ID);
+    expect(first).not.toHaveProperty('parse_mode');
+    expect(first.reply_markup).toEqual({
+      inline_keyboard: [
+        [
+          {
+            text: 'Yandex chaqirish / Вызвать Яндекс',
+            url:
+              'https://3.redirect.appmetrica.yandex.com/route?end-lat=41.311081&end-lon=69.240562' +
+              '&tariffClass=courier&level=courier&ref=muniramarket' +
+              '&appmetrica_tracking_id=1178268795219780156&lang=uz',
+          },
+        ],
+      ],
+    });
+    // The coordinates never appear in the text itself.
+    expect(first.text).not.toMatch(/41\.311|69\.240/);
+    expect(second).not.toHaveProperty('reply_markup');
+    expect(second.text).toBe(first.text);
+  });
+
+  it('sends the alert without a button when the destination is unusable', async () => {
+    const api = createRecordingApi();
+    const result = await createTelegramBotTransport({ api }).deliver(
+      alert({ destination: { lat: 123, lon: 69.2 } }),
+    );
+    expect(result).toEqual({ outcome: 'delivered' });
+    expect(api.calls).toHaveLength(1);
+    expect(api.calls[0].params).not.toHaveProperty('reply_markup');
+  });
+
   it('maps 403 (bot removed from the group) to recipient_blocked', async () => {
     const api = throwing(new BotApiError(403, 'Forbidden: bot was kicked from the group chat'));
     await expect(createTelegramBotTransport({ api }).deliver(alert())).resolves.toEqual({

@@ -81,6 +81,7 @@ gateway bundles the signer and the Function bundles the drain; their only `sdk` 
 | `claimNotifications`, `reportNotification`                                | `lib/coreApi/client.js`                             | Signed calls with an EMPTY actor (the drain acts for the service, never for a user).                                                  |
 | `NotificationTransport`, `createTelegramBotTransport({ api })`            | `lib/notifications/transport.js`                    | `deliver(notification)` resolves to `{ outcome, errorCode? }`; customer messages and staff alerts, both plain text (no `parse_mode`). |
 | `buildOrderStatusMessage`, `buildStaffAlertMessage`                       | `lib/notifications/orderStatus.js`, `staffAlert.js` | Message texts.                                                                                                                        |
+| `yandexGoCourierUrl({ lat, lon })`                                        | `lib/notifications/yandexGo.js`                     | Yandex Go courier link for the staff alert button (`null` for an invalid point).                                                      |
 | `drainOrderNotifications({ coreApi, transport, limit, maxBatches, now })` | `lib/notifications/outbox.js`                       | Claim, validate, deliver sequentially, report; returns a summary.                                                                     |
 
 **Core API contract** (signed per ADR 0003, empty actor; 401 for any auth failure, 403 if an actor is sent):
@@ -100,9 +101,16 @@ gateway bundles the signer and the Function bundles the drain; their only `sdk` 
 - `order.staff_alert` payload (to the connected staff group; enqueued for NEW, CANCELLED,
   OUT_FOR_DELIVERY and DELIVERED when a group is connected): `order_id`, `order_number`, `status`,
   `previous_status` (status or `null`), `total_uzs`, `chat_id` (negative group id),
-  `cancelled_by_customer` (boolean). No customer PII. The message is one bilingual text: Uzbek
-  lines (headline + order number, status with the previous status when known, total, "cancelled
-  by the customer" when true), a blank line, then the same in Russian.
+  `cancelled_by_customer` (boolean), and for a `NEW` order whose address has coordinates an
+  optional `destination` (`{"lat", "lon"}`, WGS84). No customer name, phone or address text. The
+  message is one bilingual text: Uzbek lines (headline + order number, status with the previous
+  status when known, total, "cancelled by the customer" when true), a blank line, then the same in
+  Russian. With a valid `destination` it also carries one inline URL button, "Yandex chaqirish /
+  Вызвать Яндекс", opening Yandex Go with the destination preset and NO start point (the app
+  uses the location of whoever taps it; `lib/notifications/yandexGo.js`, same link as
+  `packages/contracts/src/yandex-go.ts`). The coordinates are the only location that reaches the
+  group, and only inside that URL. A malformed or misplaced `destination` drops the button, not
+  the alert.
 
 **Outcome mapping** (`createTelegramBotTransport`): sent -> `delivered`; Bot API 403 ->
 `recipient_blocked` (customer blocked the bot, or the bot was removed from the staff group);

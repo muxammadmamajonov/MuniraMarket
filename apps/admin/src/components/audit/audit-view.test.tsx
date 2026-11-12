@@ -81,4 +81,28 @@ describe('AuditView', () => {
       'Пользователь разблокирован',
     ]);
   });
+
+  it('renders old rows of entity types the app no longer has by their raw codes', async () => {
+    installFakeApi(sessionHandler('admin'), (call) =>
+      call.path.startsWith('/api/v1/admin/audit')
+        ? json(
+            page([
+              auditEntry({
+                action: 'retired.delete',
+                entity_type: 'retired',
+                entity_id: 'r1',
+                details: { changes: { name_ru: { from: 'A', to: null } }, legacy_count: 3 },
+              }),
+            ]),
+          )
+        : undefined,
+    );
+    renderAdmin(<AuditView />);
+    const row = await screen.findByTestId('audit-row');
+    expect(row).toHaveTextContent('retired.delete');
+    expect(row).toHaveTextContent('retired');
+    expect(row).toHaveTextContent('name_ru: A → —');
+    expect(row).toHaveTextContent('legacy_count: 3');
+    expect(document.body.textContent).not.toContain('undefined');
+  });
 });

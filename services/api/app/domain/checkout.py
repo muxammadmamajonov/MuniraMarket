@@ -1,9 +1,12 @@
-"""Checkout rules as pure functions: the quote (subtotal, delivery fee, total) and order errors.
+"""Checkout rules as pure functions: the quote (subtotal = total) and order errors.
 
 The quote and order creation evaluate the cart with exactly the same function, so what the
 customer is shown is what the order is created with (or the order is refused). Money is integer
 UZS; clients never send prices, only the total they were shown (``expected_total_uzs``) so a price
 change between quote and order is detected instead of silently charged.
+
+The store does not charge for delivery: a Yandex Go courier carries each order on demand and the
+customer pays the courier directly, so the order total is the goods subtotal.
 """
 
 import re
@@ -13,9 +16,8 @@ from dataclasses import dataclass
 from typing import Literal
 
 from app.domain.cart import CartTotals, EvaluatedLine, LineFacts, evaluate_cart
-from app.domain.delivery import ZoneRules, delivery_fee_for, free_delivery_remaining
 
-QuoteIssue = Literal["cart_empty", "cart_has_issues", "below_min_order"]
+QuoteIssue = Literal["cart_empty", "cart_has_issues"]
 
 # Unconfirmed (``NEW``) orders one customer may have at once. Cash/card on delivery means an order
 # costs nothing to place, so this bounds how much tracked stock one account can hold.
@@ -27,9 +29,7 @@ class QuoteTotals:
     lines: list[EvaluatedLine]
     cart: CartTotals
     subtotal_uzs: int
-    delivery_fee_uzs: int
     total_uzs: int
-    free_delivery_remaining_uzs: int | None
     issues: tuple[QuoteIssue, ...]
 
     @property
@@ -37,29 +37,21 @@ class QuoteTotals:
         return not self.issues
 
 
-def build_quote(lines: Sequence[LineFacts], rules: ZoneRules) -> QuoteTotals:
-    """Evaluate the cart against a zone.
-
-    Lines with an issue are excluded from the subtotal (as in the cart) and block the order. The
-    minimum order is compared with the subtotal of valid lines, before delivery.
-    """
+def build_quote(lines: Sequence[LineFacts]) -> QuoteTotals:
+    """Evaluate the cart. Lines with an issue are excluded from the subtotal (as in the cart) and
+    block the order. The total is the subtotal: delivery is paid to the courier."""
     evaluated, cart = evaluate_cart(lines)
     subtotal = cart.subtotal_uzs
-    fee = delivery_fee_for(rules, subtotal)
     issues: list[QuoteIssue] = []
     if not lines:
         issues.append("cart_empty")
     if cart.has_issues:
         issues.append("cart_has_issues")
-    if lines and subtotal < rules.min_order_uzs:
-        issues.append("below_min_order")
     return QuoteTotals(
         lines=evaluated,
         cart=cart,
         subtotal_uzs=subtotal,
-        delivery_fee_uzs=fee,
-        total_uzs=subtotal + fee,
-        free_delivery_remaining_uzs=free_delivery_remaining(rules, subtotal),
+        total_uzs=subtotal,
         issues=tuple(issues),
     )
 
@@ -86,10 +78,6 @@ class CheckoutError(Exception):
     """Base class for checkout/order rule violations."""
 
 
-class DistrictNotServedError(CheckoutError):
-    pass
-
-
 class CartEmptyError(CheckoutError):
     pass
 
@@ -105,10 +93,6 @@ class OrderInsufficientStockError(CheckoutError):
         super().__init__(f"only {available_quantity} in stock")
         self.product_id = product_id
         self.available_quantity = available_quantity
-
-
-class BelowMinimumOrderError(CheckoutError):
-    pass
 
 
 class TooManyOpenOrdersError(CheckoutError):
@@ -147,15 +131,3 @@ class InvalidStatusTransitionError(CheckoutError):
     def __init__(self, current_status: str) -> None:
         super().__init__(f"transition not allowed from {current_status}")
         self.current_status = current_status
-
-
-class SlotRequiredError(CheckoutError):
-    """The zone has bookable delivery slots, so the order must name one."""
-
-
-class SlotUnavailableError(CheckoutError):
-    """Unknown slot, inactive, of another zone, or its cutoff has passed."""
-
-
-class SlotFullError(CheckoutError):
-    """Every place in the slot is taken."""

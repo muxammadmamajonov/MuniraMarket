@@ -1,16 +1,17 @@
 /**
- * Checkout rules as pure functions: the quote (subtotal, delivery fee, total) and order errors
- * (port of services/api/app/domain/checkout.py).
+ * Checkout rules as pure functions: the quote (subtotal and total) and order errors (port of
+ * services/api/app/domain/checkout.py).
  *
- * The quote and order creation evaluate the cart with exactly the same function, so what the
- * customer is shown is what the order is created with (or the order is refused). Money is integer
- * UZS; clients never send prices, only the total they were shown (`expected_total_uzs`) so a price
- * change between quote and order is detected instead of silently charged.
+ * The store charges nothing for delivery: a Yandex Go courier carries each order on demand and the
+ * customer pays the courier, so the total is the subtotal of the valid lines. The quote and order
+ * creation evaluate the cart with exactly the same function, so what the customer is shown is what
+ * the order is created with (or the order is refused). Money is integer UZS; clients never send
+ * prices, only the total they were shown (`expected_total_uzs`) so a price change between quote
+ * and order is detected instead of silently charged.
  */
 import { evaluateCart, type CartTotals, type EvaluatedLine, type LineFacts } from './cart.ts';
-import { deliveryFeeFor, freeDeliveryRemaining, type ZoneRules } from './delivery.ts';
 
-export type QuoteIssue = 'cart_empty' | 'cart_has_issues' | 'below_min_order';
+export type QuoteIssue = 'cart_empty' | 'cart_has_issues';
 
 /**
  * Unconfirmed (`NEW`) orders one customer may have at once. Cash/card on delivery means an order
@@ -22,33 +23,26 @@ export interface QuoteTotals {
   lines: EvaluatedLine[];
   cart: CartTotals;
   subtotalUzs: number;
-  deliveryFeeUzs: number;
+  /** Always equal to `subtotalUzs`. */
   totalUzs: number;
-  freeDeliveryRemainingUzs: number | null;
   issues: QuoteIssue[];
   canPlaceOrder: boolean;
 }
 
 /**
- * Evaluate the cart against a zone. Lines with an issue are excluded from the subtotal (as in the
- * cart) and block the order. The minimum order is compared with the subtotal of valid lines,
- * before delivery.
+ * Evaluate the cart. Lines with an issue are excluded from the subtotal (as in the cart) and block
+ * the order.
  */
-export function buildQuote(lines: readonly LineFacts[], rules: ZoneRules): QuoteTotals {
+export function buildQuote(lines: readonly LineFacts[]): QuoteTotals {
   const { lines: evaluated, totals: cart } = evaluateCart(lines);
-  const subtotal = cart.subtotalUzs;
-  const fee = deliveryFeeFor(rules, subtotal);
   const issues: QuoteIssue[] = [];
   if (lines.length === 0) issues.push('cart_empty');
   if (cart.hasIssues) issues.push('cart_has_issues');
-  if (lines.length > 0 && subtotal < rules.minOrderUzs) issues.push('below_min_order');
   return {
     lines: evaluated,
     cart,
-    subtotalUzs: subtotal,
-    deliveryFeeUzs: fee,
-    totalUzs: subtotal + fee,
-    freeDeliveryRemainingUzs: freeDeliveryRemaining(rules, subtotal),
+    subtotalUzs: cart.subtotalUzs,
+    totalUzs: cart.subtotalUzs,
     issues,
     canPlaceOrder: issues.length === 0,
   };
@@ -83,21 +77,13 @@ export class CheckoutError extends Error {
   }
 }
 
-export class DistrictNotServedError extends CheckoutError {}
 export class CartEmptyError extends CheckoutError {}
-export class BelowMinimumOrderError extends CheckoutError {}
 /** The customer already has `MAX_OPEN_ORDERS` orders waiting for confirmation. */
 export class TooManyOpenOrdersError extends CheckoutError {}
 /** The key was already used by this user for a different order request. */
 export class IdempotencyKeyConflictError extends CheckoutError {}
 /** Unknown order, or not the caller's (both look the same: no IDOR oracle). */
 export class OrderNotFoundError extends CheckoutError {}
-/** The zone has bookable delivery slots, so the order must name one. */
-export class SlotRequiredError extends CheckoutError {}
-/** Unknown slot, inactive, of another zone, or its cutoff has passed. */
-export class SlotUnavailableError extends CheckoutError {}
-/** Every place in the slot is taken. */
-export class SlotFullError extends CheckoutError {}
 
 export class OrderProductUnavailableError extends CheckoutError {
   readonly productId: string;

@@ -10,8 +10,10 @@
  * order data, or Bot API descriptions.
  */
 import { BotApiError } from 'sdk';
+import { STAFF_MESSAGES } from '../i18n.js';
 import { buildOrderStatusMessage, sendOrderStatusNotification } from './orderStatus.js';
 import { buildStaffAlertMessage } from './staffAlert.js';
+import { yandexGoCourierUrl } from './yandexGo.js';
 
 /**
  * A validated order status notification for the customer, as handed to a transport.
@@ -35,6 +37,8 @@ import { buildStaffAlertMessage } from './staffAlert.js';
  * @property {import('../types.js').OrderStatus | null} previousStatus
  * @property {number} totalUzs integer amount in UZS
  * @property {boolean} cancelledByCustomer
+ * @property {import('./yandexGo.js').GeoPoint} [destination] delivery point of a NEW order; adds
+ *   the Yandex Go courier button
  */
 
 /**
@@ -106,6 +110,25 @@ function staffAlertText(alert) {
 }
 
 /**
+ * The `sendMessage` parameters of a staff alert: the plain text, plus a one-button inline keyboard
+ * (a URL button: Telegram opens it, the bot receives no callback) when the alert carries a valid
+ * destination. Throws `TypeError` when the alert is unusable.
+ * @param {StaffAlertNotification} alert
+ * @returns {Record<string, unknown>}
+ */
+export function staffAlertParams(alert) {
+  /** @type {Record<string, unknown>} */
+  const params = { chat_id: alert.chatId, text: staffAlertText(alert) };
+  const url = alert.destination === undefined ? null : yandexGoCourierUrl(alert.destination);
+  if (url !== null) {
+    params.reply_markup = {
+      inline_keyboard: [[{ text: STAFF_MESSAGES.staffAlert.courierButton, url }]],
+    };
+  }
+  return params;
+}
+
+/**
  * Sends a staff alert. Bot API 403 means the bot was removed from (or muted in) the group: final,
  * reported as `recipient_blocked`, like a customer who blocked the bot.
  * @param {{ sendMessage: (params: Record<string, unknown>) => Promise<unknown> }} api
@@ -113,15 +136,15 @@ function staffAlertText(alert) {
  * @returns {Promise<DeliveryResult>}
  */
 async function deliverStaffAlert(api, alert) {
-  /** @type {string} */
-  let text;
+  /** @type {Record<string, unknown>} */
+  let params;
   try {
-    text = staffAlertText(alert);
+    params = staffAlertParams(alert);
   } catch {
     return { outcome: 'failed', errorCode: 'invalid_payload' };
   }
   try {
-    await api.sendMessage({ chat_id: alert.chatId, text });
+    await api.sendMessage(params);
     return { outcome: 'delivered' };
   } catch (error) {
     if (error instanceof BotApiError && error.code === 403) return { outcome: 'recipient_blocked' };
@@ -131,7 +154,8 @@ async function deliverStaffAlert(api, alert) {
 
 /**
  * Bot API transport: customer notifications via `sendOrderStatusNotification`, staff alerts via
- * `buildStaffAlertMessage` + `api.sendMessage` (both plain text, no `parse_mode`).
+ * `buildStaffAlertMessage` + `api.sendMessage` (both plain text, no `parse_mode`; a staff alert
+ * with a destination also gets the Yandex Go courier URL button).
  *
  * | Situation                                   | Result                                     |
  * | ------------------------------------------- | ------------------------------------------ |

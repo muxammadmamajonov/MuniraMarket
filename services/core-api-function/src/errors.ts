@@ -33,9 +33,7 @@ export const ERROR_CODES = [
   'cart_limit_reached',
   'cart_item_not_found',
   // checkout / orders
-  'district_not_served',
   'cart_empty',
-  'below_min_order',
   'price_changed',
   'idempotency_key_conflict',
   'order_not_found',
@@ -57,17 +55,6 @@ export const ERROR_CODES = [
   'user_not_found',
   'last_admin',
   'cannot_block_self',
-  // delivery slots at checkout; admin: delivery zones and slots
-  'slot_required',
-  'slot_unavailable',
-  'slot_full',
-  'zone_not_found',
-  'zone_in_use',
-  'district_taken',
-  'slot_not_found',
-  'slot_exists',
-  'slot_in_use',
-  'capacity_below_reserved',
 ] as const;
 
 export type ErrorCode = (typeof ERROR_CODES)[number];
@@ -103,7 +90,6 @@ export interface ErrorExtra {
   product_id?: string;
   total_uzs?: number;
   current_status?: string;
-  district?: string;
 }
 
 /** Throw from routes/services to return a typed error envelope. */

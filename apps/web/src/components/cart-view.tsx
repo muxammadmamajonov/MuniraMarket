@@ -1,7 +1,6 @@
 'use client';
 
 import type { Cart, CartLine } from '@muniramarket/contracts';
-import type { DeliveryZone } from '@muniramarket/contracts';
 import { Button, ErrorState, QuantityStepper, Skeleton, formatUZS } from '@muniramarket/ui';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
@@ -9,18 +8,14 @@ import { useCallback, useEffect, useState } from 'react';
 import { useI18n } from '@/i18n/context';
 import { formatMessage } from '@/i18n/format';
 import { getCart, removeCartItem, updateCartItem } from '@/lib/api/cart';
-import { getDeliveryZones } from '@/lib/api/delivery';
 import { ApiRequestError } from '@/lib/api/errors';
 import { useCartSettled, useCartSync } from '@/lib/cart';
 import { localizedName, maxQuantityFor } from '@/lib/catalog';
 import { retryAfterSeconds } from '@/lib/checkout/failures';
-import { zoneForDistrict } from '@/lib/checkout/zones';
-import { useDistrictPreference } from '@/lib/delivery/district-preference';
 import { useSession } from '@/lib/session';
 import { useMainButton } from '@/lib/telegram';
 import { useCooldown } from '@/lib/use-cooldown';
 import { EmptyPanel } from './empty-panel';
-import { FreeDeliveryProgress } from './free-delivery-progress';
 import { BagIcon, TrashIcon } from './icons';
 import { ProductImage } from './product-image';
 import { SignInPrompt } from './sign-in-prompt';
@@ -43,10 +38,6 @@ export function CartView() {
   const syncCart = useCartSync();
   const cartSettled = useCartSettled();
   const [load, setLoad] = useState<Load>({ kind: 'loading' });
-  // Free-delivery progress: only for a district the customer already chose, and only when that
-  // district's zone really has a threshold. A failed lookup just hides the bar.
-  const [district] = useDistrictPreference();
-  const [zones, setZones] = useState<DeliveryZone[] | null>(null);
   const [busyProduct, setBusyProduct] = useState<string | null>(null);
   const [notice, setNotice] = useState<Notice | null>(null);
   // A 429 on a quantity change or a removal: every line is locked until `Retry-After` has passed.
@@ -81,19 +72,6 @@ export function CartView() {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     void fetchCart();
   }, [status, fetchCart]);
-
-  useEffect(() => {
-    if (status !== 'authenticated' || district === null) return;
-    let live = true;
-    getDeliveryZones(apiFetch)
-      .then((list) => {
-        if (live) setZones(list.items);
-      })
-      .catch(() => undefined);
-    return () => {
-      live = false;
-    };
-  }, [status, district, apiFetch]);
 
   const mutate = useCallback(
     async (productId: string, action: () => Promise<Cart>) => {
@@ -173,21 +151,8 @@ export function CartView() {
     );
   }
 
-  const zone = district === null || zones === null ? null : zoneForDistrict(zones, district);
-  const threshold = zone?.free_delivery_threshold_uzs ?? null;
-
   return (
     <div className="flex flex-col gap-3">
-      {threshold !== null && threshold > 0 && !cart.has_issues ? (
-        <div className={`${GROUP} p-4`}>
-          <FreeDeliveryProgress
-            threshold={threshold}
-            remaining={Math.max(0, threshold - cart.subtotal_uzs)}
-            testId="cart-free-delivery"
-          />
-        </div>
-      ) : null}
-
       <ul className={`${GROUP} ${ROWS} flex flex-col px-4`} aria-label={dict.cart.title}>
         {cart.items.map((line) => (
           <CartLineItem
@@ -228,7 +193,7 @@ export function CartView() {
             {formatUZS(cart.total_uzs, locale)}
           </span>
         </p>
-        <p className="text-sm text-muted-foreground">{dict.cart.deliveryAtCheckout}</p>
+        <p className="text-sm text-muted-foreground">{dict.cart.deliveryNote}</p>
         {canCheckout ? (
           <Link
             href={checkoutHref}

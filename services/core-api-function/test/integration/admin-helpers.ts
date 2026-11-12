@@ -124,60 +124,9 @@ export async function addProduct(
   return rows[0]!.id;
 }
 
-export async function addZone(
-  db: Database,
-  slug: string,
-  districts: string[] = [],
-): Promise<string> {
-  const { rows } = await db.query<{ id: string }>(
-    `INSERT INTO delivery_zones (id, slug, name_uz, name_ru, delivery_fee_uzs, min_order_uzs,
-                                 opens_at, closes_at)
-     VALUES (gen_random_uuid(), $1, $2, $3, 15000, 0, '09:00', '21:00') RETURNING id::text AS id`,
-    [slug, `Demo ${slug}`, `Демо ${slug}`],
-  );
-  const id = rows[0]!.id;
-  for (const district of districts) {
-    await db.query('INSERT INTO delivery_zone_districts (district, zone_id) VALUES ($1, $2)', [
-      district,
-      id,
-    ]);
-  }
-  return id;
-}
-
-export async function addSlot(
-  db: Database,
-  zoneId: string,
-  options: {
-    date?: string;
-    startsAt?: string;
-    endsAt?: string;
-    capacity?: number;
-    reserved?: number;
-  } = {},
-): Promise<string> {
-  const date = options.date ?? '2030-01-10';
-  const startsAt = options.startsAt ?? '10:00';
-  const { rows } = await db.query<{ id: string }>(
-    `INSERT INTO delivery_slots (id, zone_id, slot_date, starts_at, ends_at, capacity, reserved_count, cutoff_at)
-     VALUES (gen_random_uuid(), $1, $2::date, $3::time, $4::time, $5, $6,
-             ($2::date + $3::time) AT TIME ZONE 'Asia/Tashkent' - interval '2 hours')
-     RETURNING id::text AS id`,
-    [
-      zoneId,
-      date,
-      startsAt,
-      options.endsAt ?? '12:00',
-      options.capacity ?? 5,
-      options.reserved ?? 0,
-    ],
-  );
-  return rows[0]!.id;
-}
-
 let orderNumber = 0;
 
-/** A minimal order row (fake recipient data), optionally referencing a zone/slot. */
+/** A minimal order row (fake recipient data). */
 export async function addOrder(
   db: Database,
   userId: string,
@@ -185,20 +134,17 @@ export async function addOrder(
     total?: number;
     status?: string;
     createdAt?: Date;
-    zoneId?: string | null;
-    slotId?: string | null;
   } = {},
 ): Promise<string> {
   orderNumber += 1;
   const total = options.total ?? 50_000;
   const status = options.status ?? 'NEW';
   const { rows } = await db.query<{ id: string }>(
-    `INSERT INTO orders (id, number, user_id, status, subtotal_uzs, delivery_fee_uzs, total_uzs,
-                         payment_method, recipient_name, recipient_phone, address_snapshot,
-                         cancel_reason, idempotency_key, idempotency_request_hash, item_count,
-                         delivery_zone_id, delivery_slot_id, created_at)
-     VALUES (gen_random_uuid(), $1, $2, $3, $4, 0, $4, 'cash_on_delivery', 'Demo Person',
-             '+998900000000', '{}'::jsonb, $5, $6, $7, 1, $8, $9, $10)
+    `INSERT INTO orders (id, number, user_id, status, subtotal_uzs, total_uzs, payment_method,
+                         recipient_name, recipient_phone, address_snapshot, cancel_reason,
+                         idempotency_key, idempotency_request_hash, item_count, created_at)
+     VALUES (gen_random_uuid(), $1, $2, $3, $4, $4, 'cash_on_delivery', 'Demo Person',
+             '+998900000000', '{}'::jsonb, $5, $6, $7, 1, $8)
      RETURNING id::text AS id`,
     [
       `T-${Date.now()}-${orderNumber}`,
@@ -208,8 +154,6 @@ export async function addOrder(
       status === 'CANCELLED' ? 'test' : null,
       `key-${orderNumber}-${Math.random()}`,
       'a'.repeat(64),
-      options.zoneId ?? null,
-      options.slotId ?? null,
       options.createdAt ?? new Date(),
     ],
   );

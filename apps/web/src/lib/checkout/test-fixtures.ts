@@ -1,9 +1,8 @@
+import type { Address } from '@/lib/address/address';
 import type {
   Cart,
   CartLine,
   CheckoutQuote,
-  DeliverySlotOption,
-  DeliveryZone,
   OrderDetail,
   OrderSummary,
   ProductSummary,
@@ -25,8 +24,8 @@ export const WORST = {
   productNameUz: textOfLength('Qaymoqli shokoladli glazurlangan ho‘l mevali tort ', 255).trim(),
   productNameRu: textOfLength('Вафельный торт с кремом и шоколадной глазурью ', 255).trim(),
   /** 200 characters without a single space or hyphen: no break opportunity for the browser. */
-  street: textOfLength('Ulug‘bekMirzoUlug‘bekTumaniSohilBo‘yiKo‘chasi', 200),
-  landmark: textOfLength('YunusobodTumaniMetroStansiyasiYonidagiKattaDo‘kon', 200),
+  street: textOfLength('Ulug‘bekMirzoUlug‘bekShahristoniSohilBo‘yiKo‘chasi', 200),
+  landmark: textOfLength('YunusobodMetroStansiyasiYonidagiKattaDo‘kon', 200),
   /** 100 characters of Cyrillic with spaces and a hyphen, the recipient limit. */
   recipientName: textOfLength('Александра Вишневская-Ковальчик ', 100).trim(),
   comment: textOfLength('Iltimos, eshik oldiga qoldiring, qo‘ng‘iroq qilmang. ', 500).trim(),
@@ -68,108 +67,31 @@ export function cart(overrides: Partial<Cart> = {}): Cart {
   };
 }
 
-export function zone(overrides: Partial<DeliveryZone> = {}): DeliveryZone {
-  return {
-    id: '11111111-1111-4111-8111-111111111111',
-    slug: 'demo-markaziy',
-    name_uz: 'Demo markaziy zona',
-    name_ru: 'Демо центральная зона',
-    delivery_fee_uzs: 15000,
-    free_delivery_threshold_uzs: 300000,
-    min_order_uzs: 50000,
-    opens_at: '09:00',
-    closes_at: '21:00',
-    is_open_now: true,
-    districts: [
-      { code: 'yunusobod', name_uz: 'Yunusobod', name_ru: 'Юнусабад' },
-      { code: 'mirobod', name_uz: 'Mirobod', name_ru: 'Миробад' },
-    ],
-    ...overrides,
-  };
-}
-
-export function farZone(): DeliveryZone {
-  return zone({
-    id: '22222222-2222-4222-8222-222222222222',
-    slug: 'demo-chekka',
-    name_uz: 'Demo chekka zona',
-    name_ru: 'Демо окраинная зона',
-    delivery_fee_uzs: 0,
-    free_delivery_threshold_uzs: null,
-    min_order_uzs: 100000,
-    districts: [{ code: 'chilonzor', name_uz: 'Chilonzor', name_ru: 'Чиланзар' }],
-  });
-}
-
 export function quote(overrides: Partial<CheckoutQuote> = {}): CheckoutQuote {
   return {
     items: [line()],
     item_count: 4,
     subtotal_uzs: 60000,
-    delivery_fee_uzs: 15000,
-    total_uzs: 75000,
-    free_delivery_remaining_uzs: 240000,
-    zone: zone(),
+    total_uzs: 60000,
     issues: [],
     can_place_order: true,
-    slot_required: false,
-    delivery_slots: [],
     ...overrides,
   };
 }
 
-/** A bookable window (Tashkent, `HH:MM`). Ids are stable so tests can name the slot they pick. */
-export function slotOption(overrides: Partial<DeliverySlotOption> = {}): DeliverySlotOption {
+/** A complete delivery address as the map picker saves it (point rounded to 6 decimals). */
+export function address(overrides: Partial<Address> = {}): Address {
   return {
-    id: '5a000000-0000-4000-8000-000000000001',
-    date: '2026-10-31',
-    starts_at: '10:00',
-    ends_at: '12:00',
-    remaining: 8,
-    is_full: false,
+    lat: 41.311081,
+    lon: 69.240562,
+    street: 'Demo ko‘cha',
+    house: '12',
+    apartment: '34',
+    entrance: '',
+    floor: '',
+    landmark: '',
     ...overrides,
   };
-}
-
-/**
- * A quote for a zone with delivery slots: today (one low, one full), tomorrow, and a later day.
- * Fee, minimum and totals follow {@link quote}'s defaults so a form filled for the slot-less zone
- * can be reused.
- */
-export function slotQuote(overrides: Partial<CheckoutQuote> = {}): CheckoutQuote {
-  return quote({
-    slot_required: true,
-    delivery_slots: [
-      slotOption({
-        id: '5a000000-0000-4000-8000-000000000001',
-        starts_at: '10:00',
-        ends_at: '12:00',
-        remaining: 2,
-      }),
-      slotOption({
-        id: '5a000000-0000-4000-8000-000000000002',
-        starts_at: '12:00',
-        ends_at: '14:00',
-        remaining: 0,
-        is_full: true,
-      }),
-      slotOption({
-        id: '5a000000-0000-4000-8000-000000000003',
-        date: '2026-11-01',
-        starts_at: '10:00',
-        ends_at: '12:00',
-        remaining: 10,
-      }),
-      slotOption({
-        id: '5a000000-0000-4000-8000-000000000004',
-        date: '2026-11-03',
-        starts_at: '16:00',
-        ends_at: '18:00',
-        remaining: 10,
-      }),
-    ],
-    ...overrides,
-  });
 }
 
 export function order(overrides: Partial<OrderDetail> = {}): OrderDetail {
@@ -180,16 +102,14 @@ export function order(overrides: Partial<OrderDetail> = {}): OrderDetail {
     created_at: '2026-10-31T21:30:00Z',
     updated_at: '2026-10-31T21:30:00Z',
     subtotal_uzs: 60000,
-    delivery_fee_uzs: 15000,
-    total_uzs: 75000,
+    total_uzs: 60000,
     item_count: 4,
     payment_method: 'cash_on_delivery',
     recipient_name: 'Ali Valiyev',
     recipient_phone: '+998001234567',
     address: {
-      district: 'yunusobod',
-      district_name_uz: 'Yunusobod',
-      district_name_ru: 'Юнусабад',
+      lat: 41.311081,
+      lon: 69.240562,
       street: 'Demo ko‘cha',
       house: '12',
       apartment: '34',
@@ -197,7 +117,6 @@ export function order(overrides: Partial<OrderDetail> = {}): OrderDetail {
       floor: null,
       landmark: null,
     },
-    delivery_slot: null,
     comment: null,
     cancel_reason: null,
     items: [

@@ -13,9 +13,9 @@ import {
   addCategory,
   addProduct,
   addToCart,
-  addZone,
   connectStaffChat,
   customer,
+  DEMO_POINT,
   errorOf,
   place,
   stockOf,
@@ -51,7 +51,6 @@ describe.skipIf(!hasDatabase)('admin orders', () => {
     me = await customer(db);
     operator = await createStaff(db, 'operator');
     const category = await addCategory(db, 'admin-cat');
-    await addZone(db, 'demo-markaziy', ['chilonzor']);
     apple = await addProduct(db, category, 'apple', { price: 30_000, stock: 10 });
   });
 
@@ -111,6 +110,21 @@ describe.skipIf(!hasDatabase)('admin orders', () => {
       ['order.status_changed', 'DELIVERED', customerChat],
       ['order.staff_alert', 'DELIVERED', -100_777],
     ]);
+    // Only the NEW alert carries the drop-off point (for the Yandex Go courier button); no
+    // address text, name or phone ever goes to the group.
+    const alerts = await db.query<{ status: string; payload: Json }>(
+      `SELECT payload->>'status' AS status, payload FROM notification_outbox
+        WHERE order_id = $1 AND event_type = 'order.staff_alert' ORDER BY created_at`,
+      [order.id],
+    );
+    expect(alerts.rows.map((r) => [r.status, r.payload['destination'] ?? null])).toEqual([
+      ['NEW', DEMO_POINT],
+      ['OUT_FOR_DELIVERY', null],
+      ['DELIVERED', null],
+    ]);
+    for (const { payload } of alerts.rows) {
+      expect(JSON.stringify(payload)).not.toMatch(/Demo ko|Demo Mijoz|\+998/);
+    }
     const audits = await db.query<{ actor_role: string; to: string }>(
       `SELECT actor_role::text AS actor_role, details->'changes'->'status'->>'to' AS to
          FROM audit_log WHERE entity_id = $1 ORDER BY created_at`,

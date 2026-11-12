@@ -1,4 +1,4 @@
-import { screen, within } from '@testing-library/react';
+import { screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { installFakeApi, json, renderAdmin, sessionHandler } from '@/test-utils/fake-api';
 import { dashboard, page } from '@/test-utils/fixtures';
@@ -9,16 +9,12 @@ import {
   worstAudit,
   worstCategories,
   worstProducts,
-  worstSlots,
   worstUsers,
-  worstZone,
 } from '@/test-utils/worst-case';
 import { AuditView } from './audit/audit-view';
 import { CategoriesView } from './catalog/categories-view';
 import { ProductsList } from './catalog/products-list';
 import { DashboardView } from './dashboard';
-import { SlotsView } from './delivery/slots-view';
-import { ZonesView } from './delivery/zones-view';
 import { UsersView } from './users/users-view';
 
 vi.mock('next/navigation', async () => await import('@/test-utils/navigation'));
@@ -67,32 +63,6 @@ describe('worst-case data (break-ui regression)', () => {
     expect(rows[2]).toHaveTextContent('Telegram ID 77');
     expect(rows[2]).not.toHaveTextContent('@');
     expect(rows[3]).toHaveTextContent('🦊 👩🏽‍💻 Priya');
-    noGarbage();
-  });
-
-  it('zones: all twelve districts, a never-free zone and the 1e12 fee', async () => {
-    installFakeApi(sessionHandler('admin'), serve('delivery/zones', { items: [worstZone] }));
-    renderAdmin(<ZonesView />);
-    const card = await screen.findByTestId('zone-card');
-    expect(within(card).getByText(/Янгихаётский$/)).toBeInTheDocument();
-    expect(card).toHaveTextContent('Бесплатной доставки нет');
-    expect(card).toHaveTextContent('00:00–23:59');
-    expect(card.textContent?.match(/ский/g)?.length).toBeGreaterThanOrEqual(11);
-    noGarbage();
-  });
-
-  it('slots: capacity 10 000 with 9 999 reserved, 0 capacity, and exactly-full', async () => {
-    installFakeApi(
-      sessionHandler('admin'),
-      serve('delivery/zones', { items: [worstZone] }),
-      serve('delivery/slots', { items: worstSlots, truncated: false }),
-    );
-    renderAdmin(<SlotsView />);
-    const rows = await screen.findAllByTestId('slot-row');
-    expect(rows[0]).toHaveTextContent('Занято: 9 999 из 10 000');
-    expect(rows[0]).toHaveTextContent('Свободно: 1');
-    expect(rows.some((row) => row.textContent?.includes('Занято: 0 из 0'))).toBe(true);
-    expect(rows.filter((row) => row.textContent?.includes('Заполнен'))).toHaveLength(2);
     noGarbage();
   });
 

@@ -30,7 +30,7 @@ const ROW_ON =
   'before:left-0 before:w-1 before:rounded-full before:bg-primary';
 const ROW_OFF = 'hover:bg-surface-muted';
 
-const GROUP_ORDER: NavGroup[] = ['main', 'catalog', 'delivery', 'system'];
+const GROUP_ORDER: NavGroup[] = ['main', 'catalog', 'system'];
 
 function NavLinks({ items, onNavigate }: { items: NavItem[]; onNavigate?: () => void }) {
   const { dict, locale } = useI18n();

@@ -169,20 +169,6 @@
             "title": "Created At",
             "type": "string"
           },
-          "delivery_fee_uzs": {
-            "title": "Delivery Fee Uzs",
-            "type": "integer"
-          },
-          "delivery_slot": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/OrderDeliverySlot"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
           "history": {
             "items": {
               "$ref": "#/components/schemas/OrderStatusChange"
@@ -252,14 +238,12 @@
           "created_at",
           "updated_at",
           "subtotal_uzs",
-          "delivery_fee_uzs",
           "total_uzs",
           "item_count",
           "payment_method",
           "recipient_name",
           "recipient_phone",
           "address",
-          "delivery_slot",
           "comment",
           "cancel_reason",
           "items",
@@ -645,9 +629,7 @@
               "insufficient_stock",
               "cart_limit_reached",
               "cart_item_not_found",
-              "district_not_served",
               "cart_empty",
-              "below_min_order",
               "price_changed",
               "idempotency_key_conflict",
               "order_not_found",
@@ -667,17 +649,7 @@
               "csv_too_many_rows",
               "user_not_found",
               "last_admin",
-              "cannot_block_self",
-              "slot_required",
-              "slot_unavailable",
-              "slot_full",
-              "zone_not_found",
-              "zone_in_use",
-              "district_taken",
-              "slot_not_found",
-              "slot_exists",
-              "slot_in_use",
-              "capacity_below_reserved"
+              "cannot_block_self"
             ],
             "title": "Code",
             "type": "string"
@@ -705,17 +677,6 @@
               }
             ],
             "title": "Details"
-          },
-          "district": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "District"
           },
           "message": {
             "title": "Message",
@@ -1227,34 +1188,11 @@
             "title": "Can Place Order",
             "type": "boolean"
           },
-          "delivery_fee_uzs": {
-            "title": "Delivery Fee Uzs",
-            "type": "integer"
-          },
-          "delivery_slots": {
-            "items": {
-              "$ref": "#/components/schemas/DeliverySlotOption"
-            },
-            "title": "Delivery Slots",
-            "type": "array"
-          },
-          "free_delivery_remaining_uzs": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Free Delivery Remaining Uzs"
-          },
           "issues": {
             "items": {
               "enum": [
                 "cart_empty",
-                "cart_has_issues",
-                "below_min_order"
+                "cart_has_issues"
               ],
               "type": "string"
             },
@@ -1272,10 +1210,6 @@
             "title": "Items",
             "type": "array"
           },
-          "slot_required": {
-            "title": "Slot Required",
-            "type": "boolean"
-          },
           "subtotal_uzs": {
             "title": "Subtotal Uzs",
             "type": "integer"
@@ -1283,53 +1217,17 @@
           "total_uzs": {
             "title": "Total Uzs",
             "type": "integer"
-          },
-          "zone": {
-            "$ref": "#/components/schemas/DeliveryZonePublic"
           }
         },
         "required": [
           "items",
           "item_count",
           "subtotal_uzs",
-          "delivery_fee_uzs",
           "total_uzs",
-          "free_delivery_remaining_uzs",
-          "zone",
           "issues",
-          "can_place_order",
-          "slot_required",
-          "delivery_slots"
+          "can_place_order"
         ],
         "title": "CheckoutQuote",
-        "type": "object"
-      },
-      "CheckoutQuoteRequest": {
-        "additionalProperties": false,
-        "properties": {
-          "district": {
-            "enum": [
-              "bektemir",
-              "chilonzor",
-              "mirobod",
-              "mirzo_ulugbek",
-              "olmazor",
-              "sergeli",
-              "shayxontohur",
-              "uchtepa",
-              "yakkasaroy",
-              "yangihayot",
-              "yashnobod",
-              "yunusobod"
-            ],
-            "title": "District",
-            "type": "string"
-          }
-        },
-        "required": [
-          "district"
-        ],
-        "title": "CheckoutQuoteRequest",
         "type": "object"
       },
       "ClaimResponse": {
@@ -1385,18 +1283,6 @@
               }
             ],
             "title": "Comment"
-          },
-          "delivery_slot_id": {
-            "anyOf": [
-              {
-                "format": "uuid",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Delivery Slot Id"
           },
           "expected_total_uzs": {
             "minimum": 0.0,
@@ -1600,6 +1486,7 @@
       },
       "DeliveryAddress": {
         "additionalProperties": false,
+        "description": "Where the Yandex Go courier takes the order: the map point plus what the courier needs to\nfind the door.",
         "properties": {
           "apartment": {
             "anyOf": [
@@ -1613,24 +1500,6 @@
               }
             ],
             "title": "Apartment"
-          },
-          "district": {
-            "enum": [
-              "bektemir",
-              "chilonzor",
-              "mirobod",
-              "mirzo_ulugbek",
-              "olmazor",
-              "sergeli",
-              "shayxontohur",
-              "uchtepa",
-              "yakkasaroy",
-              "yangihayot",
-              "yashnobod",
-              "yunusobod"
-            ],
-            "title": "District",
-            "type": "string"
           },
           "entrance": {
             "anyOf": [
@@ -1677,6 +1546,20 @@
             ],
             "title": "Landmark"
           },
+          "lat": {
+            "description": "WGS84 latitude, -90..90",
+            "maximum": 90.0,
+            "minimum": -90.0,
+            "title": "Lat",
+            "type": "number"
+          },
+          "lon": {
+            "description": "WGS84 longitude, -180..180",
+            "maximum": 180.0,
+            "minimum": -180.0,
+            "title": "Lon",
+            "type": "number"
+          },
           "street": {
             "maxLength": 200,
             "minLength": 2,
@@ -1685,387 +1568,12 @@
           }
         },
         "required": [
-          "district",
+          "lat",
+          "lon",
           "street",
           "house"
         ],
         "title": "DeliveryAddress",
-        "type": "object"
-      },
-      "DeliverySlotAdmin": {
-        "properties": {
-          "capacity": {
-            "title": "Capacity",
-            "type": "integer"
-          },
-          "created_at": {
-            "format": "date-time",
-            "title": "Created At",
-            "type": "string"
-          },
-          "cutoff_at": {
-            "format": "date-time",
-            "title": "Cutoff At",
-            "type": "string"
-          },
-          "ends_at": {
-            "title": "Ends At",
-            "type": "string"
-          },
-          "id": {
-            "format": "uuid",
-            "title": "Id",
-            "type": "string"
-          },
-          "is_active": {
-            "title": "Is Active",
-            "type": "boolean"
-          },
-          "remaining": {
-            "title": "Remaining",
-            "type": "integer"
-          },
-          "reserved_count": {
-            "title": "Reserved Count",
-            "type": "integer"
-          },
-          "slot_date": {
-            "format": "date",
-            "title": "Slot Date",
-            "type": "string"
-          },
-          "starts_at": {
-            "title": "Starts At",
-            "type": "string"
-          },
-          "updated_at": {
-            "format": "date-time",
-            "title": "Updated At",
-            "type": "string"
-          },
-          "zone_id": {
-            "format": "uuid",
-            "title": "Zone Id",
-            "type": "string"
-          }
-        },
-        "required": [
-          "id",
-          "zone_id",
-          "slot_date",
-          "starts_at",
-          "ends_at",
-          "capacity",
-          "reserved_count",
-          "remaining",
-          "cutoff_at",
-          "is_active",
-          "created_at",
-          "updated_at"
-        ],
-        "title": "DeliverySlotAdmin",
-        "type": "object"
-      },
-      "DeliverySlotAdminList": {
-        "properties": {
-          "items": {
-            "items": {
-              "$ref": "#/components/schemas/DeliverySlotAdmin"
-            },
-            "title": "Items",
-            "type": "array"
-          },
-          "truncated": {
-            "title": "Truncated",
-            "type": "boolean"
-          }
-        },
-        "required": [
-          "items",
-          "truncated"
-        ],
-        "title": "DeliverySlotAdminList",
-        "type": "object"
-      },
-      "DeliverySlotOption": {
-        "description": "A bookable delivery window offered at checkout (local Asia/Tashkent date and times).",
-        "properties": {
-          "date": {
-            "format": "date",
-            "title": "Date",
-            "type": "string"
-          },
-          "ends_at": {
-            "title": "Ends At",
-            "type": "string"
-          },
-          "id": {
-            "format": "uuid",
-            "title": "Id",
-            "type": "string"
-          },
-          "is_full": {
-            "title": "Is Full",
-            "type": "boolean"
-          },
-          "remaining": {
-            "title": "Remaining",
-            "type": "integer"
-          },
-          "starts_at": {
-            "title": "Starts At",
-            "type": "string"
-          }
-        },
-        "required": [
-          "id",
-          "date",
-          "starts_at",
-          "ends_at",
-          "remaining",
-          "is_full"
-        ],
-        "title": "DeliverySlotOption",
-        "type": "object"
-      },
-      "DeliveryZoneAdmin": {
-        "properties": {
-          "closes_at": {
-            "title": "Closes At",
-            "type": "string"
-          },
-          "created_at": {
-            "format": "date-time",
-            "title": "Created At",
-            "type": "string"
-          },
-          "delivery_fee_uzs": {
-            "title": "Delivery Fee Uzs",
-            "type": "integer"
-          },
-          "districts": {
-            "items": {
-              "$ref": "#/components/schemas/District"
-            },
-            "title": "Districts",
-            "type": "array"
-          },
-          "free_delivery_threshold_uzs": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Free Delivery Threshold Uzs"
-          },
-          "id": {
-            "format": "uuid",
-            "title": "Id",
-            "type": "string"
-          },
-          "is_active": {
-            "title": "Is Active",
-            "type": "boolean"
-          },
-          "min_order_uzs": {
-            "title": "Min Order Uzs",
-            "type": "integer"
-          },
-          "name_ru": {
-            "title": "Name Ru",
-            "type": "string"
-          },
-          "name_uz": {
-            "title": "Name Uz",
-            "type": "string"
-          },
-          "opens_at": {
-            "title": "Opens At",
-            "type": "string"
-          },
-          "slug": {
-            "title": "Slug",
-            "type": "string"
-          },
-          "sort_order": {
-            "title": "Sort Order",
-            "type": "integer"
-          },
-          "updated_at": {
-            "format": "date-time",
-            "title": "Updated At",
-            "type": "string"
-          }
-        },
-        "required": [
-          "id",
-          "slug",
-          "name_uz",
-          "name_ru",
-          "delivery_fee_uzs",
-          "free_delivery_threshold_uzs",
-          "min_order_uzs",
-          "opens_at",
-          "closes_at",
-          "sort_order",
-          "is_active",
-          "districts",
-          "created_at",
-          "updated_at"
-        ],
-        "title": "DeliveryZoneAdmin",
-        "type": "object"
-      },
-      "DeliveryZoneAdminList": {
-        "properties": {
-          "items": {
-            "items": {
-              "$ref": "#/components/schemas/DeliveryZoneAdmin"
-            },
-            "title": "Items",
-            "type": "array"
-          }
-        },
-        "required": [
-          "items"
-        ],
-        "title": "DeliveryZoneAdminList",
-        "type": "object"
-      },
-      "DeliveryZoneList": {
-        "properties": {
-          "items": {
-            "items": {
-              "$ref": "#/components/schemas/DeliveryZonePublic"
-            },
-            "title": "Items",
-            "type": "array"
-          },
-          "timezone": {
-            "const": "Asia/Tashkent",
-            "default": "Asia/Tashkent",
-            "title": "Timezone",
-            "type": "string"
-          }
-        },
-        "required": [
-          "items"
-        ],
-        "title": "DeliveryZoneList",
-        "type": "object"
-      },
-      "DeliveryZonePublic": {
-        "properties": {
-          "closes_at": {
-            "title": "Closes At",
-            "type": "string"
-          },
-          "delivery_fee_uzs": {
-            "title": "Delivery Fee Uzs",
-            "type": "integer"
-          },
-          "districts": {
-            "items": {
-              "$ref": "#/components/schemas/District"
-            },
-            "title": "Districts",
-            "type": "array"
-          },
-          "free_delivery_threshold_uzs": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Free Delivery Threshold Uzs"
-          },
-          "id": {
-            "format": "uuid",
-            "title": "Id",
-            "type": "string"
-          },
-          "is_open_now": {
-            "title": "Is Open Now",
-            "type": "boolean"
-          },
-          "min_order_uzs": {
-            "title": "Min Order Uzs",
-            "type": "integer"
-          },
-          "name_ru": {
-            "title": "Name Ru",
-            "type": "string"
-          },
-          "name_uz": {
-            "title": "Name Uz",
-            "type": "string"
-          },
-          "opens_at": {
-            "title": "Opens At",
-            "type": "string"
-          },
-          "slug": {
-            "title": "Slug",
-            "type": "string"
-          }
-        },
-        "required": [
-          "id",
-          "slug",
-          "name_uz",
-          "name_ru",
-          "delivery_fee_uzs",
-          "free_delivery_threshold_uzs",
-          "min_order_uzs",
-          "opens_at",
-          "closes_at",
-          "is_open_now",
-          "districts"
-        ],
-        "title": "DeliveryZonePublic",
-        "type": "object"
-      },
-      "District": {
-        "properties": {
-          "code": {
-            "enum": [
-              "bektemir",
-              "chilonzor",
-              "mirobod",
-              "mirzo_ulugbek",
-              "olmazor",
-              "sergeli",
-              "shayxontohur",
-              "uchtepa",
-              "yakkasaroy",
-              "yangihayot",
-              "yashnobod",
-              "yunusobod"
-            ],
-            "title": "Code",
-            "type": "string"
-          },
-          "name_ru": {
-            "title": "Name Ru",
-            "type": "string"
-          },
-          "name_uz": {
-            "title": "Name Uz",
-            "type": "string"
-          }
-        },
-        "required": [
-          "code",
-          "name_uz",
-          "name_ru"
-        ],
-        "title": "District",
         "type": "object"
       },
       "ErrorDetail": {
@@ -2223,32 +1731,6 @@
             ],
             "title": "Apartment"
           },
-          "district": {
-            "enum": [
-              "bektemir",
-              "chilonzor",
-              "mirobod",
-              "mirzo_ulugbek",
-              "olmazor",
-              "sergeli",
-              "shayxontohur",
-              "uchtepa",
-              "yakkasaroy",
-              "yangihayot",
-              "yashnobod",
-              "yunusobod"
-            ],
-            "title": "District",
-            "type": "string"
-          },
-          "district_name_ru": {
-            "title": "District Name Ru",
-            "type": "string"
-          },
-          "district_name_uz": {
-            "title": "District Name Uz",
-            "type": "string"
-          },
           "entrance": {
             "anyOf": [
               {
@@ -2286,15 +1768,36 @@
             ],
             "title": "Landmark"
           },
+          "lat": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lat"
+          },
+          "lon": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lon"
+          },
           "street": {
             "title": "Street",
             "type": "string"
           }
         },
         "required": [
-          "district",
-          "district_name_uz",
-          "district_name_ru",
+          "lat",
+          "lon",
           "street",
           "house",
           "apartment",
@@ -2303,31 +1806,6 @@
           "landmark"
         ],
         "title": "OrderAddress",
-        "type": "object"
-      },
-      "OrderDeliverySlot": {
-        "description": "The booked delivery window (local Asia/Tashkent date, ``HH:MM`` times).",
-        "properties": {
-          "date": {
-            "format": "date",
-            "title": "Date",
-            "type": "string"
-          },
-          "ends_at": {
-            "title": "Ends At",
-            "type": "string"
-          },
-          "starts_at": {
-            "title": "Starts At",
-            "type": "string"
-          }
-        },
-        "required": [
-          "date",
-          "starts_at",
-          "ends_at"
-        ],
-        "title": "OrderDeliverySlot",
         "type": "object"
       },
       "OrderDetail": {
@@ -2365,20 +1843,6 @@
             "format": "date-time",
             "title": "Created At",
             "type": "string"
-          },
-          "delivery_fee_uzs": {
-            "title": "Delivery Fee Uzs",
-            "type": "integer"
-          },
-          "delivery_slot": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/OrderDeliverySlot"
-              },
-              {
-                "type": "null"
-              }
-            ]
           },
           "history": {
             "items": {
@@ -2442,14 +1906,12 @@
           "created_at",
           "updated_at",
           "subtotal_uzs",
-          "delivery_fee_uzs",
           "total_uzs",
           "item_count",
           "payment_method",
           "recipient_name",
           "recipient_phone",
           "address",
-          "delivery_slot",
           "comment",
           "cancel_reason",
           "items",
@@ -3352,149 +2814,6 @@
         "title": "SetLanguageRequest",
         "type": "object"
       },
-      "SlotCreateRequest": {
-        "additionalProperties": false,
-        "properties": {
-          "capacity": {
-            "maximum": 10000.0,
-            "minimum": 0.0,
-            "title": "Capacity",
-            "type": "integer"
-          },
-          "cutoff_at": {
-            "format": "date-time",
-            "title": "Cutoff At",
-            "type": "string"
-          },
-          "ends_at": {
-            "examples": [
-              "09:00"
-            ],
-            "pattern": "^([01][0-9]|2[0-3]):[0-5][0-9]$",
-            "title": "Ends At",
-            "type": "string"
-          },
-          "is_active": {
-            "default": true,
-            "title": "Is Active",
-            "type": "boolean"
-          },
-          "slot_date": {
-            "format": "date",
-            "title": "Slot Date",
-            "type": "string"
-          },
-          "starts_at": {
-            "examples": [
-              "09:00"
-            ],
-            "pattern": "^([01][0-9]|2[0-3]):[0-5][0-9]$",
-            "title": "Starts At",
-            "type": "string"
-          },
-          "zone_id": {
-            "format": "uuid",
-            "title": "Zone Id",
-            "type": "string"
-          }
-        },
-        "required": [
-          "zone_id",
-          "slot_date",
-          "starts_at",
-          "ends_at",
-          "capacity",
-          "cutoff_at"
-        ],
-        "title": "SlotCreateRequest",
-        "type": "object"
-      },
-      "SlotUpdateRequest": {
-        "additionalProperties": false,
-        "description": "Only the fields sent are changed. Date and times can change only while nothing is booked;\ncapacity cannot drop below what is already booked.",
-        "properties": {
-          "capacity": {
-            "anyOf": [
-              {
-                "maximum": 10000.0,
-                "minimum": 0.0,
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Capacity"
-          },
-          "cutoff_at": {
-            "anyOf": [
-              {
-                "format": "date-time",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Cutoff At"
-          },
-          "ends_at": {
-            "anyOf": [
-              {
-                "examples": [
-                  "09:00"
-                ],
-                "pattern": "^([01][0-9]|2[0-3]):[0-5][0-9]$",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Ends At"
-          },
-          "is_active": {
-            "anyOf": [
-              {
-                "type": "boolean"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Is Active"
-          },
-          "slot_date": {
-            "anyOf": [
-              {
-                "format": "date",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Slot Date"
-          },
-          "starts_at": {
-            "anyOf": [
-              {
-                "examples": [
-                  "09:00"
-                ],
-                "pattern": "^([01][0-9]|2[0-3]):[0-5][0-9]$",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Starts At"
-          }
-        },
-        "title": "SlotUpdateRequest",
-        "type": "object"
-      },
       "Unit": {
         "enum": [
           "piece",
@@ -3672,289 +2991,6 @@
           "type"
         ],
         "title": "ValidationError",
-        "type": "object"
-      },
-      "ZoneCreateRequest": {
-        "additionalProperties": false,
-        "properties": {
-          "closes_at": {
-            "examples": [
-              "09:00"
-            ],
-            "pattern": "^([01][0-9]|2[0-3]):[0-5][0-9]$",
-            "title": "Closes At",
-            "type": "string"
-          },
-          "delivery_fee_uzs": {
-            "maximum": 1000000000000.0,
-            "minimum": 0.0,
-            "title": "Delivery Fee Uzs",
-            "type": "integer"
-          },
-          "districts": {
-            "items": {
-              "enum": [
-                "bektemir",
-                "chilonzor",
-                "mirobod",
-                "mirzo_ulugbek",
-                "olmazor",
-                "sergeli",
-                "shayxontohur",
-                "uchtepa",
-                "yakkasaroy",
-                "yangihayot",
-                "yashnobod",
-                "yunusobod"
-              ],
-              "type": "string"
-            },
-            "maxItems": 12,
-            "minItems": 1,
-            "title": "Districts",
-            "type": "array"
-          },
-          "free_delivery_threshold_uzs": {
-            "anyOf": [
-              {
-                "maximum": 1000000000000.0,
-                "minimum": 0.0,
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Free Delivery Threshold Uzs"
-          },
-          "is_active": {
-            "default": true,
-            "title": "Is Active",
-            "type": "boolean"
-          },
-          "min_order_uzs": {
-            "default": 0,
-            "maximum": 1000000000000.0,
-            "minimum": 0.0,
-            "title": "Min Order Uzs",
-            "type": "integer"
-          },
-          "name_ru": {
-            "maxLength": 255,
-            "minLength": 1,
-            "title": "Name Ru",
-            "type": "string"
-          },
-          "name_uz": {
-            "maxLength": 255,
-            "minLength": 1,
-            "title": "Name Uz",
-            "type": "string"
-          },
-          "opens_at": {
-            "examples": [
-              "09:00"
-            ],
-            "pattern": "^([01][0-9]|2[0-3]):[0-5][0-9]$",
-            "title": "Opens At",
-            "type": "string"
-          },
-          "slug": {
-            "maxLength": 64,
-            "minLength": 1,
-            "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
-            "title": "Slug",
-            "type": "string"
-          },
-          "sort_order": {
-            "default": 0,
-            "maximum": 100000.0,
-            "minimum": -100000.0,
-            "title": "Sort Order",
-            "type": "integer"
-          }
-        },
-        "required": [
-          "slug",
-          "name_uz",
-          "name_ru",
-          "delivery_fee_uzs",
-          "opens_at",
-          "closes_at",
-          "districts"
-        ],
-        "title": "ZoneCreateRequest",
-        "type": "object"
-      },
-      "ZoneUpdateRequest": {
-        "additionalProperties": false,
-        "description": "Only the fields sent are changed; ``districts`` replaces the whole set.",
-        "properties": {
-          "closes_at": {
-            "anyOf": [
-              {
-                "examples": [
-                  "09:00"
-                ],
-                "pattern": "^([01][0-9]|2[0-3]):[0-5][0-9]$",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Closes At"
-          },
-          "delivery_fee_uzs": {
-            "anyOf": [
-              {
-                "maximum": 1000000000000.0,
-                "minimum": 0.0,
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Delivery Fee Uzs"
-          },
-          "districts": {
-            "anyOf": [
-              {
-                "items": {
-                  "enum": [
-                    "bektemir",
-                    "chilonzor",
-                    "mirobod",
-                    "mirzo_ulugbek",
-                    "olmazor",
-                    "sergeli",
-                    "shayxontohur",
-                    "uchtepa",
-                    "yakkasaroy",
-                    "yangihayot",
-                    "yashnobod",
-                    "yunusobod"
-                  ],
-                  "type": "string"
-                },
-                "maxItems": 12,
-                "minItems": 1,
-                "type": "array"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Districts"
-          },
-          "free_delivery_threshold_uzs": {
-            "anyOf": [
-              {
-                "maximum": 1000000000000.0,
-                "minimum": 0.0,
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Free Delivery Threshold Uzs"
-          },
-          "is_active": {
-            "anyOf": [
-              {
-                "type": "boolean"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Is Active"
-          },
-          "min_order_uzs": {
-            "anyOf": [
-              {
-                "maximum": 1000000000000.0,
-                "minimum": 0.0,
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Min Order Uzs"
-          },
-          "name_ru": {
-            "anyOf": [
-              {
-                "maxLength": 255,
-                "minLength": 1,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Name Ru"
-          },
-          "name_uz": {
-            "anyOf": [
-              {
-                "maxLength": 255,
-                "minLength": 1,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Name Uz"
-          },
-          "opens_at": {
-            "anyOf": [
-              {
-                "examples": [
-                  "09:00"
-                ],
-                "pattern": "^([01][0-9]|2[0-3]):[0-5][0-9]$",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Opens At"
-          },
-          "slug": {
-            "anyOf": [
-              {
-                "maxLength": 64,
-                "minLength": 1,
-                "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Slug"
-          },
-          "sort_order": {
-            "anyOf": [
-              {
-                "maximum": 100000.0,
-                "minimum": -100000.0,
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Sort Order"
-          }
-        },
-        "title": "ZoneUpdateRequest",
         "type": "object"
       }
     }
@@ -4807,805 +3843,6 @@
           }
         },
         "summary": "Dashboard",
-        "tags": [
-          "admin"
-        ]
-      }
-    },
-    "/api/v1/admin/delivery/slots": {
-      "get": {
-        "description": "Slots by date and start time, optionally of one zone and a date range (at most 1000).",
-        "operationId": "list_slots_api_v1_admin_delivery_slots_get",
-        "parameters": [
-          {
-            "in": "query",
-            "name": "zone_id",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "format": "uuid",
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Zone Id"
-            }
-          },
-          {
-            "description": "Local date, inclusive",
-            "in": "query",
-            "name": "date_from",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "format": "date",
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "description": "Local date, inclusive",
-              "title": "Date From"
-            }
-          },
-          {
-            "description": "Local date, inclusive",
-            "in": "query",
-            "name": "date_to",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "format": "date",
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "description": "Local date, inclusive",
-              "title": "Date To"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/DeliverySlotAdminList"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "401": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            },
-            "description": "Unauthorized"
-          },
-          "403": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            },
-            "description": "Forbidden"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            },
-            "description": "Unprocessable Content"
-          },
-          "429": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            },
-            "description": "Too Many Requests"
-          },
-          "503": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            },
-            "description": "Service Unavailable"
-          }
-        },
-        "summary": "List Slots",
-        "tags": [
-          "admin"
-        ]
-      },
-      "post": {
-        "description": "``cutoff_at`` may not be after the slot starts (Asia/Tashkent); ``409 slot_exists`` when\nthe zone already has a slot starting at that date and time.",
-        "operationId": "create_slot_api_v1_admin_delivery_slots_post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/SlotCreateRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "201": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/DeliverySlotAdmin"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "401": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            },
-            "description": "Unauthorized"
-          },
-          "403": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            },
-            "description": "Forbidden"
-          },
-          "404": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            },
-            "description": "Not Found"
-          },
-          "409": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            },
-            "description": "Conflict"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            },
-            "description": "Unprocessable Content"
-          },
-          "429": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            },
-            "description": "Too Many Requests"
-          },
-          "503": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            },
-            "description": "Service Unavailable"
-          }
-        },
-        "summary": "Create Slot",
-        "tags": [
-          "admin"
-        ]
-      }
-    },
-    "/api/v1/admin/delivery/slots/{slot_id}": {
-      "delete": {
-        "description": "Only a slot with nothing booked and no order referring to it (``409 slot_in_use``).",
-        "operationId": "delete_slot_api_v1_admin_delivery_slots__slot_id__delete",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "slot_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Slot Id",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "204": {
-            "description": "Successful Response"
-          },
-          "401": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            },
-            "description": "Unauthorized"
-          },
-          "403": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            },
-            "description": "Forbidden"
-          },
-          "404": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            },
-            "description": "Not Found"
-          },
-          "409": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            },
-            "description": "Conflict"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            },
-            "description": "Unprocessable Content"
-          },
-          "429": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            },
-            "description": "Too Many Requests"
-          },
-          "503": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            },
-            "description": "Service Unavailable"
-          }
-        },
-        "summary": "Delete Slot",
-        "tags": [
-          "admin"
-        ]
-      },
-      "patch": {
-        "description": "Change only the fields sent. ``409 capacity_below_reserved`` below the booked places;\n``409 slot_in_use`` when moving (date/times) a slot with booked places.",
-        "operationId": "update_slot_api_v1_admin_delivery_slots__slot_id__patch",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "slot_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Slot Id",
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/SlotUpdateRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/DeliverySlotAdmin"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "401": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            },
-            "description": "Unauthorized"
-          },
-          "403": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            },
-            "description": "Forbidden"
-          },
-          "404": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            },
-            "description": "Not Found"
-          },
-          "409": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            },
-            "description": "Conflict"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            },
-            "description": "Unprocessable Content"
-          },
-          "429": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            },
-            "description": "Too Many Requests"
-          },
-          "503": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            },
-            "description": "Service Unavailable"
-          }
-        },
-        "summary": "Update Slot",
-        "tags": [
-          "admin"
-        ]
-      }
-    },
-    "/api/v1/admin/delivery/zones": {
-      "get": {
-        "description": "Every zone (inactive ones too), in display order, with its districts.",
-        "operationId": "list_zones_api_v1_admin_delivery_zones_get",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/DeliveryZoneAdminList"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "401": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            },
-            "description": "Unauthorized"
-          },
-          "403": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            },
-            "description": "Forbidden"
-          },
-          "429": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            },
-            "description": "Too Many Requests"
-          },
-          "503": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            },
-            "description": "Service Unavailable"
-          }
-        },
-        "summary": "List Zones",
-        "tags": [
-          "admin"
-        ]
-      },
-      "post": {
-        "description": "``409 district_taken`` (with ``district``) when a district already belongs to a zone.",
-        "operationId": "create_zone_api_v1_admin_delivery_zones_post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/ZoneCreateRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "201": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/DeliveryZoneAdmin"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "401": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            },
-            "description": "Unauthorized"
-          },
-          "403": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            },
-            "description": "Forbidden"
-          },
-          "409": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            },
-            "description": "Conflict"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            },
-            "description": "Unprocessable Content"
-          },
-          "429": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            },
-            "description": "Too Many Requests"
-          },
-          "503": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            },
-            "description": "Service Unavailable"
-          }
-        },
-        "summary": "Create Zone",
-        "tags": [
-          "admin"
-        ]
-      }
-    },
-    "/api/v1/admin/delivery/zones/{zone_id}": {
-      "delete": {
-        "description": "Only a zone no order and no slot refers to (``409 zone_in_use``); else deactivate it.",
-        "operationId": "delete_zone_api_v1_admin_delivery_zones__zone_id__delete",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "zone_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Zone Id",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "204": {
-            "description": "Successful Response"
-          },
-          "401": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            },
-            "description": "Unauthorized"
-          },
-          "403": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            },
-            "description": "Forbidden"
-          },
-          "404": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            },
-            "description": "Not Found"
-          },
-          "409": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            },
-            "description": "Conflict"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            },
-            "description": "Unprocessable Content"
-          },
-          "429": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            },
-            "description": "Too Many Requests"
-          },
-          "503": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            },
-            "description": "Service Unavailable"
-          }
-        },
-        "summary": "Delete Zone",
-        "tags": [
-          "admin"
-        ]
-      },
-      "patch": {
-        "description": "Change only the fields sent; ``districts`` replaces the zone's whole district set.",
-        "operationId": "update_zone_api_v1_admin_delivery_zones__zone_id__patch",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "zone_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Zone Id",
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/ZoneUpdateRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/DeliveryZoneAdmin"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "401": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            },
-            "description": "Unauthorized"
-          },
-          "403": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            },
-            "description": "Forbidden"
-          },
-          "404": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            },
-            "description": "Not Found"
-          },
-          "409": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            },
-            "description": "Conflict"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            },
-            "description": "Unprocessable Content"
-          },
-          "429": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            },
-            "description": "Too Many Requests"
-          },
-          "503": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            },
-            "description": "Service Unavailable"
-          }
-        },
-        "summary": "Update Zone",
         "tags": [
           "admin"
         ]
@@ -7604,18 +5841,8 @@
     },
     "/api/v1/checkout/quote": {
       "post": {
-        "description": "Re-check the cart (status, current price, stock) and price delivery for a district.\n\nNever fails because of the cart's contents: problems are reported in ``issues`` and\n``can_place_order``. ``409 district_not_served`` when no active zone covers the district.\n``slot_required`` and ``delivery_slots`` say whether (and which) delivery slot to book.",
+        "description": "Re-check the cart (status, current price, stock). No request body.\n\nNever fails because of the cart's contents: problems are reported in ``issues`` and\n``can_place_order``. ``total_uzs`` equals ``subtotal_uzs``: delivery is by a Yandex Go courier\nwhom the customer pays directly.",
         "operationId": "quote_api_v1_checkout_quote_post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/CheckoutQuoteRequest"
-              }
-            }
-          },
-          "required": true
-        },
         "responses": {
           "200": {
             "content": {
@@ -7647,26 +5874,6 @@
             },
             "description": "Forbidden"
           },
-          "409": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            },
-            "description": "Conflict"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            },
-            "description": "Unprocessable Content"
-          },
           "429": {
             "content": {
               "application/json": {
@@ -7691,48 +5898,6 @@
         "summary": "Quote",
         "tags": [
           "checkout"
-        ]
-      }
-    },
-    "/api/v1/delivery/zones": {
-      "get": {
-        "description": "Active zones with their districts, fees, minimum order and Asia/Tashkent hours.\n\n``is_open_now`` is as of the response; it may be up to a minute stale from a cache.",
-        "operationId": "list_zones_api_v1_delivery_zones_get",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/DeliveryZoneList"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "429": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            },
-            "description": "Too Many Requests"
-          },
-          "503": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            },
-            "description": "Service Unavailable"
-          }
-        },
-        "summary": "List Zones",
-        "tags": [
-          "delivery"
         ]
       }
     },
@@ -8380,7 +6545,7 @@
         ]
       },
       "post": {
-        "description": "Place an order from the whole cart.\n\nThe same ``Idempotency-Key`` with the same body returns the original order (``200`` and\n``Idempotent-Replayed: true``); with a different body it is ``409 idempotency_key_conflict``.\nWhen the zone has delivery slots, ``delivery_slot_id`` is required (``409 slot_required``) and\nbooked atomically (``409 slot_full`` / ``slot_unavailable``). Without a verified account\nphone it is ``409 phone_verification_required`` (unless disabled by configuration).",
+        "description": "Place an order from the whole cart.\n\nThe same ``Idempotency-Key`` with the same body returns the original order (``200`` and\n``Idempotent-Replayed: true``); with a different body it is ``409 idempotency_key_conflict``.\nDelivery is on demand (no zone, hours or slot check). Without a verified account\nphone it is ``409 phone_verification_required`` (unless disabled by configuration).",
         "operationId": "create_order_api_v1_orders_post",
         "parameters": [
           {

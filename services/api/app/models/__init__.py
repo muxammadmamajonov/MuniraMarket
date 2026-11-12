@@ -3,7 +3,6 @@
 from app.models.audit import AuditLog
 from app.models.cart import Cart, CartItem
 from app.models.catalog import Category, Product
-from app.models.delivery import DeliverySlot, DeliveryZone, DeliveryZoneDistrict
 from app.models.notification import NotificationOutbox, StaffNotificationChat
 from app.models.order import Order, OrderItem, OrderStatusHistory
 from app.models.security_state import (
@@ -20,9 +19,6 @@ __all__ = [
     "Cart",
     "CartItem",
     "Category",
-    "DeliverySlot",
-    "DeliveryZone",
-    "DeliveryZoneDistrict",
     "NotificationOutbox",
     "OidcLoginState",
     "Order",

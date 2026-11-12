@@ -116,6 +116,59 @@ export function int(options: IntOptions = {}): Validator<number> {
   };
 }
 
+// Python float literal syntax (digits may be grouped with `_`), and the non-finite spellings.
+const DIGITS = '\\d+(?:_\\d+)*';
+const FLOAT_STRING = new RegExp(
+  `^[+-]?(?:${DIGITS}(?:\\.(?:${DIGITS})?)?|\\.${DIGITS})(?:[eE][+-]?${DIGITS})?$`,
+);
+const NON_FINITE_STRING = /^[+-]?(?:nan|inf|infinity)$/i;
+
+export interface FloatOptions {
+  ge?: number;
+  le?: number;
+  /** Runs after the range checks (Pydantic `AfterValidator`). */
+  after?: (value: number) => number;
+}
+
+/**
+ * Lax finite float (`float` with `allow_inf_nan=False`): numbers, booleans and numeric strings,
+ * with Pydantic's messages.
+ */
+export function float(options: FloatOptions = {}): Validator<number> {
+  return (value, loc, issues) => {
+    if (value === undefined) return fail(issues, loc, 'Field required');
+    let number: number;
+    if (typeof value === 'boolean') {
+      number = value ? 1 : 0;
+    } else if (typeof value === 'number') {
+      number = value;
+    } else if (typeof value === 'string') {
+      const text = pythonStrip(value);
+      if (NON_FINITE_STRING.test(text)) {
+        return fail(issues, loc, 'Input should be a finite number');
+      }
+      if (!FLOAT_STRING.test(text)) {
+        return fail(
+          issues,
+          loc,
+          'Input should be a valid number, unable to parse string as a number',
+        );
+      }
+      number = Number(text.replaceAll('_', ''));
+    } else {
+      return fail(issues, loc, 'Input should be a valid number');
+    }
+    if (!Number.isFinite(number)) return fail(issues, loc, 'Input should be a finite number');
+    if (options.ge !== undefined && number < options.ge) {
+      return fail(issues, loc, `Input should be greater than or equal to ${options.ge}`);
+    }
+    if (options.le !== undefined && number > options.le) {
+      return fail(issues, loc, `Input should be less than or equal to ${options.le}`);
+    }
+    return options.after === undefined ? number : options.after(number);
+  };
+}
+
 const TRUE = new Set(['1', 'on', 't', 'true', 'y', 'yes']);
 const FALSE = new Set(['0', 'off', 'f', 'false', 'n', 'no']);
 

@@ -1,10 +1,12 @@
 import { expect, test, type Page, type Request } from '@playwright/test';
 
 /**
- * The map step with a Maps key: pick a point under the centre pin, "Deliver here", and a real
- * delivery result from the live (seeded) zones. The Yandex SDK is a stub served by `page.route`
- * for `https://api-maps.yandex.ru/**`; every other Yandex host is aborted. CI never uses a real
- * key and never talks to Yandex.
+ * The address picker with a Maps key: the map and the address form on one screen; moving the map
+ * reverse-geocodes the pin into street and house; "Shu yerga yetkazish" saves the address (point
+ * and text) on this device. No area, price or free-delivery wording anywhere. The Yandex SDK
+ * is a stub served by `page.route` for `https://api-maps.yandex.ru/**`, and the Geocoder HTTP API
+ * is answered locally; every other Yandex host is aborted. CI never uses a real key and never
+ * talks to Yandex.
  *
  * Needs a second storefront server started with a placeholder key, for example
  *   YANDEX_MAPS_JAVASCRIPT_API_KEY=00000000-0000-4000-8000-000000000000 \
@@ -12,14 +14,10 @@ import { expect, test, type Page, type Request } from '@playwright/test';
  *     pnpm --filter @muniramarket/web exec next start --port 3002
  * and `E2E_MAPS_BASE_URL=http://localhost:3002`. Without it these specs are skipped; the
  * no-key fallback runs against the normal server in `mobile-shell.spec.ts`.
- *
- * Seeded zones (services/api/app/dev/seed.py): chilonzor is in "Demo chekka zona" (25 000 fee,
- * 100 000 minimum, free from 500 000, 09:00–20:00); bektemir and yangihayot are in an inactive
- * zone, so not served.
  */
 
 const MAPS_BASE_URL = process.env['E2E_MAPS_BASE_URL'];
-const DISTRICT_ITEM = 'mm.delivery-district.v1';
+const ADDRESS_ITEM = 'mm.delivery-address.v1';
 
 test.skip(
   MAPS_BASE_URL === undefined || MAPS_BASE_URL === '',
@@ -27,11 +25,11 @@ test.skip(
 );
 test.use({ baseURL: MAPS_BASE_URL });
 
-type Answer = 'chilonzor' | 'bektemir' | 'samarkand' | 'fail';
+type Answer = 'house' | 'kvartal' | 'fail';
 
 /**
  * A tiny `ymaps3`: a map whose centre the test can move (`__mapStub.pan`, which fires the
- * gesture listener like a drag). District lookup itself is intercepted at the Geocoder HTTP
+ * gesture listener like a drag). The street/house lookup is intercepted at the Geocoder HTTP
  * endpoint below, so this test never needs Yandex Search API access.
  */
 const STUB_SDK = String.raw`
@@ -47,7 +45,7 @@ const STUB_SDK = String.raw`
       const tile = document.createElement('div');
       tile.setAttribute('data-stub-map', '');
       tile.style.cssText =
-        'position:absolute;inset:0;background:repeating-linear-gradient(45deg,#d9e6d3 0 24px,#e8efe4 24px 48px)';
+        'position:absolute;inset:0;background:repeating-linear-gradient(45deg,#e7e5e4 0 24px,#f5f5f4 24px 48px)';
       element.append(tile);
       stub.maps.push(this);
     }
@@ -76,21 +74,34 @@ const STUB_SDK = String.raw`
 })();
 `;
 
-const GEOCODER_MEMBERS: Record<
+/** The Geocoder's first (nearest house) result: its name and address components. */
+const GEOCODER_RESULTS: Record<
   Exclude<Answer, 'fail'>,
-  Array<{ name: string; description: string }>
+  { name: string; components: Array<{ kind: string; name: string }> }
 > = {
-  chilonzor: [
-    { name: 'Bunyodkor ko‘chasi, 15', description: 'Toshkent, O‘zbekiston' },
-    { name: 'Chilonzor tumani', description: 'Toshkent, O‘zbekiston' },
-  ],
-  bektemir: [{ name: 'Бектемирский район', description: 'Ташкент, Узбекистан' }],
-  samarkand: [{ name: 'Самарканд', description: 'Узбекистан' }],
+  house: {
+    name: 'улица Бунёдкор, 15',
+    components: [
+      { kind: 'country', name: 'Узбекистан' },
+      { kind: 'locality', name: 'Ташкент' },
+      { kind: 'street', name: 'улица Бунёдкор' },
+      { kind: 'house', name: '15' },
+    ],
+  },
+  // No street component: the name minus the house number stands in for it.
+  kvartal: {
+    name: '9-й квартал, 5',
+    components: [
+      { kind: 'country', name: 'Узбекистан' },
+      { kind: 'locality', name: 'Ташкент' },
+      { kind: 'house', name: '5' },
+    ],
+  },
 };
 
 async function stubYandex(
   page: Page,
-  answer: Answer = 'chilonzor',
+  answer: Answer = 'house',
 ): Promise<{ blocked: string[]; geocodes: string[] }> {
   const blocked: string[] = [];
   const geocodes: string[] = [];
@@ -110,7 +121,18 @@ async function stubYandex(
       json: {
         response: {
           GeoObjectCollection: {
-            featureMember: GEOCODER_MEMBERS[answer].map((member) => ({ GeoObject: member })),
+            featureMember: [
+              {
+                GeoObject: {
+                  name: GEOCODER_RESULTS[answer].name,
+                  metaDataProperty: {
+                    GeocoderMetaData: {
+                      Address: { Components: GEOCODER_RESULTS[answer].components },
+                    },
+                  },
+                },
+              },
+            ],
           },
         },
       },
@@ -126,7 +148,7 @@ async function browseAnonymously(page: Page): Promise<void> {
   );
 }
 
-/** Every request to our own origin, to prove no coordinate ever reaches it. */
+/** Every request to our own origin, to prove picking an address sends nothing to our API. */
 function recordOwnRequests(page: Page): Request[] {
   const own: Request[] = [];
   const origin = new URL(MAPS_BASE_URL ?? 'http://localhost').origin;
@@ -137,18 +159,27 @@ function recordOwnRequests(page: Page): Request[] {
 }
 
 async function openMap(page: Page, locale: 'uz' | 'ru' = 'uz') {
-  const card = page.getByTestId('delivery-district').filter({ visible: true });
+  const card = page.getByTestId('delivery-address').filter({ visible: true });
+  // One tap: straight to the map and the form.
   await card.getByRole('button').first().click();
-  await page
-    .getByRole('button', { name: locale === 'uz' ? 'Xaritada belgilash' : 'Указать на карте' })
-    .click();
   const picker = page.getByRole('dialog', {
-    name: locale === 'uz' ? 'Xaritada belgilash' : 'Указать на карте',
+    name: locale === 'uz' ? 'Yetkazish manzili' : 'Адрес доставки',
   });
   await expect(picker.getByTestId('map-canvas')).toBeVisible();
   await expect(picker.locator('[data-stub-map]')).toBeVisible();
+  await expect(picker.getByTestId('address-form')).toBeVisible();
   return picker;
 }
+
+function pan(page: Page, center: [number, number]): Promise<void> {
+  return page.evaluate(
+    (c) => (window as unknown as { __mapStub: { pan: (c: number[]) => void } }).__mapStub.pan(c),
+    center,
+  );
+}
+
+/** No price or free-delivery wording around the address. */
+const NO_DELIVERY_TERMS = /so‘m|сум|bepul|бесплат/i;
 
 /** Set `E2E_SHOTS_DIR` to save the screenshots used in the PR description. */
 async function shot(page: Page, name: string): Promise<void> {
@@ -169,10 +200,10 @@ async function expectNoHorizontalScroll(page: Page): Promise<void> {
 
 test.beforeEach(async ({ page }) => browseAnonymously(page));
 
-test('served: pick a point, "Deliver here", real zone rules, choose the district', async ({
+test('pick a point: street and house are filled in, "Shu yerga yetkazish" saves the address', async ({
   page,
 }) => {
-  const { blocked, geocodes } = await stubYandex(page, 'chilonzor');
+  const { blocked, geocodes } = await stubYandex(page, 'house');
   const own = recordOwnRequests(page);
   await page.goto('/uz');
   const picker = await openMap(page);
@@ -180,140 +211,105 @@ test('served: pick a point, "Deliver here", real zone rules, choose the district
   await expect(
     picker.getByRole('img', { name: 'Yetkazish nuqtasi xarita markazida' }),
   ).toBeVisible();
-  // Nothing is looked up before the customer confirms.
+  // The city centre is nobody's address: nothing is looked up until the customer moves the map.
   expect(geocodes).toEqual([]);
-  await page.evaluate(() =>
-    (window as unknown as { __mapStub: { pan: (c: number[]) => void } }).__mapStub.pan([
-      69.2041, 41.2856,
-    ]),
-  );
-  await picker.getByRole('button', { name: 'Shu yerga yetkazish' }).click();
-
-  const result = picker.getByTestId('map-result');
-  await expect(result).toHaveAttribute('data-status', 'served');
-  await expect(result.getByRole('heading')).toHaveText('Chilonzor tumaniga yetkazib beramiz');
-  await expect(result).toContainText('Demo chekka zona');
-  await expect(result.getByTestId('demo-badge')).toHaveText('Demo');
-  await expect(result.getByTestId('demo-note')).toContainText('admin panelda');
-  await expect(result).toContainText(/25\s000\sso‘m/);
-  await expect(result).toContainText(/100\s000\sso‘m/);
-  await expect(result).toContainText(/500\s000\sso‘m dan/);
-  await expect(result).toContainText('09:00–20:00');
+  await pan(page, [69.2041, 41.2856]);
+  await expect(picker.getByLabel('Ko‘cha')).toHaveValue('улица Бунёдкор');
+  await expect(picker.getByLabel('Uy')).toHaveValue('15');
   expect(geocodes).toHaveLength(1);
-  expect(geocodes[0]).toContain('geocode=69.204100%2C41.285600');
-  await shot(page, 'map-served-uz');
-  await expectNoHorizontalScroll(page);
+  const lookup = new URL(geocodes[0] ?? '');
+  expect(lookup.searchParams.get('geocode')).toBe('69.204100,41.285600');
+  expect(lookup.searchParams.get('kind')).toBe('house');
 
-  await result.getByRole('button', { name: 'Chilonzor tumanini tanlash' }).click();
+  await picker.getByLabel('Xonadon').fill('7');
+  await picker.getByLabel('Mo‘ljal yoki izoh').fill('Demo mo‘ljal');
+  await expect(picker).not.toContainText(NO_DELIVERY_TERMS);
+  await picker.getByRole('button', { name: 'Shu yerga yetkazish' }).click();
   await expect(picker).toBeHidden();
-  const card = page.getByTestId('delivery-district').filter({ visible: true });
-  await expect(card.getByTestId('delivery-district-name')).toHaveText('Chilonzor');
 
-  // Privacy: only the district code is kept; no coordinate in storage, cookies, URL or our API.
-  const storage = await page.evaluate(() => ({
-    local: Object.entries(window.localStorage),
-    session: window.sessionStorage.length,
-    cookie: document.cookie,
-    href: window.location.href,
-  }));
-  expect(storage.local).toEqual([[DISTRICT_ITEM, 'chilonzor']]);
-  expect(storage.session).toBe(0);
-  expect(storage.cookie).not.toMatch(/69\.2|41\.2/);
-  expect(storage.href).not.toMatch(/69\.2|41\.2/);
-  for (const request of own) {
-    expect(request.url()).not.toMatch(/69\.20|41\.28/);
-    expect(request.postData() ?? '').not.toMatch(/69\.20|41\.28/);
-  }
+  const card = page.getByTestId('delivery-address').filter({ visible: true });
+  await expect(card.getByTestId('delivery-address-line')).toHaveText(
+    'улица Бунёдкор, 15, 7-xonadon',
+  );
+  await expect(card).not.toContainText(NO_DELIVERY_TERMS);
+  const saved = await page.evaluate((key) => window.localStorage.getItem(key), ADDRESS_ITEM);
+  expect(JSON.parse(saved ?? 'null')).toEqual({
+    lat: 41.2856,
+    lon: 69.2041,
+    street: 'улица Бунёдкор',
+    house: '15',
+    apartment: '7',
+    entrance: '',
+    floor: '',
+    landmark: 'Demo mo‘ljal',
+  });
+  // Choosing an address talks to Yandex only: the point never reaches our API before an order.
+  expect(
+    own.filter((request) =>
+      /41\.2856|69\.2041/.test(`${request.url()} ${request.postData() ?? ''}`),
+    ),
+  ).toEqual([]);
   expect(blocked).toEqual([]);
 });
 
-test('not served (Russian): names the district and offers served neighbours', async ({ page }) => {
-  await stubYandex(page, 'bektemir');
+test('a kvartal address: the neighbourhood stands in for the street (Russian)', async ({
+  page,
+}) => {
+  await stubYandex(page, 'kvartal');
   await page.goto('/ru');
   const picker = await openMap(page, 'ru');
-  await picker.getByRole('button', { name: 'Доставить сюда' }).click();
-  const result = picker.getByTestId('map-result');
-  await expect(result).toHaveAttribute('data-status', 'not-served');
-  await expect(result.getByRole('heading')).toHaveText('В район «Бектемирский» пока не доставляем');
-  await expect(result).toContainText('Доставляем в соседние районы:');
-  await shot(page, 'map-not-served-ru');
-  await expect(result).not.toContainText('Доставляем в этот район');
-  // Bektemir borders Yashnobod (demo-chekka) and Sergeli (demo-janubiy).
-  const neighbour = result.getByRole('button', { name: /Яшнабад/ });
-  await expect(neighbour).toBeVisible();
-  await neighbour.click();
-  await expect(picker).toBeHidden();
-  expect(await page.evaluate((key) => window.localStorage.getItem(key), DISTRICT_ITEM)).toBe(
-    'yashnobod',
-  );
+  await pan(page, [69.2, 41.29]);
+  await expect(picker.getByLabel('Улица')).toHaveValue('9-й квартал');
+  await expect(picker.getByLabel('Дом')).toHaveValue('5');
 });
 
-test('reverse geocoding fails: never claims delivery, falls back to the district list', async ({
+test('lookup fails: the customer types street and house; the pin is still the point', async ({
   page,
 }) => {
   await stubYandex(page, 'fail');
-  await page.addInitScript((key) => window.localStorage.setItem(key, 'yunusobod'), DISTRICT_ITEM);
   await page.goto('/uz');
   const picker = await openMap(page);
-  await picker.getByRole('button', { name: 'Shu yerga yetkazish' }).click();
-  const result = picker.getByTestId('map-result');
-  await expect(result).toHaveAttribute('data-status', 'lookup-failed');
-  await expect(result).toContainText('Tumanni avtomatik tekshirib bo‘lmadi');
-  await expect(result).not.toContainText('yetkazib beramiz');
-  await expect(result.getByRole('heading')).toBeFocused();
-  await shot(page, 'map-lookup-failed');
-
-  await result.getByRole('button', { name: 'Tumanni ro‘yxatdan tanlash' }).click();
-  await expect(picker).toBeHidden();
-  const sheet = page.getByRole('dialog', { name: 'Yetkazib berish manzili' });
-  await expect(sheet).toBeVisible();
-  await expect(sheet.getByRole('radio', { name: 'Yunusobod' })).toBeChecked();
-  expect(await page.evaluate((key) => window.localStorage.getItem(key), DISTRICT_ITEM)).toBe(
-    'yunusobod',
+  await pan(page, [69.25, 41.32]);
+  await expect(picker.getByTestId('map-status')).toHaveText(
+    'Manzilni aniqlab bo‘lmadi. Ko‘cha va uyni yozing.',
   );
+  await picker.getByRole('button', { name: 'Shu yerga yetkazish' }).click();
+  await expect(picker.getByText('To‘ldirish shart').first()).toBeVisible();
+  await picker.getByLabel('Ko‘cha').fill('Demo ko‘cha');
+  await picker.getByLabel('Uy').fill('3');
+  await picker.getByRole('button', { name: 'Shu yerga yetkazish' }).click();
+  await expect(picker).toBeHidden();
 });
 
-test('outside Tashkent: honest result, "Change the point" returns to the map', async ({ page }) => {
-  await stubYandex(page, 'samarkand');
+test('"Shu yerga yetkazish" before the map moved asks to place the pin', async ({ page }) => {
+  const { geocodes } = await stubYandex(page, 'house');
   await page.goto('/uz');
   const picker = await openMap(page);
-  await page.evaluate(() =>
-    (window as unknown as { __mapStub: { pan: (c: number[]) => void } }).__mapStub.pan([
-      66.9597, 39.6542,
-    ]),
-  );
   await picker.getByRole('button', { name: 'Shu yerga yetkazish' }).click();
-  const result = picker.getByTestId('map-result');
-  await expect(result).toHaveAttribute('data-status', 'outside');
-  await expect(result).toContainText('Toshkent shahridan tashqarida');
-  await shot(page, 'map-outside');
-  await result.getByRole('button', { name: 'Nuqtani o‘zgartirish' }).click();
-  await expect(result).toBeHidden();
-  await expect(picker.getByRole('button', { name: 'Shu yerga yetkazish' })).toBeEnabled();
+  await expect(picker.getByTestId('map-place-pin')).toBeVisible();
+  await expect(picker).toBeVisible();
+  expect(geocodes).toEqual([]);
 });
 
 test.describe('geolocation', () => {
-  test('permission denied: explained in our UI, the pin still works', async ({ page, context }) => {
+  test('permission denied: explained in our UI, the map still works', async ({ page, context }) => {
     await context.clearPermissions();
-    await stubYandex(page, 'chilonzor');
+    await stubYandex(page, 'house');
     await page.goto('/uz');
     const picker = await openMap(page);
     await picker.getByRole('button', { name: 'Mening joylashuvim' }).click();
-    await expect(picker.getByTestId('map-locate-status')).toContainText(
-      'Joylashuvga ruxsat berilmagan',
-    );
-    // No native dialog: the page handles it.
-    await picker.getByRole('button', { name: 'Shu yerga yetkazish' }).click();
-    await expect(picker.getByTestId('map-result')).toHaveAttribute('data-status', 'served');
+    await expect(picker.getByTestId('map-status')).toContainText('Joylashuvga ruxsat berilmagan');
+    await pan(page, [69.2041, 41.2856]);
+    await expect(picker.getByLabel('Uy')).toHaveValue('15');
   });
 
-  test('granted: "My location" only moves the map; it is used after "Deliver here"', async ({
+  test('granted: "Mening joylashuvim" moves the map there and fills the address', async ({
     page,
     context,
   }) => {
     await context.grantPermissions(['geolocation']);
     await context.setGeolocation({ latitude: 41.2856, longitude: 69.2041 });
-    const { geocodes } = await stubYandex(page, 'chilonzor');
+    const { geocodes } = await stubYandex(page, 'house');
     await page.goto('/uz');
     const picker = await openMap(page);
     await picker.getByRole('button', { name: 'Mening joylashuvim' }).click();
@@ -326,45 +322,60 @@ test.describe('geolocation', () => {
         ),
       )
       .toEqual([69.2041, 41.2856]);
-    expect(geocodes).toEqual([]);
-    await picker.getByRole('button', { name: 'Shu yerga yetkazish' }).click();
-    await expect(picker.getByTestId('map-result')).toHaveAttribute('data-status', 'served');
+    await expect(picker.getByLabel('Ko‘cha')).toHaveValue('улица Бунёдкор');
     expect(geocodes).toHaveLength(1);
   });
 });
 
 test.describe('layout', () => {
   for (const width of [320, 390]) {
-    test(`${String(width)}px: immersive, result readable, no sideways scroll`, async ({ page }) => {
+    test(`${String(width)}px: immersive, actions in thumb reach, no sideways scroll`, async ({
+      page,
+    }) => {
       await page.setViewportSize({ width, height: 700 });
-      await stubYandex(page, 'chilonzor');
+      await stubYandex(page, 'house');
       await page.goto('/uz');
       const picker = await openMap(page);
+      // Measure after the slide-in, not during it.
+      await page.evaluate(() =>
+        Promise.all(
+          document.getAnimations().map((animation) => animation.finished.catch(() => null)),
+        ),
+      );
+      await expect(picker).toHaveCSS('opacity', '1');
       const box = await picker.boundingBox();
       expect(box?.width).toBe(width);
-      await picker.getByRole('button', { name: 'Shu yerga yetkazish' }).click();
-      await expect(picker.getByTestId('map-result')).toBeVisible();
-      await expect(
-        picker.getByRole('button', { name: 'Chilonzor tumanini tanlash' }),
-      ).toBeInViewport();
-      await shot(page, `map-result-${String(width)}`);
+      // "Mening joylashuvim" and "Shu yerga yetkazish" sit at the bottom edge of the sheet.
+      const actions = await picker.getByTestId('map-actions').boundingBox();
+      expect(actions !== null && actions.y + actions.height >= 700 - 2).toBe(true);
+      const locate = await picker.getByRole('button', { name: 'Mening joylashuvim' }).boundingBox();
+      const confirm = await picker
+        .getByRole('button', { name: 'Shu yerga yetkazish' })
+        .boundingBox();
+      expect(locate !== null && locate.height >= 44 && locate.y >= (actions?.y ?? 0)).toBe(true);
+      expect(confirm !== null && confirm.height >= 44).toBe(true);
+      await pan(page, [69.2041, 41.2856]);
+      await expect(picker.getByLabel('Uy')).toHaveValue('15');
+      await shot(page, `map-picker-${String(width)}`);
       await expectNoHorizontalScroll(page);
     });
   }
 
-  test('desktop, dark: a centred dialog with the map beside the panel', async ({ page }) => {
+  test('desktop, dark: a centred dialog with the map beside the form', async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 800 });
     await page.emulateMedia({ colorScheme: 'dark', reducedMotion: 'reduce' });
-    await stubYandex(page, 'chilonzor');
+    await stubYandex(page, 'house');
     await page.goto('/ru');
     const picker = await openMap(page, 'ru');
     const dialog = await picker.boundingBox();
     expect(dialog !== null && dialog.width <= 896 && dialog.x > 0).toBe(true);
     const map = await picker.getByTestId('map-canvas').boundingBox();
-    const panel = await picker.getByTestId('map-actions').boundingBox();
+    const panel = await picker.getByTestId('address-form').boundingBox();
     expect(map !== null && panel !== null && panel.x >= map.x + map.width - 1).toBe(true);
+    await pan(page, [69.2041, 41.2856]);
+    await expect(picker.getByLabel('Дом')).toHaveValue('15');
     await picker.getByRole('button', { name: 'Доставить сюда' }).click();
-    await expect(picker.getByTestId('map-result')).toContainText('Демо окраинная зона');
+    await expect(picker).toBeHidden();
     await shot(page, 'map-desktop-dark');
     await expectNoHorizontalScroll(page);
   });
