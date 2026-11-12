@@ -85,7 +85,7 @@ export function ProductTile({ product }: ProductTileProps) {
               locale={locale}
               {...(old === null ? {} : { currentLabel: dict.product.priceCurrentLabel })}
               data-money
-              className={`text-[17px] leading-6 font-bold tabular-nums ${old === null ? '' : 'text-primary'}`}
+              className={`text-[17px] leading-6 font-bold tabular-nums ${old === null ? '' : 'text-brand-ink'}`}
             />
             <span className="text-xs whitespace-nowrap text-muted-foreground">
               / {dict.units[product.unit]}

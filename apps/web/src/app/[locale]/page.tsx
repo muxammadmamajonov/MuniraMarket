@@ -56,7 +56,7 @@ export default async function HomePage({ params }: PageProps<'/[locale]'>) {
                   <Link
                     href={`/${locale}/catalog`}
                     aria-label={`${dict.home.seeAll}: ${dict.home.categoriesHeading}`}
-                    className={`-mr-2 inline-flex min-h-11 items-center gap-0.5 rounded-xl px-2 text-sm font-semibold text-primary ${PRESS} ${FOCUS_RING}`}
+                    className={`-mr-2 inline-flex min-h-11 items-center gap-0.5 rounded-xl px-2 text-sm font-semibold text-brand-ink ${PRESS} ${FOCUS_RING}`}
                   >
                     {dict.home.seeAll}
                     <ChevronRightIcon aria-hidden="true" width={16} height={16} />

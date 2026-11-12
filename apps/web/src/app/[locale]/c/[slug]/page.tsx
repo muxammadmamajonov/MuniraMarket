@@ -94,7 +94,7 @@ export default async function CategoryPage({
         <CategoryChips
           categories={chips}
           locale={locale}
-          label={dict.catalog.subcategories}
+          label={`${dict.catalog.subcategories}: ${localizedName(category.children.length > 0 ? category : (parent ?? category), locale)}`}
           activeSlug={slug}
         />
 
