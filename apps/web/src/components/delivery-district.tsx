@@ -6,7 +6,7 @@ import { useI18n } from '@/i18n/context';
 import { formatMessage } from '@/i18n/format';
 import { districtGroups, districtName, findServedDistrict } from '@/lib/checkout/zones';
 import { useDistrictPreference } from '@/lib/delivery/district-preference';
-import { exitFullscreenIfOn, requestFullscreenOnce, useHaptics, useTelegram } from '@/lib/telegram';
+import { useHaptics } from '@/lib/telegram';
 import { AddressPicker } from './address-picker';
 import { BottomSheet } from './bottom-sheet';
 import { ChevronRightIcon, MapIcon, PinIcon } from './icons';
@@ -41,9 +41,6 @@ export function DeliveryDistrict({ zones }: DeliveryDistrictProps) {
   const [mapOpen, setMapOpen] = useState(false);
   const [announcement, setAnnouncement] = useState('');
   const haptics = useHaptics();
-  const telegram = useTelegram();
-  const webApp = telegram.kind === 'telegram' ? telegram.webApp : null;
-  const fullscreenRequested = useRef(false);
 
   const groups = zones === null ? [] : districtGroups(zones);
   const served = zones === null ? null : findServedDistrict(zones, stored);
@@ -58,19 +55,16 @@ export function DeliveryDistrict({ zones }: DeliveryDistrictProps) {
       setAnnouncement(formatMessage(t.saved, { district: districtName(picked.district, locale) }));
   };
 
-  // Opening the map is the customer's explicit action, so this is the one place fullscreen is
-  // requested. It may be refused or unsupported; the picker lays itself out either way.
+  // Fullscreen is requested for the whole Mini App at launch (`TelegramChrome`), not only for
+  // this picker. Opening and closing the map must never make the app jump between modes.
   const openMap = () => {
     setSheetOpen(false);
     setMapOpen(true);
-    fullscreenRequested.current = requestFullscreenOnce(webApp);
   };
 
   // Leaving the map always returns to the district list, where the real choice is made.
   const closeMap = () => {
     setMapOpen(false);
-    if (fullscreenRequested.current) exitFullscreenIfOn(webApp);
-    fullscreenRequested.current = false;
     setSheetOpen(true);
   };
 
@@ -78,8 +72,6 @@ export function DeliveryDistrict({ zones }: DeliveryDistrictProps) {
   // the customer lands back on the storefront with the summary updated.
   const chooseFromMap = (code: DistrictCode) => {
     setMapOpen(false);
-    if (fullscreenRequested.current) exitFullscreenIfOn(webApp);
-    fullscreenRequested.current = false;
     choose(code);
   };
 

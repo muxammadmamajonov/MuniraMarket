@@ -3,7 +3,13 @@ import { act, fireEvent, render, screen, waitFor, within } from '@testing-librar
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { LocaleProvider } from '@/i18n/context';
 import { farZone, zone } from '@/lib/checkout/test-fixtures';
-import { autoloadYandexScript, makeYMaps, toponym, type FakeYMaps } from '@/lib/maps/test-helpers';
+import {
+  autoloadYandexScript,
+  makeYMaps,
+  mockGeocoderFetch,
+  toponym,
+  type FakeYMaps,
+} from '@/lib/maps/test-helpers';
 import { MapsConfigProvider } from '@/lib/maps/use-yandex-maps';
 import { resetYandexMapsLoader } from '@/lib/maps/yandex-loader';
 import { TelegramProvider } from '@/lib/telegram';
@@ -49,6 +55,7 @@ let fake: FakeYMaps;
 
 beforeEach(() => {
   fake = makeYMaps();
+  mockGeocoderFetch(fake);
 });
 
 afterEach(() => {
@@ -155,7 +162,8 @@ describe('AddressPicker: delivery result after "Deliver here"', () => {
     fake.search.mockResolvedValue([toponym('Yunusobod tumani', 'Toshkent, O‘zbekiston')]);
     await ready({ geocoderApiKey: GEOCODER_KEY });
     await confirmPoint();
-    expect(fake.setApikeys).toHaveBeenCalledWith({ search: GEOCODER_KEY });
+    const call = globalThis.fetch as unknown as { mock: { calls: Array<[string]> } };
+    expect(new URL(call.mock.calls[0]?.[0] ?? '').searchParams.get('apikey')).toBe(GEOCODER_KEY);
   });
 
   it('served: real zone rules, a demo hint, and choosing saves only the district', async () => {
@@ -243,11 +251,11 @@ describe('AddressPicker: delivery result after "Deliver here"', () => {
     expect(onChoose).not.toHaveBeenCalled();
   });
 
-  it('an SDK without geosearch falls back the same way', async () => {
-    fake = makeYMaps({ withoutSearch: true });
+  it('a Geocoder response without a district falls back to the honest unknown state', async () => {
+    fake.search.mockResolvedValue([]);
     await ready();
     const result = await confirmPoint();
-    expect(result).toHaveAttribute('data-status', 'lookup-failed');
+    expect(result).toHaveAttribute('data-status', 'unknown');
   });
 
   it('a district the lookup cannot name: asks for the list', async () => {
@@ -284,7 +292,7 @@ describe('AddressPicker: delivery result after "Deliver here"', () => {
 
   it('privacy: the point is not stored, logged, sent to our API or put in the URL', async () => {
     fake.search.mockResolvedValue([toponym('Chilonzor tumani', 'Toshkent')]);
-    const fetchSpy = vi.spyOn(globalThis, 'fetch');
+    const fetchSpy = vi.mocked(globalThis.fetch);
     const setItem = vi.spyOn(Storage.prototype, 'setItem');
     const logs = (['log', 'info', 'warn', 'error', 'debug'] as const).map((level) =>
       vi.spyOn(console, level),
@@ -292,7 +300,8 @@ describe('AddressPicker: delivery result after "Deliver here"', () => {
     const href = window.location.href;
     await ready();
     await confirmPoint();
-    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(fetchSpy).toHaveBeenCalledOnce();
+    expect(String(fetchSpy.mock.calls[0]?.[0])).toMatch(/^https:\/\/geocode-maps\.yandex\.ru\//);
     expect(setItem).not.toHaveBeenCalled();
     for (const log of logs) expect(log).not.toHaveBeenCalled();
     expect(window.location.href).toBe(href);

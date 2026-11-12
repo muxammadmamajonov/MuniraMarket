@@ -7,6 +7,7 @@ import { localeFromPathname } from '@/i18n/switch-locale';
 import {
   armFullscreenOnFirstGesture,
   disableVerticalSwipes,
+  requestFullscreenOnce,
   useBackButton,
   useTelegram,
   useTelegramSafeArea,
@@ -61,7 +62,11 @@ export function TelegramChrome() {
 
   useEffect(() => {
     disableVerticalSwipes(webApp);
-    return armFullscreenOnFirstGesture(webApp);
+    // Request on launch: pressing the bot's Open App / menu button was the user gesture. This
+    // avoids the initial compact sheet seen on iOS. A client that rejects it still gets one
+    // first-touch retry for compatibility with older Telegram builds.
+    const requested = requestFullscreenOnce(webApp);
+    return requested ? undefined : armFullscreenOnFirstGesture(webApp);
   }, [webApp]);
 
   // A MainButton left visible by a previous page of the same webview must not leak onto pages

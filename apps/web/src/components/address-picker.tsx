@@ -20,7 +20,7 @@ import { districtLabel } from '@/lib/delivery/districts';
 import { reverseGeocodeDistrict } from '@/lib/maps/reverse-geocode';
 import { useYandexMaps, useYandexMapsGeocoderApiKey } from '@/lib/maps/use-yandex-maps';
 import type { LngLat, YMapInstance, YMaps3 } from '@/lib/maps/yandex-types';
-import { useBackButton, useSuppressMainButton } from '@/lib/telegram';
+import { useBackButton, useSuppressMainButton, useTelegram } from '@/lib/telegram';
 import { ChevronLeftIcon, LocateIcon, MapIcon, PinIcon } from './icons';
 import { FOCUS_RING, PRESS } from './ui-classes';
 
@@ -133,7 +133,7 @@ function PickerPanel({ closing, onClose, zones, onChoose }: PickerPanelProps) {
     const match =
       geocoderApiKey === null
         ? null
-        : await reverseGeocodeDistrict(maps.api, point, { apiKey: geocoderApiKey });
+        : await reverseGeocodeDistrict(point, { apiKey: geocoderApiKey });
     if (ticket !== generation.current) return;
     setCheck({ phase: 'result', coverage: coverageFor(zones, match, point) });
   };
@@ -336,10 +336,14 @@ interface MapStageProps {
 function MapStage({ api, hintId, mapRef, onMoved, dimmed }: MapStageProps) {
   const { dict } = useI18n();
   const t = dict.map;
+  const telegram = useTelegram();
   const containerRef = useRef<HTMLDivElement>(null);
   const [locate, setLocate] = useState<LocateState>('idle');
   const [moving, setMoving] = useState(false);
-  const canLocate = typeof navigator !== 'undefined' && 'geolocation' in navigator;
+  const nativeLocation = telegram.kind === 'telegram' ? telegram.webApp.LocationManager : undefined;
+  const canLocate =
+    nativeLocation !== undefined ||
+    (typeof navigator !== 'undefined' && 'geolocation' in navigator);
   const onMovedRef = useRef(onMoved);
   useEffect(() => {
     onMovedRef.current = onMoved;
@@ -401,18 +405,37 @@ function MapStage({ api, hintId, mapRef, onMoved, dimmed }: MapStageProps) {
   const onLocate = () => {
     if (!canLocate || locate === 'locating') return;
     setLocate('locating');
+    const moveTo = (longitude: number, latitude: number) => {
+      setLocate('idle');
+      const reduce = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false;
+      mapRef.current?.update({
+        location: { center: [longitude, latitude], zoom: 16, duration: reduce ? 0 : 200 },
+      });
+      onMoved();
+    };
+
+    // Telegram's native manager is the source of truth inside a Mini App. Browser geolocation is
+    // only the fallback for normal browsers and older Telegram clients that do not have it.
+    if (nativeLocation !== undefined) {
+      nativeLocation.init(() => {
+        if (!nativeLocation.isLocationAvailable) {
+          setLocate('unavailable');
+          return;
+        }
+        nativeLocation.getLocation((position) => {
+          if (position === null) {
+            setLocate(nativeLocation.isAccessGranted ? 'unavailable' : 'denied');
+            return;
+          }
+          moveTo(position.longitude, position.latitude);
+        });
+      });
+      return;
+    }
+
     navigator.geolocation.getCurrentPosition(
       (position) => {
-        setLocate('idle');
-        const reduce = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false;
-        mapRef.current?.update({
-          location: {
-            center: [position.coords.longitude, position.coords.latitude],
-            zoom: 16,
-            duration: reduce ? 0 : 200,
-          },
-        });
-        onMoved();
+        moveTo(position.coords.longitude, position.coords.latitude);
       },
       (error) => setLocate(error.code === error.PERMISSION_DENIED ? 'denied' : 'unavailable'),
       { enableHighAccuracy: false, timeout: 10_000, maximumAge: 60_000 },

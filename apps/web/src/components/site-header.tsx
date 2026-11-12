@@ -21,10 +21,11 @@ export interface SiteHeaderProps {
  */
 export function SiteHeader({ locale, dict }: SiteHeaderProps) {
   return (
-    <header className="sticky top-0 z-40 border-b border-border bg-background pt-(--mm-inset-top) pr-(--mm-inset-right) pl-(--mm-inset-left)">
-      {/* Mobile Telegram fullscreen: only the logo is on this row, centred in the content safe
-          area (Telegram's Close / "…" controls sit above it, outside our layout). */}
-      <PageContainer className="flex flex-wrap items-center justify-between gap-x-1 gap-y-0 py-1.5 max-md:[:root[data-tg-fullscreen]_&]:justify-center">
+    <header className="sticky top-0 z-40 border-b border-border bg-background pt-(--mm-inset-top) pr-(--mm-inset-right) pl-(--mm-inset-left) max-md:[:root[data-tg-fullscreen]_&]:border-transparent">
+      {/* Telegram owns the native fullscreen title row (Close / title / …); web content cannot
+          safely render inside it. Do not show a second logo below it. The page starts immediately
+          under Telegram's content-safe inset instead. */}
+      <PageContainer className="flex flex-wrap items-center justify-between gap-x-1 gap-y-0 py-1.5 max-md:[:root[data-tg-fullscreen]_&]:hidden">
         <Link
           href={`/${locale}`}
           aria-label={`${dict.meta.title}: ${dict.nav.home}`}
