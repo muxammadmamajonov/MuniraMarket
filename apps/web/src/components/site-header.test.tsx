@@ -5,9 +5,11 @@ import { LocaleProvider } from '@/i18n/context';
 import { CartProvider } from '@/lib/cart';
 import { makeCart, makeLine, makeProduct } from '@/lib/cart/test-fixtures';
 import { TelegramProvider } from '@/lib/telegram';
-import { SiteHeader } from './site-header';
+import { parentFor } from '@/lib/back-navigation';
+import { SiteHeader, type SiteHeaderProps } from './site-header';
 
-vi.mock('next/navigation', () => ({ usePathname: () => '/uz' }));
+const nav = vi.hoisted(() => ({ pathname: '/uz' }));
+vi.mock('next/navigation', () => ({ usePathname: () => nav.pathname }));
 
 const session = vi.hoisted(() => ({
   status: 'authenticated' as 'loading' | 'authenticated' | 'anonymous' | 'error',
@@ -20,12 +22,15 @@ const session = vi.hoisted(() => ({
 }));
 vi.mock('@/lib/session', () => ({ useSession: () => session }));
 
-function renderHeader(locale: 'uz' | 'ru' = 'uz') {
+function renderHeader(
+  locale: 'uz' | 'ru' = 'uz',
+  props: Omit<SiteHeaderProps, 'locale' | 'dict'> = {},
+) {
   return render(
     <LocaleProvider locale={locale}>
       <TelegramProvider>
         <CartProvider>
-          <SiteHeader locale={locale} dict={getDictionary(locale)} />
+          <SiteHeader locale={locale} dict={getDictionary(locale)} {...props} />
         </CartProvider>
       </TelegramProvider>
     </LocaleProvider>,
@@ -33,6 +38,7 @@ function renderHeader(locale: 'uz' | 'ru' = 'uz') {
 }
 
 beforeEach(() => {
+  nav.pathname = '/uz';
   session.status = 'authenticated';
   session.user = { id: 'u1', first_name: 'Ali' };
   session.apiFetch.mockReset();
@@ -78,6 +84,55 @@ describe('SiteHeader', () => {
     );
     renderHeader();
     expect(await screen.findByTestId('cart-count')).toHaveTextContent('99+');
+  });
+
+  it('shows the logo on the home page and no title', () => {
+    renderHeader();
+    expect(screen.getByTestId('header-logo')).toBeInTheDocument();
+    expect(screen.queryByTestId('header-title')).toBeNull();
+    expect(screen.queryByRole('heading')).toBeNull();
+    expect(screen.getByRole('banner')).toHaveAttribute('data-page-header', 'logo');
+  });
+
+  it('shows the page title instead of the logo on inner pages, as the page h1', () => {
+    renderHeader('uz', { title: 'Katalog' });
+    expect(screen.queryByTestId('header-logo')).toBeNull();
+    const title = screen.getByRole('heading', { level: 1, name: 'Katalog' });
+    expect(title).toHaveAttribute('data-testid', 'header-title');
+    // One line, cut with an ellipsis instead of running under Telegram's buttons.
+    expect(title).toHaveClass('truncate', 'min-w-0');
+    expect(screen.getByRole('banner')).toHaveAttribute('data-page-header', 'title');
+    // Wide screens have no tab bar, so a small mark still leads home.
+    expect(screen.getByTestId('header-home')).toHaveAttribute('href', '/uz');
+    expect(screen.getByTestId('header-home')).toHaveClass('hidden', 'md:inline-flex');
+  });
+
+  it('keeps the full title for assistive tech and as a tooltip, however long', () => {
+    const long = 'Qaymoqli shokoladli muzqaymoq, vanilli, 500 g, katta oilaviy qadoq';
+    renderHeader('uz', { title: long });
+    const title = screen.getByRole('heading', { level: 1 });
+    expect(title).toHaveTextContent(long);
+    expect(title).toHaveAttribute('title', long);
+  });
+
+  it('leaves the slot empty while the title is unknown (loading), never flashing the logo', () => {
+    renderHeader('uz', { title: null });
+    expect(screen.queryByTestId('header-logo')).toBeNull();
+    expect(screen.queryByTestId('header-title')).toBeNull();
+  });
+
+  it('has no back button or back link of its own', () => {
+    renderHeader('ru', { title: 'Каталог' });
+    expect(screen.queryByRole('button', { name: /назад/i })).toBeNull();
+    expect(screen.queryByRole('link', { name: /назад/i })).toBeNull();
+  });
+
+  it("registers the page's parent for Telegram's BackButton while mounted", () => {
+    nav.pathname = '/uz/p/olma';
+    const { unmount } = renderHeader('uz', { title: 'Olma', parentHref: '/uz/c/fruits' });
+    expect(parentFor('/uz/p/olma')).toBe('/uz/c/fruits');
+    unmount();
+    expect(parentFor('/uz/p/olma')).toBe('/uz/catalog');
   });
 
   it('is localized', () => {

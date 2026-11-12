@@ -144,6 +144,10 @@
     calc(var(--mm-tg-safe-right) + var(--mm-tg-content-right))
   );
   --mm-nav-h: 0px;
+  /* Room kept on each side of the header title for Telegram's own Close and "…" buttons in
+     fullscreen (Close is the wider one, about 100px with its margin in Russian, "Закрыть").
+     Symmetric, so the title stays centred on the screen. */
+  --mm-tg-controls: 6.5rem;
 }
 
 /* Matches the bottom navigation's `md:hidden`: below 48rem, and only while it is rendered. */
@@ -161,7 +165,21 @@
     scrollbar-color: var(--mm-color-border-strong) transparent;
     -webkit-text-size-adjust: 100%;
     -webkit-tap-highlight-color: transparent;
-    overscroll-behavior: none;
+    /*
+     * Vertical overscroll is left native on purpose. `overscroll-behavior: none` here switched off
+     * WebKit's rubber band for the whole page, so in Telegram on iOS a flick on a short page (the
+     * catalog scrolls only a screen or so) hit a dead stop, and a drag at the top went nowhere:
+     * that read as a stuck page. Telegram's swipe-to-close no longer needs it either:
+     * `disableVerticalSwipes()` (components/telegram-chrome.tsx) keeps that gesture for the
+     * page. Only the sideways bounce stays off; the page never pans horizontally.
+     */
+    overscroll-behavior-x: none;
+    /*
+     * Panning only: no pinch zoom and no double-tap zoom anywhere (and no 300ms tap delay).
+     * Effective `touch-action` is the intersection with every ancestor, so this covers the whole
+     * page. The map sets `touch-action: none` and zooms itself in JavaScript.
+     */
+    touch-action: pan-x pan-y;
   }
 
   body {
@@ -301,7 +319,6 @@
   overscroll-behavior-x: contain;
   scroll-snap-type: x proximity;
   scrollbar-width: none;
-  -webkit-overflow-scrolling: touch;
 }
 
 .mm-rail::-webkit-scrollbar {

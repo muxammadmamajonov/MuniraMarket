@@ -11,7 +11,8 @@ import { Pagination } from '@/components/pagination';
 import { ProductGrid } from '@/components/product-grid';
 import { SearchForm } from '@/components/search-form';
 import { SessionNotice } from '@/components/session-notice';
-import { LINK_BUTTON_PRIMARY, PAGE_TITLE } from '@/components/ui-classes';
+import { SiteHeader } from '@/components/site-header';
+import { LINK_BUTTON_PRIMARY } from '@/components/ui-classes';
 import { getDictionary } from '@/i18n';
 import { formatMessage } from '@/i18n/format';
 import { fetchCategories, fetchProducts } from '@/lib/api/server';
@@ -45,69 +46,71 @@ export default async function SearchPage({ params, searchParams }: PageProps<'/[
   );
 
   return (
-    <main className="flex-1">
-      <PageContainer className="flex flex-col gap-4 py-4">
-        <h1 className={PAGE_TITLE}>{dict.search.heading}</h1>
-        <SearchForm locale={locale} dict={dict} defaultValue={q} />
+    <>
+      <SiteHeader locale={locale} dict={dict} title={dict.pageTitles.search} />
+      <main className="flex-1">
+        <PageContainer className="flex flex-col gap-4 py-4">
+          <SearchForm locale={locale} dict={dict} defaultValue={q} />
 
-        {results === null ? (
-          <>
-            <EmptyPanel
-              icon={<SearchIcon width={28} height={28} />}
-              title={dict.search.heading}
-              description={formatMessage(dict.search.tooShort, { min: MIN_QUERY })}
-            />
-            {browse}
-          </>
-        ) : (
-          <>
-            <CatalogToolbar
-              total={results.total}
-              sort={sort}
-              inStock={inStock}
-              basePath={base}
-              params={{ q }}
-              lead={formatMessage(dict.search.resultsFor, { query: q })}
-            />
-            {results.items.length === 0 ? (
-              <>
-                <EmptyPanel
-                  icon={<SearchIcon width={28} height={28} />}
-                  title={inStock ? dict.catalog.noneInStock : dict.search.noResults}
-                  {...(inStock ? {} : { description: dict.search.noResultsHint })}
-                  action={
-                    inStock ? (
-                      <Link
-                        href={listingHref(base, { sort, inStock: false }, { q })}
-                        className={LINK_BUTTON_PRIMARY}
-                      >
-                        {dict.catalog.clearFilter}
-                      </Link>
-                    ) : (
-                      <Link href={`/${locale}`} className={LINK_BUTTON_PRIMARY}>
-                        {dict.errors.backHome}
-                      </Link>
-                    )
-                  }
-                />
-                {inStock ? null : browse}
-              </>
-            ) : (
-              <>
-                <SessionNotice />
-                <ProductGrid products={results.items} label={dict.search.heading} />
-              </>
-            )}
-            <Pagination
-              page={results.page}
-              totalPages={results.total_pages}
-              hrefFor={hrefFor}
-              dict={dict}
-            />
-          </>
-        )}
-        <CartBar />
-      </PageContainer>
-    </main>
+          {results === null ? (
+            <>
+              <EmptyPanel
+                icon={<SearchIcon width={28} height={28} />}
+                title={dict.search.heading}
+                description={formatMessage(dict.search.tooShort, { min: MIN_QUERY })}
+              />
+              {browse}
+            </>
+          ) : (
+            <>
+              <CatalogToolbar
+                total={results.total}
+                sort={sort}
+                inStock={inStock}
+                basePath={base}
+                params={{ q }}
+                lead={formatMessage(dict.search.resultsFor, { query: q })}
+              />
+              {results.items.length === 0 ? (
+                <>
+                  <EmptyPanel
+                    icon={<SearchIcon width={28} height={28} />}
+                    title={inStock ? dict.catalog.noneInStock : dict.search.noResults}
+                    {...(inStock ? {} : { description: dict.search.noResultsHint })}
+                    action={
+                      inStock ? (
+                        <Link
+                          href={listingHref(base, { sort, inStock: false }, { q })}
+                          className={LINK_BUTTON_PRIMARY}
+                        >
+                          {dict.catalog.clearFilter}
+                        </Link>
+                      ) : (
+                        <Link href={`/${locale}`} className={LINK_BUTTON_PRIMARY}>
+                          {dict.errors.backHome}
+                        </Link>
+                      )
+                    }
+                  />
+                  {inStock ? null : browse}
+                </>
+              ) : (
+                <>
+                  <SessionNotice />
+                  <ProductGrid products={results.items} label={dict.search.heading} />
+                </>
+              )}
+              <Pagination
+                page={results.page}
+                totalPages={results.total_pages}
+                hrefFor={hrefFor}
+                dict={dict}
+              />
+            </>
+          )}
+          <CartBar />
+        </PageContainer>
+      </main>
+    </>
   );
 }
