@@ -7,6 +7,7 @@ import { AddToCart } from '@/components/add-to-cart';
 import { ChevronRightIcon } from '@/components/icons';
 import { PageContainer } from '@/components/page-container';
 import { ProductImage } from '@/components/product-image';
+import { PHOTO_SIZES } from '@/lib/photo';
 import { GROUP, ROWS, SECTION_TITLE } from '@/components/ui-classes';
 import { getDictionary } from '@/i18n';
 import { fetchProduct } from '@/lib/api/server';
@@ -60,6 +61,8 @@ export default async function ProductPage({ params }: PageProps<'/[locale]/p/[sl
           src={product.image_url}
           name={name}
           toneKey={product.category_id}
+          sizes={PHOTO_SIZES.detail}
+          priority
           className="w-full rounded-3xl max-md:aspect-[6/5] md:max-w-md"
         />
 

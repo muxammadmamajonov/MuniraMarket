@@ -41,4 +41,24 @@ describe('CategoryGrid', () => {
       expect(tile.closest('li')).not.toHaveClass('col-span-2');
     }
   });
+
+  it('puts the category photo in the corner when there is one, the line icon otherwise', () => {
+    render(
+      <CategoryGrid
+        categories={[
+          { ...node('a', 'demo-mevalar', 'Mevalar'), image_url: '/categories/mevalar.webp' },
+          node('b', 'demo-non', 'Non'),
+        ]}
+        locale="uz"
+        label="Katalog"
+      />,
+    );
+    const [withPhoto, withIcon] = screen.getAllByTestId('catalog-category');
+    expect(withPhoto?.querySelector('img')).toHaveAttribute(
+      'srcset',
+      '/categories/mevalar-400.webp 400w, /categories/mevalar.webp 800w',
+    );
+    expect(withPhoto).toHaveAccessibleName('Mevalar');
+    expect(withIcon?.querySelector('img')).toBeNull();
+  });
 });

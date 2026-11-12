@@ -109,6 +109,48 @@
 }
 
 /*
+ * Photo boxes (`components/product-image.tsx`). The box is a warm neutral backdrop that shows
+ * while the photo loads, and in light mode the photo is multiplied onto it: a white studio
+ * background takes the backdrop's tone, so stock photos shot on white, cream or grey read as one
+ * set on the warm page, and the box keeps its shape on white grouped surfaces. Dark photos barely
+ * change (the backdrop is 94% white). An inset hairline keeps a pale photo's edge visible. Dark
+ * mode drops the blend (it would muddy every photo) and dims photos a touch for the dark page.
+ */
+:root {
+  --mm-photo-bg: #f1eee9;
+  --mm-photo-edge: rgb(20 20 22 / 0.05);
+}
+
+.mm-photo {
+  background-color: var(--mm-photo-bg);
+}
+
+.mm-photo > img {
+  mix-blend-mode: multiply;
+}
+
+.mm-photo::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  box-shadow: inset 0 0 0 1px var(--mm-photo-edge);
+  pointer-events: none;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --mm-photo-bg: #1d1c1f;
+    --mm-photo-edge: rgb(255 255 255 / 0.06);
+  }
+
+  .mm-photo > img {
+    mix-blend-mode: normal;
+    filter: brightness(0.92);
+  }
+}
+
+/*
  * Safe-area insets for the app shell. The browser's `env(safe-area-inset-*)` (needs the
  * `viewport-fit=cover` viewport) is combined with what Telegram reports (`--mm-tg-*`, written by
  * `lib/telegram/safe-area.ts`; 0 outside the Mini App): in fullscreen the top inset is the status
