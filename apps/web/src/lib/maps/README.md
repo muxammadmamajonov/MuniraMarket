@@ -57,6 +57,8 @@ true`), using the constants in `config.ts`:
 
 - `script-src https://api-maps.yandex.ru` (`YANDEX_MAPS_API_ORIGIN`, for browsers without
   `'strict-dynamic'`);
+- `style-src https://yastatic.net` (`YANDEX_MAPS_STATIC_ORIGIN`, the JavaScript API's own
+  stylesheet host);
 - `connect-src https://api-maps.yandex.ru https://*.maps.yandex.net`, plus
   `https://search-maps.yandex.ru` only with the Geocoder key (`YANDEX_MAPS_API_ORIGIN`,
   `YANDEX_MAPS_DATA_ORIGIN`, and `YANDEX_MAPS_SEARCH_ORIGIN`);

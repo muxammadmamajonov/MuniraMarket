@@ -2,6 +2,7 @@ import {
   YANDEX_MAPS_API_ORIGIN,
   YANDEX_MAPS_DATA_ORIGIN,
   YANDEX_MAPS_SEARCH_ORIGIN,
+  YANDEX_MAPS_STATIC_ORIGIN,
 } from './maps/config';
 
 /**
@@ -69,7 +70,10 @@ export function buildContentSecurityPolicy({
     // Inline styles are allowed because a nonce cannot cover `style=""` attributes (React `style`
     // props, and the map library's own elements). Style injection can't run script, and scripts
     // stay locked down above.
-    ['style-src', ["'self'", "'unsafe-inline'"]],
+    [
+      'style-src',
+      ["'self'", "'unsafe-inline'", ...(yandexMaps ? [YANDEX_MAPS_STATIC_ORIGIN] : [])],
+    ],
     ['img-src', ["'self'", 'data:', 'blob:', 'https:']],
     ['font-src', ["'self'"]],
     // The browser only talks to this origin: the API is reached through the same-origin proxy.

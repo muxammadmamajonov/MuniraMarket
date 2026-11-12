@@ -17,6 +17,9 @@ export const YANDEX_MAPS_API_ORIGIN = 'https://api-maps.yandex.ru';
 /** Tiles, vector data and styles the API fetches once loaded. */
 export const YANDEX_MAPS_DATA_ORIGIN = 'https://*.maps.yandex.net';
 
+/** Stylesheet assets loaded by the official JavaScript API after its bootstrap script runs. */
+export const YANDEX_MAPS_STATIC_ORIGIN = 'https://yastatic.net';
+
 /** Geosearch host `ymaps3.search` calls (reverse geocoding), per the v3 CSP requirements. */
 export const YANDEX_MAPS_SEARCH_ORIGIN = 'https://search-maps.yandex.ru';
 
