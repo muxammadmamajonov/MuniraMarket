@@ -201,7 +201,7 @@ export function CheckoutView() {
         void flow.submit();
       }}
       aria-label={dict.checkout.title}
-      className={`grid min-w-0 gap-6 md:grid-cols-[minmax(0,1fr)_22rem] md:items-start ${inTelegram ? '' : slotReason === null ? BAR_CLEARANCE : BAR_CLEARANCE_WITH_REASON}`}
+      className={`grid min-w-0 gap-3 md:gap-6 md:grid-cols-[minmax(0,1fr)_22rem] md:items-start ${inTelegram ? '' : slotReason === null ? BAR_CLEARANCE : BAR_CLEARANCE_WITH_REASON}`}
     >
       <CheckoutFormFields
         values={values}
@@ -215,6 +215,7 @@ export function CheckoutView() {
         slotPicker={
           slotView === null ? null : (
             <DeliverySlotPicker
+              step={2}
               slots={slotView.slots}
               selectedId={flow.slots.selectedId}
               required={slotView.required}
@@ -229,7 +230,7 @@ export function CheckoutView() {
         }
       />
 
-      <div className="flex min-w-0 flex-col gap-4 md:sticky md:top-4">
+      <div className="flex min-w-0 flex-col gap-3 md:sticky md:top-4">
         <PhoneCard variant="checkout" />
         <FailureNotice
           ref={noticeRef}

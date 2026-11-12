@@ -30,9 +30,9 @@ export function RadioCard({
   return (
     <label
       className={
-        'group flex min-h-12 cursor-pointer items-center gap-3 rounded-xl border border-border bg-surface px-3 py-2 ' +
-        'transition-colors duration-150 motion-reduce:transition-none ' +
-        'has-checked:border-primary has-checked:bg-surface-muted has-disabled:cursor-not-allowed has-disabled:opacity-50 ' +
+        'group flex min-h-13 cursor-pointer items-center gap-3 rounded-2xl border border-transparent bg-surface-muted px-3.5 py-2 font-medium ' +
+        'transition-[transform,background-color,border-color] duration-150 ease-out-strong active:scale-[0.98] motion-reduce:transition-none ' +
+        'has-checked:border-primary has-checked:bg-brand-soft has-disabled:cursor-not-allowed has-disabled:opacity-50 ' +
         'has-focus-visible:outline-2 has-focus-visible:outline-offset-2 has-focus-visible:outline-focus'
       }
     >

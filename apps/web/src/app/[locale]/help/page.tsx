@@ -2,6 +2,7 @@ import { isLocale } from '@muniramarket/contracts';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { PageContainer } from '@/components/page-container';
+import { PAGE_TITLE } from '@/components/ui-classes';
 import { CARD, LINK_BUTTON_SECONDARY } from '@/components/ui-classes';
 import { getDictionary } from '@/i18n';
 
@@ -29,7 +30,7 @@ export default async function HelpPage({ params }: PageProps<'/[locale]/help'>) 
     <main className="flex-1">
       <PageContainer className="flex max-w-2xl flex-col gap-4 py-4">
         <header className="flex flex-col gap-1">
-          <h1 className="text-2xl font-bold tracking-tight">{t.title}</h1>
+          <h1 className={PAGE_TITLE}>{t.title}</h1>
           <p className="text-muted-foreground">{t.intro}</p>
         </header>
 

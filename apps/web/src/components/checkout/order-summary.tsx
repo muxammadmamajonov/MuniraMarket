@@ -7,7 +7,8 @@ import { useI18n } from '@/i18n/context';
 import { formatMessage, formatPlural } from '@/i18n/format';
 import { localizedName } from '@/lib/catalog';
 import type { QuoteState } from '@/lib/checkout/use-checkout';
-import { CARD, ERROR_TEXT, LINK_BUTTON_SECONDARY } from '../ui-classes';
+import { CARD, ERROR_TEXT, LINK_BUTTON_SECONDARY, SECTION_TITLE } from '../ui-classes';
+import { FreeDeliveryProgress } from '../free-delivery-progress';
 import { RetryButton } from './retry-button';
 
 export interface OrderSummaryProps {
@@ -77,6 +78,7 @@ export function OrderSummary({
   const total = readyQuote === null ? '—' : formatUZS(readyQuote.total_uzs, locale);
   const remaining = readyQuote?.free_delivery_remaining_uzs ?? null;
   const issues = readyQuote?.issues ?? [];
+  const threshold = zone?.free_delivery_threshold_uzs ?? null;
 
   return (
     <section
@@ -84,11 +86,11 @@ export function OrderSummary({
       className={`${CARD} flex min-w-0 flex-col gap-3`}
       aria-busy={quote.kind === 'loading'}
     >
-      <h2 id="checkout-summary" className="text-lg font-bold">
+      <h2 id="checkout-summary" className={SECTION_TITLE}>
         {dict.checkout.sections.summary}
       </h2>
 
-      <ul className="flex flex-col divide-y divide-border" data-testid="summary-lines">
+      <ul className="flex flex-col divide-y divide-hairline" data-testid="summary-lines">
         {lines.map((line) => {
           const name = localizedName(line.product, locale);
           return (
@@ -127,7 +129,7 @@ export function OrderSummary({
         })}
       </ul>
 
-      <div className="flex flex-col gap-1.5 border-t border-border pt-3">
+      <div className="flex flex-col gap-1.5 border-t border-hairline pt-3">
         {slotText === null ? null : (
           <p className="flex flex-col pb-1" data-testid="checkout-slot-summary">
             <span className="text-sm text-muted-foreground">{dict.checkout.slots.summary}</span>
@@ -146,12 +148,13 @@ export function OrderSummary({
         {quote.kind === 'loading' ? (
           <p className="text-sm text-muted-foreground">{t.calculating}</p>
         ) : null}
-        {remaining !== null && remaining > 0 ? (
-          <p className="text-sm text-muted-foreground" data-testid="free-delivery-hint">
-            {formatMessage(t.freeRemaining, { amount: formatUZS(remaining, locale) })}
-          </p>
+        {remaining !== null && threshold !== null && threshold > 0 ? (
+          <FreeDeliveryProgress
+            threshold={threshold}
+            remaining={remaining}
+            {...(remaining > 0 ? { testId: 'free-delivery-hint' } : {})}
+          />
         ) : null}
-        {remaining === 0 ? <p className="text-sm text-muted-foreground">{t.freeReached}</p> : null}
         {issues.includes('below_min_order') && zone !== null ? (
           <p role="alert" className={ERROR_TEXT} data-testid="below-min">
             {formatMessage(t.belowMin, { min: formatUZS(zone.min_order_uzs, locale) })}

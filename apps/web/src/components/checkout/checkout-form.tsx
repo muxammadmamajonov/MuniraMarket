@@ -21,6 +21,7 @@ import {
 import { districtGroups, districtName, zoneHours, zoneName } from '@/lib/checkout/zones';
 import { FormField } from '../form-field';
 import { CARD, ERROR_TEXT, INPUT } from '../ui-classes';
+import { STEP_HEADING, StepNumber } from './step-number';
 import { ListboxSelect } from '../ui/listbox-select';
 import { RadioCard } from '../ui/radio-card';
 
@@ -115,12 +116,15 @@ export function CheckoutFormFields({
   );
 
   const groups = districtGroups(zones);
+  // Steps are numbered in reading order; the delivery-time step exists only when slots do.
+  const recipientStep = slotPicker === null ? 2 : 3;
   const commentLength = charCount(values.comment);
 
   return (
-    <div className="flex min-w-0 flex-col gap-6">
+    <div className="flex min-w-0 flex-col gap-3">
       <section aria-labelledby="checkout-delivery" className={`${CARD} flex flex-col gap-4`}>
-        <h2 id="checkout-delivery" className="text-lg font-bold">
+        <h2 id="checkout-delivery" className={STEP_HEADING}>
+          <StepNumber step={1} />
           {t.sections.delivery}
         </h2>
 
@@ -220,7 +224,8 @@ export function CheckoutFormFields({
       {slotPicker}
 
       <section aria-labelledby="checkout-recipient" className={`${CARD} flex flex-col gap-4`}>
-        <h2 id="checkout-recipient" className="text-lg font-bold">
+        <h2 id="checkout-recipient" className={STEP_HEADING}>
+          <StepNumber step={recipientStep} />
           {t.sections.recipient}
         </h2>
         {text('recipientName', {
@@ -250,7 +255,10 @@ export function CheckoutFormFields({
         }
         className={`${CARD} flex min-w-0 flex-col gap-3`}
       >
-        <legend className="px-1 text-lg font-bold">{t.sections.payment}</legend>
+        <legend className={`${STEP_HEADING} float-left w-full`}>
+          <StepNumber step={recipientStep + 1} />
+          {t.sections.payment}
+        </legend>
         <div role="radiogroup" className="flex flex-col gap-2">
           {PAYMENT_METHODS.map((method: PaymentMethod) => (
             <RadioCard
@@ -276,7 +284,8 @@ export function CheckoutFormFields({
       </fieldset>
 
       <section aria-labelledby="checkout-comment" className={`${CARD} flex flex-col gap-4`}>
-        <h2 id="checkout-comment" className="text-lg font-bold">
+        <h2 id="checkout-comment" className={STEP_HEADING}>
+          <StepNumber step={recipientStep + 2} />
           {t.sections.comment}
         </h2>
         <FormField
