@@ -4,6 +4,7 @@ import {
   InvalidOrderTransitionError,
   ORDER_STATUSES,
   allowedTransitionsOf,
+  canAdjustItems,
   canTransition,
   customerCanCancel,
   ensureTransition,
@@ -60,6 +61,21 @@ describe('order status transitions (port of test_order_status.py)', () => {
   });
 
   it('lets customers cancel only before picking', () => {
-    expect(ORDER_STATUSES.filter(customerCanCancel)).toEqual(['NEW', 'CONFIRMED']);
+    expect(ORDER_STATUSES.filter((status) => customerCanCancel(status))).toEqual([
+      'NEW',
+      'CONFIRMED',
+    ]);
+  });
+
+  it('lets customers cancel an adjusted order while it is picked (ADR 0018)', () => {
+    expect(ORDER_STATUSES.filter((status) => customerCanCancel(status, true))).toEqual([
+      'NEW',
+      'CONFIRMED',
+      'PICKING',
+    ]);
+  });
+
+  it('lets staff lower lines until the order is packed', () => {
+    expect(ORDER_STATUSES.filter(canAdjustItems)).toEqual(['NEW', 'CONFIRMED', 'PICKING']);
   });
 });

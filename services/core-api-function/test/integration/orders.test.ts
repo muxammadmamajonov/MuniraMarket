@@ -180,6 +180,8 @@ describe.skipIf(!hasDatabase)('orders', () => {
       unit_price_uzs: 25_000,
       quantity: 2,
       line_total_uzs: 50_000,
+      original_quantity: 2,
+      adjusted: false,
     });
 
     expect(await stockOf(db, tracked)).toBe(8);
@@ -488,6 +490,24 @@ describe.skipIf(!hasDatabase)('orders', () => {
       total_uzs: 60_000,
       chat_id: -100_500,
       cancelled_by_customer: false,
+      recipient_name: 'Demo Mijoz',
+      // The whole order, for the private staff group (owner's request, ADR 0015).
+      details: {
+        items: [{ name_uz: 'Demo apple', quantity: 2, unit: 'piece', line_total_uzs: 60_000 }],
+        subtotal_uzs: 60_000,
+        payment_method: 'cash_on_delivery',
+        recipient_phone: DEMO_PHONE,
+        address: {
+          street: "Demo ko'cha",
+          house: '12',
+          apartment: null,
+          entrance: null,
+          floor: null,
+          landmark: null,
+        },
+        comment: null,
+        created_at: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{6}\+00:00$/),
+      },
       destination: DEMO_POINT,
     });
 

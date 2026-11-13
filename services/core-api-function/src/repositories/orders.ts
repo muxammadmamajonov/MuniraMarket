@@ -17,6 +17,12 @@
  * Cancelling (by the customer, or an operator) returns tracked stock and writes an
  * `order.status_change` audit row (no reason text, no recipient data); so does every other status
  * change. Nothing is ever committed partially: any rule violation rolls the whole transaction back.
+ *
+ * Shortage at picking (ADR 0018): staff lower one line (`adjustItem`) under the order lock, then
+ * the product lock. The difference goes back to stock, or the product's stock is set to 0 when the
+ * goods physically ran out; the totals are recomputed, the change is logged
+ * (`order_item_adjustments`, audit) and the customer and the staff group are told through the
+ * outbox. An order whose every line reached 0 is cancelled through the normal cancel path.
  */
 import { randomInt, timingSafeEqual } from 'node:crypto';
 import type pg from 'pg';
@@ -26,9 +32,12 @@ import type { LineFacts } from '../domain/cart.ts';
 import {
   CartEmptyError,
   IdempotencyKeyConflictError,
+  InvalidQuantityError,
   InvalidStatusTransitionError,
   MAX_OPEN_ORDERS,
   OrderInsufficientStockError,
+  OrderItemNotFoundError,
+  OrderNotAdjustableError,
   OrderNotCancellableError,
   OrderNotFoundError,
   OrderProductUnavailableError,
@@ -41,6 +50,7 @@ import {
 } from '../domain/checkout.ts';
 import {
   ORDER_STATUS_GROUP_STATUSES,
+  canAdjustItems,
   canTransition,
   customerCanCancel,
   type OrderStatus,
@@ -61,7 +71,15 @@ export const STAFF_ALERT_STATUSES: ReadonlySet<OrderStatus> = new Set([
   'OUT_FOR_DELIVERY',
   'DELIVERED',
 ]);
+/** Order lines lowered at picking (ADR 0018): the customer's message and the staff group's. */
+export const ORDER_ADJUSTED_EVENT = 'order.adjusted';
+export const STAFF_ADJUSTED_EVENT = 'order.staff_adjusted';
 export const AUDIT_STATUS_CHANGE = 'order.status_change';
+export const AUDIT_ITEM_ADJUST = 'order.item_adjust';
+/** The cancel reason when every line of an order ran out (Uzbek, like the staff UI). */
+export const ALL_ITEMS_OUT_REASON = 'Mahsulotlar tugab qoldi';
+/** Address parts a staff alert shows (the map point only ever goes into the courier button). */
+const STAFF_ADDRESS_KEYS = ['street', 'house', 'apartment', 'entrance', 'floor', 'landmark'];
 export const IDEMPOTENCY_CONSTRAINT = 'uq_orders_user_id_idempotency_key';
 export const NUMBER_CONSTRAINT = 'uq_orders_number';
 /** Crockford-style alphabet without look-alikes (0/O, 1/I/L, U). */
@@ -114,6 +132,24 @@ export interface OrderItemRecord {
   unit_price_uzs: number;
   quantity: number;
   line_total_uzs: number;
+  /** The quantity ordered, once staff lowered the line (`null`: never adjusted). */
+  original_quantity: number | null;
+}
+
+/** One order line lowered at picking (ADR 0018). */
+export interface AdjustmentRecord {
+  product_id: string | null;
+  sku: string;
+  name_uz: string;
+  name_ru: string;
+  unit: Unit;
+  from_quantity: number;
+  to_quantity: number;
+  reason: string;
+  marked_out_of_stock: boolean;
+  actor_role: UserRole;
+  /** Pydantic-formatted UTC datetime. */
+  created_at: string;
 }
 
 export interface StatusChangeRecord {
@@ -143,6 +179,7 @@ export interface OrderRecord {
   updated_at: string;
   items: OrderItemRecord[];
   history: StatusChangeRecord[];
+  adjustments: AdjustmentRecord[];
 }
 
 export interface OrderThumbnailRecord {
@@ -365,7 +402,9 @@ export async function cancelForUser(
   return db.tx(async (client) => {
     const order = await lockOrder(client, orderId, userId);
     if (order === null) throw new OrderNotFoundError();
-    if (!customerCanCancel(order.status)) throw new OrderNotCancellableError(order.status);
+    if (!customerCanCancel(order.status, await isAdjusted(client, order.id))) {
+      throw new OrderNotCancellableError(order.status);
+    }
     await applyStatus(client, order, 'CANCELLED', { userId, role: 'customer' }, reason);
     return loadOrder(client, order.id);
   });
@@ -419,7 +458,224 @@ export async function changeStatus(
   });
 }
 
+export interface AdjustItemOptions {
+  quantity: number;
+  reason: string;
+  markOutOfStock: boolean;
+  actor: Actor;
+}
+
+/**
+ * Lower one line because the goods are not there (ADR 0018). Setting the quantity the line
+ * already has changes nothing (a retried request is harmless).
+ */
+export async function adjustItem(
+  db: Database,
+  orderId: string,
+  productId: string,
+  { quantity, reason, markOutOfStock, actor }: AdjustItemOptions,
+): Promise<OrderRecord> {
+  return db.tx(async (client) => {
+    const order = await lockOrder(client, orderId, null);
+    if (order === null) throw new OrderNotFoundError();
+    const found = await client.query<LockedLine>(
+      `SELECT id::text AS id, product_id::text AS product_id, sku, name_uz, name_ru,
+              unit::text AS unit, quantity, stock_decremented
+         FROM order_items WHERE order_id = $1 AND product_id = $2`,
+      [order.id, productId],
+    );
+    const line = found.rows[0];
+    if (line === undefined) throw new OrderItemNotFoundError();
+    if (quantity === line.quantity) return loadOrder(client, order.id);
+    if (!canAdjustItems(order.status)) throw new OrderNotAdjustableError(order.status);
+    if (quantity > line.quantity) throw new InvalidQuantityError(line.quantity);
+
+    await lockProducts(client, [productId]);
+    await releaseStock(client, order, line, line.quantity - quantity, markOutOfStock, actor);
+    await client.query(
+      `UPDATE order_items
+          SET original_quantity = COALESCE(original_quantity, quantity), quantity = $2::int4,
+              line_total_uzs = unit_price_uzs * $2::int4, adjusted_at = now()
+        WHERE id = $1`,
+      [line.id, quantity],
+    );
+    const totals = await client.query<{ subtotal: number; item_count: number }>(
+      `SELECT COALESCE(sum(line_total_uzs), 0)::int8 AS subtotal,
+              COALESCE(sum(quantity), 0)::int8 AS item_count
+         FROM order_items WHERE order_id = $1`,
+      [order.id],
+    );
+    const { subtotal, item_count: itemCount } = totals.rows[0] as {
+      subtotal: number;
+      item_count: number;
+    };
+    // Orders from before courier delivery keep the delivery charge of the time.
+    await client.query(
+      `UPDATE orders SET subtotal_uzs = $2::int8,
+                         total_uzs = $2::int8 + (total_uzs - subtotal_uzs),
+                         item_count = $3::int4, updated_at = now()
+        WHERE id = $1`,
+      [order.id, subtotal, itemCount],
+    );
+    await client.query(
+      `INSERT INTO order_item_adjustments (id, order_id, order_item_id, product_id, from_quantity,
+                                           to_quantity, reason, marked_out_of_stock,
+                                           actor_user_id, actor_role, created_at)
+       VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, $6, $7, $8, $9::user_role,
+               clock_timestamp())`,
+      [
+        order.id,
+        line.id,
+        productId,
+        line.quantity,
+        quantity,
+        reason,
+        markOutOfStock,
+        actor.userId,
+        actor.role,
+      ],
+    );
+    // The reason is free text: only whether there was one (always, it is required).
+    await recordAudit(client, actor, {
+      action: AUDIT_ITEM_ADJUST,
+      entityType: AuditEntity.ORDER,
+      entityId: order.id,
+      changes: { quantity: [line.quantity, quantity] },
+      extra: {
+        order_number: order.number,
+        sku: line.sku,
+        marked_out_of_stock: markOutOfStock,
+        has_reason: true,
+      },
+    });
+    const change = {
+      name_uz: line.name_uz,
+      name_ru: line.name_ru,
+      unit: line.unit,
+      from_quantity: line.quantity,
+      to_quantity: quantity,
+    };
+    if (itemCount === 0) {
+      // Nothing left to deliver: the normal cancel path (stock, history, outbox).
+      await applyStatus(client, order, 'CANCELLED', actor, ALL_ITEMS_OUT_REASON);
+    } else {
+      await enqueueAdjusted(client, order.id, change, reason, markOutOfStock);
+    }
+    return loadOrder(client, order.id);
+  });
+}
+
 // --- internals -----------------------------------------------------------------------------------
+
+interface LockedLine {
+  id: string;
+  product_id: string;
+  sku: string;
+  name_uz: string;
+  name_ru: string;
+  unit: Unit;
+  quantity: number;
+  stock_decremented: boolean;
+}
+
+async function isAdjusted(db: Queryable, orderId: string): Promise<boolean> {
+  const { rows } = await db.query<{ adjusted: boolean }>(
+    `SELECT EXISTS (SELECT 1 FROM order_items
+                     WHERE order_id = $1 AND original_quantity IS NOT NULL) AS adjusted`,
+    [orderId],
+  );
+  return rows[0]?.adjusted === true;
+}
+
+/** What happens to the units a lowered line no longer takes (product already locked). */
+async function releaseStock(
+  db: Queryable,
+  order: LockedOrder,
+  line: LockedLine,
+  difference: number,
+  markOutOfStock: boolean,
+  actor: Actor,
+): Promise<void> {
+  if (markOutOfStock) {
+    // The goods physically ran out: nothing goes back, the shelf is empty.
+    const before = await db.query<{ stock_quantity: number | null }>(
+      'SELECT stock_quantity FROM products WHERE id = $1',
+      [line.product_id],
+    );
+    await db.query('UPDATE products SET stock_quantity = 0, updated_at = now() WHERE id = $1', [
+      line.product_id,
+    ]);
+    await recordAudit(db, actor, {
+      action: 'product.update',
+      entityType: AuditEntity.PRODUCT,
+      entityId: line.product_id,
+      changes: { stock_quantity: [before.rows[0]?.stock_quantity ?? null, 0] },
+      extra: { source: 'order_adjustment', sku: line.sku, order_number: order.number },
+    });
+  } else if (line.stock_decremented) {
+    // Only what this order actually took goes back (as when cancelling).
+    await db.query(
+      `UPDATE products SET stock_quantity = stock_quantity + $2, updated_at = now()
+        WHERE id = $1 AND stock_quantity IS NOT NULL`,
+      [line.product_id, difference],
+    );
+  }
+}
+
+/** The customer's "your order changed" message and the staff group's short alert. */
+async function enqueueAdjusted(
+  db: Queryable,
+  orderId: string,
+  change: Record<string, unknown>,
+  reason: string,
+  markOutOfStock: boolean,
+): Promise<void> {
+  const { rows } = await db.query<{
+    number: string;
+    status: OrderStatus;
+    total_uzs: number;
+    recipient_name: string;
+    telegram_user_id: number;
+    language: string;
+  }>(
+    `SELECT o.number, o.status::text AS status, o.total_uzs, o.recipient_name,
+            u.telegram_user_id, u.language::text AS language
+       FROM orders o JOIN users u ON u.id = o.user_id
+      WHERE o.id = $1`,
+    [orderId],
+  );
+  const row = rows[0];
+  if (row === undefined) throw new Error('order vanished inside its transaction');
+  await insertOutbox(db, ORDER_ADJUSTED_EVENT, orderId, {
+    order_id: orderId,
+    order_number: row.number,
+    status: row.status,
+    locale: row.language,
+    total_uzs: row.total_uzs,
+    chat_id: row.telegram_user_id,
+    changes: [change],
+  });
+  const groupChatId = await staffChatId(db);
+  if (groupChatId !== null) {
+    await insertOutbox(db, STAFF_ADJUSTED_EVENT, orderId, {
+      order_id: orderId,
+      order_number: row.number,
+      status: row.status,
+      total_uzs: row.total_uzs,
+      chat_id: groupChatId,
+      recipient_name: row.recipient_name,
+      changes: [{ ...change, marked_out_of_stock: markOutOfStock }],
+      reason,
+    });
+  }
+}
+
+async function staffChatId(db: Queryable): Promise<number | null> {
+  const staff = await db.query<{ chat_id: number }>(
+    'SELECT chat_id FROM staff_notification_chat LIMIT 1',
+  );
+  return staff.rows[0]?.chat_id ?? null;
+}
 
 async function orderIdForKey(db: Queryable, userId: string, key: string): Promise<string | null> {
   const { rows } = await db.query<{ id: string }>(
@@ -616,15 +872,11 @@ async function recordChange(
              clock_timestamp())`,
     [orderId, fromStatus, toStatus, actor.userId, actor.role, reason],
   );
-  const { rows } = await db.query<{
-    number: string;
-    total_uzs: number;
-    telegram_user_id: number;
-    language: string;
-    address: Record<string, unknown>;
-  }>(
-    `SELECT o.number, o.total_uzs, u.telegram_user_id, u.language::text AS language,
-            o.address_snapshot AS address
+  const { rows } = await db.query<OrderFacts>(
+    `SELECT o.number, o.subtotal_uzs, o.total_uzs, u.telegram_user_id,
+            u.language::text AS language, o.address_snapshot AS address,
+            o.payment_method::text AS payment_method, o.recipient_name, o.recipient_phone,
+            o.comment, ${isoUtcSql('o.created_at')} AS created_at
        FROM orders o JOIN users u ON u.id = o.user_id
       WHERE o.id = $1`,
     [orderId],
@@ -643,15 +895,13 @@ async function recordChange(
   await insertOutbox(db, ORDER_STATUS_EVENT, orderId, payload);
 
   if (STAFF_ALERT_STATUSES.has(toStatus)) {
-    const staff = await db.query<{ chat_id: number }>(
-      'SELECT chat_id FROM staff_notification_chat LIMIT 1',
-    );
-    const groupChatId = staff.rows[0]?.chat_id;
-    if (groupChatId !== undefined) {
-      // Same transaction as the change: an alert exists iff the change committed. No customer
-      // name, phone or address text: staff open the order in the admin. The one exception: a NEW
-      // order's destination coordinates, which reach the group only inside the Yandex Go courier
-      // button URL (services/telegram/tgcloud/lib/notifications/yandexGo.js), never as text.
+    const groupChatId = await staffChatId(db);
+    if (groupChatId !== null) {
+      // Same transaction as the change: an alert exists iff the change committed. The group is
+      // the shop's private staff group (ADR 0015): every alert names the recipient, and a NEW
+      // order's alert carries the whole order so staff can act from Telegram (owner's request);
+      // the payload goes nowhere but that group. The destination coordinates only ever become
+      // the Yandex Go courier button URL (services/telegram/tgcloud/lib/notifications/yandexGo.js).
       const alert: Record<string, unknown> = {
         order_id: orderId,
         order_number: row.number,
@@ -660,12 +910,68 @@ async function recordChange(
         total_uzs: row.total_uzs,
         chat_id: groupChatId,
         cancelled_by_customer: toStatus === 'CANCELLED' && actor.role === 'customer',
+        recipient_name: row.recipient_name,
       };
+      if (toStatus === 'NEW') alert['details'] = await staffDetails(db, orderId, row);
       const destination = toStatus === 'NEW' ? coordinatesOf(row.address) : null;
       if (destination !== null) alert['destination'] = destination;
       await insertOutbox(db, STAFF_ALERT_EVENT, orderId, alert);
     }
   }
+}
+
+interface OrderFacts {
+  number: string;
+  subtotal_uzs: number;
+  total_uzs: number;
+  telegram_user_id: number;
+  language: string;
+  address: Record<string, unknown>;
+  payment_method: string;
+  recipient_name: string;
+  recipient_phone: string;
+  comment: string | null;
+  created_at: string;
+}
+
+/** `2026-11-13T09:05:00.123456+00:00`: the reference's `datetime.isoformat()` of a UTC time. */
+function isoUtcSql(column: string): string {
+  return `to_char(${column} AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US') || '+00:00'`;
+}
+
+/** Everything a NEW order's staff alert shows (the bot renders and truncates it). */
+async function staffDetails(
+  db: Queryable,
+  orderId: string,
+  row: OrderFacts,
+): Promise<Record<string, unknown>> {
+  const items = await db.query<{
+    name_uz: string;
+    quantity: number;
+    unit: string;
+    line_total_uzs: number;
+  }>(
+    `SELECT name_uz, quantity, unit::text AS unit, line_total_uzs
+       FROM order_items WHERE order_id = $1
+      ORDER BY name_uz, id`,
+    [orderId],
+  );
+  const address: Record<string, unknown> = {};
+  for (const key of STAFF_ADDRESS_KEYS) address[key] = row.address[key] ?? null;
+  return {
+    items: items.rows.map((item) => ({
+      name_uz: item.name_uz,
+      quantity: item.quantity,
+      unit: item.unit,
+      line_total_uzs: item.line_total_uzs,
+    })),
+    subtotal_uzs: row.subtotal_uzs,
+    payment_method: row.payment_method,
+    recipient_phone: row.recipient_phone,
+    address,
+    comment: row.comment,
+    created_at: row.created_at,
+  };
 }
 
 function coordinate(value: unknown, limit: number): number | null {
@@ -738,7 +1044,7 @@ async function orderPage(
 }
 
 export async function loadOrder(db: Queryable, orderId: string): Promise<OrderRecord> {
-  const found = await db.query<Omit<OrderRecord, 'items' | 'history'>>(
+  const found = await db.query<Omit<OrderRecord, 'items' | 'history' | 'adjustments'>>(
     `SELECT id::text AS id, number, user_id::text AS user_id, status::text AS status,
             subtotal_uzs, total_uzs, item_count, payment_method::text AS payment_method,
             recipient_name, recipient_phone, address_snapshot AS address, comment, cancel_reason,
@@ -750,7 +1056,7 @@ export async function loadOrder(db: Queryable, orderId: string): Promise<OrderRe
   if (order === undefined) throw new Error('order not found');
   const items = await db.query<OrderItemRecord>(
     `SELECT product_id::text AS product_id, sku, name_uz, name_ru, unit::text AS unit,
-            unit_price_uzs, quantity, line_total_uzs
+            unit_price_uzs, quantity, line_total_uzs, original_quantity
        FROM order_items WHERE order_id = $1
       ORDER BY name_uz, id`,
     [orderId],
@@ -762,5 +1068,19 @@ export async function loadOrder(db: Queryable, orderId: string): Promise<OrderRe
       ORDER BY order_status_history.created_at, id`,
     [orderId],
   );
-  return { ...order, items: items.rows, history: history.rows };
+  const adjustments = await db.query<AdjustmentRecord>(
+    `SELECT a.product_id::text AS product_id, i.sku, i.name_uz, i.name_ru, i.unit::text AS unit,
+            a.from_quantity, a.to_quantity, a.reason, a.marked_out_of_stock,
+            a.actor_role::text AS actor_role, ${isoSql('a.created_at')} AS created_at
+       FROM order_item_adjustments a JOIN order_items i ON i.id = a.order_item_id
+      WHERE a.order_id = $1
+      ORDER BY a.created_at, a.id`,
+    [orderId],
+  );
+  return {
+    ...order,
+    items: items.rows,
+    history: history.rows,
+    adjustments: adjustments.rows,
+  };
 }

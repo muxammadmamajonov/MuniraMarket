@@ -242,6 +242,8 @@ const ProductCreate = model(
     price_uzs: required(Price),
     old_price_uzs: optional(nullable(Price)),
     stock_quantity: optional(nullable(Stock)),
+    // Units kept back for walk-in shoppers (ADR 0018); absent or null means 0.
+    safety_stock: optional(nullable(Stock)),
     image_url: optional(ImageUrl),
     sort_order: optional(SortOrder, 0),
     is_active: optional(bool, true),
@@ -267,6 +269,7 @@ const ProductUpdate = model(
     price_uzs: optional(nullable(Price)),
     old_price_uzs: optional(nullable(Price)),
     stock_quantity: optional(nullable(Stock)),
+    safety_stock: optional(nullable(Stock)),
     image_url: optional(ImageUrl),
     sort_order: optional(nullable(SortOrder)),
     is_active: optional(nullable(bool)),
@@ -382,7 +385,9 @@ async function createProduct(c: Ctx): Promise<Response> {
   const issues: Issues = [];
   const payload = validateBody(body, ProductCreate, issues);
   throwIfInvalid(issues);
-  const record = await mapped(() => repo(c).createProduct(ok(payload).values, auditActorOf(admin)));
+  const values = { ...ok(payload).values };
+  values['safety_stock'] ??= 0;
+  const record = await mapped(() => repo(c).createProduct(values, auditActorOf(admin)));
   return json(record, 201);
 }
 

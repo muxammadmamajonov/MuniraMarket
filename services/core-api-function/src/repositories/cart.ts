@@ -23,6 +23,7 @@ import {
   VISIBLE_CATEGORY_CTE,
   productIsVisible,
   productSummaryColumns,
+  sellableStockSql,
   summaryFromRow,
   type ProductSummaryRecord,
 } from './catalog.ts';
@@ -162,7 +163,7 @@ async function productFacts(
 ): Promise<{ isAvailable: boolean; stockQuantity: number | null } | null> {
   const { rows } = await db.query<{ stock_quantity: number | null; is_available: boolean }>(
     `WITH RECURSIVE ${VISIBLE_CATEGORY_CTE}
-     SELECT p.stock_quantity, ${productIsVisible()} AS is_available
+     SELECT ${sellableStockSql()} AS stock_quantity, ${productIsVisible()} AS is_available
        FROM products p WHERE p.id = $1`,
     [productId],
   );

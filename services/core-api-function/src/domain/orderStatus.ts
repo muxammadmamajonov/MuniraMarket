@@ -47,8 +47,24 @@ export function isOrderStatus(value: string): value is OrderStatus {
   return (ORDER_STATUSES as readonly string[]).includes(value);
 }
 
-export function customerCanCancel(current: OrderStatus): boolean {
-  return CUSTOMER_CANCELLABLE_STATUSES.has(current);
+/** Staff may lower an order line (the goods are not there, ADR 0018) until it is packed. */
+export const ADJUSTABLE_STATUSES: ReadonlySet<OrderStatus> = new Set([
+  'NEW',
+  'CONFIRMED',
+  'PICKING',
+]);
+
+/**
+ * Before picking always; while PICKING only when staff lowered a line of the order (`adjusted`):
+ * the customer did not agree to the smaller order and may back out (ADR 0018).
+ */
+export function customerCanCancel(current: OrderStatus, adjusted = false): boolean {
+  if (CUSTOMER_CANCELLABLE_STATUSES.has(current)) return true;
+  return adjusted && current === 'PICKING';
+}
+
+export function canAdjustItems(current: OrderStatus): boolean {
+  return ADJUSTABLE_STATUSES.has(current);
 }
 
 export class InvalidOrderTransitionError extends Error {

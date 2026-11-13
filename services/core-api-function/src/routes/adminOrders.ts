@@ -1,5 +1,5 @@
 /**
- * Operator/admin back office: list orders, read one, change its status (port of
+ * Operator/admin back office: list orders, read one, change its status, lower a line (port of
  * services/api/app/api/routes/admin_orders.py).
  *
  * Only `operator` and `admin` users get past `requireStaff` (role re-read on every request, Login
@@ -20,12 +20,13 @@ import {
   requireStaffWriter,
 } from '../http/auth.ts';
 import { deps, type Ctx } from '../http/context.ts';
-import { changeStatus, getOrder, listAll } from '../repositories/orders.ts';
-import { Validation, int, nullable, oneOf } from '../schemas/storefront/fields.ts';
+import { adjustItem, changeStatus, getOrder, listAll } from '../repositories/orders.ts';
+import { Validation, int, nullable, oneOf, uuid } from '../schemas/storefront/fields.ts';
 import { readBody, readJsonBody, readPath, readQuery } from '../schemas/storefront/http.ts';
 import {
   ORDERS_MAX_PAGE,
   ORDERS_MAX_PAGE_SIZE,
+  orderItemAdjustRequest,
   orderStatusUpdateRequest,
   withDefault,
 } from '../schemas/storefront/requests.ts';
@@ -89,8 +90,39 @@ async function updateStatus(c: Ctx): Promise<Response> {
   return c.json(adminOrderDetail(record));
 }
 
+/**
+ * Lower one order line because the goods are not there (ADR 0018). Only while the order is NEW,
+ * CONFIRMED or PICKING (else `409 order_not_adjustable`), and only down (more than the line's
+ * quantity is `409 invalid_quantity`). The units the line no longer takes go back to stock, or,
+ * with `mark_out_of_stock`, the product's stock becomes 0. A line already at `quantity` is
+ * returned unchanged, so a retry is harmless. When every line reaches 0 the order is cancelled.
+ */
+async function adjustLine(c: Ctx): Promise<Response> {
+  const body = await readJsonBody(c);
+  await backOfficeRouterDeps(c);
+  await rateLimit(c, RULES.ADMIN_WRITE, 'user');
+  const staff = await requireStaffWriter(c);
+  const validation = new Validation();
+  const orderId = readPath(validation, c, 'order_id', orderIdParam);
+  const productId = readPath(validation, c, 'product_id', uuid());
+  const payload = readBody(validation, body, orderItemAdjustRequest);
+  validation.check();
+  const { db, logger } = deps(c);
+  const record = await mapCheckoutErrors(() =>
+    adjustItem(db, orderId, productId, {
+      quantity: payload.quantity,
+      reason: payload.reason,
+      markOutOfStock: payload.mark_out_of_stock,
+      actor: { userId: staff.id, role: staff.role },
+    }),
+  );
+  logger.info('Staff order line adjustment succeeded');
+  return c.json(adminOrderDetail(record));
+}
+
 export function register(router: Router): void {
   router.get('/admin/orders', list);
   router.get('/admin/orders/{order_id}', get);
   router.patch('/admin/orders/{order_id}/status', updateStatus);
+  router.patch('/admin/orders/{order_id}/items/{product_id}', adjustLine);
 }
