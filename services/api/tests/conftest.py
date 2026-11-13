@@ -12,7 +12,14 @@ from app.api.deps import get_user_repository
 from app.core.config import Settings
 from app.main import create_app
 from app.models.enums import Language, UserRole
-from app.repositories.users import TelegramProfile, UserRecord, language_from_code, phone_hint
+from app.repositories.users import (
+    UNSET,
+    ProfileUpdate,
+    TelegramProfile,
+    UserRecord,
+    language_from_code,
+    phone_hint,
+)
 from app.security.service_auth import InMemoryNonceStore
 
 # Obviously fake values that are only ever used inside the test process.
@@ -63,15 +70,19 @@ class FakeUserRepository:
         self.users: dict[int, UserRecord] = {}
         self.upserts: list[TelegramProfile] = []
         self.phones: dict[int, str] = {}
+        # Telegram ids whose name was edited in the shop (Telegram no longer overwrites it).
+        self.name_edited: set[int] = set()
+        self.profile_updates: list[ProfileUpdate] = []
 
     async def upsert_from_telegram(self, profile: TelegramProfile) -> UserRecord:
         self.upserts.append(profile)
         existing = self.users.get(profile.telegram_user_id)
+        keep_name = existing is not None and profile.telegram_user_id in self.name_edited
         record = UserRecord(
             id=existing.id if existing else uuid.uuid4(),
             telegram_user_id=profile.telegram_user_id,
-            first_name=profile.first_name,
-            last_name=profile.last_name,
+            first_name=existing.first_name if existing and keep_name else profile.first_name,
+            last_name=existing.last_name if existing and keep_name else profile.last_name,
             username=profile.username,
             language=(
                 existing.language
@@ -82,9 +93,35 @@ class FakeUserRepository:
             is_blocked=existing.is_blocked if existing else False,
             language_confirmed=existing.language_confirmed if existing else False,
             phone_verified=existing.phone_verified if existing else False,
+            phone_hint=existing.phone_hint if existing else None,
+            birth_date=existing.birth_date if existing else None,
         )
         self.users[profile.telegram_user_id] = record
         return record
+
+    async def update_profile(self, user_id: uuid.UUID, changes: ProfileUpdate) -> UserRecord | None:
+        """Same semantics as the SQL repository (see ``SqlAlchemyUserRepository``)."""
+        self.profile_updates.append(changes)
+        key = next((k for k, user in self.users.items() if user.id == user_id), None)
+        if key is None:
+            return None
+        user = self.users[key]
+        if changes.first_name is not UNSET:
+            user = replace(user, first_name=changes.first_name)
+        if changes.last_name is not UNSET:
+            user = replace(user, last_name=changes.last_name)
+        if changes.first_name is not UNSET or changes.last_name is not UNSET:
+            self.name_edited.add(key)
+        if changes.birth_date is not UNSET:
+            user = replace(user, birth_date=changes.birth_date)
+        if changes.phone is None:
+            self.phones.pop(key, None)
+            user = replace(user, phone_verified=False, phone_hint=None)
+        elif changes.phone is not UNSET and changes.phone != self.phones.get(key):
+            self.phones[key] = changes.phone
+            user = replace(user, phone_verified=False, phone_hint=phone_hint(changes.phone))
+        self.users[key] = user
+        return user
 
     async def set_language(self, user_id: uuid.UUID, language: Language) -> UserRecord | None:
         for key, user in self.users.items():

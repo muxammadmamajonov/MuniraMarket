@@ -1,6 +1,6 @@
-from datetime import datetime
+from datetime import date, datetime
 
-from sqlalchemy import BigInteger, Boolean, CheckConstraint, DateTime, String, text
+from sqlalchemy import BigInteger, Boolean, CheckConstraint, Date, DateTime, String, text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
@@ -14,6 +14,8 @@ class User(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     first_name: Mapped[str] = mapped_column(String(255), nullable=False)
     last_name: Mapped[str | None] = mapped_column(String(255))
     username: Mapped[str | None] = mapped_column(String(64))
+    # Never sent to clients (only a masked ``phone_hint``). Either the user's own Telegram contact
+    # (verified) or a number typed in the shop profile (unverified, normalised ``+998XXXXXXXXX``).
     phone: Mapped[str | None] = mapped_column(String(32))
     phone_verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     # ``telegram_contact`` (own contact shared with the bot) or ``otp`` (code provider).
@@ -32,6 +34,11 @@ class User(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         default=UserRole.CUSTOMER,
         server_default=text("'customer'"),
     )
+    # Optional, from the shop profile (``PATCH /me``).
+    birth_date: Mapped[date | None] = mapped_column(Date)
+    # Set once the user edits their name in the shop: from then on a Telegram sign-in no longer
+    # overwrites ``first_name`` / ``last_name`` (it still refreshes ``username``).
+    name_edited_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     is_blocked: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default=text("false")
     )

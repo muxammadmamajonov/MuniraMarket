@@ -610,6 +610,7 @@ describe.skipIf(!hasDatabase)('orders', () => {
       'total_uzs',
       'item_count',
       'created_at',
+      'thumbnails',
     ]);
     const second = (await (await as(app, me).get(`${ORDERS}?page=2&page_size=2`)).json()) as {
       items: Json[];

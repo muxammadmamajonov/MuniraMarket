@@ -4,7 +4,9 @@
  * (`WebApp.requestContact()`, which Telegram delivers here as a contact message); the
  * `request_contact` button after `/start phone` is the fallback for browser users. Only the sender's OWN
  * contact (`contact.user_id === from.id`, both from the platform-verified update) is stored, as
- * the verified account phone. The number is never logged or echoed.
+ * the verified account phone. The number is never logged or echoed, and once it is recorded the
+ * shared contact message itself is deleted from the chat (best effort: a failure is logged without
+ * the number and the confirmation is still sent).
  */
 import { messagesFor, pickLocale } from '../i18n.js';
 import { describeError, loadBotContext, readBotUser } from './context.js';
@@ -51,6 +53,15 @@ export async function handleContact(message, deps) {
   if (!verified) {
     await deps.api.sendMessage({ chat_id: chatId, text: text.genericError });
     return { handled: true, verified: false };
+  }
+
+  // The number is stored; the contact card need not stay in the chat history.
+  if (typeof message.message_id === 'number') {
+    try {
+      await deps.api.deleteMessage({ chat_id: chatId, message_id: message.message_id });
+    } catch (error) {
+      log.warn('contact: shared contact message not deleted:', describeError(error));
+    }
   }
 
   await deps.api.sendMessage({

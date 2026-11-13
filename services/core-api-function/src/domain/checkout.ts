@@ -53,7 +53,7 @@ export function buildQuote(lines: readonly LineFacts[]): QuoteTotals {
 // ASCII digits only: `\d` with the `u` flag is ASCII in JS, but be explicit like the reference.
 const UZ_PHONE_RE = /^\+998[0-9]{9}$/;
 // Python's `\s` (str patterns) plus `-`, `(` and `)`.
-const PHONE_SEPARATORS = new RegExp(
+export const PHONE_SEPARATORS = new RegExp(
   // eslint-disable-next-line no-control-regex -- Python's \s includes \x1c-\x1f
   '[\\t\\n\\v\\f\\r\\x1c-\\x1f \\x85\\xa0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000\\-()]',
   'g',

@@ -6,7 +6,13 @@
 import { createHash } from 'node:crypto';
 import { MAX_LINE_QUANTITY } from '../../domain/cart.ts';
 import { PHONE_MESSAGE, normalizeUzPhone } from '../../domain/checkout.ts';
-import { ORDER_STATUSES } from '../../domain/orderStatus.ts';
+import { ORDER_STATUSES, ORDER_STATUS_GROUPS } from '../../domain/orderStatus.ts';
+import {
+  checkBirthDate,
+  normalizeProfilePhone,
+  parseBirthDate,
+  tashkentToday,
+} from '../../domain/profile.ts';
 import { PRODUCT_SORTS } from '../../repositories/catalog.ts';
 import { PAYMENT_METHODS } from '../../repositories/orders.ts';
 import {
@@ -86,7 +92,7 @@ export const setCartItemQuantityRequest = model({ quantity });
  * Where the Yandex Go courier delivers: the map point (WGS84, rounded to 6 decimals, about 0.1 m)
  * and the address details the courier needs at the door.
  */
-export const deliveryAddress = model({
+const deliveryAddressShape = {
   lat: latitude,
   lon: longitude,
   street,
@@ -95,7 +101,8 @@ export const deliveryAddress = model({
   entrance: shortPart,
   floor,
   landmark,
-});
+};
+export const deliveryAddress = model(deliveryAddressShape);
 
 export const createOrderRequest = model({
   address: deliveryAddress,
@@ -117,6 +124,71 @@ export const orderStatusUpdateRequest = model({
   // Optimistic concurrency: refuse with 409 if the order is no longer in this status.
   expected_status: nullable(oneOf(ORDER_STATUSES)),
 });
+
+// --- profile (`PATCH /me`) and saved addresses -----------------------------------------------------
+
+/** An optional key: absent -> `undefined` ("not sent"), anything else -> `inner`. */
+export function optional<T>(inner: Validator<T>): Validator<T | undefined> {
+  return (value, loc, issues) => (value === undefined ? undefined : inner(value, loc, issues));
+}
+
+/**
+ * An optional, NOT nullable key (`X | None = None` refusing an explicit null in the reference):
+ * absent -> `undefined`, `null` -> `message`, anything else -> `inner`.
+ */
+export function optionalNotNull<T>(inner: Validator<T>, message: string): Validator<T | undefined> {
+  return (value, loc, issues) => {
+    if (value === undefined) return undefined;
+    if (value === null) {
+      issues.push({ loc: loc.map(String), msg: message });
+      return INVALID;
+    }
+    return inner(value, loc, issues);
+  };
+}
+
+function profilePhone(value: string): string {
+  try {
+    return normalizeProfilePhone(value);
+  } catch (error) {
+    if (error instanceof RangeError) throw new ValueError(error.message);
+    throw error;
+  }
+}
+
+/** `YYYY-MM-DD`, 1900-01-01..today (Asia/Tashkent); messages as the reference's validators. */
+const birthDate: Validator<string> = (value, loc, issues) => {
+  if (value === undefined) {
+    issues.push({ loc: loc.map(String), msg: 'Field required' });
+    return INVALID;
+  }
+  try {
+    return checkBirthDate(parseBirthDate(value), tashkentToday());
+  } catch (error) {
+    if (!(error instanceof RangeError)) throw error;
+    issues.push({ loc: loc.map(String), msg: `Value error, ${error.message}` });
+    return INVALID;
+  }
+};
+
+export const AT_LEAST_ONE_FIELD = 'Value error, at least one field is required';
+
+/** `PATCH /me` body; the route also refuses an empty object (`AT_LEAST_ONE_FIELD`). */
+export const updateProfileRequest = model({
+  first_name: optionalNotNull(text(1, 64, singleLine), 'Input should be a valid string'),
+  last_name: optional(optionalText(64, singleLine)),
+  birth_date: optional(nullable(birthDate)),
+  phone: optional(nullable(str({ max: 32, after: profilePhone }))),
+});
+export type UpdateProfileRequest = Output<typeof updateProfileRequest>;
+
+/** `POST /me/addresses` and `PUT /me/addresses/{id}`: a `DeliveryAddress` plus label/default. */
+export const savedAddressRequest = model({
+  ...deliveryAddressShape,
+  label: optionalText(32, singleLine),
+  is_default: optionalNotNull(bool(), 'Input should be a valid boolean'),
+});
+export type SavedAddressRequest = Output<typeof savedAddressRequest>;
 
 /** A float as Pydantic's `model_dump_json()` writes it (`69.0`, `1e-6`, `0.00001`). */
 export function pydanticFloat(value: number): string {
@@ -167,6 +239,7 @@ export const ORDERS_MAX_PAGE = 100_000;
 export const orderPageQuery = {
   page: withDefault(int({ ge: 1, le: ORDERS_MAX_PAGE }), 1),
   page_size: withDefault(int({ ge: 1, le: ORDERS_MAX_PAGE_SIZE }), ORDERS_DEFAULT_PAGE_SIZE),
+  status_group: withDefault(oneOf(ORDER_STATUS_GROUPS), 'all'),
 };
 
 /** A query parameter with a default (absent -> `fallback`; `null` cannot occur in a query). */

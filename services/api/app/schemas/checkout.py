@@ -282,6 +282,17 @@ class OrderDetail(BaseModel):
         )
 
 
+class OrderThumbnail(BaseModel):
+    """One of the first order lines, for the order list card."""
+
+    # ``null`` once the product has been deleted from the catalog.
+    product_id: uuid.UUID | None
+    name_uz: str
+    name_ru: str
+    # The product's current image (as in the catalog); ``null`` when gone or without an image.
+    image_url: str | None
+
+
 class OrderSummary(BaseModel):
     id: uuid.UUID
     number: str
@@ -289,6 +300,8 @@ class OrderSummary(BaseModel):
     total_uzs: int
     item_count: int
     created_at: datetime
+    # The first (up to 4) lines, in the order the order detail lists them.
+    thumbnails: list[OrderThumbnail]
 
     @classmethod
     def from_record(cls, record: OrderSummaryRecord) -> Self:
@@ -299,6 +312,15 @@ class OrderSummary(BaseModel):
             total_uzs=record.total_uzs,
             item_count=record.item_count,
             created_at=record.created_at,
+            thumbnails=[
+                OrderThumbnail(
+                    product_id=thumbnail.product_id,
+                    name_uz=thumbnail.name_uz,
+                    name_ru=thumbnail.name_ru,
+                    image_url=thumbnail.image_url,
+                )
+                for thumbnail in record.thumbnails
+            ],
         )
 
 
@@ -368,4 +390,5 @@ __all__ = [
     "OrderDetail",
     "OrderPage",
     "OrderStatusUpdateRequest",
+    "OrderThumbnail",
 ]

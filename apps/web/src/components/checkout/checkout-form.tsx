@@ -1,10 +1,11 @@
 'use client';
 
 import { PAYMENT_METHODS, type PaymentMethod } from '@muniramarket/contracts';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useI18n } from '@/i18n/context';
 import { formatMessage } from '@/i18n/format';
 import { formatAddressLine, type Address } from '@/lib/address/address';
+import { savedToAddress } from '@/lib/address/saved';
 import {
   LIMITS,
   charCount,
@@ -13,7 +14,7 @@ import {
   type FieldName,
   type FormErrors,
 } from '@/lib/checkout/form';
-import { AddressPicker } from '../address-picker';
+import { AddressChooser, SaveAddressPrompt, useSavedAddresses } from '../address-chooser';
 import { FormField } from '../form-field';
 import { PinIcon } from '../icons';
 import { CARD, ERROR_TEXT, FOCUS_RING, INPUT, PRESS } from '../ui-classes';
@@ -42,6 +43,17 @@ export function CheckoutFormFields({
   const { dict } = useI18n();
   const t = dict.checkout;
   const [pickerOpen, setPickerOpen] = useState(false);
+  const { items: saved, reload: reloadSaved } = useSavedAddresses();
+
+  // No address yet but a saved default: start from it (once; the customer can still change it).
+  const prefilled = useRef(false);
+  const currentAddress = values.address;
+  useEffect(() => {
+    if (prefilled.current || saved === null) return;
+    prefilled.current = true;
+    const preferred = saved.find((item) => item.is_default) ?? saved[0];
+    if (currentAddress === null && preferred !== undefined) onAddress(savedToAddress(preferred));
+  }, [saved, currentAddress, onAddress]);
 
   const errorText = (field: FieldName): string | undefined => {
     const error: FieldError | undefined = errors[field];
@@ -165,11 +177,19 @@ export function CheckoutFormFields({
           </p>
         )}
 
-        <AddressPicker
+        <SaveAddressPrompt
+          key={addressLine ?? 'none'}
+          address={address}
+          saved={saved}
+          onSaved={() => void reloadSaved()}
+        />
+
+        <AddressChooser
           open={pickerOpen}
           onClose={() => setPickerOpen(false)}
-          initial={address}
-          onSave={(next) => {
+          current={address}
+          saved={saved}
+          onChoose={(next) => {
             setPickerOpen(false);
             onAddress(next);
           }}

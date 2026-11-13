@@ -42,6 +42,9 @@ export const ERROR_CODES = [
   'order_status_conflict',
   'too_many_open_orders',
   'phone_verification_required',
+  // profile: saved addresses
+  'address_not_found',
+  'address_limit_reached',
   // admin: catalog, CSV, users
   'slug_taken',
   'sku_taken',

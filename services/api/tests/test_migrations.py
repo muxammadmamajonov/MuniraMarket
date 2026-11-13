@@ -376,7 +376,7 @@ async def test_an_already_migrated_schema_on_the_search_path_is_never_touched() 
 
         await upgrade(my_engine)
         assert await _scalar(my_engine, tables_in, schema=mine) == 2
-        assert await _scalar(my_engine, "SELECT version_num FROM alembic_version") == "0007"
+        assert await _scalar(my_engine, "SELECT version_num FROM alembic_version") == "0008"
 
         await truncate_app_tables(my_engine)
         assert await _scalar(my_engine, count_other) == 1
@@ -688,7 +688,7 @@ async def test_courier_delivery_revision_keeps_historical_totals_and_downgrades(
             _ORDER_SQL, _order_params(user_id, "H-2", subtotal=400_000, fee=0, total=400_000)
         )
 
-    await upgrade(empty_engine)
+    await upgrade(empty_engine, "0007")
     assert await _scalar(empty_engine, "SELECT version_num FROM alembic_version") == "0007"
     assert not (await _tables(empty_engine) & DELIVERY_TABLES)
     assert not (DELIVERY_ORDER_COLUMNS & await _columns(empty_engine, "orders"))
@@ -708,7 +708,6 @@ async def test_courier_delivery_revision_keeps_historical_totals_and_downgrades(
         await _scalar(empty_engine, "SELECT address_snapshot FROM orders WHERE number = 'H-1'")
         == {}
     )
-    assert await _model_differences(empty_engine) == []
 
     async with empty_engine.connect() as conn:
         params = {"user_id": user_id, "key": "key-N-1", "hash": "0" * 64}
@@ -769,4 +768,104 @@ async def test_courier_delivery_revision_keeps_historical_totals_and_downgrades(
         "H-2": (400_000, 400_000),
         "N-1": (30_000, 30_000),
     }
+    assert await _model_differences(empty_engine) == []
+
+
+# --- 0008: profile hub (birth date, user-edited name, saved addresses) ----------------------------
+
+_ADDRESS_SQL = text(
+    "INSERT INTO user_addresses (user_id, label, lat, lon, street, house, is_default) "
+    "VALUES (:user_id, :label, :lat, :lon, 'Amir Temur', '1', :is_default) RETURNING id"
+)
+
+
+async def test_profile_revision_adds_addresses_and_downgrades(empty_engine: AsyncEngine) -> None:
+    """0008 adds two nullable user columns and ``user_addresses`` (cascade on user delete, at
+    most one default per user, coordinate ranges); the downgrade drops them, users stay."""
+    await upgrade(empty_engine, "0007")
+    async with empty_engine.begin() as conn:
+        user_id = (
+            await conn.execute(
+                text(
+                    "INSERT INTO users (telegram_user_id, first_name, last_name) "
+                    "VALUES (3001, 'Aziza', 'K') RETURNING id"
+                )
+            )
+        ).scalar_one()
+    assert "user_addresses" not in await _tables(empty_engine)
+
+    await upgrade(empty_engine, "0008")
+    assert await _scalar(empty_engine, "SELECT version_num FROM alembic_version") == "0008"
+    assert {"birth_date", "name_edited_at"} <= await _columns(empty_engine, "users")
+    assert (
+        await _scalar(
+            empty_engine,
+            "SELECT birth_date IS NULL AND name_edited_at IS NULL FROM users WHERE id = :id",
+            id=user_id,
+        )
+        is True
+    )
+    assert await _indexes(empty_engine, "user_addresses") >= {
+        "pk_user_addresses",
+        "ix_user_addresses_user_id",
+        "uq_user_addresses_user_id_default",
+    }
+    assert await _constraints(empty_engine, "user_addresses") >= {
+        "ck_user_addresses_lat_range",
+        "ck_user_addresses_lon_range",
+        "fk_user_addresses_user_id_users",
+    }
+    assert await _model_differences(empty_engine) == []
+
+    base = {"user_id": user_id, "label": None, "lat": 41.311081, "lon": 69.240562}
+    async with empty_engine.connect() as conn:
+        await conn.execute(_ADDRESS_SQL, {**base, "label": "Uy", "is_default": True})
+        await conn.execute(_ADDRESS_SQL, {**base, "is_default": False})
+        await conn.execute(_ADDRESS_SQL, {**base, "is_default": False})
+        with pytest.raises(IntegrityError, match="uq_user_addresses_user_id_default"):
+            async with conn.begin_nested():
+                await conn.execute(_ADDRESS_SQL, {**base, "is_default": True})
+        for bad, constraint in (
+            ({"lat": 90.000001}, "ck_user_addresses_lat_range"),
+            ({"lon": -180.5}, "ck_user_addresses_lon_range"),
+        ):
+            with pytest.raises(IntegrityError, match=constraint):
+                async with conn.begin_nested():
+                    await conn.execute(_ADDRESS_SQL, {**base, **bad, "is_default": False})
+        await conn.commit()
+    assert await _scalar(empty_engine, "SELECT count(*) FROM user_addresses") == 3
+
+    # Deleting the user deletes their addresses.
+    async with empty_engine.begin() as conn:
+        other = (
+            await conn.execute(
+                text(
+                    "INSERT INTO users (telegram_user_id, first_name) "
+                    "VALUES (3002, 'Other') RETURNING id"
+                )
+            )
+        ).scalar_one()
+        await conn.execute(_ADDRESS_SQL, {**base, "user_id": other, "is_default": True})
+        await conn.execute(text("DELETE FROM users WHERE id = :id"), {"id": other})
+    assert await _scalar(empty_engine, "SELECT count(*) FROM user_addresses") == 3
+
+    async with empty_engine.begin() as conn:
+        await conn.execute(
+            text(
+                "UPDATE users SET birth_date = '1990-05-17', name_edited_at = now() WHERE id = :id"
+            ),
+            {"id": user_id},
+        )
+
+    await downgrade(empty_engine, "0007")
+    assert await _scalar(empty_engine, "SELECT version_num FROM alembic_version") == "0007"
+    assert "user_addresses" not in await _tables(empty_engine)
+    assert not ({"birth_date", "name_edited_at"} & await _columns(empty_engine, "users"))
+    assert (
+        await _scalar(empty_engine, "SELECT first_name FROM users WHERE id = :id", id=user_id)
+        == "Aziza"
+    )
+
+    await upgrade(empty_engine)
+    assert await _scalar(empty_engine, "SELECT count(*) FROM user_addresses") == 0
     assert await _model_differences(empty_engine) == []

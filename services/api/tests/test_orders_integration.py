@@ -778,6 +778,7 @@ async def test_customer_order_list_is_newest_first_and_paginated(shop: Shop) -> 
         "total_uzs",
         "item_count",
         "created_at",
+        "thumbnails",
     }
     beyond = (
         await shop.client.get(ORDERS, params={"page": 9, "page_size": 2}, headers=shop.headers())

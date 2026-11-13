@@ -16,6 +16,33 @@ import { TelegramProvider } from '@/lib/telegram';
 import { GEOCODE_DEBOUNCE_MS } from './address-picker';
 import { DeliveryAddressCard } from './delivery-address-card';
 
+const session = vi.hoisted(() => ({
+  status: 'anonymous' as 'loading' | 'authenticated' | 'anonymous' | 'error',
+  user: null,
+  apiFetch: vi.fn<(path: string, init?: RequestInit) => Promise<Response>>(),
+  retry: vi.fn(),
+}));
+vi.mock('@/lib/session', () => ({ useSession: () => session }));
+
+function savedAddress(overrides: Record<string, unknown> = {}) {
+  return {
+    id: 'a1',
+    label: 'Uy',
+    lat: 41.3,
+    lon: 69.2,
+    street: 'Navoiy ko‘chasi',
+    house: '30',
+    apartment: null,
+    entrance: null,
+    floor: null,
+    landmark: null,
+    is_default: true,
+    created_at: '2026-11-01T00:00:00Z',
+    updated_at: '2026-11-01T00:00:00Z',
+    ...overrides,
+  };
+}
+
 // Placeholder shape only; jsdom never fetches the script and the SDK is a fake.
 const KEY = '00000000-0000-4000-8000-000000000000';
 
@@ -59,6 +86,8 @@ afterEach(() => {
   window.localStorage.clear();
   resetDeliveryAddressMemory();
   document.body.style.overflow = '';
+  session.status = 'anonymous';
+  session.apiFetch.mockReset();
 });
 
 describe('DeliveryAddressCard', () => {
@@ -156,5 +185,55 @@ describe('DeliveryAddressCard', () => {
     fireEvent.click(screen.getAllByRole('button', { name: 'Orqaga' })[0] as HTMLElement);
     expect(JSON.parse(window.localStorage.getItem(ADDRESS_STORAGE_ITEM) ?? 'null')).toEqual(HOME);
     expect(screen.getByTestId('delivery-address-line')).toHaveTextContent('Amir Temur ko‘chasi');
+  });
+
+  it('signed in: starts from the saved default and offers saved addresses first', async () => {
+    session.status = 'authenticated';
+    session.apiFetch.mockResolvedValue(
+      Response.json({
+        items: [
+          savedAddress(),
+          savedAddress({
+            id: 'a2',
+            label: 'Ish',
+            street: 'Bobur ko‘chasi',
+            house: '7',
+            is_default: false,
+          }),
+        ],
+      }),
+    );
+    renderCard();
+    // No address on this device yet: the saved default fills the card.
+    await waitFor(() =>
+      expect(screen.getByTestId('delivery-address-line')).toHaveTextContent('Navoiy ko‘chasi, 30'),
+    );
+    expect(session.apiFetch).toHaveBeenCalledWith('/me/addresses', { method: 'GET' });
+
+    fireEvent.click(screen.getByRole('button', { name: /Navoiy ko‘chasi/ }));
+    const chooser = await screen.findByTestId('address-chooser');
+    const options = within(chooser).getAllByTestId('address-chooser-option');
+    expect(options).toHaveLength(2);
+    expect(options[0]).toHaveAttribute('aria-pressed', 'true');
+    expect(fake.maps).toHaveLength(0);
+
+    fireEvent.click(options[1] as HTMLElement);
+    expect(screen.getByTestId('delivery-address-line')).toHaveTextContent('Bobur ko‘chasi, 7');
+    expect(JSON.parse(window.localStorage.getItem(ADDRESS_STORAGE_ITEM) ?? 'null')).toMatchObject({
+      street: 'Bobur ko‘chasi',
+      house: '7',
+    });
+  });
+
+  it('signed in: "New address" in the chooser opens the map picker', async () => {
+    session.status = 'authenticated';
+    session.apiFetch.mockResolvedValue(Response.json({ items: [savedAddress()] }));
+    renderCard();
+    await waitFor(() =>
+      expect(screen.getByTestId('delivery-address')).toHaveAttribute('data-state', 'set'),
+    );
+    fireEvent.click(screen.getByRole('button', { name: /Navoiy ko‘chasi/ }));
+    fireEvent.click(await screen.findByTestId('address-chooser-new'));
+    expect(await screen.findByTestId('address-picker')).toBeInTheDocument();
   });
 });

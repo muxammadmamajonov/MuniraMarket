@@ -175,7 +175,10 @@ async function create(c: Ctx): Promise<Response> {
   return c.json(orderDetail(created.order), 201);
 }
 
-/** The signed-in customer's orders, newest first. */
+/**
+ * The signed-in customer's orders, newest first, optionally one tab of the history
+ * (`status_group`); `total` and `total_pages` count that group only.
+ */
 async function list(c: Ctx): Promise<Response> {
   await ordersIpLimit(c);
   await rateLimit(c, RULES.ORDER_READ, 'user');
@@ -183,7 +186,13 @@ async function list(c: Ctx): Promise<Response> {
   const validation = new Validation();
   const query = readQuery(validation, c, orderPageQuery);
   validation.check();
-  const record = await listForUser(deps(c).db.pool, user.id, query.page, query.page_size);
+  const record = await listForUser(
+    deps(c).db.pool,
+    user.id,
+    query.page,
+    query.page_size,
+    query.status_group,
+  );
   return c.json(orderPage(record, query.page, query.page_size));
 }
 

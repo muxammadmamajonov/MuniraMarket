@@ -39,7 +39,13 @@ import {
   type CheckoutError,
   type QuoteTotals,
 } from '../domain/checkout.ts';
-import { canTransition, customerCanCancel, type OrderStatus } from '../domain/orderStatus.ts';
+import {
+  ORDER_STATUS_GROUP_STATUSES,
+  canTransition,
+  customerCanCancel,
+  type OrderStatus,
+  type OrderStatusGroup,
+} from '../domain/orderStatus.ts';
 import type { UserRole } from '../http/context.ts';
 import { tashkentDate } from '../domain/tashkentTime.ts';
 import { isoSql } from '../http/serialize.ts';
@@ -139,6 +145,15 @@ export interface OrderRecord {
   history: StatusChangeRecord[];
 }
 
+export interface OrderThumbnailRecord {
+  /** `null` once the product has been deleted from the catalog. */
+  product_id: string | null;
+  name_uz: string;
+  name_ru: string;
+  /** The product's CURRENT image (as in the catalog); null when gone or without an image. */
+  image_url: string | null;
+}
+
 export interface OrderSummaryRecord {
   id: string;
   number: string;
@@ -146,7 +161,12 @@ export interface OrderSummaryRecord {
   total_uzs: number;
   item_count: number;
   created_at: string;
+  /** The first `ORDER_THUMBNAIL_LIMIT` lines, in the order the order detail lists them. */
+  thumbnails: OrderThumbnailRecord[];
 }
+
+/** Lines shown as thumbnails on an order list card. */
+export const ORDER_THUMBNAIL_LIMIT = 4;
 
 export interface OrderPageRecord {
   items: OrderSummaryRecord[];
@@ -310,8 +330,16 @@ export async function listForUser(
   userId: string,
   page: number,
   pageSize: number,
+  statusGroup: OrderStatusGroup = 'all',
 ): Promise<OrderPageRecord> {
-  return orderPage(db, 'user_id = $1', [userId], page, pageSize);
+  if (statusGroup === 'all') return orderPage(db, 'user_id = $1', [userId], page, pageSize);
+  return orderPage(
+    db,
+    'user_id = $1 AND status = ANY($2::order_status[])',
+    [userId, ORDER_STATUS_GROUP_STATUSES[statusGroup]],
+    page,
+    pageSize,
+  );
 }
 
 /** The order if it exists AND belongs to `userId` (another customer's order looks missing). */
@@ -688,9 +716,19 @@ async function orderPage(
   const offset = (page - 1) * pageSize;
   if (offset >= total) return { items: [], total };
   const n = params.length;
+  // Thumbnails come from a correlated `json_agg` subquery: one statement for the whole page.
   const { rows } = await db.query<OrderSummaryRecord>(
     `SELECT id::text AS id, number, status::text AS status, total_uzs, item_count,
-            ${isoSql('created_at')} AS created_at
+            ${isoSql('created_at')} AS created_at,
+            (SELECT coalesce(json_agg(json_build_object(
+                      'product_id', first_lines.product_id, 'name_uz', first_lines.name_uz,
+                      'name_ru', first_lines.name_ru, 'image_url', first_lines.image_url)
+                    ORDER BY first_lines.name_uz, first_lines.id), '[]'::json)
+               FROM (SELECT oi.id, oi.product_id, oi.name_uz, oi.name_ru, p.image_url
+                       FROM order_items oi LEFT OUTER JOIN products p ON p.id = oi.product_id
+                      WHERE oi.order_id = orders.id
+                      ORDER BY oi.name_uz, oi.id
+                      LIMIT ${ORDER_THUMBNAIL_LIMIT}) AS first_lines) AS thumbnails
        FROM orders ${where}
       ORDER BY orders.created_at DESC, orders.id DESC
       LIMIT $${n + 1} OFFSET $${n + 2}`,

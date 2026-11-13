@@ -638,6 +638,8 @@
               "order_status_conflict",
               "too_many_open_orders",
               "phone_verification_required",
+              "address_not_found",
+              "address_limit_reached",
               "slug_taken",
               "sku_taken",
               "category_cycle",
@@ -2043,6 +2045,18 @@
         "title": "OrderStatusChange",
         "type": "object"
       },
+      "OrderStatusGroup": {
+        "description": "Tabs of the customer's order history (``GET /orders?status_group=``).",
+        "enum": [
+          "all",
+          "active",
+          "delivering",
+          "done",
+          "cancelled"
+        ],
+        "title": "OrderStatusGroup",
+        "type": "string"
+      },
       "OrderStatusUpdateRequest": {
         "additionalProperties": false,
         "properties": {
@@ -2102,6 +2116,13 @@
           "status": {
             "$ref": "#/components/schemas/OrderStatus"
           },
+          "thumbnails": {
+            "items": {
+              "$ref": "#/components/schemas/OrderThumbnail"
+            },
+            "title": "Thumbnails",
+            "type": "array"
+          },
           "total_uzs": {
             "title": "Total Uzs",
             "type": "integer"
@@ -2113,9 +2134,54 @@
           "status",
           "total_uzs",
           "item_count",
-          "created_at"
+          "created_at",
+          "thumbnails"
         ],
         "title": "OrderSummary",
+        "type": "object"
+      },
+      "OrderThumbnail": {
+        "description": "One of the first order lines, for the order list card.",
+        "properties": {
+          "image_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Image Url"
+          },
+          "name_ru": {
+            "title": "Name Ru",
+            "type": "string"
+          },
+          "name_uz": {
+            "title": "Name Uz",
+            "type": "string"
+          },
+          "product_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Product Id"
+          }
+        },
+        "required": [
+          "product_id",
+          "name_uz",
+          "name_ru",
+          "image_url"
+        ],
+        "title": "OrderThumbnail",
         "type": "object"
       },
       "OutboxMessagePublic": {
@@ -2766,6 +2832,243 @@
         "title": "ReadinessResponse",
         "type": "object"
       },
+      "SavedAddress": {
+        "properties": {
+          "apartment": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Apartment"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "entrance": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Entrance"
+          },
+          "floor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Floor"
+          },
+          "house": {
+            "title": "House",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "is_default": {
+            "title": "Is Default",
+            "type": "boolean"
+          },
+          "label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label"
+          },
+          "landmark": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Landmark"
+          },
+          "lat": {
+            "title": "Lat",
+            "type": "number"
+          },
+          "lon": {
+            "title": "Lon",
+            "type": "number"
+          },
+          "street": {
+            "title": "Street",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "label",
+          "lat",
+          "lon",
+          "street",
+          "house",
+          "apartment",
+          "entrance",
+          "floor",
+          "landmark",
+          "is_default",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "SavedAddress",
+        "type": "object"
+      },
+      "SavedAddressList": {
+        "description": "``GET /me/addresses``: the default first, then the most recently updated.",
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/SavedAddress"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "SavedAddressList",
+        "type": "object"
+      },
+      "SavedAddressRequest": {
+        "additionalProperties": false,
+        "description": "Body of ``POST /me/addresses`` and ``PUT /me/addresses/{id}`` (a full replacement).\n\n``is_default: true`` makes this the default address (the previous default is unset);\n``false`` on the current default leaves the user without a default; omitted keeps the current\nstate (a user's first address always becomes the default).",
+        "properties": {
+          "apartment": {
+            "anyOf": [
+              {
+                "maxLength": 16,
+                "minLength": 0,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Apartment"
+          },
+          "entrance": {
+            "anyOf": [
+              {
+                "maxLength": 16,
+                "minLength": 0,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Entrance"
+          },
+          "floor": {
+            "anyOf": [
+              {
+                "maxLength": 8,
+                "minLength": 0,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Floor"
+          },
+          "house": {
+            "maxLength": 32,
+            "minLength": 1,
+            "title": "House",
+            "type": "string"
+          },
+          "is_default": {
+            "title": "Is Default",
+            "type": "boolean"
+          },
+          "label": {
+            "anyOf": [
+              {
+                "maxLength": 32,
+                "minLength": 0,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label"
+          },
+          "landmark": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "minLength": 0,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Landmark"
+          },
+          "lat": {
+            "description": "WGS84 latitude, -90..90",
+            "maximum": 90.0,
+            "minimum": -90.0,
+            "title": "Lat",
+            "type": "number"
+          },
+          "lon": {
+            "description": "WGS84 longitude, -180..180",
+            "maximum": 180.0,
+            "minimum": -180.0,
+            "title": "Lon",
+            "type": "number"
+          },
+          "street": {
+            "maxLength": 200,
+            "minLength": 2,
+            "title": "Street",
+            "type": "string"
+          }
+        },
+        "required": [
+          "lat",
+          "lon",
+          "street",
+          "house"
+        ],
+        "title": "SavedAddressRequest",
+        "type": "object"
+      },
       "SessionResponse": {
         "description": "Returned by every login and by ``GET /auth/session``.\n\n``csrf_token`` must be kept in memory by the client and sent as ``X-CSRF-Token`` on every\nstate-changing request. The session token itself is only ever in the HTTP-only cookie.",
         "properties": {
@@ -2825,6 +3128,59 @@
         "title": "Unit",
         "type": "string"
       },
+      "UpdateProfileRequest": {
+        "additionalProperties": false,
+        "description": "Body of ``PATCH /me``. Every key is optional, but at least one must be sent.\n\n``first_name`` cannot be null; ``last_name``, ``birth_date`` and ``phone`` are cleared by\n``null``. A ``phone`` different from the stored one is saved *unverified*; the same number\nkeeps its verification.",
+        "properties": {
+          "birth_date": {
+            "anyOf": [
+              {
+                "description": "YYYY-MM-DD, from 1900-01-01 to today (Asia/Tashkent)",
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Birth Date"
+          },
+          "first_name": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "First Name",
+            "type": "string"
+          },
+          "last_name": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "minLength": 0,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Name"
+          },
+          "phone": {
+            "anyOf": [
+              {
+                "description": "Uzbekistan number: +998XXXXXXXXX, 998XXXXXXXXX or the 9 national digits; spaces, dashes and () are ignored. Stored as +998XXXXXXXXX, unverified.",
+                "maxLength": 32,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Phone"
+          }
+        },
+        "title": "UpdateProfileRequest",
+        "type": "object"
+      },
       "UserEnvelope": {
         "properties": {
           "user": {
@@ -2840,6 +3196,18 @@
       "UserPublic": {
         "description": "The only user shape exposed to clients (no phone, no internal flags).",
         "properties": {
+          "birth_date": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Birth Date"
+          },
           "first_name": {
             "title": "First Name",
             "type": "string"
@@ -2910,7 +3278,8 @@
           "last_name",
           "username",
           "language",
-          "role"
+          "role",
+          "birth_date"
         ],
         "title": "UserPublic",
         "type": "object"
@@ -6355,6 +6724,429 @@
         ]
       }
     },
+    "/api/v1/me": {
+      "patch": {
+        "description": "Edit the profile: name, birth date and phone. Only the keys sent are changed.\n\nEditing the name stops Telegram sign-ins from overwriting it. A ``phone`` different from the\nstored number is saved *unverified* (only the Telegram contact verifies a phone); the same\nnumber keeps its verification; ``null`` removes the phone.",
+        "operationId": "update_profile_api_v1_me_patch",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateProfileRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserEnvelope"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "summary": "Update Profile",
+        "tags": [
+          "me"
+        ]
+      }
+    },
+    "/api/v1/me/addresses": {
+      "get": {
+        "description": "The saved addresses: the default first, then the most recently updated.",
+        "operationId": "list_addresses_api_v1_me_addresses_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SavedAddressList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "summary": "List Addresses",
+        "tags": [
+          "me"
+        ]
+      },
+      "post": {
+        "description": "Save an address (at most 10: ``409 address_limit_reached``). The first one becomes the\ndefault; ``is_default: true`` moves the default to the new address.",
+        "operationId": "create_address_api_v1_me_addresses_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SavedAddressRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SavedAddress"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "summary": "Create Address",
+        "tags": [
+          "me"
+        ]
+      }
+    },
+    "/api/v1/me/addresses/{address_id}": {
+      "delete": {
+        "description": "Delete one of the user's addresses. Deleting the default promotes the most recently\nupdated remaining address.",
+        "operationId": "delete_address_api_v1_me_addresses__address_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "address_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Address Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "summary": "Delete Address",
+        "tags": [
+          "me"
+        ]
+      },
+      "put": {
+        "description": "Replace every field of one of the user's addresses. ``is_default: true`` makes it the\ndefault, ``false`` (on the default) leaves the user without one, omitted keeps it.",
+        "operationId": "replace_address_api_v1_me_addresses__address_id__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "address_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Address Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SavedAddressRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SavedAddress"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "summary": "Replace Address",
+        "tags": [
+          "me"
+        ]
+      }
+    },
     "/api/v1/me/language": {
       "put": {
         "description": "Save the storefront language. The same value the bot uses; the URL locale follows it.",
@@ -6449,7 +7241,7 @@
     },
     "/api/v1/orders": {
       "get": {
-        "description": "The signed-in customer's orders, newest first.",
+        "description": "The signed-in customer's orders, newest first, optionally one tab of the history.\n\n``status_group``: ``active`` (NEW, CONFIRMED, PICKING, READY_FOR_DELIVERY), ``delivering``\n(OUT_FOR_DELIVERY), ``done`` (DELIVERED), ``cancelled`` (CANCELLED) or ``all``; ``total`` and\n``total_pages`` count that group only.",
         "operationId": "list_orders_api_v1_orders_get",
         "parameters": [
           {
@@ -6474,6 +7266,15 @@
               "minimum": 1,
               "title": "Page Size",
               "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "status_group",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/OrderStatusGroup",
+              "default": "all"
             }
           }
         ],

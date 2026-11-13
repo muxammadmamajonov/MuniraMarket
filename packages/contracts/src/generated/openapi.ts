@@ -767,6 +767,81 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/v1/me': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    /**
+     * Update Profile
+     * @description Edit the profile: name, birth date and phone. Only the keys sent are changed.
+     *
+     *     Editing the name stops Telegram sign-ins from overwriting it. A ``phone`` different from the
+     *     stored number is saved *unverified* (only the Telegram contact verifies a phone); the same
+     *     number keeps its verification; ``null`` removes the phone.
+     */
+    patch: operations['update_profile_api_v1_me_patch'];
+    trace?: never;
+  };
+  '/api/v1/me/addresses': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * List Addresses
+     * @description The saved addresses: the default first, then the most recently updated.
+     */
+    get: operations['list_addresses_api_v1_me_addresses_get'];
+    put?: never;
+    /**
+     * Create Address
+     * @description Save an address (at most 10: ``409 address_limit_reached``). The first one becomes the
+     *     default; ``is_default: true`` moves the default to the new address.
+     */
+    post: operations['create_address_api_v1_me_addresses_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/me/addresses/{address_id}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    /**
+     * Replace Address
+     * @description Replace every field of one of the user's addresses. ``is_default: true`` makes it the
+     *     default, ``false`` (on the default) leaves the user without one, omitted keeps it.
+     */
+    put: operations['replace_address_api_v1_me_addresses__address_id__put'];
+    post?: never;
+    /**
+     * Delete Address
+     * @description Delete one of the user's addresses. Deleting the default promotes the most recently
+     *     updated remaining address.
+     */
+    delete: operations['delete_address_api_v1_me_addresses__address_id__delete'];
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/v1/me/language': {
     parameters: {
       query?: never;
@@ -796,7 +871,11 @@ export interface paths {
     };
     /**
      * List Orders
-     * @description The signed-in customer's orders, newest first.
+     * @description The signed-in customer's orders, newest first, optionally one tab of the history.
+     *
+     *     ``status_group``: ``active`` (NEW, CONFIRMED, PICKING, READY_FOR_DELIVERY), ``delivering``
+     *     (OUT_FOR_DELIVERY), ``done`` (DELIVERED), ``cancelled`` (CANCELLED) or ``all``; ``total`` and
+     *     ``total_pages`` count that group only.
      */
     get: operations['list_orders_api_v1_orders_get'];
     put?: never;
@@ -1153,6 +1232,8 @@ export interface components {
         | 'order_status_conflict'
         | 'too_many_open_orders'
         | 'phone_verification_required'
+        | 'address_not_found'
+        | 'address_limit_reached'
         | 'slug_taken'
         | 'sku_taken'
         | 'category_cycle'
@@ -1684,6 +1765,12 @@ export interface components {
       at: string;
       status: components['schemas']['OrderStatus'];
     };
+    /**
+     * OrderStatusGroup
+     * @description Tabs of the customer's order history (``GET /orders?status_group=``).
+     * @enum {string}
+     */
+    OrderStatusGroup: 'all' | 'active' | 'delivering' | 'done' | 'cancelled';
     /** OrderStatusUpdateRequest */
     OrderStatusUpdateRequest: {
       expected_status?: components['schemas']['OrderStatus'] | null;
@@ -1708,8 +1795,24 @@ export interface components {
       /** Number */
       number: string;
       status: components['schemas']['OrderStatus'];
+      /** Thumbnails */
+      thumbnails: components['schemas']['OrderThumbnail'][];
       /** Total Uzs */
       total_uzs: number;
+    };
+    /**
+     * OrderThumbnail
+     * @description One of the first order lines, for the order list card.
+     */
+    OrderThumbnail: {
+      /** Image Url */
+      image_url: string | null;
+      /** Name Ru */
+      name_ru: string;
+      /** Name Uz */
+      name_uz: string;
+      /** Product Id */
+      product_id: string | null;
     };
     /** OutboxMessagePublic */
     OutboxMessagePublic: {
@@ -1918,6 +2021,88 @@ export interface components {
        */
       status: 'ok' | 'unavailable';
     };
+    /** SavedAddress */
+    SavedAddress: {
+      /** Apartment */
+      apartment: string | null;
+      /**
+       * Created At
+       * Format: date-time
+       */
+      created_at: string;
+      /** Entrance */
+      entrance: string | null;
+      /** Floor */
+      floor: string | null;
+      /** House */
+      house: string;
+      /**
+       * Id
+       * Format: uuid
+       */
+      id: string;
+      /** Is Default */
+      is_default: boolean;
+      /** Label */
+      label: string | null;
+      /** Landmark */
+      landmark: string | null;
+      /** Lat */
+      lat: number;
+      /** Lon */
+      lon: number;
+      /** Street */
+      street: string;
+      /**
+       * Updated At
+       * Format: date-time
+       */
+      updated_at: string;
+    };
+    /**
+     * SavedAddressList
+     * @description ``GET /me/addresses``: the default first, then the most recently updated.
+     */
+    SavedAddressList: {
+      /** Items */
+      items: components['schemas']['SavedAddress'][];
+    };
+    /**
+     * SavedAddressRequest
+     * @description Body of ``POST /me/addresses`` and ``PUT /me/addresses/{id}`` (a full replacement).
+     *
+     *     ``is_default: true`` makes this the default address (the previous default is unset);
+     *     ``false`` on the current default leaves the user without a default; omitted keeps the current
+     *     state (a user's first address always becomes the default).
+     */
+    SavedAddressRequest: {
+      /** Apartment */
+      apartment?: string | null;
+      /** Entrance */
+      entrance?: string | null;
+      /** Floor */
+      floor?: string | null;
+      /** House */
+      house: string;
+      /** Is Default */
+      is_default?: boolean;
+      /** Label */
+      label?: string | null;
+      /** Landmark */
+      landmark?: string | null;
+      /**
+       * Lat
+       * @description WGS84 latitude, -90..90
+       */
+      lat: number;
+      /**
+       * Lon
+       * @description WGS84 longitude, -180..180
+       */
+      lon: number;
+      /** Street */
+      street: string;
+    };
     /**
      * SessionResponse
      * @description Returned by every login and by ``GET /auth/session``.
@@ -1947,6 +2132,24 @@ export interface components {
      * @enum {string}
      */
     Unit: 'piece' | 'kg' | 'g' | 'l' | 'ml';
+    /**
+     * UpdateProfileRequest
+     * @description Body of ``PATCH /me``. Every key is optional, but at least one must be sent.
+     *
+     *     ``first_name`` cannot be null; ``last_name``, ``birth_date`` and ``phone`` are cleared by
+     *     ``null``. A ``phone`` different from the stored one is saved *unverified*; the same number
+     *     keeps its verification.
+     */
+    UpdateProfileRequest: {
+      /** Birth Date */
+      birth_date?: string | null;
+      /** First Name */
+      first_name?: string;
+      /** Last Name */
+      last_name?: string | null;
+      /** Phone */
+      phone?: string | null;
+    };
     /** UserEnvelope */
     UserEnvelope: {
       user: components['schemas']['UserPublic'];
@@ -1956,6 +2159,8 @@ export interface components {
      * @description The only user shape exposed to clients (no phone, no internal flags).
      */
     UserPublic: {
+      /** Birth Date */
+      birth_date: string | null;
       /** First Name */
       first_name: string;
       /**
@@ -4517,6 +4722,363 @@ export interface operations {
       };
     };
   };
+  update_profile_api_v1_me_patch: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['UpdateProfileRequest'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['UserEnvelope'];
+        };
+      };
+      /** @description Unauthorized */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Forbidden */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Not Found */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Unprocessable Content */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Too Many Requests */
+      429: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Service Unavailable */
+      503: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+    };
+  };
+  list_addresses_api_v1_me_addresses_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['SavedAddressList'];
+        };
+      };
+      /** @description Unauthorized */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Forbidden */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Service Unavailable */
+      503: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+    };
+  };
+  create_address_api_v1_me_addresses_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['SavedAddressRequest'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['SavedAddress'];
+        };
+      };
+      /** @description Unauthorized */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Forbidden */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Conflict */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Unprocessable Content */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Too Many Requests */
+      429: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Service Unavailable */
+      503: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+    };
+  };
+  replace_address_api_v1_me_addresses__address_id__put: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        address_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['SavedAddressRequest'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['SavedAddress'];
+        };
+      };
+      /** @description Unauthorized */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Forbidden */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Not Found */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Unprocessable Content */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Too Many Requests */
+      429: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Service Unavailable */
+      503: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+    };
+  };
+  delete_address_api_v1_me_addresses__address_id__delete: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        address_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Unauthorized */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Forbidden */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Not Found */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Unprocessable Content */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Too Many Requests */
+      429: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Service Unavailable */
+      503: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+    };
+  };
   set_language_api_v1_me_language_put: {
     parameters: {
       query?: never;
@@ -4600,6 +5162,7 @@ export interface operations {
       query?: {
         page?: number;
         page_size?: number;
+        status_group?: components['schemas']['OrderStatusGroup'];
       };
       header?: never;
       path?: never;

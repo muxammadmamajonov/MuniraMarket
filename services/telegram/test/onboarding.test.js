@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { handleContact } from '../tgcloud/lib/bot/contact.js';
 import { handleCallbackQuery, parseLanguageCallback } from '../tgcloud/lib/bot/onboarding.js';
 import { buildLanguageKeyboard, handleMessage } from '../tgcloud/lib/bot/start.js';
-import { createRecordingApi } from './sdk-fake/api.js';
+import { BotApiError, createRecordingApi } from './sdk-fake/api.js';
 import { createFakeDb } from './sdk-fake/db.js';
 import { createFakeFetch } from './sdk-fake/fetch.js';
 import { ADR_VECTOR, TEST_CONFIG_ROWS, rowsFrom, silentLogger } from './helpers.js';
@@ -191,9 +191,43 @@ describe('/start phone and shared contacts', () => {
       contact_user_id: 555,
       phone_number: PHONE,
     });
-    expect(api.calls[0].params.reply_markup).toEqual({ remove_keyboard: true });
+    expect(api.calls.map((call) => call.method)).toEqual(['deleteMessage', 'sendMessage']);
+    expect(api.calls[0].params).toEqual({ chat_id: 555, message_id: 3 });
+    expect(api.calls[1].params.reply_markup).toEqual({ remove_keyboard: true });
     expect(JSON.stringify(logged)).not.toContain('998');
     expect(JSON.stringify(api.calls)).not.toContain('901234567');
+  });
+
+  it('still confirms when the shared contact message cannot be deleted', async () => {
+    const warnings = [];
+    log = { ...silentLogger(), warn: (...a) => warnings.push(a) };
+    fetch.__setHandler(() => ({ body: user({ phone_verified: true }) }));
+    api.respond('deleteMessage', () => {
+      throw new BotApiError(400, "Bad Request: message can't be deleted", {
+        method: 'deleteMessage',
+      });
+    });
+    const result = await handleContact(
+      contactMessage({ user_id: 555, phone_number: PHONE, first_name: 'Munira' }),
+      deps(),
+    );
+    expect(result).toEqual({ handled: true, verified: true });
+    expect(api.calls.map((call) => call.method)).toEqual(['deleteMessage', 'sendMessage']);
+    expect(api.calls[1].params.reply_markup).toEqual({ remove_keyboard: true });
+    expect(warnings).toEqual([
+      ['contact: shared contact message not deleted:', 'BotApiError code=400'],
+    ]);
+    expect(JSON.stringify(warnings)).not.toContain('998');
+  });
+
+  it('keeps the contact message when the number was not saved', async () => {
+    fetch.__setHandler(() => ({ status: 503, body: '{}' }));
+    const result = await handleContact(
+      contactMessage({ user_id: 555, phone_number: PHONE, first_name: 'Munira' }),
+      deps(),
+    );
+    expect(result).toEqual({ handled: true, verified: false });
+    expect(api.calls.map((call) => call.method)).toEqual(['sendMessage']);
   });
 
   it('refuses someone else’s contact without calling the Core API', async () => {

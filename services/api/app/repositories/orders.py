@@ -31,7 +31,8 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Protocol
 
-from sqlalchemy import delete, func, select, update
+from sqlalchemy import and_, delete, func, select, text, update
+from sqlalchemy.dialects.postgresql import aggregate_order_by
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -53,7 +54,13 @@ from app.domain.checkout import (
     build_quote,
 )
 from app.domain.geo import snapshot_point
-from app.domain.order_status import OrderStatus, can_transition, customer_can_cancel
+from app.domain.order_status import (
+    ORDER_STATUS_GROUP_STATUSES,
+    OrderStatus,
+    OrderStatusGroup,
+    can_transition,
+    customer_can_cancel,
+)
 from app.domain.tashkent import TASHKENT_TZ
 from app.models.cart import Cart, CartItem
 from app.models.catalog import Product
@@ -81,6 +88,8 @@ NUMBER_CONSTRAINT = "uq_orders_number"
 # Crockford-style alphabet without look-alikes (0/O, 1/I/L, U).
 _NUMBER_ALPHABET = "23456789ABCDEFGHJKMNPQRSTVWXYZ"
 _NUMBER_ATTEMPTS = 5
+# Lines shown as thumbnails on an order list card.
+ORDER_THUMBNAIL_LIMIT = 4
 
 
 # --- records --------------------------------------------------------------------------------------
@@ -153,6 +162,16 @@ class OrderRecord:
 
 
 @dataclass(frozen=True, slots=True)
+class OrderThumbnailRecord:
+    # ``None`` once the product has been deleted from the catalog.
+    product_id: uuid.UUID | None
+    name_uz: str
+    name_ru: str
+    # The product's CURRENT image (as in the catalog); ``None`` when gone or without an image.
+    image_url: str | None
+
+
+@dataclass(frozen=True, slots=True)
 class OrderSummaryRecord:
     id: uuid.UUID
     number: str
@@ -160,6 +179,8 @@ class OrderSummaryRecord:
     total_uzs: int
     item_count: int
     created_at: datetime
+    # The first ``ORDER_THUMBNAIL_LIMIT`` lines, in the order the order detail lists them.
+    thumbnails: tuple[OrderThumbnailRecord, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -191,7 +212,12 @@ class OrderRepository(Protocol):
     ) -> CreatedOrder: ...
 
     async def list_for_user(
-        self, user_id: uuid.UUID, *, page: int, page_size: int
+        self,
+        user_id: uuid.UUID,
+        *,
+        page: int,
+        page_size: int,
+        status_group: OrderStatusGroup = OrderStatusGroup.ALL,
     ) -> OrderPageRecord: ...
 
     async def get_for_user(self, user_id: uuid.UUID, order_id: uuid.UUID) -> OrderRecord | None: ...
@@ -220,6 +246,17 @@ class OrderRepository(Protocol):
 
 
 # --- pure helpers ---------------------------------------------------------------------------------
+
+
+def _thumbnail(item: dict[str, Any]) -> OrderThumbnailRecord:
+    """One element of the page query's ``json_agg`` (JSON, so the UUID arrives as text)."""
+    product_id = item["product_id"]
+    return OrderThumbnailRecord(
+        product_id=uuid.UUID(product_id) if product_id is not None else None,
+        name_uz=item["name_uz"],
+        name_ru=item["name_ru"],
+        image_url=item["image_url"],
+    )
 
 
 def line_facts(lines: Sequence[CartLineRecord]) -> list[LineFacts]:
@@ -363,9 +400,17 @@ class SqlAlchemyOrderRepository:
     # --- customer reads / cancel -----------------------------------------------------------------
 
     async def list_for_user(
-        self, user_id: uuid.UUID, *, page: int, page_size: int
+        self,
+        user_id: uuid.UUID,
+        *,
+        page: int,
+        page_size: int,
+        status_group: OrderStatusGroup = OrderStatusGroup.ALL,
     ) -> OrderPageRecord:
-        return await self._page(Order.user_id == user_id, page=page, page_size=page_size)
+        condition = Order.user_id == user_id
+        if status_group is not OrderStatusGroup.ALL:
+            condition = and_(condition, Order.status.in_(ORDER_STATUS_GROUP_STATUSES[status_group]))
+        return await self._page(condition, page=page, page_size=page_size)
 
     async def get_for_user(self, user_id: uuid.UUID, order_id: uuid.UUID) -> OrderRecord | None:
         owned = (
@@ -654,6 +699,11 @@ class SqlAlchemyOrderRepository:
         await self._session.flush()
 
     async def _page(self, condition: Any, *, page: int, page_size: int) -> OrderPageRecord:
+        """One page of order summaries, newest first, with each order's thumbnails.
+
+        Two statements whatever the page size: the count, and the page itself, whose thumbnails
+        come from a correlated ``json_agg`` subquery (no query per order).
+        """
         conditions = [] if condition is None else [condition]
         total = (
             await self._session.execute(select(func.count()).select_from(Order).where(*conditions))
@@ -661,6 +711,47 @@ class SqlAlchemyOrderRepository:
         offset = (page - 1) * page_size
         if offset >= total:
             return OrderPageRecord(items=(), total=total)
+        first_lines = (
+            select(
+                OrderItem.id,
+                OrderItem.product_id,
+                OrderItem.name_uz,
+                OrderItem.name_ru,
+                Product.image_url,
+            )
+            .select_from(OrderItem)
+            .outerjoin(Product, Product.id == OrderItem.product_id)
+            .where(OrderItem.order_id == Order.id)
+            .order_by(OrderItem.name_uz, OrderItem.id)
+            .limit(ORDER_THUMBNAIL_LIMIT)
+            .correlate(Order)
+            .subquery("first_lines")
+        )
+        thumbnails = (
+            select(
+                func.coalesce(
+                    func.json_agg(
+                        aggregate_order_by(
+                            func.json_build_object(
+                                "product_id",
+                                first_lines.c.product_id,
+                                "name_uz",
+                                first_lines.c.name_uz,
+                                "name_ru",
+                                first_lines.c.name_ru,
+                                "image_url",
+                                first_lines.c.image_url,
+                            ),
+                            first_lines.c.name_uz,
+                            first_lines.c.id,
+                        )
+                    ),
+                    text("'[]'::json"),
+                )
+            )
+            .select_from(first_lines)
+            .scalar_subquery()
+        )
         rows = (
             await self._session.execute(
                 select(
@@ -670,6 +761,7 @@ class SqlAlchemyOrderRepository:
                     Order.total_uzs,
                     Order.item_count,
                     Order.created_at,
+                    thumbnails.label("thumbnails"),
                 )
                 .where(*conditions)
                 .order_by(Order.created_at.desc(), Order.id.desc())
@@ -686,6 +778,7 @@ class SqlAlchemyOrderRepository:
                     total_uzs=row.total_uzs,
                     item_count=row.item_count,
                     created_at=row.created_at,
+                    thumbnails=tuple(_thumbnail(item) for item in row.thumbnails),
                 )
                 for row in rows
             ),

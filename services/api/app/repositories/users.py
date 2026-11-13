@@ -2,9 +2,11 @@
 
 import uuid
 from dataclasses import dataclass
-from typing import Protocol
+from datetime import date
+from enum import Enum
+from typing import Any, Final, Literal, Protocol
 
-from sqlalchemy import func, select, update
+from sqlalchemy import case, func, select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -26,8 +28,29 @@ class UserRecord:
     language_confirmed: bool = False
     # Account phone verified (Telegram contact or OTP). The number itself never leaves the API.
     phone_verified: bool = False
-    # Masked verified phone for the owner's own profile (``+998 •• ••• 45 67``), else ``None``.
+    # Masked account phone (verified or typed in the profile) for the owner's own profile
+    # (``+998 •• ••• 45 67``), else ``None``. ``phone_verified`` says whether it is verified.
     phone_hint: str | None = None
+    birth_date: date | None = None
+
+
+class _Unset(Enum):
+    UNSET = "UNSET"
+
+
+UNSET: Final = _Unset.UNSET
+Unset = Literal[_Unset.UNSET]
+
+
+@dataclass(frozen=True, slots=True)
+class ProfileUpdate:
+    """``PATCH /me``: only the keys the request contained; ``UNSET`` means "not sent"."""
+
+    first_name: str | Unset = UNSET
+    last_name: str | Unset | None = UNSET
+    birth_date: date | Unset | None = UNSET
+    # Normalised ``+998XXXXXXXXX``, or ``None`` to remove the phone (and its verification).
+    phone: str | Unset | None = UNSET
 
 
 @dataclass(frozen=True, slots=True)
@@ -91,6 +114,10 @@ class UserRepository(Protocol):
         self, telegram_user_id: int, phone: str
     ) -> UserRecord | None: ...
 
+    async def update_profile(
+        self, user_id: uuid.UUID, changes: ProfileUpdate
+    ) -> UserRecord | None: ...
+
 
 def _to_record(user: User) -> UserRecord:
     return UserRecord(
@@ -104,7 +131,8 @@ def _to_record(user: User) -> UserRecord:
         is_blocked=user.is_blocked,
         language_confirmed=user.language_confirmed_at is not None,
         phone_verified=user.phone_verified_at is not None,
-        phone_hint=phone_hint(user.phone) if user.phone_verified_at is not None else None,
+        phone_hint=phone_hint(user.phone),
+        birth_date=user.birth_date,
     )
 
 
@@ -116,7 +144,9 @@ class SqlAlchemyUserRepository:
         """Insert or refresh the user in one atomic statement and commit.
 
         The language is taken from Telegram only when a user is first created, so a language the
-        user later picks inside the shop is not overwritten on every sign-in.
+        user later picks inside the shop is not overwritten on every sign-in. Likewise the name:
+        once the user edited it in the shop (``name_edited_at``), Telegram no longer overwrites
+        ``first_name`` / ``last_name``; ``username`` is always refreshed.
         """
         language = language_from_code(profile.language_code) or Language.UZ
         insert_stmt = insert(User).values(
@@ -129,8 +159,14 @@ class SqlAlchemyUserRepository:
         statement = insert_stmt.on_conflict_do_update(
             index_elements=[User.telegram_user_id],
             set_={
-                "first_name": insert_stmt.excluded.first_name,
-                "last_name": insert_stmt.excluded.last_name,
+                "first_name": case(
+                    (User.name_edited_at.is_(None), insert_stmt.excluded.first_name),
+                    else_=User.first_name,
+                ),
+                "last_name": case(
+                    (User.name_edited_at.is_(None), insert_stmt.excluded.last_name),
+                    else_=User.last_name,
+                ),
                 "username": insert_stmt.excluded.username,
                 "updated_at": func.now(),
             },
@@ -178,6 +214,43 @@ class SqlAlchemyUserRepository:
             .returning(User)
         )
         user = (await self._session.execute(statement)).scalar_one_or_none()
+        record = _to_record(user) if user else None
+        await self._session.commit()
+        return record
+
+    async def update_profile(self, user_id: uuid.UUID, changes: ProfileUpdate) -> UserRecord | None:
+        """Apply ``PATCH /me`` in one atomic UPDATE and commit.
+
+        Writing either name part marks the name as user-edited. A phone equal to the stored one
+        changes nothing (its verification is kept); a different number is stored unverified;
+        ``None`` removes the phone and its verification. Every ``CASE`` reads the row as it was
+        before this statement.
+        """
+        values: dict[str, Any] = {"updated_at": func.now()}
+        if changes.first_name is not UNSET:
+            values["first_name"] = changes.first_name
+        if changes.last_name is not UNSET:
+            values["last_name"] = changes.last_name
+        if changes.first_name is not UNSET or changes.last_name is not UNSET:
+            values["name_edited_at"] = func.now()
+        if changes.birth_date is not UNSET:
+            values["birth_date"] = changes.birth_date
+        if changes.phone is not UNSET:
+            if changes.phone is None:
+                values.update(phone=None, phone_verified_at=None, phone_verification_method=None)
+            else:
+                same = User.phone == changes.phone
+                values.update(
+                    phone=changes.phone,
+                    phone_verified_at=case((same, User.phone_verified_at), else_=None),
+                    phone_verification_method=case(
+                        (same, User.phone_verification_method), else_=None
+                    ),
+                )
+        statement = update(User).where(User.id == user_id).values(**values).returning(User)
+        user = (
+            await self._session.execute(statement, execution_options={"populate_existing": True})
+        ).scalar_one_or_none()
         record = _to_record(user) if user else None
         await self._session.commit()
         return record

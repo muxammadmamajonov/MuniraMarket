@@ -4,6 +4,7 @@ import {
   type CreateOrderRequest,
   type OrderDetail,
   type OrderPage,
+  type OrderStatusGroup,
 } from '@muniramarket/contracts';
 import type { ApiFetch } from './cart';
 import { ApiRequestError, readJson } from './errors';
@@ -68,6 +69,8 @@ export async function createOrder(
 export interface ListOrdersParams {
   page?: number;
   pageSize?: number;
+  /** Status filter; `all` (the API default) is not sent. */
+  statusGroup?: OrderStatusGroup;
 }
 
 /** `GET /orders`: the signed-in customer's orders, newest first. */
@@ -75,6 +78,9 @@ export function listOrders(apiFetch: ApiFetch, params: ListOrdersParams = {}): P
   const search = new URLSearchParams();
   if (params.page !== undefined) search.set('page', String(params.page));
   if (params.pageSize !== undefined) search.set('page_size', String(params.pageSize));
+  if (params.statusGroup !== undefined && params.statusGroup !== 'all') {
+    search.set('status_group', params.statusGroup);
+  }
   const query = search.toString();
   return requestJson<OrderPage>(apiFetch, `/orders${query === '' ? '' : `?${query}`}`, {
     method: 'GET',

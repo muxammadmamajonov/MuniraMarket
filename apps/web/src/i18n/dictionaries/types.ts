@@ -443,25 +443,15 @@ export interface Dictionary {
   };
   profile: {
     title: string;
-    /** Section with the signed-in account. */
-    accountHeading: string;
     /** Shown while the session is still being checked. */
     checking: string;
     anonymousTitle: string;
     /** Why to sign in; the sign-in control itself is the shared `SignInPrompt`. */
     anonymousText: string;
-    ordersLink: string;
-    ordersHint: string;
-    languageHeading: string;
     /** Under the language choice: it is one setting shared with the bot. */
     languageHint: string;
     /** Inline error when the language could not be saved. */
     languageFailed: string;
-    /** Under the name: the account is the Telegram account. */
-    telegramAccount: string;
-    settingsHeading: string;
-    helpLink: string;
-    helpHint: string;
     /** Footer line in the Mini App: no sign-out, the Telegram account is the session. */
     miniAppSession: string;
   };
@@ -513,6 +503,132 @@ export interface Dictionary {
     emptyTitle: string;
     emptyHint: string;
   };
+  /** The profile hub: grouped rows that open each settings page. */
+  account: {
+    accountSection: string;
+    settingsSection: string;
+    supportSection: string;
+    personalLink: string;
+    ordersLink: string;
+    addressesLink: string;
+    languageLink: string;
+    helpLink: string;
+    /** Under the name when the account has no phone yet. */
+    phoneMissing: string;
+    logout: string;
+  };
+  /** `/<locale>/profile/personal`: name, birthday and phone. */
+  personal: {
+    nameSection: string;
+    firstName: string;
+    lastName: string;
+    optional: string;
+    firstNameRequired: string;
+    /** `{max}` characters. */
+    tooLong: string;
+    singleLine: string;
+    birthDate: string;
+    birthPlaceholder: string;
+    openCalendar: string;
+    pickerDone: string;
+    pickerDay: string;
+    pickerMonth: string;
+    pickerYear: string;
+    /** January..December, as shown in the date wheel. */
+    months: readonly string[];
+    birthIncomplete: string;
+    birthInvalid: string;
+    birthFuture: string;
+    birthTooOld: string;
+    save: string;
+    saving: string;
+    saved: string;
+    saveFailed: string;
+    phoneSection: string;
+    phoneNone: string;
+    verifiedBadge: string;
+    unverifiedBadge: string;
+    /** A typed number is not verified; ordering needs the Telegram contact. */
+    unverifiedHint: string;
+    changePhone: string;
+    addPhone: string;
+    phoneSheetTitle: string;
+    phoneSheetText: string;
+    shareContact: string;
+    shareHint: string;
+    orDivider: string;
+    manualLabel: string;
+    manualHint: string;
+    phoneIncomplete: string;
+    phoneInvalid: string;
+    savePhone: string;
+    phoneSaved: string;
+    close: string;
+  };
+  /** `/<locale>/profile/addresses` and the saved-address chooser. */
+  addresses: {
+    loading: string;
+    loadFailed: string;
+    retry: string;
+    emptyTitle: string;
+    emptyHint: string;
+    add: string;
+    delete: string;
+    /** Accessible name of a row's delete action; `{label}` is the address name or line. */
+    deleteNamed: string;
+    deleted: string;
+    deleteFailed: string;
+    isDefault: string;
+    makeDefault: string;
+    labelSection: string;
+    labelHome: string;
+    labelWork: string;
+    labelOther: string;
+    labelPlaceholder: string;
+    untitled: string;
+    /** `{max}` addresses. */
+    limitReached: string;
+    pointSection: string;
+    chooseOnMap: string;
+    changeOnMap: string;
+    needPoint: string;
+    save: string;
+    saving: string;
+    saved: string;
+    saveFailed: string;
+    notFound: string;
+    deleteTitle: string;
+    deleteText: string;
+    keep: string;
+    close: string;
+    chooserTitle: string;
+    newAddress: string;
+    saveForLater: string;
+    savedToList: string;
+    /** Swipe hint for screen readers / keyboard: the delete button follows each row. */
+    rowActionsHint: string;
+  };
+  /** Status filter on the orders page. */
+  orderTabs: {
+    label: string;
+    all: string;
+    active: string;
+    delivering: string;
+    done: string;
+    cancelled: string;
+    emptyAll: string;
+    emptyAllHint: string;
+    emptyActive: string;
+    emptyActiveHint: string;
+    emptyDelivering: string;
+    emptyDeliveringHint: string;
+    emptyDone: string;
+    emptyDoneHint: string;
+    emptyCancelled: string;
+    emptyCancelledHint: string;
+    /** Extra items beyond the thumbnails, e.g. `+3`. */
+    moreItems: string;
+  };
   /**
    * Page titles shown in the header slot (Telegram's own top row in fullscreen), so they must be
    * short: the slot is about 120px wide on a 320px phone and longer text is cut with an ellipsis.
@@ -527,6 +643,11 @@ export interface Dictionary {
     order: string;
     profile: string;
     help: string;
+    personal: string;
+    addresses: string;
+    address: string;
+    newAddress: string;
+    language: string;
     signIn: string;
     notFound: string;
     error: string;

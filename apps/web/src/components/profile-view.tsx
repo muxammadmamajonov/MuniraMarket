@@ -1,16 +1,24 @@
 'use client';
 
-import { Button, Skeleton } from '@muniramarket/ui';
+import { Skeleton } from '@muniramarket/ui';
 import Link from 'next/link';
-import { useState, type ReactNode } from 'react';
+import { useState } from 'react';
 import { useI18n } from '@/i18n/context';
 import { useSession } from '@/lib/session';
 import { useTelegram } from '@/lib/telegram';
-import { ChevronRightIcon, GlobeIcon, HelpIcon, ReceiptIcon, TelegramIcon } from './icons';
-import { LanguageSetting } from './language-setting';
-import { PhoneCard } from './phone-card';
+import {
+  ChevronRightIcon,
+  GlobeIcon,
+  HelpIcon,
+  IdCardIcon,
+  LogOutIcon,
+  PinIcon,
+  ReceiptIcon,
+  TelegramIcon,
+} from './icons';
+import { SettingsButtonRow, SettingsGroup, SettingsLinkRow } from './profile/settings-list';
 import { SignInPrompt } from './sign-in-prompt';
-import { CARD, FOCUS_RING, PRESS } from './ui-classes';
+import { FOCUS_RING, GROUP } from './ui-classes';
 
 /** First user-perceived character (a whole emoji or accented letter), upper-cased. */
 export function initialOf(name: string): string {
@@ -26,92 +34,65 @@ export function initialOf(name: string): string {
   return (Array.from(trimmed)[0] ?? '').toLocaleUpperCase();
 }
 
-function NavRow({
-  href,
-  icon,
-  title,
-  hint,
-}: {
-  href: string;
-  icon: ReactNode;
-  title: string;
-  hint: string;
-}) {
-  return (
-    <Link
-      href={href}
-      className={`flex min-h-16 items-center gap-3 px-4 py-3 hover:bg-surface-muted ${PRESS} ${FOCUS_RING}`}
-    >
-      <span
-        aria-hidden="true"
-        className="flex size-10 shrink-0 items-center justify-center rounded-full bg-brand-soft text-brand-ink"
-      >
-        {icon}
-      </span>
-      <span className="flex min-w-0 flex-1 flex-col">
-        <span className="font-semibold">{title}</span>
-        <span className="truncate text-sm text-muted-foreground">{hint}</span>
-      </span>
-      <ChevronRightIcon aria-hidden="true" className="shrink-0 text-muted-foreground" />
-    </Link>
-  );
-}
-
 /**
- * The Profile tab, built only from the current session:
+ * The Profile tab: a settings hub in the native grouped-list style. Each row opens its own page
+ * (with its title in the header slot and Telegram's BackButton):
  *
- * - signed in: who you are (Telegram account), the verified phone (share / update through
- *   Telegram), shortcuts to orders and help, and the language — the one place it is changed.
- *   In a browser there is also "sign out"; inside the Mini App the Telegram account IS the
- *   session, so there is nothing to sign out of.
- * - not signed in: the branded sign-in screen, plus the language (kept in the browser).
+ * - the account card -> personal details (name, birthday, phone);
+ * - My orders (filtered by status), My addresses (saved delivery addresses);
+ * - Language (one setting shared with the bot), Help;
+ * - in a browser, sign out. Inside the Mini App the Telegram account IS the session.
  *
- * Nothing else: no invented account features.
+ * Signed out, the branded sign-in screen comes first and only Language and Help remain.
  */
 export function ProfileView() {
   const { dict, locale } = useI18n();
-  const t = dict.profile;
+  const t = dict.account;
   const { status, user, logout } = useSession();
   const telegram = useTelegram();
   const [pending, setPending] = useState(false);
+  const base = `/${locale}/profile`;
 
-  const language = (
-    <section aria-labelledby="profile-language" className={`${CARD} flex flex-col gap-3`}>
-      <h2 id="profile-language" className="flex items-center gap-2 font-semibold">
-        <GlobeIcon width={18} height={18} aria-hidden="true" className="text-muted-foreground" />
-        {t.languageHeading}
-      </h2>
-      <LanguageSetting />
-    </section>
+  const settings = (
+    <SettingsGroup title={t.settingsSection} labelledBy="profile-settings">
+      <SettingsLinkRow
+        href={`${base}/language`}
+        testId="profile-language-row"
+        icon={<GlobeIcon />}
+        tone="muted"
+        title={t.languageLink}
+        value={dict.language[locale]}
+      />
+    </SettingsGroup>
   );
 
-  const help = (
-    <nav aria-label={t.settingsHeading} className="overflow-hidden rounded-3xl bg-surface">
-      <NavRow
+  const support = (
+    <SettingsGroup title={t.supportSection} labelledBy="profile-support">
+      <SettingsLinkRow
         href={`/${locale}/help`}
-        icon={<HelpIcon width={20} height={20} />}
+        icon={<HelpIcon />}
+        tone="muted"
         title={t.helpLink}
-        hint={t.helpHint}
       />
-    </nav>
+    </SettingsGroup>
   );
 
   if (status === 'loading') {
     return (
-      <div role="status" aria-label={t.checking} className="flex flex-col gap-3">
-        <Skeleton className="h-24 w-full rounded-3xl bg-surface" />
-        <Skeleton className="h-32 w-full rounded-3xl bg-surface" />
-        <Skeleton className="h-16 w-full rounded-3xl bg-surface" />
+      <div role="status" aria-label={dict.profile.checking} className="flex flex-col gap-6">
+        <Skeleton className="h-[88px] w-full rounded-3xl bg-surface" />
+        <Skeleton className="h-40 w-full rounded-3xl bg-surface" />
+        <Skeleton className="h-14 w-full rounded-3xl bg-surface" />
       </div>
     );
   }
 
   if (status !== 'authenticated' || user === null) {
     return (
-      <div data-testid="profile-anonymous" className="flex flex-col gap-4">
+      <div data-testid="profile-anonymous" className="flex flex-col gap-6">
         <SignInPrompt variant="screen" />
-        {language}
-        {help}
+        {settings}
+        {support}
       </div>
     );
   }
@@ -119,76 +100,99 @@ export function ProfileView() {
   const fullName = [user.first_name, user.last_name ?? ''].join(' ').trim();
 
   return (
-    <div data-testid="profile-authenticated" className="flex flex-col gap-3">
-      <section
-        aria-label={t.accountHeading}
-        className="relative isolate flex items-center gap-4 overflow-hidden rounded-3xl bg-surface p-4"
+    <div data-testid="profile-authenticated" className="flex flex-col gap-6">
+      <Link
+        href={`${base}/personal`}
+        aria-label={`${fullName}. ${t.personalLink}`}
+        data-testid="profile-card"
+        className={`${GROUP} flex items-center gap-4 p-4 transition-colors duration-150 hover:bg-surface-muted active:bg-surface-muted ${FOCUS_RING}`}
       >
-        <div
-          aria-hidden="true"
-          className="absolute inset-y-0 left-0 -z-10 w-40 bg-gradient-to-r from-brand-soft to-transparent"
-        />
         <span
           aria-hidden="true"
-          className="flex size-14 shrink-0 items-center justify-center rounded-full bg-primary text-xl font-bold text-primary-foreground"
+          className="flex size-16 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-primary to-primary-hover text-2xl font-bold text-primary-foreground shadow-[inset_0_-2px_0_rgb(0_0_0/0.12)]"
         >
           {initialOf(fullName)}
         </span>
-        <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-          <p
+        <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+          <span
             data-testid="profile-name"
             data-user-text
-            className="line-clamp-2 text-lg font-bold leading-tight"
+            className="line-clamp-2 text-xl leading-6 font-bold tracking-[-0.01em]"
           >
             {fullName}
-          </p>
-          <p className="flex min-w-0 items-center gap-1.5 text-sm text-muted-foreground">
-            <TelegramIcon width={14} height={14} aria-hidden="true" className="shrink-0" />
-            <span className="truncate">
-              {user.username ? `@${user.username}` : t.telegramAccount}
-            </span>
-          </p>
-        </div>
-      </section>
+          </span>
+          <span className="flex min-w-0 items-center gap-1.5 text-[15px] text-muted-foreground">
+            {user.phone_hint ? (
+              <span data-money data-testid="profile-phone" className="truncate">
+                {user.phone_hint}
+              </span>
+            ) : user.username ? (
+              <>
+                <TelegramIcon width={14} height={14} aria-hidden="true" className="shrink-0" />
+                <span className="truncate">@{user.username}</span>
+              </>
+            ) : (
+              <span className="truncate">{t.phoneMissing}</span>
+            )}
+          </span>
+        </span>
+        <ChevronRightIcon
+          aria-hidden="true"
+          width={18}
+          height={18}
+          className="shrink-0 text-muted-foreground/70"
+        />
+      </Link>
 
-      <PhoneCard />
-
-      <nav
-        aria-label={t.accountHeading}
-        className="divide-y divide-hairline overflow-hidden rounded-3xl bg-surface"
-      >
-        <NavRow
+      <SettingsGroup title={t.accountSection} labelledBy="profile-account">
+        <SettingsLinkRow
+          href={`${base}/personal`}
+          testId="profile-personal-row"
+          icon={<IdCardIcon />}
+          tone="brand"
+          title={t.personalLink}
+        />
+        <SettingsLinkRow
           href={`/${locale}/orders`}
-          icon={<ReceiptIcon width={20} height={20} />}
+          testId="profile-orders-row"
+          icon={<ReceiptIcon />}
+          tone="ink"
           title={t.ordersLink}
-          hint={t.ordersHint}
         />
-        <NavRow
-          href={`/${locale}/help`}
-          icon={<HelpIcon width={20} height={20} />}
-          title={t.helpLink}
-          hint={t.helpHint}
+        <SettingsLinkRow
+          href={`${base}/addresses`}
+          testId="profile-addresses-row"
+          icon={<PinIcon />}
+          tone="ink"
+          title={t.addressesLink}
         />
-      </nav>
+      </SettingsGroup>
 
-      {language}
+      {settings}
+      {support}
 
       {telegram.kind === 'telegram' ? (
-        <p className="text-center text-sm text-muted-foreground">{t.miniAppSession}</p>
+        <p className="px-4 text-center text-[13px] text-muted-foreground">
+          {dict.profile.miniAppSession}
+        </p>
       ) : (
-        <Button
-          variant="secondary"
-          disabled={pending}
-          onClick={() => {
-            setPending(true);
-            // A failed logout leaves the session in place; the button becomes usable again.
-            void logout()
-              .catch(() => undefined)
-              .finally(() => setPending(false));
-          }}
-        >
-          {dict.auth.logout}
-        </Button>
+        <SettingsGroup>
+          <SettingsButtonRow
+            onClick={() => {
+              setPending(true);
+              // A failed logout leaves the session in place; the row becomes usable again.
+              void logout()
+                .catch(() => undefined)
+                .finally(() => setPending(false));
+            }}
+            disabled={pending}
+            danger
+            chevron={false}
+            icon={<LogOutIcon />}
+            tone="soft"
+            title={t.logout}
+          />
+        </SettingsGroup>
       )}
     </div>
   );
