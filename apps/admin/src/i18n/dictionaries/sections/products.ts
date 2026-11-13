@@ -52,6 +52,8 @@ export interface ProductsDict {
       oldPriceHint: string;
       stock: string;
       stockHint: string;
+      safetyStock: string;
+      safetyStockHint: string;
       sortOrder: string;
       sortOrderHint: string;
       imageUrl: string;
@@ -132,6 +134,9 @@ export const productsDict: Record<Locale, ProductsDict> = {
         oldPriceHint: 'Chegirmani ko‘rsatish uchun: joriy narxdan katta bo‘lishi kerak.',
         stock: 'Qoldiq',
         stockHint: 'Bo‘sh qoldirilsa, qoldiq hisobga olinmaydi (cheksiz).',
+        safetyStock: 'Do‘kon uchun zaxira',
+        safetyStockHint:
+          'Shuncha birlik onlayn sotilmaydi: kassadagi xaridorlar uchun qoladi. Onlayn sotiladi: {sellable}.',
         sortOrder: 'Saralash tartibi',
         sortOrderHint: 'Kichik raqam yuqorida turadi.',
         imageUrl: 'Rasm manzili',
@@ -223,6 +228,9 @@ export const productsDict: Record<Locale, ProductsDict> = {
         oldPriceHint: 'Чтобы показать скидку: должна быть больше текущей цены.',
         stock: 'Остаток',
         stockHint: 'Если оставить пустым, остаток не учитывается (без ограничений).',
+        safetyStock: 'Резерв для магазина',
+        safetyStockHint:
+          'Столько единиц не продаётся онлайн: остаётся для покупателей на кассе. Онлайн доступно: {sellable}.',
         sortOrder: 'Порядок сортировки',
         sortOrderHint: 'Меньшее число — выше в списке.',
         imageUrl: 'Адрес изображения',

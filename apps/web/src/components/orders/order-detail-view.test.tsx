@@ -422,6 +422,8 @@ describe('OrderDetailView: worst-case data (break-ui)', () => {
       unit: 'kg' as const,
       unit_price_uzs: 199_999_980,
       quantity: 99,
+      original_quantity: 99,
+      adjusted: false,
       line_total_uzs: 99 * 199_999_980,
     }));
     routes[`GET /orders/${ID}`] = () =>

@@ -13,6 +13,8 @@ import { SKU_PATTERN, SLUG_PATTERN } from './slug';
 
 export const MAX_PRICE = 1_000_000_000_000;
 export const MAX_STOCK = 1_000_000;
+/** Upper bound of `safety_stock`, as the API validates it. */
+export const MAX_SAFETY_STOCK = 1_000_000;
 export const MAX_SORT = 100_000;
 
 /** The name of a catalog entity in the UI language. */
@@ -118,6 +120,8 @@ export interface ProductFormValues {
   price: string;
   old_price: string;
   stock: string;
+  /** Units kept for walk-in customers (ADR 0018); empty means 0. */
+  safety: string;
   sort_order: string;
   image_url: string;
   is_active: boolean;
@@ -138,6 +142,7 @@ export function emptyProductForm(): ProductFormValues {
     price: '',
     old_price: '',
     stock: '',
+    safety: '',
     sort_order: '0',
     image_url: '',
     is_active: true,
@@ -157,6 +162,7 @@ export function productToForm(product: AdminProduct): ProductFormValues {
     price: String(product.price_uzs),
     old_price: product.old_price_uzs === null ? '' : String(product.old_price_uzs),
     stock: product.stock_quantity === null ? '' : String(product.stock_quantity),
+    safety: product.safety_stock === 0 ? '' : String(product.safety_stock),
     sort_order: String(product.sort_order),
     image_url: product.image_url ?? '',
     is_active: product.is_active,
@@ -200,6 +206,9 @@ export function validateProductForm(values: ProductFormValues): FormProblems {
   if (parseIntegerField(values.stock, { min: 0, max: MAX_STOCK }) === 'invalid') {
     problems.stock_quantity = 'invalid';
   }
+  if (parseIntegerField(values.safety, { min: 0, max: MAX_SAFETY_STOCK }) === 'invalid') {
+    problems.safety_stock = 'invalid';
+  }
   const sort = parseIntegerField(values.sort_order, { min: -MAX_SORT, max: MAX_SORT });
   if (sort === 'invalid' || sort === null)
     problems.sort_order = sort === null ? 'required' : 'invalid';
@@ -233,6 +242,7 @@ export function buildCreateRequest(values: ProductFormValues): ProductCreateRequ
     price_uzs: intOrNull(values.price, 0, MAX_PRICE) ?? 0,
     old_price_uzs: intOrNull(values.old_price, 0, MAX_PRICE),
     stock_quantity: intOrNull(values.stock, 0, MAX_STOCK),
+    safety_stock: intOrNull(values.safety, 0, MAX_SAFETY_STOCK) ?? 0,
     is_active: values.is_active,
     sort_order: intOrNull(values.sort_order, -MAX_SORT, MAX_SORT) ?? 0,
     image_url: orNull(values.image_url),

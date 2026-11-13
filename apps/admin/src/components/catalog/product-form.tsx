@@ -14,6 +14,7 @@ import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useMemo, useRef, useState, type FormEvent } from 'react';
 import { useI18n } from '@/i18n/context';
+import { formatMessage } from '@/i18n/format';
 import type { FieldKey } from '@/i18n/dictionaries/sections/shared';
 import { readErrorMessage, writeErrorMessage } from '@/lib/api/error-messages';
 import { FORM_LEVEL, fieldErrorsFrom } from '@/lib/api/field-errors';
@@ -31,6 +32,7 @@ import {
   validateProductForm,
   type ProductFormValues,
 } from '@/lib/catalog';
+import { formatCount } from '@/lib/format';
 import { parseIntegerField } from '@/lib/numbers';
 import { ownPhotoPath } from '@/lib/photo';
 import { slugFromSku } from '@/lib/slug';
@@ -128,6 +130,13 @@ function ProductForm({ categories, product: initial, onReload, created }: FormPr
   const unitOptions = PRODUCT_UNITS.map((unit) => ({ value: unit, label: dict.units[unit] }));
 
   const price = parseIntegerField(values.price, { min: 0, max: 1e12 });
+  // What the storefront may sell: physical stock minus the units kept for walk-in shoppers.
+  const stockNow = parseIntegerField(values.stock, { min: 0, max: 1e6 });
+  const safetyNow = parseIntegerField(values.safety, { min: 0, max: 1e6 });
+  const sellableLabel =
+    typeof stockNow === 'number'
+      ? formatCount(Math.max(stockNow - (typeof safetyNow === 'number' ? safetyNow : 0), 0))
+      : dict.products.stockUntracked;
   const imageUrl = values.image_url.trim();
   // The admin CSP forbids external images, so the URL is never handed to the preview until image
   // storage is enabled (`isImagePreviewEnabled`).
@@ -456,6 +465,22 @@ function ProductForm({ categories, product: initial, onReload, created }: FormPr
                     set('stock', value);
                   }),
                   name: 'stock_quantity',
+                }}
+              />
+              <TextField
+                label={copy.fields.safetyStock}
+                optionalLabel={dict.common.optional}
+                hint={formatMessage(copy.fields.safetyStockHint, {
+                  sellable: sellableLabel,
+                })}
+                error={errorFor('safety_stock')}
+                testId="safety-stock-input"
+                input={{
+                  ...integerInputAttrs(values.safety, (value) => {
+                    clearServer('safety_stock');
+                    set('safety', value);
+                  }),
+                  name: 'safety_stock',
                 }}
               />
               <TextField

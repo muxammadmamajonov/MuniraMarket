@@ -75,6 +75,7 @@ export type FieldKey =
   | 'price_uzs'
   | 'old_price_uzs'
   | 'stock_quantity'
+  | 'safety_stock'
   | 'sort_order'
   | 'image_url';
 
@@ -265,6 +266,7 @@ const validation: Record<Locale, ValidationDict> = {
       price_uzs: '0 dan 1 000 000 000 000 gacha butun son.',
       old_price_uzs: 'Joriy narxdan katta butun son yoki bo‘sh qoldiring.',
       stock_quantity: '0 dan 1 000 000 gacha butun son yoki bo‘sh (hisobsiz).',
+      safety_stock: 'Butun son, 0 dan 1 000 000 gacha.',
       sort_order: '−100 000 dan 100 000 gacha butun son.',
       image_url: 'Faqat https:// manzil, 2048 belgigacha, IP va localhost bo‘lmasin.',
     },
@@ -286,6 +288,7 @@ const validation: Record<Locale, ValidationDict> = {
       price_uzs: 'Целое число от 0 до 1 000 000 000 000.',
       old_price_uzs: 'Целое число больше текущей цены или оставьте пустым.',
       stock_quantity: 'Целое число от 0 до 1 000 000 или пусто (без учёта остатков).',
+      safety_stock: 'Целое число от 0 до 1 000 000.',
       sort_order: 'Целое число от −100 000 до 100 000.',
       image_url: 'Только адрес https://, до 2048 символов, без IP-адреса и localhost.',
     },
