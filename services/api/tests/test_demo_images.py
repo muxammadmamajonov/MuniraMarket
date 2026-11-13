@@ -106,6 +106,10 @@ def test_every_photo_has_both_sizes_and_a_licence_record(folder: str) -> None:
             # Re-encoded without metadata: no EXIF/XMP chunks.
             assert b"EXIF" not in data[:4096], file
             assert b"XMP " not in data[:4096], file
+            # A cut-out: extended WebP with an alpha channel, so the storefront's CSS tile shows
+            # through in light and dark mode (VP8X header, alpha flag 0x10).
+            assert data[12:16] == b"VP8X", file
+            assert data[20] & 0x10, file
         assert rows.get(name, "").startswith(ALLOWED_PAGES), name
     assert set(rows) == {Path(path).name for path in images.values()}
 

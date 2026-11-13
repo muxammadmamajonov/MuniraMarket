@@ -7,6 +7,16 @@
  */
 const OWN_PHOTO = /^(?:https:\/\/[a-z0-9.-]+)?\/(?:products|categories)\/[a-z0-9-]+\.webp$/;
 
+/**
+ * Our own photos are product cut-outs: a transparent WebP, the product alone, centred with even
+ * padding. They are shown whole on the CSS tile (`.mm-photo[data-cutout]`), which supplies the
+ * backdrop and the shadow, so one file works in light and dark mode. Anything else is an ordinary
+ * photo with its own background and fills its box.
+ */
+export function isCutout(src: string): boolean {
+  return OWN_PHOTO.test(src);
+}
+
 export function photoSrcSet(src: string): string | undefined {
   if (!OWN_PHOTO.test(src) || src.endsWith('-400.webp')) return undefined;
   return `${src.replace(/\.webp$/, '-400.webp')} 400w, ${src} 800w`;
@@ -21,5 +31,5 @@ export const PHOTO_SIZES = {
   /** Cart line thumbnail. */
   thumb: '72px',
   /** Category rail and mosaic tiles. */
-  category: '104px',
+  category: '148px',
 } as const;

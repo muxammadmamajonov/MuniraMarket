@@ -1,7 +1,7 @@
 import type { CategoryNode, Locale } from '@muniramarket/contracts';
 import Link from 'next/link';
 import { localizedName } from '@/lib/catalog';
-import { PHOTO_SIZES } from '@/lib/photo';
+import { PHOTO_SIZES, isCutout } from '@/lib/photo';
 import { toneFor } from '@/lib/placeholder';
 import { CategoryIcon, categoryIconFor } from './category-icons';
 import { ProductImage } from './product-image';
@@ -29,6 +29,9 @@ export function CategoryGrid({ categories, locale, label }: CategoryGridProps) {
           const wide = index === 0 && categories.length > 2;
           const name = localizedName(category, locale);
           const photo = category.image_url !== null && category.image_url !== '';
+          // Our own photos are cut-outs: they stand straight on the tinted tile, larger, with
+          // only a contact shadow. A pasted photo keeps its own rounded box.
+          const cutout = photo && isCutout(category.image_url ?? '');
           return (
             <li key={category.id} className={`min-w-0 ${wide ? 'col-span-2' : ''}`}>
               <Link
@@ -47,14 +50,27 @@ export function CategoryGrid({ categories, locale, label }: CategoryGridProps) {
                   // Decorative: the link is already named by the text above.
                   <span
                     aria-hidden="true"
-                    className={`absolute ${wide ? 'right-3 bottom-3 w-[104px] sm:w-[116px]' : 'right-2.5 bottom-2.5 w-[76px] sm:w-[88px]'}`}
+                    className={`absolute ${
+                      cutout
+                        ? wide
+                          ? 'right-1 -bottom-1 w-[132px] sm:w-[148px]'
+                          : '-right-1 -bottom-1.5 w-[100px] sm:w-[112px]'
+                        : wide
+                          ? 'right-3 bottom-3 w-[104px] sm:w-[116px]'
+                          : 'right-2.5 bottom-2.5 w-[76px] sm:w-[88px]'
+                    }`}
                   >
                     <ProductImage
                       src={category.image_url}
                       name={name}
                       toneKey={category.id}
                       sizes={PHOTO_SIZES.category}
-                      className="rounded-2xl shadow-[0_4px_14px_rgb(20_20_22/0.10)]"
+                      bare={cutout}
+                      className={
+                        cutout
+                          ? 'rounded-none'
+                          : 'rounded-2xl shadow-[0_4px_14px_rgb(20_20_22/0.10)]'
+                      }
                     />
                   </span>
                 ) : (

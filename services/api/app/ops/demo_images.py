@@ -3,8 +3,10 @@
 The photos are static files of the storefront Worker (``apps/web/public/products/<name>.webp`` and
 ``apps/web/public/categories/<name>.webp``, each with a 400px ``<name>-400.webp`` variant). Every
 one is an Unsplash (Unsplash License) or Pexels (Pexels License) photo; page URL, author and
-licence are recorded in the ``SOURCES.md`` next to the files. ``test_demo_images`` checks that every
-path below has both files and a manifest row.
+licence are recorded in the ``SOURCES.md`` next to the files. Every file is a transparent cut-out
+(the product alone; a category is a small still life of its own products' cut-outs) and the
+storefront draws the tile behind it, so one file serves light and dark mode. ``test_demo_images``
+checks that every path below has both files, an alpha channel and a manifest row.
 
 A row stores the storefront path (``/products/banan.webp``): the image URL validation
 (``app.domain.image_url``) accepts exactly these paths besides public ``https`` URLs, and the
