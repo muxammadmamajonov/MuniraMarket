@@ -126,10 +126,88 @@
         "title": "AdminCategoryList",
         "type": "object"
       },
+      "AdminOrderAdjustment": {
+        "description": "One order line lowered at picking: \"Olma: 2 kg -> 0 kg, sabab: ...\" (ADR 0018).",
+        "properties": {
+          "actor_role": {
+            "$ref": "#/components/schemas/UserRole"
+          },
+          "at": {
+            "format": "date-time",
+            "title": "At",
+            "type": "string"
+          },
+          "from_quantity": {
+            "title": "From Quantity",
+            "type": "integer"
+          },
+          "marked_out_of_stock": {
+            "title": "Marked Out Of Stock",
+            "type": "boolean"
+          },
+          "name_ru": {
+            "title": "Name Ru",
+            "type": "string"
+          },
+          "name_uz": {
+            "title": "Name Uz",
+            "type": "string"
+          },
+          "product_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Product Id"
+          },
+          "reason": {
+            "title": "Reason",
+            "type": "string"
+          },
+          "sku": {
+            "title": "Sku",
+            "type": "string"
+          },
+          "to_quantity": {
+            "title": "To Quantity",
+            "type": "integer"
+          },
+          "unit": {
+            "$ref": "#/components/schemas/Unit"
+          }
+        },
+        "required": [
+          "product_id",
+          "sku",
+          "name_uz",
+          "name_ru",
+          "unit",
+          "from_quantity",
+          "to_quantity",
+          "reason",
+          "marked_out_of_stock",
+          "actor_role",
+          "at"
+        ],
+        "title": "AdminOrderAdjustment",
+        "type": "object"
+      },
       "AdminOrderDetail": {
         "properties": {
           "address": {
             "$ref": "#/components/schemas/OrderAddress"
+          },
+          "adjustments": {
+            "items": {
+              "$ref": "#/components/schemas/AdminOrderAdjustment"
+            },
+            "title": "Adjustments",
+            "type": "array"
           },
           "allowed_transitions": {
             "items": {
@@ -137,6 +215,10 @@
             },
             "title": "Allowed Transitions",
             "type": "array"
+          },
+          "can_adjust_items": {
+            "title": "Can Adjust Items",
+            "type": "boolean"
           },
           "can_cancel": {
             "title": "Can Cancel",
@@ -250,7 +332,9 @@
           "history",
           "can_cancel",
           "history_detail",
-          "allowed_transitions"
+          "allowed_transitions",
+          "can_adjust_items",
+          "adjustments"
         ],
         "title": "AdminOrderDetail",
         "type": "object"
@@ -344,6 +428,21 @@
             "title": "Price Uzs",
             "type": "integer"
           },
+          "safety_stock": {
+            "title": "Safety Stock",
+            "type": "integer"
+          },
+          "sellable_quantity": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sellable Quantity"
+          },
           "sku": {
             "title": "Sku",
             "type": "string"
@@ -389,6 +488,8 @@
           "price_uzs",
           "old_price_uzs",
           "stock_quantity",
+          "safety_stock",
+          "sellable_quantity",
           "image_url",
           "sort_order",
           "is_active",
@@ -638,6 +739,9 @@
               "order_status_conflict",
               "too_many_open_orders",
               "phone_verification_required",
+              "order_not_adjustable",
+              "order_item_not_found",
+              "invalid_quantity",
               "address_not_found",
               "address_limit_reached",
               "slug_taken",
@@ -1382,6 +1486,7 @@
               "invalid_money",
               "invalid_old_price",
               "invalid_stock",
+              "invalid_safety_stock",
               "invalid_unit",
               "invalid_bool",
               "invalid_sort_order",
@@ -1410,6 +1515,7 @@
                   "price_uzs",
                   "old_price_uzs",
                   "stock_quantity",
+                  "safety_stock",
                   "is_active",
                   "sort_order",
                   "image_url",
@@ -1923,8 +2029,41 @@
         "title": "OrderDetail",
         "type": "object"
       },
+      "OrderItemAdjustRequest": {
+        "additionalProperties": false,
+        "description": "Lower one order line because the goods are not there (ADR 0018).",
+        "properties": {
+          "mark_out_of_stock": {
+            "default": false,
+            "title": "Mark Out Of Stock",
+            "type": "boolean"
+          },
+          "quantity": {
+            "maximum": 99.0,
+            "minimum": 0.0,
+            "title": "Quantity",
+            "type": "integer"
+          },
+          "reason": {
+            "maxLength": 300,
+            "minLength": 3,
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "required": [
+          "quantity",
+          "reason"
+        ],
+        "title": "OrderItemAdjustRequest",
+        "type": "object"
+      },
       "OrderLine": {
         "properties": {
+          "adjusted": {
+            "title": "Adjusted",
+            "type": "boolean"
+          },
           "line_total_uzs": {
             "title": "Line Total Uzs",
             "type": "integer"
@@ -1936,6 +2075,10 @@
           "name_uz": {
             "title": "Name Uz",
             "type": "string"
+          },
+          "original_quantity": {
+            "title": "Original Quantity",
+            "type": "integer"
           },
           "product_id": {
             "anyOf": [
@@ -1973,7 +2116,9 @@
           "unit",
           "unit_price_uzs",
           "quantity",
-          "line_total_uzs"
+          "line_total_uzs",
+          "original_quantity",
+          "adjusted"
         ],
         "title": "OrderLine",
         "type": "object"
@@ -2304,6 +2449,20 @@
             "title": "Price Uzs",
             "type": "integer"
           },
+          "safety_stock": {
+            "anyOf": [
+              {
+                "maximum": 1000000.0,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Units kept back for walk-in shoppers; absent or null = 0",
+            "title": "Safety Stock"
+          },
           "sku": {
             "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$",
             "title": "Sku",
@@ -2415,6 +2574,10 @@
             "title": "In Stock",
             "type": "boolean"
           },
+          "low_stock": {
+            "title": "Low Stock",
+            "type": "boolean"
+          },
           "name_ru": {
             "title": "Name Ru",
             "type": "string"
@@ -2472,6 +2635,7 @@
           "old_price_uzs",
           "stock_quantity",
           "in_stock",
+          "low_stock",
           "image_url",
           "category_id",
           "description_uz",
@@ -2569,6 +2733,10 @@
             "title": "In Stock",
             "type": "boolean"
           },
+          "low_stock": {
+            "title": "Low Stock",
+            "type": "boolean"
+          },
           "name_ru": {
             "title": "Name Ru",
             "type": "string"
@@ -2626,6 +2794,7 @@
           "old_price_uzs",
           "stock_quantity",
           "in_stock",
+          "low_stock",
           "image_url",
           "category_id"
         ],
@@ -2747,6 +2916,19 @@
               }
             ],
             "title": "Price Uzs"
+          },
+          "safety_stock": {
+            "anyOf": [
+              {
+                "maximum": 1000000.0,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Safety Stock"
           },
           "sku": {
             "anyOf": [
@@ -4419,6 +4601,130 @@
           }
         },
         "summary": "Get Order",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/v1/admin/orders/{order_id}/items/{product_id}": {
+      "patch": {
+        "description": "Lower one order line because the goods are not there (ADR 0018).\n\nOnly while the order is NEW, CONFIRMED or PICKING (else ``409 order_not_adjustable``), and\nonly down (``0..current quantity``; more is ``409 invalid_quantity``). The units the line no\nlonger takes go back to stock, or, with ``mark_out_of_stock``, the product's stock becomes 0.\nThe totals are recomputed and the customer is told (they may then cancel in the app). A line\nalready at ``quantity`` is returned unchanged, so a retry is harmless. When every line reaches\n0 the order is cancelled (\"Mahsulotlar tugab qoldi\").",
+        "operationId": "adjust_item_api_v1_admin_orders__order_id__items__product_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "order_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Order Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "product_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Product Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OrderItemAdjustRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminOrderDetail"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "summary": "Adjust Item",
         "tags": [
           "admin"
         ]

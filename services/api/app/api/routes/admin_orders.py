@@ -1,4 +1,4 @@
-"""Operator/admin back office: list orders, read one, change its status.
+"""Operator/admin back office: list orders, read one, change its status, lower a line.
 
 Only ``operator`` and ``admin`` users get past ``require_staff`` (``app/api/admin_deps.py``: role
 re-read on every request, Login Widget sessions only). Every response is ``Cache-Control:
@@ -24,7 +24,12 @@ from app.core.errors import error_responses
 from app.domain.checkout import CheckoutError, OrderNotFoundError
 from app.domain.order_status import OrderStatus
 from app.repositories.orders import Actor
-from app.schemas.checkout import AdminOrderDetail, OrderPage, OrderStatusUpdateRequest
+from app.schemas.checkout import (
+    AdminOrderDetail,
+    OrderItemAdjustRequest,
+    OrderPage,
+    OrderStatusUpdateRequest,
+)
 
 logger = logging.getLogger("app.admin.orders")
 
@@ -94,4 +99,41 @@ async def change_status(
     except CheckoutError as exc:
         raise to_api_error(exc) from None
     logger.info("Staff order status change succeeded")
+    return AdminOrderDetail.from_admin_record(record)
+
+
+@router.patch(
+    "/{order_id}/items/{product_id}",
+    response_model=AdminOrderDetail,
+    dependencies=[Depends(ADMIN_WRITE_LIMIT)],
+    responses=error_responses(401, 403, 404, 409, 422, 429, 503),
+)
+async def adjust_item(
+    order_id: uuid.UUID,
+    product_id: uuid.UUID,
+    payload: OrderItemAdjustRequest,
+    staff: StaffWriterDep,
+    orders: OrderRepositoryDep,
+) -> AdminOrderDetail:
+    """Lower one order line because the goods are not there (ADR 0018).
+
+    Only while the order is NEW, CONFIRMED or PICKING (else ``409 order_not_adjustable``), and
+    only down (``0..current quantity``; more is ``409 invalid_quantity``). The units the line no
+    longer takes go back to stock, or, with ``mark_out_of_stock``, the product's stock becomes 0.
+    The totals are recomputed and the customer is told (they may then cancel in the app). A line
+    already at ``quantity`` is returned unchanged, so a retry is harmless. When every line reaches
+    0 the order is cancelled ("Mahsulotlar tugab qoldi").
+    """
+    try:
+        record = await orders.adjust_item(
+            order_id,
+            product_id,
+            quantity=payload.quantity,
+            reason=payload.reason,
+            mark_out_of_stock=payload.mark_out_of_stock,
+            actor=Actor(user_id=staff.id, role=staff.role),
+        )
+    except CheckoutError as exc:
+        raise to_api_error(exc) from None
+    logger.info("Staff order line adjustment succeeded")
     return AdminOrderDetail.from_admin_record(record)

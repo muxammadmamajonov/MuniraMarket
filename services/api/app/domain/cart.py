@@ -9,6 +9,8 @@ from typing import Literal
 
 MAX_LINE_QUANTITY = 99
 MAX_CART_LINES = 50
+# A tracked product with this many sellable units or fewer (but some) is "low stock" ("Kam qoldi").
+LOW_STOCK_THRESHOLD = 3
 
 CartIssue = Literal["product_inactive", "insufficient_stock"]
 
@@ -43,9 +45,26 @@ class CartItemNotFoundError(CartError):
     pass
 
 
+def sellable_quantity(stock_quantity: int | None, safety_stock: int) -> int | None:
+    """What the online store may sell (ADR 0018): physical stock minus the units kept back for
+    walk-in shoppers, never below 0. ``None`` (stock not tracked) stays ``None``.
+
+    Every storefront availability rule (catalog, cart, quote, order) works on this number; the
+    repositories select it as the summary's ``stock_quantity``.
+    """
+    if stock_quantity is None:
+        return None
+    return max(stock_quantity - max(safety_stock, 0), 0)
+
+
 def is_in_stock(stock_quantity: int | None) -> bool:
     """``None`` means stock is not tracked, which counts as always in stock."""
     return stock_quantity is None or stock_quantity > 0
+
+
+def is_low_stock(stock_quantity: int | None) -> bool:
+    """Tracked, with at least one but at most ``LOW_STOCK_THRESHOLD`` sellable units."""
+    return stock_quantity is not None and 0 < stock_quantity <= LOW_STOCK_THRESHOLD
 
 
 def check_line_quantity(*, quantity: int, stock_quantity: int | None) -> None:

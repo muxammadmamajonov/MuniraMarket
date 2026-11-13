@@ -196,6 +196,33 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/v1/admin/orders/{order_id}/items/{product_id}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    /**
+     * Adjust Item
+     * @description Lower one order line because the goods are not there (ADR 0018).
+     *
+     *     Only while the order is NEW, CONFIRMED or PICKING (else ``409 order_not_adjustable``), and
+     *     only down (``0..current quantity``; more is ``409 invalid_quantity``). The units the line no
+     *     longer takes go back to stock, or, with ``mark_out_of_stock``, the product's stock becomes 0.
+     *     The totals are recomputed and the customer is told (they may then cancel in the app). A line
+     *     already at ``quantity`` is returned unchanged, so a retry is harmless. When every line reaches
+     *     0 the order is cancelled ("Mahsulotlar tugab qoldi").
+     */
+    patch: operations['adjust_item_api_v1_admin_orders__order_id__items__product_id__patch'];
+    trace?: never;
+  };
   '/api/v1/admin/orders/{order_id}/status': {
     parameters: {
       query?: never;
@@ -1030,11 +1057,44 @@ export interface components {
       /** Items */
       items: components['schemas']['AdminCategory'][];
     };
+    /**
+     * AdminOrderAdjustment
+     * @description One order line lowered at picking: "Olma: 2 kg -> 0 kg, sabab: ..." (ADR 0018).
+     */
+    AdminOrderAdjustment: {
+      actor_role: components['schemas']['UserRole'];
+      /**
+       * At
+       * Format: date-time
+       */
+      at: string;
+      /** From Quantity */
+      from_quantity: number;
+      /** Marked Out Of Stock */
+      marked_out_of_stock: boolean;
+      /** Name Ru */
+      name_ru: string;
+      /** Name Uz */
+      name_uz: string;
+      /** Product Id */
+      product_id: string | null;
+      /** Reason */
+      reason: string;
+      /** Sku */
+      sku: string;
+      /** To Quantity */
+      to_quantity: number;
+      unit: components['schemas']['Unit'];
+    };
     /** AdminOrderDetail */
     AdminOrderDetail: {
       address: components['schemas']['OrderAddress'];
+      /** Adjustments */
+      adjustments: components['schemas']['AdminOrderAdjustment'][];
       /** Allowed Transitions */
       allowed_transitions: components['schemas']['OrderStatus'][];
+      /** Can Adjust Items */
+      can_adjust_items: boolean;
       /** Can Cancel */
       can_cancel: boolean;
       /** Cancel Reason */
@@ -1112,6 +1172,10 @@ export interface components {
       old_price_uzs: number | null;
       /** Price Uzs */
       price_uzs: number;
+      /** Safety Stock */
+      safety_stock: number;
+      /** Sellable Quantity */
+      sellable_quantity: number | null;
       /** Sku */
       sku: string;
       /** Slug */
@@ -1232,6 +1296,9 @@ export interface components {
         | 'order_status_conflict'
         | 'too_many_open_orders'
         | 'phone_verification_required'
+        | 'order_not_adjustable'
+        | 'order_item_not_found'
+        | 'invalid_quantity'
         | 'address_not_found'
         | 'address_limit_reached'
         | 'slug_taken'
@@ -1502,6 +1569,7 @@ export interface components {
         | 'invalid_money'
         | 'invalid_old_price'
         | 'invalid_stock'
+        | 'invalid_safety_stock'
         | 'invalid_unit'
         | 'invalid_bool'
         | 'invalid_sort_order'
@@ -1525,6 +1593,7 @@ export interface components {
             | 'price_uzs'
             | 'old_price_uzs'
             | 'stock_quantity'
+            | 'safety_stock'
             | 'is_active'
             | 'sort_order'
             | 'image_url'
@@ -1713,14 +1782,33 @@ export interface components {
        */
       updated_at: string;
     };
+    /**
+     * OrderItemAdjustRequest
+     * @description Lower one order line because the goods are not there (ADR 0018).
+     */
+    OrderItemAdjustRequest: {
+      /**
+       * Mark Out Of Stock
+       * @default false
+       */
+      mark_out_of_stock: boolean;
+      /** Quantity */
+      quantity: number;
+      /** Reason */
+      reason: string;
+    };
     /** OrderLine */
     OrderLine: {
+      /** Adjusted */
+      adjusted: boolean;
       /** Line Total Uzs */
       line_total_uzs: number;
       /** Name Ru */
       name_ru: string;
       /** Name Uz */
       name_uz: string;
+      /** Original Quantity */
+      original_quantity: number;
       /** Product Id */
       product_id: string | null;
       /** Quantity */
@@ -1867,6 +1955,11 @@ export interface components {
       old_price_uzs?: number | null;
       /** Price Uzs */
       price_uzs: number;
+      /**
+       * Safety Stock
+       * @description Units kept back for walk-in shoppers; absent or null = 0
+       */
+      safety_stock?: number | null;
       /** Sku */
       sku: string;
       /** Slug */
@@ -1903,6 +1996,8 @@ export interface components {
       image_url: string | null;
       /** In Stock */
       in_stock: boolean;
+      /** Low Stock */
+      low_stock: boolean;
       /** Name Ru */
       name_ru: string;
       /** Name Uz */
@@ -1958,6 +2053,8 @@ export interface components {
       image_url: string | null;
       /** In Stock */
       in_stock: boolean;
+      /** Low Stock */
+      low_stock: boolean;
       /** Name Ru */
       name_ru: string;
       /** Name Uz */
@@ -2000,6 +2097,8 @@ export interface components {
       old_price_uzs?: number | null;
       /** Price Uzs */
       price_uzs?: number | null;
+      /** Safety Stock */
+      safety_stock?: number | null;
       /** Sku */
       sku?: string | null;
       /** Slug */
@@ -2980,6 +3079,96 @@ export interface operations {
       };
       /** @description Not Found */
       404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Unprocessable Content */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Too Many Requests */
+      429: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Service Unavailable */
+      503: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+    };
+  };
+  adjust_item_api_v1_admin_orders__order_id__items__product_id__patch: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        order_id: string;
+        product_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['OrderItemAdjustRequest'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['AdminOrderDetail'];
+        };
+      };
+      /** @description Unauthorized */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Forbidden */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Not Found */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Conflict */
+      409: {
         headers: {
           [name: string]: unknown;
         };

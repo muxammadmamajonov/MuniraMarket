@@ -39,9 +39,23 @@ CUSTOMER_CANCELLABLE_STATUSES: frozenset[OrderStatus] = frozenset(
     {OrderStatus.NEW, OrderStatus.CONFIRMED}
 )
 
+# Staff may lower an order line (the goods are not there, ADR 0018) until the order is packed.
+ADJUSTABLE_STATUSES: frozenset[OrderStatus] = frozenset(
+    {OrderStatus.NEW, OrderStatus.CONFIRMED, OrderStatus.PICKING}
+)
 
-def customer_can_cancel(current: OrderStatus) -> bool:
-    return current in CUSTOMER_CANCELLABLE_STATUSES
+
+def customer_can_cancel(current: OrderStatus, *, adjusted: bool = False) -> bool:
+    """Before picking always; while PICKING only when staff lowered a line of the order
+    (``adjusted``): the customer did not agree to the smaller order and may back out (ADR 0018).
+    """
+    if current in CUSTOMER_CANCELLABLE_STATUSES:
+        return True
+    return adjusted and current is OrderStatus.PICKING
+
+
+def can_adjust_items(current: OrderStatus) -> bool:
+    return current in ADJUSTABLE_STATUSES
 
 
 class InvalidOrderTransitionError(ValueError):

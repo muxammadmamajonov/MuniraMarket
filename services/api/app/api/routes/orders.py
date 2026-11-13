@@ -23,8 +23,11 @@ from app.domain.checkout import (
     CartEmptyError,
     CheckoutError,
     IdempotencyKeyConflictError,
+    InvalidQuantityError,
     InvalidStatusTransitionError,
     OrderInsufficientStockError,
+    OrderItemNotFoundError,
+    OrderNotAdjustableError,
     OrderNotCancellableError,
     OrderNotFoundError,
     OrderProductUnavailableError,
@@ -129,12 +132,27 @@ def to_api_error(exc: CheckoutError) -> ApiError:  # noqa: PLR0911 - one branch 
             "Status change not allowed",
             current_status=exc.current_status,
         )
+    if isinstance(exc, OrderNotAdjustableError):
+        return ApiError(
+            409,
+            "order_not_adjustable",
+            "Order lines can no longer be changed",
+            current_status=exc.current_status,
+        )
+    if isinstance(exc, InvalidQuantityError):
+        return ApiError(
+            409,
+            "invalid_quantity",
+            "Quantity can only be lowered",
+            available_quantity=exc.current_quantity,
+        )
     simple: dict[type[CheckoutError], ApiError] = {
         CartEmptyError: ApiError(409, "cart_empty", "Cart is empty"),
         IdempotencyKeyConflictError: ApiError(
             409, "idempotency_key_conflict", "Idempotency key was used for a different order"
         ),
         OrderNotFoundError: ApiError(404, "order_not_found", "Order not found"),
+        OrderItemNotFoundError: ApiError(404, "order_item_not_found", "Order line not found"),
         TooManyOpenOrdersError: ApiError(
             409, "too_many_open_orders", "Too many orders waiting for confirmation"
         ),

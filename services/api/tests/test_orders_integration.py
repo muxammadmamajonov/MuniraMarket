@@ -23,7 +23,7 @@ from app.models.cart import CartItem
 from app.models.catalog import Category, Product
 from app.models.enums import UserRole
 from app.models.notification import NotificationOutbox, StaffNotificationChat
-from app.models.order import Order, OrderStatusHistory
+from app.models.order import Order, OrderItemAdjustment, OrderStatusHistory
 from app.repositories import orders as order_repository
 from app.repositories.users import UserRecord
 from tests.db_data import (
@@ -271,6 +271,8 @@ async def test_happy_path(shop: Shop) -> None:
         "unit_price_uzs": 25_000,
         "quantity": 2,
         "line_total_uzs": 50_000,
+        "original_quantity": 2,
+        "adjusted": False,
     }
     assert lines["DEMO-0200"]["line_total_uzs"] == 30_000
 
@@ -652,7 +654,8 @@ async def test_concurrent_cancels_restock_once(shop: Shop) -> None:
 
 async def test_staff_group_gets_alerts_for_new_orders_and_key_statuses(shop: Shop) -> None:
     """ADR 0015: with a group connected, the same transaction also enqueues staff alerts for
-    NEW, OUT_FOR_DELIVERY, DELIVERED and CANCELLED, without customer personal data."""
+    NEW, OUT_FOR_DELIVERY, DELIVERED and CANCELLED. Every alert names the recipient; the NEW
+    alert carries the whole order (owner's request) for the private staff group."""
     plain = await shop.product("plain", price=30_000, stock=10)
     await shop.add(plain, 2)
     before = await shop.place()  # no group yet: customer notification only
@@ -680,13 +683,31 @@ async def test_staff_group_gets_alerts_for_new_orders_and_key_statuses(shop: Sho
         "total_uzs",
         "chat_id",
         "cancelled_by_customer",
+        "recipient_name",
+        "details",
         "destination",
     }
     # The drop-off point (for the "call a Yandex Go courier" button), only on the NEW alert.
     assert alerts[0].payload["destination"] == {"lat": 41.311081, "lon": 69.240562}
     assert all("destination" not in m.payload for m in alerts[1:])
-    for personal in ("Demo ko'cha", "Demo Mijoz", DEMO_PHONE):
-        assert personal not in str(alerts[0].payload)
+    assert all(m.payload["recipient_name"] == "Demo Mijoz" for m in alerts)
+    details = alerts[0].payload["details"]
+    assert details["items"] == [
+        {"name_uz": "Demo apple", "quantity": 2, "unit": "piece", "line_total_uzs": 60_000}
+    ]
+    assert (details["subtotal_uzs"], details["payment_method"]) == (60_000, "cash_on_delivery")
+    assert details["recipient_phone"] == DEMO_PHONE
+    assert details["address"] == {
+        "street": "Demo ko'cha",
+        "house": "12",
+        "apartment": None,
+        "entrance": None,
+        "floor": None,
+        "landmark": None,
+    }
+    assert details["comment"] is None
+    assert details["created_at"].endswith("+00:00")
+    assert all("details" not in m.payload for m in alerts[1:])
     customer = [m for m in await shop.outbox(order["id"]) if m.event_type != "order.staff_alert"]
     assert len(customer) == 6  # the customer's own notifications are unchanged
 
@@ -902,3 +923,286 @@ async def test_lost_idempotency_race_replays_the_winner(
     assert await shop.count(NotificationOutbox) == 1
     assert await shop.stock(apple) == 4
     assert await shop.count(CartItem) == 1
+
+
+# --- safety stock (ADR 0018) ----------------------------------------------------------------------
+
+
+async def test_safety_stock_limits_what_the_storefront_sells(shop: Shop) -> None:
+    """3 apples on the shelf, 2 kept back for walk-in shoppers: only 1 can be ordered online."""
+    apple = await shop.product("apple", price=10_000, stock=3, safety_stock=2)
+    listed = (await shop.client.get("/api/v1/products/apple")).json()
+    assert (listed["stock_quantity"], listed["in_stock"], listed["low_stock"]) == (1, True, True)
+
+    response = await shop.client.post(
+        ITEMS, json={"product_id": str(apple.id), "quantity": 2}, headers=shop.headers()
+    )
+    assert error(response, 409, "insufficient_stock")["available_quantity"] == 1
+    await shop.add(apple, 1)
+    # The kept-back units grow under the cart line: the quote reports it, the order is refused.
+    await update_row(shop.factory, Product, apple.id, safety_stock=3)
+    quote = (await shop.quote()).json()
+    assert quote["items"][0]["issue"] == "insufficient_stock"
+    assert quote["items"][0]["product"]["stock_quantity"] == 0
+    refused = error(await shop.order(10_000), 409, "insufficient_stock")
+    assert refused["available_quantity"] == 0
+    assert await shop.stock(apple) == 3
+
+    await update_row(shop.factory, Product, apple.id, safety_stock=2)
+    order = await shop.place()
+    assert order["total_uzs"] == 10_000
+    # The order took the physical stock; the safety stock is left on the shelf.
+    assert await shop.stock(apple) == 2
+    sold_out = (await shop.client.get("/api/v1/products/apple")).json()
+    assert (sold_out["stock_quantity"], sold_out["in_stock"]) == (0, False)
+    in_stock_slugs = {
+        item["slug"]
+        for item in (await shop.client.get("/api/v1/products", params={"in_stock": "true"})).json()[
+            "items"
+        ]
+    }
+    assert "apple" not in in_stock_slugs
+
+
+# --- shortage at picking (ADR 0018) ---------------------------------------------------------------
+
+
+class Picking:
+    def __init__(self, shop: Shop) -> None:
+        self.shop = shop
+
+    async def adjust(
+        self,
+        order_id: str,
+        product: Product,
+        quantity: int,
+        *,
+        reason: str = "Javonda qolmadi",
+        mark_out_of_stock: bool = False,
+        user: UserRecord | None = None,
+    ) -> httpx.Response:
+        return await self.shop.client.patch(
+            f"{ADMIN}/{order_id}/items/{product.id}",
+            json={"quantity": quantity, "reason": reason, "mark_out_of_stock": mark_out_of_stock},
+            headers=self.shop.headers(user or self.shop.operator),
+        )
+
+
+async def _group(shop: Shop) -> None:
+    async with shop.factory() as session:
+        if await session.get(StaffNotificationChat, 1) is None:
+            session.add(StaffNotificationChat(id=1, chat_id=-1001234567890))
+            await session.commit()
+
+
+async def test_lowering_a_line_returns_stock_and_tells_everyone(shop: Shop) -> None:
+    await _group(shop)
+    apple = await shop.product("apple", price=15_000, stock=5)
+    bread = await shop.product("bread", price=4_000, stock=None)
+    await shop.add(apple, 3)
+    await shop.add(bread, 2)
+    order = await shop.place()
+    assert await shop.stock(apple) == 2
+    picking = Picking(shop)
+
+    response = await picking.adjust(order["id"], apple, 1, reason="Ikkitasi ezilgan")
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert (body["subtotal_uzs"], body["total_uzs"], body["item_count"]) == (23_000, 23_000, 3)
+    lines = {line["sku"]: line for line in body["items"]}
+    assert lines["DEMO-apple"] | {"product_id": None} == {
+        "product_id": None,
+        "sku": "DEMO-apple",
+        "name_uz": "Demo apple",
+        "name_ru": "Демо apple",
+        "unit": "piece",
+        "unit_price_uzs": 15_000,
+        "quantity": 1,
+        "line_total_uzs": 15_000,
+        "original_quantity": 3,
+        "adjusted": True,
+    }
+    assert (lines["DEMO-bread"]["original_quantity"], lines["DEMO-bread"]["adjusted"]) == (2, False)
+    assert body["can_adjust_items"] is True
+    [adjustment] = body["adjustments"]
+    assert adjustment | {"at": None, "product_id": None} == {
+        "product_id": None,
+        "sku": "DEMO-apple",
+        "name_uz": "Demo apple",
+        "name_ru": "Демо apple",
+        "unit": "piece",
+        "from_quantity": 3,
+        "to_quantity": 1,
+        "reason": "Ikkitasi ezilgan",
+        "marked_out_of_stock": False,
+        "actor_role": "operator",
+        "at": None,
+    }
+    assert adjustment["product_id"] == str(apple.id)
+    # The two units the line no longer takes are back on sale; the status did not change.
+    assert await shop.stock(apple) == 4
+    assert body["status"] == "NEW"
+    assert [change["status"] for change in body["history"]] == ["NEW"]
+
+    events = [(m.event_type, m.payload) for m in await shop.outbox(order["id"])]
+    customer = [payload for kind, payload in events if kind == "order.adjusted"]
+    staff = [payload for kind, payload in events if kind == "order.staff_adjusted"]
+    assert customer == [
+        {
+            "order_id": order["id"],
+            "order_number": order["number"],
+            "status": "NEW",
+            "locale": "uz",
+            "total_uzs": 23_000,
+            "chat_id": shop.user.telegram_user_id,
+            "changes": [
+                {
+                    "name_uz": "Demo apple",
+                    "name_ru": "Демо apple",
+                    "unit": "piece",
+                    "from_quantity": 3,
+                    "to_quantity": 1,
+                }
+            ],
+        }
+    ]
+    assert len(staff) == 1
+    assert staff[0]["reason"] == "Ikkitasi ezilgan"
+    assert staff[0]["recipient_name"] == "Demo Mijoz"
+    assert staff[0]["changes"][0]["marked_out_of_stock"] is False
+
+    # Retrying the same request changes nothing.
+    again = await picking.adjust(order["id"], apple, 1, reason="Ikkitasi ezilgan")
+    assert again.status_code == 200
+    assert len(again.json()["adjustments"]) == 1
+    assert await shop.stock(apple) == 4
+    assert len(await shop.outbox(order["id"])) == len(events)
+
+
+async def test_out_of_stock_zeroes_the_product_and_an_untracked_line_returns_nothing(
+    shop: Shop,
+) -> None:
+    apple = await shop.product("apple", price=15_000, stock=5)
+    bread = await shop.product("bread", price=4_000, stock=None)
+    await shop.add(apple, 1)
+    await shop.add(bread, 2)
+    order = await shop.place()
+    assert await shop.stock(apple) == 4
+    picking = Picking(shop)
+
+    response = await picking.adjust(order["id"], apple, 0, mark_out_of_stock=True)
+    assert response.status_code == 200, response.text
+    assert response.json()["total_uzs"] == 8_000
+    # The goods physically ran out: the product is out of stock, nothing went back.
+    assert await shop.stock(apple) == 0
+    # An untracked line gives nothing back.
+    assert (await picking.adjust(order["id"], bread, 1)).status_code == 200
+    assert await shop.stock(bread) is None
+    detail = await shop.client.get(f"{ADMIN}/{order['id']}", headers=shop.headers(shop.operator))
+    assert [a["to_quantity"] for a in detail.json()["adjustments"]] == [0, 1]
+    assert detail.json()["status"] == "NEW"
+
+
+async def test_when_every_line_runs_out_the_order_is_cancelled(shop: Shop) -> None:
+    await _group(shop)
+    apple = await shop.product("apple", price=15_000, stock=5)
+    await shop.add(apple, 2)
+    order = await shop.place()
+    assert (await shop.move(order["id"], "CONFIRMED")).status_code == 200
+    picking = Picking(shop)
+
+    response = await picking.adjust(order["id"], apple, 0)
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["status"] == "CANCELLED"
+    assert body["cancel_reason"] == "Mahsulotlar tugab qoldi"
+    assert (body["subtotal_uzs"], body["total_uzs"], body["item_count"]) == (0, 0, 0)
+    assert body["can_adjust_items"] is False
+    # The two units went back once (by the adjustment), not twice.
+    assert await shop.stock(apple) == 5
+    kinds = [m.event_type for m in await shop.outbox(order["id"])]
+    assert "order.adjusted" not in kinds
+    assert "order.staff_adjusted" not in kinds
+    cancelled = [
+        m.payload
+        for m in await shop.outbox(order["id"])
+        if m.event_type == "order.status_changed" and m.payload["status"] == "CANCELLED"
+    ]
+    assert cancelled[0]["cancel_reason"] == "Mahsulotlar tugab qoldi"
+
+
+async def test_adjustment_refusals(shop: Shop) -> None:
+    apple = await shop.product("apple", price=15_000, stock=5)
+    pear = await shop.product("pear", price=9_000, stock=5)
+    await shop.add(apple, 2)
+    order = await shop.place()
+    picking = Picking(shop)
+
+    assert (
+        error(await picking.adjust(order["id"], apple, 3), 409, "invalid_quantity")[
+            "available_quantity"
+        ]
+        == 2
+    )
+    error(await picking.adjust(order["id"], pear, 0), 404, "order_item_not_found")
+    error(await picking.adjust(str(uuid.uuid4()), apple, 0), 404, "order_not_found")
+    error(await picking.adjust(order["id"], apple, 1, reason="x"), 422, "validation_error")
+    error(await picking.adjust(order["id"], apple, -1), 422, "validation_error")
+    # Customers cannot reach the back office.
+    assert (await picking.adjust(order["id"], apple, 1, user=shop.user)).status_code == 403
+
+    for status in ("CONFIRMED", "PICKING", "READY_FOR_DELIVERY"):
+        assert (await shop.move(order["id"], status)).status_code == 200
+    refused = error(await picking.adjust(order["id"], apple, 1), 409, "order_not_adjustable")
+    assert refused["current_status"] == "READY_FOR_DELIVERY"
+    assert await shop.stock(apple) == 3
+    assert await shop.count(OrderItemAdjustment) == 0
+
+
+async def test_an_adjusted_order_can_be_cancelled_by_the_customer_while_picking(
+    shop: Shop,
+) -> None:
+    apple = await shop.product("apple", price=15_000, stock=5)
+    bread = await shop.product("bread", price=4_000, stock=5)
+    await shop.add(apple, 2)
+    await shop.add(bread, 1)
+    order = await shop.place()
+    for status in ("CONFIRMED", "PICKING"):
+        assert (await shop.move(order["id"], status)).status_code == 200
+    detail = (await shop.client.get(f"{ORDERS}/{order['id']}", headers=shop.headers())).json()
+    assert detail["can_cancel"] is False
+    error(await shop.cancel(order["id"]), 409, "order_not_cancellable")
+
+    assert (await Picking(shop).adjust(order["id"], apple, 1)).status_code == 200
+    detail = (await shop.client.get(f"{ORDERS}/{order['id']}", headers=shop.headers())).json()
+    assert detail["can_cancel"] is True
+    assert (await shop.cancel(order["id"], "Kerak emas")).status_code == 200
+    # Everything the order still held went back.
+    assert (await shop.stock(apple), await shop.stock(bread)) == (5, 5)
+
+
+async def test_concurrent_adjustments_and_status_changes_serialise(shop: Shop) -> None:
+    """An adjustment and a status change racing on one order: both are serialised by the order
+    lock, so the adjustment either happens before READY_FOR_DELIVERY or is refused after it."""
+    apple = await shop.product("apple", price=15_000, stock=10)
+    await shop.add(apple, 4)
+    order = await shop.place()
+    for status in ("CONFIRMED", "PICKING"):
+        assert (await shop.move(order["id"], status)).status_code == 200
+    picking = Picking(shop)
+    adjust, move = await asyncio.gather(
+        picking.adjust(order["id"], apple, 1), shop.move(order["id"], "READY_FOR_DELIVERY")
+    )
+    assert move.status_code == 200
+    assert adjust.status_code in (200, 409)
+    expected_stock = 9 if adjust.status_code == 200 else 6
+    assert await shop.stock(apple) == expected_stock
+    # Two concurrent identical adjustments return the stock once.
+    other = await shop.product("other", price=1_000, stock=10)
+    await shop.add(other, 5)
+    second = await shop.place()
+    first, repeat = await asyncio.gather(
+        picking.adjust(second["id"], other, 2), picking.adjust(second["id"], other, 2)
+    )
+    assert (first.status_code, repeat.status_code) == (200, 200)
+    assert await shop.stock(other) == 8

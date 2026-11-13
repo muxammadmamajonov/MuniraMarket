@@ -166,6 +166,7 @@ def make_product_record(**overrides: Any) -> AdminProductRecord:
         "price_uzs": 12_000,
         "old_price_uzs": None,
         "stock_quantity": None,
+        "safety_stock": 0,
         "image_url": None,
         "sort_order": 0,
         "is_active": True,

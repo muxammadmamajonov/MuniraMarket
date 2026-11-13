@@ -3,9 +3,11 @@
 Format (template, export and import share it):
 
 - UTF-8, written with a byte-order mark and CRLF line endings; on import the BOM is optional.
-- The columns in :data:`COLUMNS`, then ``updated_at`` (:data:`EXPORT_COLUMNS`; export and
-  template use this order). An import may order them differently, but every column of
-  :data:`COLUMNS` must be present exactly once, ``updated_at`` at most once, and nothing else.
+- The columns in :data:`EXPORT_COLUMNS` (export and template use this order): every column of
+  :data:`COLUMNS` plus the optional ``safety_stock`` (after ``stock_quantity``) and
+  ``updated_at`` (last). An import may order them differently, but every column of
+  :data:`COLUMNS` must be present exactly once, each optional column at most once, and nothing
+  else.
 - RFC 4180 quoting (``"`` doubled inside quoted fields), parsed with the ``csv`` module in
   strict mode, so a stray quote is an error instead of a silently merged field. Export quotes
   **every** cell, so a separator inside a value (``,``, or ``;`` / tab, which spreadsheets in
@@ -16,6 +18,10 @@ microseconds). When an imported row carries one and the product's current ``upda
 (an order took stock, another admin edited it, ...), the row is refused (``stale_row``) instead of
 writing the file's older values back. Leave it empty for new products, or to overwrite on
 purpose; files without the column are accepted as before.
+
+Safety stock (ADR 0018): ``safety_stock`` is the number of units kept back for walk-in shoppers.
+A file without the column (made before it existed) leaves every product's safety stock as it is
+(0 for a new product); with the column, an empty cell means 0.
 
 Spreadsheet formula injection: a text cell beginning with ``= + - @ \\t \\r`` would be evaluated
 by Excel/LibreOffice when an exported file is opened. Export prefixes such cells (and cells that
@@ -58,9 +64,15 @@ COLUMNS: Final = (
     "sort_order",
     "image_url",
 )
-# Optional on import; always written by export and the template (last column).
-OPTIONAL_COLUMNS: Final = ("updated_at",)
-EXPORT_COLUMNS: Final = (*COLUMNS, *OPTIONAL_COLUMNS)
+# Optional on import; always written by export and the template.
+OPTIONAL_COLUMNS: Final = ("safety_stock", "updated_at")
+# ``safety_stock`` right after ``stock_quantity``; ``updated_at`` last.
+EXPORT_COLUMNS: Final = (
+    *COLUMNS[: COLUMNS.index("stock_quantity") + 1],
+    "safety_stock",
+    *COLUMNS[COLUMNS.index("stock_quantity") + 1 :],
+    "updated_at",
+)
 Column = Literal[
     "sku",
     "slug",
@@ -73,6 +85,7 @@ Column = Literal[
     "price_uzs",
     "old_price_uzs",
     "stock_quantity",
+    "safety_stock",
     "is_active",
     "sort_order",
     "image_url",
@@ -128,6 +141,7 @@ RowErrorCode = Literal[
     "invalid_money",
     "invalid_old_price",
     "invalid_stock",
+    "invalid_safety_stock",
     "invalid_unit",
     "invalid_bool",
     "invalid_sort_order",
@@ -199,6 +213,8 @@ class CsvRow:
     image_url: str | None
     # ``updated_at`` as exported; ``None``: the column is absent or empty (no staleness check).
     updated_at: datetime | None = None
+    # ``None``: the file has no ``safety_stock`` column (keep the product's; 0 for a new one).
+    safety_stock: int | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -251,7 +267,9 @@ def _check_header(header: Sequence[str]) -> dict[str, int]:
     if details:
         raise CsvFileError(
             "csv_invalid_header",
-            "The header must be exactly: " + ",".join(COLUMNS) + " (optionally ,updated_at)",
+            "The header must be exactly: "
+            + ",".join(COLUMNS)
+            + " (optionally ,safety_stock and ,updated_at)",
             details,
         )
     return {name: index for index, name in enumerate(names)}
@@ -395,6 +413,16 @@ def _stock(raw: str) -> int | None:
     return int(value)
 
 
+def _safety_stock(raw: str) -> int:
+    """An empty cell is 0 (nothing kept back)."""
+    value = raw.strip()
+    if not value:
+        return 0
+    if not _STOCK.fullmatch(value) or int(value) > MAX_STOCK:
+        raise _CellError("invalid_safety_stock", f"Empty (0) or 0..{MAX_STOCK}")
+    return int(value)
+
+
 def _unit(raw: str) -> Unit:
     value = raw.strip()
     if not value:
@@ -480,6 +508,12 @@ def _parse_row(row: int, cells: Mapping[str, str]) -> tuple[CsvRow | None, list[
             values[column] = parse(cells.get(column, ""))
         except _CellError as exc:
             errors.append(CsvRowError(row, column, exc.code, exc.message))
+    safety_stock: int | None = None
+    if "safety_stock" in cells:
+        try:
+            safety_stock = _safety_stock(cells["safety_stock"])
+        except _CellError as exc:
+            errors.append(CsvRowError(row, "safety_stock", exc.code, exc.message))
     if errors:
         return None, errors
     price = cast("int", values["price_uzs"])
@@ -506,6 +540,7 @@ def _parse_row(row: int, cells: Mapping[str, str]) -> tuple[CsvRow | None, list[
             sort_order=cast("int", values["sort_order"]),
             image_url=cast("str | None", values["image_url"]),
             updated_at=cast("datetime | None", values["updated_at"]),
+            safety_stock=safety_stock,
         ),
         [],
     )
@@ -525,6 +560,7 @@ PRODUCT_FIELDS: Final = (
     "price_uzs",
     "old_price_uzs",
     "stock_quantity",
+    "safety_stock",
     "is_active",
     "sort_order",
     "image_url",
@@ -611,6 +647,13 @@ def _stale_row_error(row: CsvRow, existing: ExistingProduct | None) -> CsvRowErr
     return None
 
 
+def _safety_stock_target(row: CsvRow, existing: ExistingProduct | None) -> dict[str, object]:
+    """Without the column a product keeps its safety stock (a new one starts at 0)."""
+    if row.safety_stock is not None:
+        return {"safety_stock": row.safety_stock}
+    return {} if existing is not None else {"safety_stock": 0}
+
+
 def plan_import(rows: Sequence[CsvRow], snapshot: CatalogSnapshot) -> ImportPlan:
     """Check the rows against the catalog and classify each SKU. Pure: writes nothing."""
     errors: list[CsvRowError] = []
@@ -667,6 +710,7 @@ def plan_import(rows: Sequence[CsvRow], snapshot: CatalogSnapshot) -> ImportPlan
         }
         if slug is not None:
             target["slug"] = slug
+        target.update(_safety_stock_target(row, existing))
         if existing is None:
             changes.append(
                 PlannedChange(
@@ -713,6 +757,7 @@ class ExportRow:
     price_uzs: int
     old_price_uzs: int | None
     stock_quantity: int | None
+    safety_stock: int
     is_active: bool
     sort_order: int
     image_url: str | None

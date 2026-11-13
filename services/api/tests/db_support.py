@@ -92,6 +92,7 @@ APP_TABLES = (
     "audit_log",
     "notification_outbox",
     "order_status_history",
+    "order_item_adjustments",
     "order_items",
     "orders",
     "cart_items",

@@ -1,11 +1,16 @@
-"""Public catalog response models. Money is integer UZS; ``stock_quantity`` null = not tracked."""
+"""Public catalog response models. Money is integer UZS; ``stock_quantity`` null = not tracked.
+
+``stock_quantity`` is what the online store may sell: the physical stock minus the units kept back
+for walk-in shoppers (``safety_stock``, ADR 0018), never below 0. The physical stock and the safety
+stock themselves are back-office data and never reach the storefront.
+"""
 
 import uuid
 from typing import Self
 
 from pydantic import BaseModel, Field
 
-from app.domain.cart import is_in_stock
+from app.domain.cart import is_in_stock, is_low_stock
 from app.models.enums import Unit
 from app.repositories.catalog import (
     CategoryNodeRecord,
@@ -62,9 +67,11 @@ class ProductSummary(BaseModel):
     unit: Unit
     price_uzs: int
     old_price_uzs: int | None
-    # null = stock is not tracked for this product.
+    # Sellable quantity (stock minus safety stock, >= 0); null = stock is not tracked.
     stock_quantity: int | None
     in_stock: bool
+    # 1..3 sellable units left (tracked products only): show "Kam qoldi" / "Осталось мало".
+    low_stock: bool
     image_url: str | None
     category_id: uuid.UUID
 
@@ -81,6 +88,7 @@ class ProductSummary(BaseModel):
             old_price_uzs=record.old_price_uzs,
             stock_quantity=record.stock_quantity,
             in_stock=is_in_stock(record.stock_quantity),
+            low_stock=is_low_stock(record.stock_quantity),
             image_url=record.image_url,
             category_id=record.category_id,
         )

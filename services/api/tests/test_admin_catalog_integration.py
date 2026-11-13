@@ -409,3 +409,46 @@ async def test_category_update_without_changes_is_not_audited(back: Back) -> Non
     )
     assert response.status_code == 200
     assert await back.count(AuditLog) == 0
+
+
+# --- safety stock (ADR 0018) ------------------------------------------------------------------
+
+
+async def test_safety_stock_is_set_on_create_and_update_and_audited(back: Back) -> None:
+    # Absent (or null) on create means 0.
+    response = await back.send(
+        "POST", PRODUCTS, product_body(back.category, sku="DEMO-SAFE", slug="demo-safe")
+    )
+    assert response.status_code == 201, response.text
+    product = response.json()
+    assert (product["stock_quantity"], product["safety_stock"], product["sellable_quantity"]) == (
+        50,
+        0,
+        50,
+    )
+    response = await back.send(
+        "POST",
+        PRODUCTS,
+        product_body(
+            back.category, sku="DEMO-SAFE-2", slug="demo-safe-2", safety_stock=60, stock_quantity=5
+        ),
+    )
+    assert response.status_code == 201, response.text
+    assert response.json()["sellable_quantity"] == 0  # never below 0
+
+    response = await back.send("PATCH", f"{PRODUCTS}/{product['id']}", {"safety_stock": 4})
+    assert response.status_code == 200, response.text
+    assert (response.json()["safety_stock"], response.json()["sellable_quantity"]) == (4, 46)
+    [_, updated] = await audit_rows(back.factory, AuditLog.entity_id == product["id"])
+    assert updated.details == {"changes": {"safety_stock": {"from": 0, "to": 4}}}
+    # The storefront sells (and shows) only what is left above the safety stock.
+    storefront = (await back.get("/api/v1/products/demo-safe")).json()
+    assert (storefront["stock_quantity"], storefront["low_stock"]) == (46, False)
+    assert "safety_stock" not in storefront
+
+    for body in ({"safety_stock": None}, {"safety_stock": -1}, {"safety_stock": 1_000_001}):
+        response = await back.send("PATCH", f"{PRODUCTS}/{product['id']}", body)
+        error_of(response, 422, "validation_error")
+    # Untracked stock: the safety stock is kept but changes nothing.
+    response = await back.send("PATCH", f"{PRODUCTS}/{product['id']}", {"stock_quantity": None})
+    assert response.json()["sellable_quantity"] is None
