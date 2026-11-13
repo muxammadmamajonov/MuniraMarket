@@ -75,6 +75,8 @@ export function product(overrides: Partial<AdminProduct> = {}): AdminProduct {
     price_uzs: 30_000,
     old_price_uzs: null,
     stock_quantity: 25,
+    safety_stock: 0,
+    sellable_quantity: 25,
     is_active: true,
     sort_order: 0,
     image_url: null,

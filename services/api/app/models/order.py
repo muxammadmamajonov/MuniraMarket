@@ -61,7 +61,8 @@ class Order(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         # New orders have total == subtotal (the customer pays the Yandex Go courier directly);
         # older orders' totals still include the delivery charge of the time.
         CheckConstraint("total_uzs >= subtotal_uzs", name="total_covers_subtotal"),
-        CheckConstraint("item_count > 0", name="item_count_positive"),
+        # 0 only for an order whose every line ran out at picking (it is cancelled, ADR 0018).
+        CheckConstraint("item_count >= 0", name="item_count_non_negative"),
         CheckConstraint(
             "status <> 'CANCELLED' OR (cancel_reason IS NOT NULL AND btrim(cancel_reason) <> '')",
             name="cancelled_requires_reason",
@@ -96,9 +97,18 @@ class OrderItem(UUIDPrimaryKeyMixin, Base):
     stock_decremented: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default=text("false")
     )
+    # Shortage at picking (ADR 0018): the quantity the customer ordered, set the first time staff
+    # lower the line (``NULL``: never adjusted), and when the line was last lowered.
+    original_quantity: Mapped[int | None] = mapped_column(Integer)
+    adjusted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     __table_args__ = (
-        CheckConstraint("quantity > 0", name="quantity_positive"),
+        # 0 once the goods of the line ran out at picking.
+        CheckConstraint("quantity >= 0", name="quantity_non_negative"),
+        CheckConstraint(
+            "original_quantity IS NULL OR original_quantity >= quantity",
+            name="original_quantity_covers_quantity",
+        ),
         CheckConstraint("unit_price_uzs >= 0", name="unit_price_non_negative"),
         CheckConstraint("line_total_uzs >= 0", name="line_total_non_negative"),
         CheckConstraint("line_total_uzs = unit_price_uzs * quantity", name="line_total_is_product"),
@@ -130,4 +140,42 @@ class OrderStatusHistory(UUIDPrimaryKeyMixin, Base):
     __table_args__ = (
         CheckConstraint("from_status IS NULL OR from_status <> to_status", name="status_changes"),
         Index("ix_order_status_history_order_id_created_at", "order_id", "created_at"),
+    )
+
+
+class OrderItemAdjustment(UUIDPrimaryKeyMixin, Base):
+    """Append-only log of order lines lowered at picking because the goods were not there."""
+
+    __tablename__ = "order_item_adjustments"
+
+    order_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("orders.id", ondelete="CASCADE"), nullable=False
+    )
+    order_item_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("order_items.id", ondelete="CASCADE"), nullable=False
+    )
+    product_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("products.id", ondelete="SET NULL")
+    )
+    from_quantity: Mapped[int] = mapped_column(Integer, nullable=False)
+    to_quantity: Mapped[int] = mapped_column(Integer, nullable=False)
+    # Staff free text; shown in the back office only (never to the customer, never logged).
+    reason: Mapped[str] = mapped_column(Text, nullable=False)
+    # Whether the product's stock was set to 0 (the goods physically ran out) instead of the
+    # difference being returned to stock.
+    marked_out_of_stock: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    actor_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL")
+    )
+    actor_role: Mapped[UserRole] = mapped_column(pg_enum(UserRole, "user_role"), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    __table_args__ = (
+        CheckConstraint(
+            "to_quantity >= 0 AND to_quantity < from_quantity", name="quantity_decreases"
+        ),
+        CheckConstraint("btrim(reason) <> ''", name="reason_not_blank"),
+        Index("ix_order_item_adjustments_order_id_created_at", "order_id", "created_at"),
     )

@@ -7,7 +7,7 @@ import {
   type OrderStatus,
   type OrderStatusUpdateRequest,
 } from '@muniramarket/contracts';
-import { Button, EmptyState, ErrorState, Skeleton, formatUZS } from '@muniramarket/ui';
+import { Button, EmptyState, ErrorState, Skeleton, cx, formatUZS } from '@muniramarket/ui';
 import Link from 'next/link';
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { useI18n } from '@/i18n/context';
@@ -17,8 +17,11 @@ import { ApiRequestError, readJson } from '@/lib/api/errors';
 import { formatDateTime, telHref } from '@/lib/format';
 import { ordersHref } from '@/lib/orders';
 import { useSession } from '@/lib/session';
+import { useIsPhone } from '@/lib/use-phone';
 import { CancelDialog } from './cancel-dialog';
 import { LINK_BUTTON_PRIMARY } from './ui/classes';
+import { AdjustDialog, type OrderLine } from './order-adjust';
+import { SwipeActions } from './ui/swipe-actions';
 import { StatusBadge } from './status-badge';
 
 type Loaded =
@@ -32,8 +35,8 @@ const ALERT = 'text-sm text-danger';
 
 function Card({ title, children }: { title: string; children: ReactNode }) {
   return (
-    <section className="flex flex-col gap-3 rounded-xl border border-border bg-surface p-4">
-      <h2 className="text-lg font-semibold">{title}</h2>
+    <section className="flex min-w-0 flex-col gap-3 rounded-3xl bg-surface p-4 sm:p-5">
+      <h2 className="text-lg leading-6 font-bold tracking-[-0.01em]">{title}</h2>
       {children}
     </section>
   );
@@ -61,8 +64,17 @@ function courierUrl(address: OrderAddress): string | null {
   return lat === null || lon === null ? null : yandexGoCourierUrl({ lat, lon });
 }
 
-function OrderBody({ order }: { order: AdminOrderDetail }) {
+function OrderBody({
+  order,
+  onAdjust,
+}: {
+  order: AdminOrderDetail;
+  /** Opens the "not enough of this product" dialog for a line (only while it can be adjusted). */
+  onAdjust: (line: OrderLine & { product_id: string }, opener: HTMLElement) => void;
+}) {
   const { dict, locale } = useI18n();
+  const isPhone = useIsPhone();
+  const [openLine, setOpenLine] = useState<number | null>(null);
   const a = dict.order.address;
   const phone = telHref(order.recipient_phone);
   const yandexUrl = courierUrl(order.address);
@@ -85,31 +97,85 @@ function OrderBody({ order }: { order: AdminOrderDetail }) {
     <div className="grid gap-4 lg:grid-cols-3">
       <div className="flex flex-col gap-4 lg:col-span-2">
         <Card title={dict.order.items.title}>
-          <ul className="flex flex-col divide-y divide-border">
-            {order.items.map((line, index) => (
-              <li
-                key={`${line.sku}-${String(index)}`}
-                className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 py-2 first:pt-0 last:pb-0"
-              >
-                <div className="min-w-0">
-                  <p className="font-medium break-words">
-                    {locale === 'ru' ? line.name_ru : line.name_uz}
-                  </p>
-                  <p className="text-sm text-muted-foreground">
-                    {dict.order.items.sku}: {line.sku}
-                  </p>
+          <ul className="flex flex-col divide-y divide-hairline">
+            {order.items.map((line, index) => {
+              const name = locale === 'ru' ? line.name_ru : line.name_uz;
+              const adjustable =
+                order.can_adjust_items && line.product_id !== null && line.quantity > 0;
+              const open = (opener: HTMLElement) =>
+                onAdjust({ ...line, product_id: line.product_id ?? '' }, opener);
+              const content = (
+                <div className="flex items-start justify-between gap-x-4 gap-y-1 py-3">
+                  <div className="min-w-0">
+                    <p className="font-medium break-words">{name}</p>
+                    <p className="text-sm text-muted-foreground">
+                      {dict.order.items.sku}: {line.sku}
+                    </p>
+                  </div>
+                  <div className="shrink-0 text-right">
+                    <p className="text-sm text-muted-foreground">
+                      {line.quantity} {dict.units[line.unit]} ×{' '}
+                      {formatUZS(line.unit_price_uzs, locale)}
+                    </p>
+                    <p
+                      className={cx(
+                        'font-semibold',
+                        line.quantity === 0 && 'text-muted-foreground line-through',
+                      )}
+                    >
+                      {formatUZS(line.line_total_uzs, locale)}
+                    </p>
+                    {line.adjusted ? (
+                      <p
+                        className="text-[13px] font-semibold text-warning"
+                        data-testid="line-adjusted"
+                      >
+                        {formatMessage(dict.order.adjust.adjustedFrom, {
+                          quantity: `${String(line.original_quantity)} ${dict.units[line.unit]}`,
+                        })}
+                      </p>
+                    ) : null}
+                  </div>
+                  {adjustable && !isPhone ? (
+                    <button
+                      type="button"
+                      data-testid="adjust-line"
+                      aria-label={`${dict.order.adjust.button}: ${name}`}
+                      onClick={(event) => open(event.currentTarget)}
+                      className="inline-flex min-h-10 shrink-0 items-center justify-center self-center rounded-2xl bg-warning-soft px-3.5 text-sm font-semibold text-warning transition-transform duration-150 ease-out-strong focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus active:scale-[0.97]"
+                    >
+                      {dict.order.adjust.button}
+                    </button>
+                  ) : null}
                 </div>
-                <div className="text-right">
-                  <p className="text-sm text-muted-foreground">
-                    {line.quantity} {dict.units[line.unit]} ×{' '}
-                    {formatUZS(line.unit_price_uzs, locale)}
-                  </p>
-                  <p className="font-semibold">{formatUZS(line.line_total_uzs, locale)}</p>
-                </div>
-              </li>
-            ))}
+              );
+              return (
+                <li key={`${line.sku}-${String(index)}`} className="first:-mt-3 last:-mb-3">
+                  {adjustable && isPhone ? (
+                    // Phones: the line reads first; "not enough" slides out on a swipe left.
+                    <SwipeActions
+                      open={openLine === index}
+                      onOpenChange={(next) => setOpenLine(next ? index : null)}
+                      actions={[
+                        {
+                          label: dict.order.adjust.button,
+                          accessibleName: `${dict.order.adjust.button}: ${name}`,
+                          tone: 'danger',
+                          testId: 'adjust-line',
+                          onSelect: open,
+                        },
+                      ]}
+                    >
+                      {content}
+                    </SwipeActions>
+                  ) : (
+                    content
+                  )}
+                </li>
+              );
+            })}
           </ul>
-          <dl className="flex flex-col gap-1 border-t border-border pt-3">
+          <dl className="flex flex-col gap-1 border-t border-hairline pt-3">
             <div className="flex justify-between gap-4">
               <dt className="text-muted-foreground">{dict.order.totals.subtotal}</dt>
               <dd>{formatUZS(order.subtotal_uzs, locale)}</dd>
@@ -121,12 +187,39 @@ function OrderBody({ order }: { order: AdminOrderDetail }) {
           </dl>
         </Card>
 
+        {order.adjustments.length === 0 ? null : (
+          <Card title={dict.order.adjust.historyTitle}>
+            <ul className="flex flex-col divide-y divide-hairline" data-testid="adjustments">
+              {order.adjustments.map((change, index) => (
+                <li
+                  key={`${change.at}-${String(index)}`}
+                  className="flex flex-col gap-0.5 py-2.5 first:pt-0 last:pb-0"
+                >
+                  <p className="font-medium break-words">
+                    {locale === 'ru' ? change.name_ru : change.name_uz}:{' '}
+                    <span className="tabular">
+                      {change.from_quantity} → {change.to_quantity} {dict.units[change.unit]}
+                    </span>
+                  </p>
+                  <p className="text-sm text-muted-foreground break-words">
+                    {dict.order.timeline.reason}: {change.reason}
+                    {change.marked_out_of_stock ? ` · ${dict.order.adjust.outOfStockNote}` : ''}
+                  </p>
+                  <p className="text-[13px] text-muted-foreground">
+                    {dict.roles[change.actor_role]} · {formatDateTime(change.at)}
+                  </p>
+                </li>
+              ))}
+            </ul>
+          </Card>
+        )}
+
         <Card title={dict.order.timeline.title}>
           <ol aria-label={dict.order.timeline.title} className="flex flex-col gap-3">
             {order.history_detail.map((change, index) => (
               <li
                 key={`${change.at}-${String(index)}`}
-                className="flex flex-col gap-0.5 border-l-2 border-border pl-3"
+                className="flex flex-col gap-0.5 border-l-2 border-hairline pl-3"
               >
                 <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
                   <StatusBadge status={change.status} />
@@ -214,6 +307,11 @@ export function OrderDetailView({ id }: { id: string }) {
   const [actionError, setActionError] = useState<string | null>(null);
   const [cancelOpen, setCancelOpen] = useState(false);
   const [cancelOpener, setCancelOpener] = useState<HTMLElement | null>(null);
+  const [adjusting, setAdjusting] = useState<{
+    line: OrderLine & { product_id: string };
+    opener: HTMLElement;
+  } | null>(null);
+  const [adjustNotice, setAdjustNotice] = useState<string | null>(null);
 
   const fetchOrder = useCallback(async (): Promise<AdminOrderDetail> => {
     const response = await apiFetch(`/admin/orders/${encodeURIComponent(id)}`);
@@ -352,7 +450,7 @@ export function OrderDetailView({ id }: { id: string }) {
     <div className="flex flex-col gap-4">
       {back}
       <div className="flex flex-wrap items-center gap-3">
-        <h1 className="text-2xl font-bold tracking-tight">
+        <h1 className="text-[28px] leading-8 font-bold tracking-[-0.025em] tabular">
           {formatMessage(dict.order.title, { number: order.number })}
         </h1>
         <StatusBadge status={order.status} />
@@ -360,7 +458,9 @@ export function OrderDetailView({ id }: { id: string }) {
 
       <section
         aria-label={dict.order.actions.title}
-        className="flex flex-col gap-3 rounded-xl border border-border bg-surface p-4"
+        // Phones: the status actions sit in a bar at the bottom, above the tab bar, in thumb
+        // reach while the order is read from the top (it comes last in the visual order).
+        className="flex flex-col gap-3 rounded-3xl bg-surface p-4 max-sm:sticky max-sm:bottom-[calc(4.25rem+env(safe-area-inset-bottom))] max-sm:z-20 max-sm:order-last max-sm:bg-surface/90 max-sm:p-3 max-sm:shadow-[0_8px_28px_-12px_rgb(20_20_22/0.32)] max-sm:ring-1 max-sm:ring-hairline max-sm:backdrop-blur-xl sm:p-5"
       >
         {notice !== null ? (
           <p role="status" className="font-medium">
@@ -372,7 +472,12 @@ export function OrderDetailView({ id }: { id: string }) {
         ) : (
           <div className="flex flex-wrap gap-2">
             {forward.map((status) => (
-              <Button key={status} onClick={() => void changeStatus(status)} disabled={pending}>
+              <Button
+                key={status}
+                onClick={() => void changeStatus(status)}
+                disabled={pending}
+                className="max-sm:min-h-12 max-sm:flex-1"
+              >
                 {pending ? dict.order.actions.working : dict.actions[status]}
               </Button>
             ))}
@@ -393,7 +498,40 @@ export function OrderDetailView({ id }: { id: string }) {
         {errorLine}
       </section>
 
-      <OrderBody order={order} />
+      {adjustNotice === null ? null : (
+        <p
+          role="status"
+          className="rounded-2xl bg-success-soft px-4 py-3 text-sm font-medium text-success"
+        >
+          {adjustNotice}
+        </p>
+      )}
+
+      <OrderBody
+        order={order}
+        onAdjust={(line, opener) => {
+          setAdjustNotice(null);
+          setAdjusting({ line, opener });
+        }}
+      />
+
+      {adjusting === null ? null : (
+        <AdjustDialog
+          order={order}
+          line={adjusting.line}
+          returnFocusTo={adjusting.opener}
+          onClose={() => setAdjusting(null)}
+          onAdjusted={(updated) => {
+            setAdjusting(null);
+            setLoaded({ key, order: updated, error: null });
+            setAdjustNotice(
+              updated.status === 'CANCELLED'
+                ? dict.order.adjust.cancelledAll
+                : dict.order.adjust.done,
+            );
+          }}
+        />
+      )}
 
       {cancelOpen && canCancel ? (
         <CancelDialog

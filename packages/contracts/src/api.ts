@@ -212,6 +212,20 @@ export type AdminOrderDetail = Schemas['AdminOrderDetail'];
 /** `PATCH /api/v1/admin/orders/{id}/status` body. */
 export type OrderStatusUpdateRequest = Schemas['OrderStatusUpdateRequest'];
 
+/**
+ * `PATCH /api/v1/admin/orders/{id}/items/{product_id}` body (operator and admin, CSRF): lower an
+ * order line because the goods are not there (ADR 0018). `quantity` 0..current line quantity,
+ * `reason` 3-300 characters, `mark_out_of_stock` (default false) sets the product's stock to 0
+ * instead of returning the difference. Response: `AdminOrderDetail`. Errors:
+ * `409 order_not_adjustable` (`current_status`; only NEW / CONFIRMED / PICKING),
+ * `409 invalid_quantity` (`available_quantity` = the line's current quantity),
+ * `404 order_not_found` / `order_item_not_found`.
+ */
+export type OrderItemAdjustRequest = Schemas['OrderItemAdjustRequest'];
+
+/** One line lowered at picking: "Olma: `from_quantity` kg → `to_quantity` kg, sabab: `reason`". */
+export type AdminOrderAdjustment = Schemas['AdminOrderAdjustment'];
+
 /** `GET /api/v1/admin/dashboard` (operator and admin): today's numbers, computed server-side. */
 export type Dashboard = Schemas['Dashboard'];
 
@@ -294,6 +308,10 @@ export const API_ERROR_CODES = [
   'order_status_conflict',
   'too_many_open_orders',
   'phone_verification_required',
+  // back office: order lines lowered at picking (ADR 0018)
+  'order_not_adjustable',
+  'order_item_not_found',
+  'invalid_quantity',
   // profile: saved addresses
   'address_not_found',
   'address_limit_reached',

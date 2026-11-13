@@ -35,6 +35,7 @@ from app.repositories.catalog import (
     PRODUCT_SUMMARY_COLUMNS,
     ProductSummaryRecord,
     product_is_visible,
+    sellable_stock,
     summary_from_row,
     visible_category_cte,
 )
@@ -214,7 +215,8 @@ class SqlAlchemyCartRepository:
         row = (
             await self._session.execute(
                 select(
-                    Product.stock_quantity,
+                    # Sellable, not physical, stock (ADR 0018).
+                    sellable_stock().label("stock_quantity"),
                     product_is_visible(visible).label("is_available"),
                 ).where(Product.id == product_id)
             )

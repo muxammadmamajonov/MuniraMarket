@@ -17,10 +17,12 @@ import { formatCount } from '@/lib/format';
 import { LIST_PAGE_SIZE, isUuid, parseChoice, parsePageParam, parseText } from '@/lib/list-params';
 import { useApiResource } from '@/lib/use-api-resource';
 import { useUrlParams } from '@/lib/use-url-params';
-import { CHIP, CHIP_OFF, CHIP_ON, LINK_BUTTON_PRIMARY } from '../ui/classes';
+import { CHIP, CHIP_OFF, CHIP_ON, CHIP_RAIL, LINK_BUTTON_PRIMARY, ROW_LINK } from '../ui/classes';
 import { DataTable, type Column } from '../ui/data-table';
+import { FilterSheet } from '../ui/filter-sheet';
 import { PageHeader } from '../ui/page-header';
 import { Pagination } from '../ui/pagination';
+import { ProductPhoto } from '../ui/product-photo';
 import { ResourceView } from '../ui/resource-view';
 import { SearchBox } from '../ui/search-box';
 import { Select } from '../ui/select';
@@ -77,18 +79,21 @@ export function ProductsList() {
       header: copy.columns.name,
       primary: true,
       cell: (product) => (
-        <>
-          <Link
-            href={productHref(locale, product.id)}
-            data-testid="product-row-link"
-            className="font-semibold underline-offset-2 hover:underline focus-visible:outline-2 focus-visible:outline-focus"
-          >
-            {localName(product, locale)}
-          </Link>
-          <span className="block text-sm text-muted-foreground">
-            {copy.columns.sku}: <span className="font-mono">{product.sku}</span>
+        <span className="flex items-center gap-3">
+          <ProductPhoto src={product.image_url} className="w-12" />
+          <span className="min-w-0">
+            <Link
+              href={productHref(locale, product.id)}
+              data-testid="product-row-link"
+              className="font-semibold underline-offset-2 hover:underline focus-visible:outline-2 focus-visible:outline-focus"
+            >
+              {localName(product, locale)}
+            </Link>
+            <span className="block text-sm text-muted-foreground">
+              {copy.columns.sku}: <span className="font-mono">{product.sku}</span>
+            </span>
           </span>
-        </>
+        </span>
       ),
     },
     {
@@ -146,50 +151,59 @@ export function ProductsList() {
         }
       />
 
-      <div className="flex flex-wrap items-end gap-3">
-        <SearchBox
-          value={q}
-          onSearch={(next) => replace({ q: next })}
-          label={copy.searchLabel}
-          placeholder={copy.searchPlaceholder}
-          testId="product-search"
-        />
-        <div className="flex min-w-0 flex-col gap-1 text-sm font-medium sm:w-60">
-          <span id={categoryLabelId}>{copy.categoryFilterLabel}</span>
-          <Select
-            labelledBy={categoryLabelId}
-            value={categoryId}
-            onChange={(next) => replace({ category_id: next })}
-            disabled={categories.status !== 'ready'}
-            testId="product-category-filter"
-            placeholder={copy.allCategories}
-            options={options.map(({ category, depth }) => ({
-              value: category.id,
-              label: indentedLabel(localName(category, locale), depth),
-            }))}
+      <FilterSheet
+        active={(status === 'default' ? 0 : 1) + (categoryId === '' ? 0 : 1)}
+        onReset={() => replace({ status: null, category_id: null })}
+        always={
+          <SearchBox
+            value={q}
+            onSearch={(next) => replace({ q: next })}
+            label={copy.searchLabel}
+            placeholder={copy.searchPlaceholder}
+            testId="product-search"
           />
+        }
+      >
+        <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
+          <div className="flex min-w-0 flex-col gap-1 text-sm font-medium sm:w-60">
+            <span id={categoryLabelId} className="sm:sr-only">
+              {copy.categoryFilterLabel}
+            </span>
+            <Select
+              onPage
+              labelledBy={categoryLabelId}
+              value={categoryId}
+              onChange={(next) => replace({ category_id: next })}
+              disabled={categories.status !== 'ready'}
+              testId="product-category-filter"
+              placeholder={copy.allCategories}
+              options={options.map(({ category, depth }) => ({
+                value: category.id,
+                label: indentedLabel(localName(category, locale), depth),
+              }))}
+            />
+          </div>
+          <nav aria-label={copy.statusFilterLabel}>
+            <ul className={CHIP_RAIL}>
+              {CHOICES.map((choice) => {
+                const selected = choice === status;
+                return (
+                  <li key={choice}>
+                    <Link
+                      href={hrefWith({ status: choice === 'default' ? null : choice })}
+                      replace
+                      aria-current={selected ? 'true' : undefined}
+                      className={`${CHIP} ${selected ? CHIP_ON : CHIP_OFF}`}
+                    >
+                      {copy.statusChoices[choice]}
+                    </Link>
+                  </li>
+                );
+              })}
+            </ul>
+          </nav>
         </div>
-      </div>
-
-      <nav aria-label={copy.statusFilterLabel}>
-        <ul className="flex flex-wrap gap-2">
-          {CHOICES.map((choice) => {
-            const selected = choice === status;
-            return (
-              <li key={choice}>
-                <Link
-                  href={hrefWith({ status: choice === 'default' ? null : choice })}
-                  replace
-                  aria-current={selected ? 'true' : undefined}
-                  className={`${CHIP} ${selected ? CHIP_ON : CHIP_OFF}`}
-                >
-                  {copy.statusChoices[choice]}
-                </Link>
-              </li>
-            );
-          })}
-        </ul>
-      </nav>
+      </FilterSheet>
 
       <ResourceView resource={products} loadingLabel={copy.loading}>
         {(data) =>
@@ -219,6 +233,36 @@ export function ProductsList() {
                 columns={columns}
                 rows={data.items}
                 rowKey={(product) => product.id}
+                mobileRow={(product) => {
+                  const state = productState(product);
+                  return (
+                    <Link
+                      href={productHref(locale, product.id)}
+                      data-testid="product-row-link"
+                      className={ROW_LINK}
+                    >
+                      <ProductPhoto src={product.image_url} className="w-14" />
+                      <span className="min-w-0 flex-1">
+                        <span className="line-clamp-2 leading-5 font-semibold">
+                          {localName(product, locale)}
+                        </span>
+                        <span className="mt-0.5 block truncate text-[13px] text-muted-foreground">
+                          {names.get(product.category_id) ?? dict.common.noValue} ·{' '}
+                          {copy.columns.stock}:{' '}
+                          {product.stock_quantity === null
+                            ? copy.stockUntracked
+                            : formatCount(product.stock_quantity)}
+                        </span>
+                      </span>
+                      <span className="flex shrink-0 flex-col items-end gap-1">
+                        <span className="font-semibold whitespace-nowrap tabular">
+                          {formatUZS(product.price_uzs, locale)}
+                        </span>
+                        {state === 'active' ? null : <ProductStatusBadge state={state} />}
+                      </span>
+                    </Link>
+                  );
+                }}
               />
               <Pagination
                 page={page}

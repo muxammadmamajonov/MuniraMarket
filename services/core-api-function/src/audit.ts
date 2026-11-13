@@ -34,13 +34,14 @@ export const ALLOWED_FIELDS: Readonly<Record<string, ReadonlySet<string>>> = {
     'price_uzs',
     'old_price_uzs',
     'stock_quantity',
+    'safety_stock',
     'is_active',
     'sort_order',
     'image_url',
     'archived',
   ]),
   user: new Set(['role', 'is_blocked']),
-  order: new Set(['status']),
+  order: new Set(['status', 'quantity']),
   catalog: new Set(),
 };
 
@@ -55,6 +56,7 @@ export const ALLOWED_EXTRA: ReadonlySet<string> = new Set([
   'unchanged',
   'sku',
   'slug',
+  'marked_out_of_stock',
 ]);
 /** Allow-listed flags whose name contains a denied word: only a boolean is kept. */
 const FLAG_EXTRA: ReadonlySet<string> = new Set(['has_reason']);

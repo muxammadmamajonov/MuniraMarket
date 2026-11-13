@@ -181,14 +181,15 @@ async def test_products_defaults_and_page_shape(
         "old_price_uzs",
         "stock_quantity",
         "in_stock",
+        "low_stock",
         "image_url",
         "category_id",
     }
     assert first["unit"] == "kg"
     assert first["old_price_uzs"] == 15_000
-    assert (first["stock_quantity"], first["in_stock"]) == (0, False)
-    assert (second["stock_quantity"], second["in_stock"]) == (4, True)
-    assert (third["stock_quantity"], third["in_stock"]) == (None, True)
+    assert (first["stock_quantity"], first["in_stock"], first["low_stock"]) == (0, False, False)
+    assert (second["stock_quantity"], second["in_stock"], second["low_stock"]) == (4, True, False)
+    assert (third["stock_quantity"], third["in_stock"], third["low_stock"]) == (None, True, False)
 
 
 async def test_products_passes_filters_to_repository(

@@ -94,6 +94,8 @@ export const ru: Dictionary = {
     productsCount: 'Товаров: {count}',
     emptyCategory: 'В этой категории пока нет товаров.',
     filterLabel: 'Фильтр',
+    showResults: 'Показать результаты',
+    closeFilters: 'Закрыть',
     inStockOnly: 'Только в наличии',
     noneInStock: 'Сейчас нет товаров в наличии.',
     clearFilter: 'Сбросить фильтр',
@@ -296,6 +298,7 @@ export const ru: Dictionary = {
       cancelReasonHeading: 'Причина отмены',
       cancelledNotice: 'Этот заказ отменён.',
       productRemoved: 'Товар удалён из каталога',
+      lineAdjusted: 'Не хватило в магазине: было {original} {unit}',
     },
     cancel: {
       button: 'Отменить заказ',

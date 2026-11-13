@@ -117,6 +117,31 @@ export interface Dictionary {
     };
     notices: { conflict: string; updated: string };
     errors: { invalidTransition: string; failed: string };
+    /** A line the shop no longer has (ADR 0018): lower its quantity while picking. */
+    adjust: {
+      button: string;
+      title: string;
+      description: string;
+      quantityLabel: string;
+      quantityHint: string;
+      reasonLabel: string;
+      reasons: string[];
+      reasonInvalid: string;
+      markOutOfStock: string;
+      markOutOfStockHint: string;
+      confirm: string;
+      dismiss: string;
+      adjustedFrom: string;
+      done: string;
+      cancelledAll: string;
+      historyTitle: string;
+      outOfStockNote: string;
+      errors: {
+        notAdjustable: string;
+        invalidQuantity: string;
+        failed: string;
+      };
+    };
   };
   status: Record<OrderStatus, string>;
   /** Label of the button that moves an order *to* the given status. */

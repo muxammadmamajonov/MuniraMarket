@@ -12,7 +12,9 @@ from app.domain.cart import (
     check_line_quantity,
     evaluate_cart,
     is_in_stock,
+    is_low_stock,
     line_issue,
+    sellable_quantity,
 )
 
 
@@ -127,3 +129,18 @@ def test_money_stays_integer_for_large_amounts() -> None:
     _, totals = evaluate_cart([facts(price=9_999_999_999, quantity=99)])
     assert totals.subtotal_uzs == 989_999_999_901
     assert isinstance(totals.subtotal_uzs, int)
+
+
+@pytest.mark.parametrize(
+    ("stock", "safety", "expected"),
+    [(None, 5, None), (10, 0, 10), (10, 3, 7), (3, 3, 0), (2, 5, 0), (0, 0, 0)],
+)
+def test_sellable_quantity(stock: int | None, safety: int, expected: int | None) -> None:
+    assert sellable_quantity(stock, safety) == expected
+
+
+@pytest.mark.parametrize(
+    ("sellable", "expected"), [(None, False), (0, False), (1, True), (3, True), (4, False)]
+)
+def test_is_low_stock(sellable: int | None, expected: bool) -> None:
+    assert is_low_stock(sellable) is expected

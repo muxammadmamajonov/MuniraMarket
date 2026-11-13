@@ -12,8 +12,11 @@ import {
   CartEmptyError,
   CheckoutError,
   IdempotencyKeyConflictError,
+  InvalidQuantityError,
   InvalidStatusTransitionError,
   OrderInsufficientStockError,
+  OrderItemNotFoundError,
+  OrderNotAdjustableError,
   OrderNotCancellableError,
   OrderNotFoundError,
   OrderProductUnavailableError,
@@ -76,6 +79,19 @@ export function checkoutApiError(error: CheckoutError): ApiError {
     return new ApiError(409, 'invalid_status_transition', 'Status change not allowed', {
       extra: { current_status: error.currentStatus },
     });
+  }
+  if (error instanceof OrderNotAdjustableError) {
+    return new ApiError(409, 'order_not_adjustable', 'Order lines can no longer be changed', {
+      extra: { current_status: error.currentStatus },
+    });
+  }
+  if (error instanceof InvalidQuantityError) {
+    return new ApiError(409, 'invalid_quantity', 'Quantity can only be lowered', {
+      extra: { available_quantity: error.currentQuantity },
+    });
+  }
+  if (error instanceof OrderItemNotFoundError) {
+    return new ApiError(404, 'order_item_not_found', 'Order line not found');
   }
   if (error instanceof CartEmptyError) return new ApiError(409, 'cart_empty', 'Cart is empty');
   if (error instanceof IdempotencyKeyConflictError) {

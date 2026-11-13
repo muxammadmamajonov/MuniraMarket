@@ -19,21 +19,22 @@ import {
 } from '@/lib/orders';
 import { useSession } from '@/lib/session';
 import { StatusBadge } from './status-badge';
+import { PageHeader } from './ui/page-header';
+import { CHIP, CHIP_OFF, CHIP_ON, CHIP_RAIL, LINK_BUTTON, ROW_LINK } from './ui/classes';
+import { DataTable, type Column } from './ui/data-table';
+import { FilterSheet } from './ui/filter-sheet';
+import { ProductPhoto } from './ui/product-photo';
 
 type Loaded =
   | { key: string; page: OrderPage; error: null }
   | { key: string; page: null; error: ApiRequestError };
-
-const CHIP =
-  'inline-flex min-h-11 items-center rounded-xl border px-3 text-sm font-medium ' +
-  'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus';
 
 function StatusFilter({ active }: { active: OrderStatus | null }) {
   const { dict, locale } = useI18n();
   const options: Array<OrderStatus | null> = [null, ...ORDER_STATUSES];
   return (
     <nav aria-label={dict.orders.filterLabel}>
-      <ul className="flex flex-wrap gap-2">
+      <ul className={CHIP_RAIL}>
         {options.map((option) => {
           const selected = option === active;
           return (
@@ -41,12 +42,7 @@ function StatusFilter({ active }: { active: OrderStatus | null }) {
               <Link
                 href={ordersHref(locale, { status: option, page: 1 })}
                 aria-current={selected ? 'true' : undefined}
-                className={cx(
-                  CHIP,
-                  selected
-                    ? 'border-primary bg-primary text-primary-foreground'
-                    : 'border-border bg-surface text-foreground hover:bg-surface-muted',
-                )}
+                className={cx(CHIP, selected ? CHIP_ON : CHIP_OFF)}
               >
                 {option === null ? dict.orders.filterAll : dict.status[option]}
               </Link>
@@ -70,11 +66,9 @@ function Pagination({
   const { dict, locale } = useI18n();
   const hasPrevious = page > 1;
   const hasNext = page < totalPages;
-  const link =
-    'inline-flex min-h-11 items-center rounded-xl border border-border bg-surface px-4 font-medium hover:bg-surface-muted ' +
-    'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus';
+  const link = LINK_BUTTON;
   const disabled =
-    'inline-flex min-h-11 items-center rounded-xl border border-border px-4 font-medium opacity-50';
+    'inline-flex min-h-11 items-center rounded-2xl bg-surface/60 px-4 font-semibold text-muted-foreground';
 
   return (
     <nav
@@ -106,69 +100,94 @@ function Pagination({
   );
 }
 
-// On narrow screens every row becomes a small card (labels come from `data-label`); from `sm` up
-// it is a regular table.
-const CELL =
-  'flex justify-between gap-3 py-1 before:text-sm before:text-muted-foreground before:content-[attr(data-label)] ' +
-  'sm:table-cell sm:px-3 sm:py-3 sm:before:hidden';
+/** Up to three product cut-outs, overlapping, so an order is recognisable at a glance. */
+function Thumbnails({ order }: { order: OrderPage['items'][number] }) {
+  // An order without thumbnails keeps one placeholder, so the numbers stay in one column.
+  const shown = order.thumbnails.length === 0 ? [null] : order.thumbnails.slice(0, 3);
+  return (
+    <span aria-hidden="true" className="flex w-24 shrink-0 -space-x-3">
+      {shown.map((thumb, index) => (
+        <ProductPhoto
+          key={`${thumb?.product_id ?? 'none'}-${String(index)}`}
+          src={thumb?.image_url ?? null}
+          className="w-10 rounded-[10px] ring-2 ring-surface"
+        />
+      ))}
+    </span>
+  );
+}
 
 function OrdersTable({ orders }: { orders: OrderPage['items'] }) {
   const { dict, locale } = useI18n();
   const columns = dict.orders.columns;
-  return (
-    <table className="block w-full text-left sm:table">
-      <thead className="hidden sm:table-header-group">
-        <tr className="border-b border-border text-sm text-muted-foreground">
-          <th scope="col" className="px-3 py-2 font-medium">
-            {columns.number}
-          </th>
-          <th scope="col" className="px-3 py-2 font-medium">
-            {columns.status}
-          </th>
-          <th scope="col" className="px-3 py-2 text-right font-medium">
-            {columns.items}
-          </th>
-          <th scope="col" className="px-3 py-2 text-right font-medium">
-            {columns.total}
-          </th>
-          <th scope="col" className="px-3 py-2 font-medium">
-            {columns.created}
-          </th>
-        </tr>
-      </thead>
-      <tbody className="block sm:table-row-group">
-        {orders.map((order) => (
-          <tr
-            key={order.id}
-            className="mb-3 block rounded-xl border border-border bg-surface px-3 py-2 sm:mb-0 sm:table-row sm:rounded-none sm:border-0 sm:border-b sm:bg-transparent sm:px-0 sm:py-0 sm:hover:bg-surface-muted"
+  const table: Array<Column<OrderPage['items'][number]>> = [
+    {
+      id: 'number',
+      header: columns.number,
+      primary: true,
+      cell: (order) => (
+        <span className="flex items-center gap-3">
+          <Thumbnails order={order} />
+          <Link
+            href={orderHref(locale, order.id)}
+            className="min-h-6 font-semibold tabular underline-offset-2 hover:underline focus-visible:outline-2 focus-visible:outline-focus"
           >
-            <td data-label={columns.number} className={CELL}>
-              <Link
-                href={orderHref(locale, order.id)}
-                className="min-h-6 font-semibold underline-offset-2 hover:underline focus-visible:outline-2 focus-visible:outline-focus"
-              >
-                {order.number}
-              </Link>
-            </td>
-            <td data-label={columns.status} className={CELL}>
-              <StatusBadge status={order.status} />
-            </td>
-            <td data-label={columns.items} className={cx(CELL, 'sm:text-right')}>
-              {order.item_count}
-            </td>
-            <td
-              data-label={columns.total}
-              className={cx(CELL, 'sm:text-right sm:whitespace-nowrap')}
-            >
-              {formatUZS(order.total_uzs, locale)}
-            </td>
-            <td data-label={columns.created} className={cx(CELL, 'sm:whitespace-nowrap')}>
+            {order.number}
+          </Link>
+        </span>
+      ),
+    },
+    {
+      id: 'status',
+      header: columns.status,
+      cell: (order) => <StatusBadge status={order.status} />,
+    },
+    {
+      id: 'items',
+      header: columns.items,
+      numeric: true,
+      cell: (order) => order.item_count,
+    },
+    {
+      id: 'total',
+      header: columns.total,
+      numeric: true,
+      nowrap: true,
+      cell: (order) => <span className="font-semibold">{formatUZS(order.total_uzs, locale)}</span>,
+    },
+    {
+      id: 'created',
+      header: columns.created,
+      nowrap: true,
+      cell: (order) => (
+        <span className="text-muted-foreground">{formatDateTime(order.created_at)}</span>
+      ),
+    },
+  ];
+  return (
+    <DataTable
+      caption={dict.orders.title}
+      columns={table}
+      rows={orders}
+      rowKey={(order) => order.id}
+      mobileRow={(order) => (
+        <Link href={orderHref(locale, order.id)} className={ROW_LINK}>
+          <Thumbnails order={order} />
+          <span className="flex min-w-0 flex-1 flex-col">
+            <span className="truncate font-semibold tabular">{order.number}</span>
+            <span className="text-[13px] text-muted-foreground tabular">
               {formatDateTime(order.created_at)}
-            </td>
-          </tr>
-        ))}
-      </tbody>
-    </table>
+            </span>
+          </span>
+          <span className="flex shrink-0 flex-col items-end gap-1">
+            <span className="font-semibold whitespace-nowrap tabular">
+              {formatUZS(order.total_uzs, locale)}
+            </span>
+            <StatusBadge status={order.status} />
+          </span>
+        </Link>
+      )}
+    />
   );
 }
 
@@ -248,8 +267,17 @@ export function OrdersList() {
 
   return (
     <div className="flex flex-col gap-4">
-      <h1 className="text-2xl font-bold tracking-tight">{dict.orders.title}</h1>
-      <StatusFilter active={status} />
+      <PageHeader title={dict.orders.title} />
+      <FilterSheet
+        active={status === null ? 0 : 1}
+        always={
+          <p className="flex min-h-11 items-center text-[15px] font-semibold sm:hidden">
+            {status === null ? dict.orders.filterAll : dict.status[status]}
+          </p>
+        }
+      >
+        <StatusFilter active={status} />
+      </FilterSheet>
       {body}
     </div>
   );

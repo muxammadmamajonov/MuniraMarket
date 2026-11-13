@@ -76,13 +76,13 @@ the outbox tables. Keep `lib/coreApi/` and `lib/notifications/` dependency-free 
 gateway bundles the signer and the Function bundles the drain; their only `sdk` import
 (`BotApiError`) is aliased to a stand-in there.
 
-| Piece                                                                     | File                                                | Role                                                                                                                                  |
-| ------------------------------------------------------------------------- | --------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
-| `claimNotifications`, `reportNotification`                                | `lib/coreApi/client.js`                             | Signed calls with an EMPTY actor (the drain acts for the service, never for a user).                                                  |
-| `NotificationTransport`, `createTelegramBotTransport({ api })`            | `lib/notifications/transport.js`                    | `deliver(notification)` resolves to `{ outcome, errorCode? }`; customer messages and staff alerts, both plain text (no `parse_mode`). |
-| `buildOrderStatusMessage`, `buildStaffAlertMessage`                       | `lib/notifications/orderStatus.js`, `staffAlert.js` | Message texts.                                                                                                                        |
-| `yandexGoCourierUrl({ lat, lon })`                                        | `lib/notifications/yandexGo.js`                     | Yandex Go courier link for the staff alert button (`null` for an invalid point).                                                      |
-| `drainOrderNotifications({ coreApi, transport, limit, maxBatches, now })` | `lib/notifications/outbox.js`                       | Claim, validate, deliver sequentially, report; returns a summary.                                                                     |
+| Piece                                                                                                         | File                                                                    | Role                                                                                                                       |
+| ------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| `claimNotifications`, `reportNotification`                                                                    | `lib/coreApi/client.js`                                                 | Signed calls with an EMPTY actor (the drain acts for the service, never for a user).                                       |
+| `NotificationTransport`, `createTelegramBotTransport({ api, adminOrigin })`                                   | `lib/notifications/transport.js`                                        | `deliver(notification)` resolves to `{ outcome, errorCode? }`; customer messages plain text, staff messages Telegram HTML. |
+| `buildOrderStatusMessage`, `buildOrderAdjustedMessage`, `buildStaffAlertMessage`, `buildStaffAdjustedMessage` | `lib/notifications/orderStatus.js`, `orderAdjusted.js`, `staffAlert.js` | Message texts.                                                                                                             |
+| `yandexGoCourierUrl({ lat, lon })`                                                                            | `lib/notifications/yandexGo.js`                                         | Yandex Go courier link for the staff alert button (`null` for an invalid point).                                           |
+| `drainOrderNotifications({ coreApi, transport, limit, maxBatches, now })`                                     | `lib/notifications/outbox.js`                                           | Claim, validate, deliver sequentially, report; returns a summary.                                                          |
 
 **Core API contract** (signed per ADR 0003, empty actor; 401 for any auth failure, 403 if an actor is sent):
 
@@ -98,19 +98,31 @@ gateway bundles the signer and the Function bundles the drain; their only `sdk` 
 - `order.status_changed` payload (to the customer): `order_id`, `order_number`, `status`,
   `locale` (`uz`|`ru`), `total_uzs` (integer), `chat_id` (integer > 0), optional `cancel_reason`.
   No address or phone.
+- `order.adjusted` payload (to the customer; ADR 0018, staff lowered order lines at picking):
+  `order_id`, `order_number`, `status`, `locale`, `total_uzs` (the new total), `chat_id`, `changes`
+  (`[{name_uz, name_ru, unit, from_quantity, to_quantity}]`). Plain text in the customer's
+  language: which items changed, the new total, and that the order can be cancelled in the app.
+  The staff's reason is never sent to the customer.
 - `order.staff_alert` payload (to the connected staff group; enqueued for NEW, CANCELLED,
   OUT_FOR_DELIVERY and DELIVERED when a group is connected): `order_id`, `order_number`, `status`,
   `previous_status` (status or `null`), `total_uzs`, `chat_id` (negative group id),
-  `cancelled_by_customer` (boolean), and for a `NEW` order whose address has coordinates an
-  optional `destination` (`{"lat", "lon"}`, WGS84). No customer name, phone or address text. The
-  message is one bilingual text: Uzbek lines (headline + order number, status with the previous
-  status when known, total, "cancelled by the customer" when true), a blank line, then the same in
-  Russian. With a valid `destination` it also carries one inline URL button, "Yandex chaqirish /
-  Вызвать Яндекс", opening Yandex Go with the destination preset and NO start point (the app
-  uses the location of whoever taps it; `lib/notifications/yandexGo.js`, same link as
-  `packages/contracts/src/yandex-go.ts`). The coordinates are the only location that reaches the
-  group, and only inside that URL. A malformed or misplaced `destination` drops the button, not
-  the alert.
+  `cancelled_by_customer` (boolean), `recipient_name`, and for a `NEW` order `details` (`items`
+  `[{name_uz, quantity, unit, line_total_uzs}]`, `subtotal_uzs`, `payment_method`,
+  `recipient_phone`, `address` `{street, house, apartment, entrance, floor, landmark}`, `comment`,
+  `created_at`) and, when the address has coordinates, `destination` (`{"lat", "lon"}`, WGS84).
+  The group is the shop's private staff group, so a NEW alert shows the whole order (owner's
+  request, ADR 0015): Uzbek Telegram HTML (`parse_mode: 'HTML'`, every value escaped) with the
+  time (Tashkent), the items, total, payment, recipient, phone, address, landmark and comment; a
+  list too long for Telegram's 4096 characters ends with "+N ta mahsulot". Other alerts are short:
+  number, status (with the previous one), recipient and total. Buttons: "Yandex chaqirish" (with a
+  valid `destination`: Yandex Go with the destination preset and NO start point;
+  `lib/notifications/yandexGo.js`, same link as `packages/contracts/src/yandex-go.ts`; the
+  coordinates never appear in the text) and "Adminda ochish" (`<ADMIN_PUBLIC_ORIGIN>/uz/orders/<id>`,
+  only when the drain is given an `https://` admin origin). A malformed `destination`, `details` or
+  `recipient_name` drops that part, not the alert.
+- `order.staff_adjusted` payload (to the staff group; ADR 0018): `order_id`, `order_number`,
+  `status`, `total_uzs`, `chat_id`, `recipient_name`, `changes` (as above plus
+  `marked_out_of_stock`), `reason`. A short Uzbek HTML alert with the "Adminda ochish" button.
 
 **Outcome mapping** (`createTelegramBotTransport`): sent -> `delivered`; Bot API 403 ->
 `recipient_blocked` (customer blocked the bot, or the bot was removed from the staff group);

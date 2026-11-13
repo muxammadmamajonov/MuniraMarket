@@ -7,8 +7,9 @@
  * before the lease expires (60 s) is redelivered, and a crash between "sent" and "reported" sends
  * it twice. Nothing in this module runs on its own: the api-gateway Worker's Cloudflare Cron
  * Trigger calls `drainOrderNotifications` every minute (Telegram Serverless has no scheduler; see
- * services/telegram/README.md). Two event types are delivered: `order.status_changed` (to the
- * customer) and `order.staff_alert` (to the connected staff group).
+ * services/telegram/README.md). Four event types are delivered: `order.status_changed` and
+ * `order.adjusted` (to the customer), `order.staff_alert` and `order.staff_adjusted` (to the
+ * connected staff group).
  *
  * Everything is injected (Core API client, transport, clock); there are no globals, and nothing
  * from a payload (names, order numbers, chat ids) is ever logged or put into an error code.
@@ -18,6 +19,9 @@ import { isGeoPoint } from './yandexGo.js';
 
 export const ORDER_STATUS_CHANGED = 'order.status_changed';
 export const ORDER_STAFF_ALERT = 'order.staff_alert';
+/** Order lines lowered at picking (ADR 0018): the customer's message and the staff group's. */
+export const ORDER_ADJUSTED = 'order.adjusted';
+export const ORDER_STAFF_ADJUSTED = 'order.staff_adjusted';
 /** Lease length the Core API grants per claim. */
 export const LEASE_MS = 60_000;
 /** Stop delivering when less than this much of the lease is left, so reports still fit in. */
@@ -30,6 +34,11 @@ const MAX_TELEGRAM_ID = 2 ** 52;
 /** Group and supergroup chat ids are negative; same bound as the Core API's staff-chat route. */
 const MIN_GROUP_CHAT_ID = -(10 ** 15);
 const ERROR_CODE_RE = /^[a-z0-9_.-]{1,64}$/;
+const UNITS = Object.freeze(['piece', 'kg', 'g', 'l', 'ml']);
+const PAYMENT_METHODS = Object.freeze(['cash_on_delivery', 'card_on_delivery']);
+/** Same bound as the cart (50 lines). */
+const MAX_LINES = 50;
+const MAX_TEXT_CHARS = 1000;
 const OUTCOMES = Object.freeze(['delivered', 'recipient_blocked', 'retry', 'failed']);
 
 /**
@@ -56,6 +65,249 @@ const OUTCOMES = Object.freeze(['delivered', 'recipient_blocked', 'retry', 'fail
  */
 function isPlainObject(value) {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+/**
+ * @param {unknown} value
+ * @returns {value is number}
+ */
+function isAmount(value) {
+  return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0;
+}
+
+/**
+ * @param {unknown} value
+ * @param {number} [maxChars]
+ * @returns {value is string}
+ */
+function isText(value, maxChars = MAX_TEXT_CHARS) {
+  return typeof value === 'string' && Array.from(value).length <= maxChars;
+}
+
+/**
+ * @param {unknown} value
+ * @returns {value is string}
+ */
+function isOrderId(value) {
+  return typeof value === 'string' && UUID_RE.test(value);
+}
+
+/**
+ * @param {unknown} value
+ * @returns {value is number}
+ */
+function isGroupChatId(value) {
+  return (
+    typeof value === 'number' &&
+    Number.isSafeInteger(value) &&
+    value < 0 &&
+    value >= MIN_GROUP_CHAT_ID
+  );
+}
+
+/**
+ * @param {unknown} value
+ * @returns {value is string}
+ */
+function isPayloadOrderNumber(value) {
+  return (
+    typeof value === 'string' && value !== '' && Array.from(value).length <= MAX_ORDER_NUMBER_CHARS
+  );
+}
+
+/**
+ * `null` when absent or not a non-empty string; otherwise the string (renderers clean and cap it).
+ * @param {unknown} value
+ * @returns {string | undefined}
+ */
+function optionalText(value) {
+  return isText(value) && value.trim() !== '' ? value : undefined;
+}
+
+/**
+ * Validates the `details` of a NEW order's staff alert. Any defect drops all of them (the alert
+ * is then sent in its short form: the order number and total are what staff must not miss).
+ * @param {unknown} details
+ * @returns {import('./staffAlert.js').StaffAlertDetails | undefined}
+ */
+export function parseStaffAlertDetails(details) {
+  if (!isPlainObject(details)) return undefined;
+  const {
+    items,
+    subtotal_uzs: subtotalUzs,
+    payment_method: paymentMethod,
+    recipient_phone: recipientPhone,
+    address,
+    comment,
+    created_at: createdAt,
+  } = details;
+  if (!Array.isArray(items) || items.length === 0 || items.length > MAX_LINES) return undefined;
+  /** @type {import('./staffAlert.js').StaffAlertItem[]} */
+  const parsedItems = [];
+  for (const item of items) {
+    if (!isPlainObject(item)) return undefined;
+    const { name_uz: nameUz, quantity, unit, line_total_uzs: lineTotalUzs } = item;
+    if (!isText(nameUz) || !isAmount(quantity) || !isAmount(lineTotalUzs)) return undefined;
+    if (typeof unit !== 'string' || !UNITS.includes(unit)) return undefined;
+    parsedItems.push({
+      nameUz,
+      quantity,
+      unit: /** @type {import('../types.js').Unit} */ (unit),
+      lineTotalUzs,
+    });
+  }
+  if (!isAmount(subtotalUzs)) return undefined;
+  if (typeof paymentMethod !== 'string' || !PAYMENT_METHODS.includes(paymentMethod)) {
+    return undefined;
+  }
+  if (!isText(recipientPhone, 32) || !isPlainObject(address)) return undefined;
+  const { street, house, apartment, entrance, floor, landmark } = address;
+  if (!isText(street) || !isText(house)) return undefined;
+  for (const part of [apartment, entrance, floor, landmark]) {
+    if (part !== null && part !== undefined && !isText(part)) return undefined;
+  }
+  if (comment !== null && comment !== undefined && !isText(comment)) return undefined;
+  if (createdAt !== null && createdAt !== undefined && !isText(createdAt, 64)) return undefined;
+  /** @param {unknown} value */
+  const orNull = (value) => (typeof value === 'string' ? value : null);
+  return {
+    items: parsedItems,
+    subtotalUzs,
+    paymentMethod: /** @type {'cash_on_delivery' | 'card_on_delivery'} */ (paymentMethod),
+    recipientPhone,
+    address: {
+      street,
+      house,
+      apartment: orNull(apartment),
+      entrance: orNull(entrance),
+      floor: orNull(floor),
+      landmark: orNull(landmark),
+    },
+    comment: orNull(comment),
+    createdAt: orNull(createdAt),
+  };
+}
+
+/**
+ * Validates the `changes` of an adjustment payload (1..50 lines, each lowered, never raised).
+ * @param {unknown} changes
+ * @param {boolean} staff whether each change must carry `marked_out_of_stock`
+ * @returns {Array<{ nameUz: string, nameRu: string, unit: import('../types.js').Unit, fromQuantity: number, toQuantity: number, markedOutOfStock: boolean }> | null}
+ */
+function parseChanges(changes, staff) {
+  if (!Array.isArray(changes) || changes.length === 0 || changes.length > MAX_LINES) return null;
+  const parsed = [];
+  for (const change of changes) {
+    if (!isPlainObject(change)) return null;
+    const {
+      name_uz: nameUz,
+      name_ru: nameRu,
+      unit,
+      from_quantity: fromQuantity,
+      to_quantity: toQuantity,
+      marked_out_of_stock: markedOutOfStock,
+    } = change;
+    if (!isText(nameUz) || !isText(nameRu)) return null;
+    if (typeof unit !== 'string' || !UNITS.includes(unit)) return null;
+    if (!isAmount(fromQuantity) || !isAmount(toQuantity) || toQuantity >= fromQuantity) {
+      return null;
+    }
+    if (staff && typeof markedOutOfStock !== 'boolean') return null;
+    parsed.push({
+      nameUz,
+      nameRu,
+      unit: /** @type {import('../types.js').Unit} */ (unit),
+      fromQuantity,
+      toQuantity,
+      markedOutOfStock: markedOutOfStock === true,
+    });
+  }
+  return parsed;
+}
+
+/**
+ * Strictly validates an `order.adjusted` payload (the customer's "your order changed" message).
+ * @param {unknown} payload
+ * @returns {import('./transport.js').OrderAdjustedNotification | null} null when malformed
+ */
+export function parseOrderAdjustedPayload(payload) {
+  if (!isPlainObject(payload)) return null;
+  const {
+    order_id: orderId,
+    order_number: orderNumber,
+    locale,
+    total_uzs: totalUzs,
+    chat_id: chatId,
+    changes,
+  } = payload;
+  if (!isOrderId(orderId) || !isPayloadOrderNumber(orderNumber)) return null;
+  if (locale !== 'uz' && locale !== 'ru') return null;
+  if (!isAmount(totalUzs)) return null;
+  if (
+    typeof chatId !== 'number' ||
+    !Number.isSafeInteger(chatId) ||
+    chatId <= 0 ||
+    chatId > MAX_TELEGRAM_ID
+  ) {
+    return null;
+  }
+  const parsed = parseChanges(changes, false);
+  if (parsed === null) return null;
+  return {
+    kind: 'order_adjusted',
+    chatId,
+    orderNumber,
+    locale,
+    totalUzs,
+    changes: parsed.map(({ nameUz, nameRu, unit, fromQuantity, toQuantity }) => ({
+      nameUz,
+      nameRu,
+      unit,
+      fromQuantity,
+      toQuantity,
+    })),
+  };
+}
+
+/**
+ * Strictly validates an `order.staff_adjusted` payload (the staff group's short alert).
+ * @param {unknown} payload
+ * @returns {import('./transport.js').StaffAdjustedNotification | null} null when malformed
+ */
+export function parseStaffAdjustedPayload(payload) {
+  if (!isPlainObject(payload)) return null;
+  const {
+    order_id: orderId,
+    order_number: orderNumber,
+    total_uzs: totalUzs,
+    chat_id: chatId,
+    recipient_name: recipientName,
+    changes,
+    reason,
+  } = payload;
+  if (!isOrderId(orderId) || !isPayloadOrderNumber(orderNumber)) return null;
+  if (!isAmount(totalUzs) || !isGroupChatId(chatId) || !isText(reason)) return null;
+  const parsed = parseChanges(changes, true);
+  if (parsed === null) return null;
+  /** @type {import('./transport.js').StaffAdjustedNotification} */
+  const alert = {
+    kind: 'staff_adjusted',
+    chatId,
+    orderId,
+    orderNumber,
+    totalUzs,
+    changes: parsed.map(({ nameUz, unit, fromQuantity, toQuantity, markedOutOfStock }) => ({
+      nameUz,
+      unit,
+      fromQuantity,
+      toQuantity,
+      markedOutOfStock,
+    })),
+    reason,
+  };
+  const name = optionalText(recipientName);
+  if (name !== undefined) alert.recipientName = name;
+  return alert;
 }
 
 /**
@@ -110,7 +362,8 @@ export function parseOrderStatusPayload(payload) {
  * becomes the Yandex Go button URL. It is validated strictly (finite numbers, WGS84 range), but a
  * bad or misplaced one (missing, malformed, or on any status other than `NEW`) only drops the
  * button: the alert text itself is what staff must not miss, so it is still delivered. Nothing
- * invalid can reach the URL.
+ * invalid can reach the URL. `recipient_name` (optional) and `details` (optional, `NEW` only: the
+ * whole order) follow the same rule: a bad one is left out and the alert still goes.
  * @param {unknown} payload
  * @returns {import('./transport.js').StaffAlertNotification | null} null when malformed
  */
@@ -124,6 +377,8 @@ export function parseStaffAlertPayload(payload) {
     total_uzs: totalUzs,
     chat_id: chatId,
     cancelled_by_customer: cancelledByCustomer,
+    recipient_name: recipientName,
+    details,
     destination,
   } = payload;
   if (typeof orderId !== 'string' || !UUID_RE.test(orderId)) return null;
@@ -150,12 +405,17 @@ export function parseStaffAlertPayload(payload) {
   const alert = {
     kind: 'staff_alert',
     chatId,
+    orderId,
     orderNumber,
     status,
     previousStatus,
     totalUzs,
     cancelledByCustomer,
   };
+  const name = optionalText(recipientName);
+  if (name !== undefined) alert.recipientName = name;
+  const parsedDetails = status === 'NEW' ? parseStaffAlertDetails(details) : undefined;
+  if (parsedDetails !== undefined) alert.details = parsedDetails;
   if (status === 'NEW' && isGeoPoint(destination)) {
     alert.destination = { lat: destination.lat, lon: destination.lon };
   }
@@ -171,6 +431,8 @@ export function parseStaffAlertPayload(payload) {
 function parseEvent(eventType, payload) {
   if (eventType === ORDER_STATUS_CHANGED) return parseOrderStatusPayload(payload);
   if (eventType === ORDER_STAFF_ALERT) return parseStaffAlertPayload(payload);
+  if (eventType === ORDER_ADJUSTED) return parseOrderAdjustedPayload(payload);
+  if (eventType === ORDER_STAFF_ADJUSTED) return parseStaffAdjustedPayload(payload);
   return undefined;
 }
 
@@ -218,7 +480,8 @@ function parseClaimResponse(response) {
  * `maxBatches * limit` sequential deliveries.
  *
  * Behaviour:
- * - `order.status_changed` and `order.staff_alert` are delivered through the transport.
+ * - `order.status_changed`, `order.staff_alert`, `order.adjusted` and `order.staff_adjusted` are
+ *   delivered through the transport.
  * - unknown `event_type` -> reported `failed` / `unknown_event`; malformed payload -> `failed` /
  *   `invalid_payload`. Neither reaches the transport.
  * - Delivery is sequential. Before each delivery the remaining lease is checked; with less than

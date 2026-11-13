@@ -333,6 +333,8 @@ describe.skipIf(!hasDatabase)('admin catalog', () => {
         'price_uzs',
         'old_price_uzs',
         'stock_quantity',
+        'safety_stock',
+        'sellable_quantity',
         'image_url',
         'sort_order',
         'is_active',

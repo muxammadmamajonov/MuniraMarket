@@ -8,7 +8,7 @@ export function ActivePill({ active }: { active: boolean }) {
     <span
       data-active={active}
       className={cx(
-        'inline-flex items-center rounded-full px-2.5 py-0.5 text-sm font-medium whitespace-nowrap',
+        'inline-flex shrink-0 items-center rounded-full px-2.5 py-0.5 text-[13px] leading-5 font-semibold whitespace-nowrap',
         active
           ? 'bg-success-soft text-success'
           : 'bg-surface-muted text-muted-foreground ring-1 ring-border ring-inset',

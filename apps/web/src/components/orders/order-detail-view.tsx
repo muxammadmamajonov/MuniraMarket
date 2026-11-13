@@ -81,8 +81,19 @@ function LineRow({ line }: { line: OrderLine }) {
         {line.product_id === null ? (
           <p className="text-sm text-muted-foreground">{dict.orders.detail.productRemoved}</p>
         ) : null}
+        {line.adjusted ? (
+          <p className="text-sm font-medium text-warning" data-testid="order-line-adjusted">
+            {formatMessage(dict.orders.detail.lineAdjusted, {
+              original: line.original_quantity,
+              unit: dict.units[line.unit],
+            })}
+          </p>
+        ) : null}
       </div>
-      <span data-money className="shrink-0 font-semibold">
+      <span
+        data-money
+        className={`shrink-0 font-semibold ${line.quantity === 0 ? 'text-muted-foreground line-through' : ''}`}
+      >
         {formatUZS(line.line_total_uzs, locale)}
       </span>
     </li>

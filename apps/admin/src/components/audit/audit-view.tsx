@@ -17,6 +17,7 @@ import { formatCount, formatDateTime } from '@/lib/format';
 import { parseChoice, parsePageParam } from '@/lib/list-params';
 import { useApiResource } from '@/lib/use-api-resource';
 import { useUrlParams } from '@/lib/use-url-params';
+import { FilterSheet } from '../ui/filter-sheet';
 import { DataTable, type Column } from '../ui/data-table';
 import { PageHeader } from '../ui/page-header';
 import { Pagination } from '../ui/pagination';
@@ -141,36 +142,43 @@ export function AuditView() {
     <div className="flex flex-col gap-4">
       <PageHeader title={copy.title} />
 
-      <div className="grid gap-3 sm:grid-cols-2">
-        <div className="flex min-w-0 flex-col gap-1 text-sm font-medium">
-          <span id={entityLabelId}>{copy.entityFilter}</span>
-          <Select
-            labelledBy={entityLabelId}
-            value={entity ?? ''}
-            testId="audit-entity-filter"
-            onChange={(next) => replace({ entity_type: next, action: null })}
-            placeholder={copy.allEntities}
-            options={AUDIT_ENTITY_TYPES.map((item: AuditEntityType) => ({
-              value: item,
-              label: copy.entities[item],
-            }))}
-          />
+      <FilterSheet
+        active={(entity === null ? 0 : 1) + (action === null ? 0 : 1)}
+        onReset={() => replace({ entity_type: null, action: null })}
+      >
+        <div className="grid gap-3 sm:grid-cols-2">
+          <div className="flex min-w-0 flex-col gap-1 text-sm font-medium">
+            <span id={entityLabelId}>{copy.entityFilter}</span>
+            <Select
+              onPage
+              labelledBy={entityLabelId}
+              value={entity ?? ''}
+              testId="audit-entity-filter"
+              onChange={(next) => replace({ entity_type: next, action: null })}
+              placeholder={copy.allEntities}
+              options={AUDIT_ENTITY_TYPES.map((item: AuditEntityType) => ({
+                value: item,
+                label: copy.entities[item],
+              }))}
+            />
+          </div>
+          <div className="flex min-w-0 flex-col gap-1 text-sm font-medium">
+            <span id={actionLabelId}>{copy.actionFilter}</span>
+            <Select
+              onPage
+              labelledBy={actionLabelId}
+              value={action ?? ''}
+              testId="audit-action-filter"
+              onChange={(next) => replace({ action: next })}
+              placeholder={copy.allActions}
+              options={actionOptions.map((item: AuditAction) => ({
+                value: item,
+                label: copy.actions[item],
+              }))}
+            />
+          </div>
         </div>
-        <div className="flex min-w-0 flex-col gap-1 text-sm font-medium">
-          <span id={actionLabelId}>{copy.actionFilter}</span>
-          <Select
-            labelledBy={actionLabelId}
-            value={action ?? ''}
-            testId="audit-action-filter"
-            onChange={(next) => replace({ action: next })}
-            placeholder={copy.allActions}
-            options={actionOptions.map((item: AuditAction) => ({
-              value: item,
-              label: copy.actions[item],
-            }))}
-          />
-        </div>
-      </div>
+      </FilterSheet>
       {entityId === null ? null : (
         <p className="flex flex-wrap items-center gap-2 text-sm">
           <span className="font-mono break-all">

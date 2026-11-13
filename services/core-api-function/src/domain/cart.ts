@@ -7,6 +7,8 @@
 
 export const MAX_LINE_QUANTITY = 99;
 export const MAX_CART_LINES = 50;
+/** A tracked product with this many sellable units or fewer (but some) is "low stock". */
+export const LOW_STOCK_THRESHOLD = 3;
 
 export type CartIssue = 'product_inactive' | 'insufficient_stock';
 
@@ -33,9 +35,24 @@ export class InsufficientStockError extends CartError {
   }
 }
 
+/**
+ * What the online store may sell (ADR 0018): physical stock minus the units kept back for walk-in
+ * shoppers, never below 0. `null` (stock not tracked) stays `null`. Every storefront availability
+ * rule works on this number; the repositories select it as the summary's `stock_quantity`.
+ */
+export function sellableQuantity(stockQuantity: number | null, safetyStock: number): number | null {
+  if (stockQuantity === null) return null;
+  return Math.max(stockQuantity - Math.max(safetyStock, 0), 0);
+}
+
 /** `null` means stock is not tracked, which counts as always in stock. */
 export function isInStock(stockQuantity: number | null): boolean {
   return stockQuantity === null || stockQuantity > 0;
+}
+
+/** Tracked, with at least one but at most `LOW_STOCK_THRESHOLD` sellable units. */
+export function isLowStock(stockQuantity: number | null): boolean {
+  return stockQuantity !== null && stockQuantity > 0 && stockQuantity <= LOW_STOCK_THRESHOLD;
 }
 
 /**

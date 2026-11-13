@@ -2,7 +2,7 @@
 
 import { cx } from '@muniramarket/ui';
 import { useEffect, useId, useRef, useState, type KeyboardEvent, type Ref } from 'react';
-import { INPUT } from './classes';
+import { INPUT, INPUT_ON_PAGE } from './classes';
 
 export interface SelectOption {
   value: string;
@@ -24,6 +24,8 @@ export interface SelectProps {
   'aria-invalid'?: boolean;
   testId?: string;
   className?: string;
+  /** A filter on the page (white field) rather than a form field inside a white group. */
+  onPage?: boolean;
   ref?: Ref<HTMLButtonElement>;
 }
 
@@ -56,6 +58,7 @@ export function Select({
   'aria-invalid': invalid,
   testId,
   className,
+  onPage = false,
   ref,
 }: SelectProps) {
   const listId = useId();
@@ -206,7 +209,7 @@ export function Select({
         onClick={() => (open ? close() : openList())}
         onKeyDown={onKeyDown}
         className={cx(
-          INPUT,
+          onPage ? INPUT_ON_PAGE : INPUT,
           'flex items-center justify-between gap-2 text-left',
           open && 'outline-2 outline-focus',
         )}
@@ -243,7 +246,7 @@ export function Select({
           role="listbox"
           aria-labelledby={labelledBy}
           tabIndex={-1}
-          className="mm-popover absolute inset-x-0 top-[calc(100%+0.25rem)] z-40 max-h-72 min-w-48 overflow-y-auto overscroll-contain rounded-xl border border-border bg-surface p-1 shadow-[0_12px_32px_-12px_rgb(20_20_22/0.35)]"
+          className="mm-popover absolute inset-x-0 top-[calc(100%+0.25rem)] z-40 max-h-72 min-w-48 overflow-y-auto overscroll-contain rounded-2xl border border-hairline bg-surface p-1.5 shadow-[0_12px_32px_-12px_rgb(20_20_22/0.35)]"
         >
           {all.map((option, index) => {
             const isSelected = index === selectedIndex;
@@ -263,7 +266,7 @@ export function Select({
                 }}
                 onClick={() => choose(index)}
                 className={cx(
-                  'flex min-h-11 cursor-pointer items-center gap-2 rounded-lg px-3 text-base break-words',
+                  'flex min-h-11 cursor-pointer items-center gap-2 rounded-xl px-3 text-base break-words',
                   isActive && 'bg-surface-muted',
                   isSelected && 'font-semibold',
                   option.disabled === true && 'cursor-not-allowed opacity-50',

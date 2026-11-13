@@ -2,15 +2,17 @@ import type { OrderStatus } from '@muniramarket/contracts';
 import { cx } from '@muniramarket/ui';
 import { useI18n } from '@/i18n/context';
 
-// The label always carries the meaning; colour only helps scanning a long list.
+// The label always carries the meaning; colour only helps scanning a long list. The same brand
+// tones as the storefront's badge (`apps/web/src/components/status-badge.tsx`), so a customer and
+// an operator see one colour per status: in-flight states neutral or amber, delivered charcoal,
+// new and cancelled red. New orders also get a ring: they are what staff look for first.
 const TONES: Record<OrderStatus, string> = {
-  // New orders need attention first: the brand's own red tint.
   NEW: 'bg-brand-soft text-brand-ink ring-1 ring-brand-ink/30 ring-inset',
-  CONFIRMED: 'bg-indigo-100 text-indigo-900 dark:bg-indigo-950 dark:text-indigo-200',
+  CONFIRMED: 'bg-surface-muted text-foreground',
   PICKING: 'bg-warning-soft text-warning',
-  READY_FOR_DELIVERY: 'bg-teal-100 text-teal-900 dark:bg-teal-950 dark:text-teal-200',
-  OUT_FOR_DELIVERY: 'bg-cyan-100 text-cyan-900 dark:bg-cyan-950 dark:text-cyan-200',
-  DELIVERED: 'bg-success-soft text-success',
+  READY_FOR_DELIVERY: 'bg-surface-muted text-foreground ring-1 ring-border-strong/60 ring-inset',
+  OUT_FOR_DELIVERY: 'bg-warning-soft text-warning ring-1 ring-warning/30 ring-inset',
+  DELIVERED: 'bg-foreground text-background',
   CANCELLED: 'bg-danger-soft text-danger',
 };
 
@@ -20,7 +22,7 @@ export function StatusBadge({ status }: { status: OrderStatus }) {
     <span
       data-status={status}
       className={cx(
-        'inline-flex items-center rounded-full px-2.5 py-0.5 text-sm font-medium whitespace-nowrap',
+        'inline-flex shrink-0 items-center rounded-full px-2.5 py-0.5 text-[13px] leading-5 font-semibold whitespace-nowrap',
         TONES[status],
       )}
     >

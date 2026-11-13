@@ -162,6 +162,12 @@ describe.skipIf(!hasDatabase)('POST /internal/scheduler/notifications/drain', ()
     ]);
     expect(response.headers.get('cache-control')).toBe('no-store');
     expect(bot.sent.map((m) => m.chat_id)).toEqual([1001, 1002, -100500]);
+    // Customer messages are plain text; the staff alert is Telegram HTML.
+    expect(bot.sent.map((m) => (m as { parse_mode?: string }).parse_mode)).toEqual([
+      undefined,
+      undefined,
+      'HTML',
+    ]);
     // The staff alert carries the Yandex Go courier button; customer messages carry none.
     expect(bot.sent.map((m) => m.reply_markup)).toEqual([
       undefined,
@@ -170,7 +176,7 @@ describe.skipIf(!hasDatabase)('POST /internal/scheduler/notifications/drain', ()
         inline_keyboard: [
           [
             {
-              text: 'Yandex chaqirish / Вызвать Яндекс',
+              text: 'Yandex chaqirish',
               url:
                 'https://3.redirect.appmetrica.yandex.com/route?end-lat=41.311081&end-lon=69.240562' +
                 '&tariffClass=courier&level=courier&ref=muniramarket' +
@@ -186,6 +192,57 @@ describe.skipIf(!hasDatabase)('POST /internal/scheduler/notifications/drain', ()
     }
     // Nothing left to do.
     expect((await counts(await drain())).claimed).toBe(0);
+  });
+
+  it('renders a NEW order alert with its details and links it to the admin', async () => {
+    const adminApp = createTestApp({
+      db,
+      clock: () => now,
+      fetch: bot.fetch,
+      env: { ADMIN_PUBLIC_ORIGIN: 'https://admin.example.uz' },
+    });
+    const orderId = crypto.randomUUID();
+    await insert(-100500, {
+      eventType: 'order.staff_alert',
+      payload: {
+        order_id: orderId,
+        order_number: 'MM-10',
+        status: 'NEW',
+        previous_status: null,
+        total_uzs: 30000,
+        chat_id: -100500,
+        cancelled_by_customer: false,
+        recipient_name: 'Demo <Mijoz>',
+        details: {
+          items: [{ name_uz: 'Olma', quantity: 2, unit: 'kg', line_total_uzs: 30000 }],
+          subtotal_uzs: 30000,
+          payment_method: 'cash_on_delivery',
+          recipient_phone: '+998001234567',
+          address: {
+            street: 'Demo',
+            house: '1',
+            apartment: null,
+            entrance: null,
+            floor: null,
+            landmark: null,
+          },
+          comment: null,
+          created_at: '2026-11-13T10:05:00.000000+00:00',
+        },
+      },
+    });
+    const body = await counts(await drain({ target: adminApp }));
+    expect(body).toMatchObject({ claimed: 1, delivered: 1 });
+    const [sent] = bot.sent as Array<{ text: string; parse_mode?: string; reply_markup?: unknown }>;
+    expect(sent!.parse_mode).toBe('HTML');
+    expect(sent!.text).toContain('<b>Yangi buyurtma №MM-10</b>');
+    expect(sent!.text).toContain('<b>Qabul qiluvchi:</b> Demo &lt;Mijoz&gt;');
+    expect(sent!.text).toContain('<b>Telefon:</b> +998001234567');
+    expect(sent!.reply_markup).toEqual({
+      inline_keyboard: [
+        [{ text: 'Adminda ochish', url: `https://admin.example.uz/uz/orders/${orderId}` }],
+      ],
+    });
   });
 
   it('records recipient_blocked, failed payloads and unknown events as final', async () => {

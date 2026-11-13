@@ -2,10 +2,11 @@
  * Response bodies with the reference's exact field order, names and nulls (ports of the
  * `from_record` builders in services/api/app/schemas/{catalog,cart,checkout}.py).
  */
-import { evaluateCart, isInStock, type CartIssue } from '../../domain/cart.ts';
+import { evaluateCart, isInStock, isLowStock, type CartIssue } from '../../domain/cart.ts';
 import type { QuoteIssue } from '../../domain/checkout.ts';
 import {
   allowedTransitionsOf,
+  canAdjustItems,
   customerCanCancel,
   type OrderStatus,
 } from '../../domain/orderStatus.ts';
@@ -60,9 +61,11 @@ export interface ProductSummary {
   unit: Unit;
   price_uzs: number;
   old_price_uzs: number | null;
-  /** `null` = stock is not tracked for this product. */
+  /** Sellable quantity (stock minus safety stock, >= 0); `null` = stock is not tracked. */
   stock_quantity: number | null;
   in_stock: boolean;
+  /** 1..3 sellable units left (tracked products only): "Kam qoldi" / "Осталось мало". */
+  low_stock: boolean;
   image_url: string | null;
   category_id: string;
 }
@@ -79,6 +82,7 @@ export function productSummary(record: ProductSummaryRecord): ProductSummary {
     old_price_uzs: record.old_price_uzs,
     stock_quantity: record.stock_quantity,
     in_stock: isInStock(record.stock_quantity),
+    low_stock: isLowStock(record.stock_quantity),
     image_url: record.image_url,
     category_id: record.category_id,
   };
@@ -194,6 +198,11 @@ function orderAddress(snapshot: Record<string, unknown>) {
   };
 }
 
+/** Whether staff lowered any line of this order. */
+function isAdjusted(record: OrderRecord): boolean {
+  return record.items.some((item) => item.original_quantity !== null);
+}
+
 export function orderDetail(record: OrderRecord) {
   return {
     id: record.id,
@@ -219,9 +228,12 @@ export function orderDetail(record: OrderRecord) {
       unit_price_uzs: item.unit_price_uzs,
       quantity: item.quantity,
       line_total_uzs: item.line_total_uzs,
+      // The quantity ordered; differs from `quantity` once staff lowered the line (ADR 0018).
+      original_quantity: item.original_quantity ?? item.quantity,
+      adjusted: item.original_quantity !== null,
     })),
     history: record.history.map((change) => ({ status: change.to_status, at: change.created_at })),
-    can_cancel: customerCanCancel(record.status),
+    can_cancel: customerCanCancel(record.status, isAdjusted(record)),
   };
 }
 
@@ -237,6 +249,22 @@ export function adminOrderDetail(record: OrderRecord) {
     })),
     // Statuses this order may move to next (CANCELLED needs a reason).
     allowed_transitions: allowedTransitionsOf(record.status),
+    // Whether lines can still be lowered (`PATCH .../items/{product_id}`): NEW..PICKING.
+    can_adjust_items: canAdjustItems(record.status),
+    // Every line lowered at picking, oldest first.
+    adjustments: record.adjustments.map((adjustment) => ({
+      product_id: adjustment.product_id,
+      sku: adjustment.sku,
+      name_uz: adjustment.name_uz,
+      name_ru: adjustment.name_ru,
+      unit: adjustment.unit,
+      from_quantity: adjustment.from_quantity,
+      to_quantity: adjustment.to_quantity,
+      reason: adjustment.reason,
+      marked_out_of_stock: adjustment.marked_out_of_stock,
+      actor_role: adjustment.actor_role as UserRole,
+      at: adjustment.created_at,
+    })),
   };
 }
 

@@ -40,6 +40,7 @@ import {
   type Unit,
 } from '../domain/catalogCsv.ts';
 import { isoSql } from '../http/serialize.ts';
+import { sellableStockSql } from './catalog.ts';
 
 /** `pg_advisory_xact_lock` key for "the category tree is being re-parented". */
 export const CATEGORY_TREE_LOCK = 4_242_001;
@@ -110,7 +111,12 @@ export interface AdminProductRecord {
   unit: Unit;
   price_uzs: number;
   old_price_uzs: number | null;
+  /** Physical stock; `null` = not tracked. */
   stock_quantity: number | null;
+  /** Units kept back for walk-in shoppers (ADR 0018). */
+  safety_stock: number;
+  /** `stock_quantity - safety_stock`, never below 0; `null` when not tracked. */
+  sellable_quantity: number | null;
   image_url: string | null;
   sort_order: number;
   is_active: boolean;
@@ -167,7 +173,8 @@ export function escapeLike(value: string): string {
 const PRODUCT_COLUMNS = `
   p.id::text AS id, p.sku, p.slug, p.category_id::text AS category_id, p.name_uz, p.name_ru,
   p.description_uz, p.description_ru, p.unit::text AS unit, p.price_uzs, p.old_price_uzs,
-  p.stock_quantity, p.image_url, p.sort_order, p.is_active,
+  p.stock_quantity, p.safety_stock, ${sellableStockSql('p')} AS sellable_quantity,
+  p.image_url, p.sort_order, p.is_active,
   ${isoSql('p.archived_at')} AS archived_at, ${isoSql('p.created_at')} AS created_at,
   ${isoSql('p.updated_at')} AS updated_at`;
 
@@ -459,8 +466,9 @@ export class AdminCatalogRepository {
     const { rows } = await client.query<{ id: string }>(
       `INSERT INTO products (id, sku, slug, category_id, name_uz, name_ru, description_uz,
                              description_ru, unit, price_uzs, old_price_uzs, stock_quantity,
-                             is_active, sort_order, image_url)
-       VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+                             is_active, sort_order, image_url, safety_stock)
+       VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14,
+               $15)
        RETURNING id::text AS id`,
       [
         values['sku'],
@@ -477,6 +485,7 @@ export class AdminCatalogRepository {
         values['is_active'],
         values['sort_order'],
         values['image_url'] ?? null,
+        values['safety_stock'] ?? 0,
       ],
     );
     return rows[0]?.id as string;
@@ -590,7 +599,7 @@ export class AdminCatalogRepository {
     const { rows } = await this.db.query<ExportRow>(
       `SELECT p.sku, p.slug, c.slug AS category_slug, p.name_uz, p.name_ru, p.description_uz,
               p.description_ru, p.unit::text AS unit, p.price_uzs, p.old_price_uzs,
-              p.stock_quantity, p.is_active, p.sort_order, p.image_url,
+              p.stock_quantity, p.safety_stock, p.is_active, p.sort_order, p.image_url,
               to_char(p.updated_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US') || '+00:00'
                 AS updated_at
        FROM products p JOIN categories c ON c.id = p.category_id
@@ -615,7 +624,7 @@ export class AdminCatalogRepository {
         `SELECT p.id::text AS id, p.sku, p.archived_at IS NOT NULL AS archived,
                 p.slug, p.category_id::text AS category_id, p.name_uz, p.name_ru, p.description_uz,
                 p.description_ru, p.unit::text AS unit, p.price_uzs, p.old_price_uzs,
-                p.stock_quantity, p.is_active, p.sort_order, p.image_url,
+                p.stock_quantity, p.safety_stock, p.is_active, p.sort_order, p.image_url,
                 (extract(epoch FROM date_trunc('second', p.updated_at))::bigint * 1000000
                   + extract(microseconds FROM p.updated_at)::bigint % 1000000)::text AS updated_micros
          FROM products p WHERE p.sku = ANY($1::text[])`,

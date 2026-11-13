@@ -3,10 +3,10 @@ import type { ReactNode } from 'react';
 
 // Brand tokens only (packages/ui/src/styles/tokens.css): each pair is AA in light and dark.
 const TONES = {
-  error: 'border-danger/40 bg-danger-soft text-danger',
-  success: 'border-success/40 bg-success-soft text-success',
-  info: 'border-border bg-surface-muted text-foreground',
-  warning: 'border-warning/40 bg-warning-soft text-warning',
+  error: 'bg-danger-soft text-danger',
+  success: 'bg-success-soft text-success',
+  info: 'bg-surface-muted text-foreground',
+  warning: 'bg-warning-soft text-warning',
 } as const;
 
 /**
@@ -28,7 +28,11 @@ export function Alert({
     <div
       role={tone === 'error' ? 'alert' : 'status'}
       data-testid={testId}
-      className={cx('rounded-xl border px-3 py-2 text-sm break-words', TONES[tone], className)}
+      className={cx(
+        'rounded-2xl px-4 py-3 text-sm font-medium break-words',
+        TONES[tone],
+        className,
+      )}
     >
       {children}
     </div>

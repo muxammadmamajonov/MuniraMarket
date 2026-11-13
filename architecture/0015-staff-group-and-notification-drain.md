@@ -3,7 +3,8 @@
 - Status: accepted
 - Builds on: [0008](0008-order-notification-outbox.md), [0003](0003-service-auth-contract.md)
 - Updated by: [0017](0017-yandex-go-courier-delivery.md) (a NEW-order alert carries the delivery
-  point inside a "Yandex chaqirish" button)
+  point inside a "Yandex chaqirish" button); 2026-11-13, owner's request (below: a NEW-order alert
+  carries the order details); [0018](0018-stock-shortage-and-safety-stock.md) (shortage alerts)
 
 ## Context
 
@@ -42,7 +43,33 @@ traffic would leave notifications waiting whenever nobody uses the bot, so it is
 - **Staff alerts**: in the same transaction as the order change, an `order.staff_alert` outbox row
   is added when a group is connected and the new status is `NEW`, `OUT_FOR_DELIVERY`, `DELIVERED`
   or `CANCELLED` (with “cancelled by the customer” when it was). Payload: order id/number, status,
-  previous status, total, group chat id — no customer name, address or phone.
+  previous status, total, group chat id — originally no customer name, address or phone (see the
+  update below).
+
+## Update (2026-11-13): the staff alert carries the order details
+
+On the owner's request, staff must be able to act on a new order from Telegram without opening
+the admin first. The decision above ("no customer name, address or phone") is relaxed for the
+connected staff group only:
+
+- Every `order.staff_alert` carries `recipient_name`. A `NEW` alert also carries `details`: the
+  lines (Uzbek name, quantity and unit, line total), subtotal, payment method, recipient phone,
+  the address parts (street, house, apartment, entrance, floor, landmark), the customer's comment
+  and the creation time. The delivery point still travels only as `destination`, into the Yandex
+  Go button URL.
+- The message is Uzbek Telegram HTML; every value from the payload is escaped, so nothing a
+  customer typed can add markup or links. It stays within Telegram's 4096 characters by cutting
+  the item list ("+N ta mahsulot"). Other alerts stay short (number, status, recipient, total).
+- Each alert also gets an "Adminda ochish" URL button to `<ADMIN_PUBLIC_ORIGIN>/uz/orders/<id>`
+  when that origin is a configured `https://` origin; the order page itself still requires a
+  staff session.
+- Boundaries kept: the payload is written in the same transaction as the order change, lives in
+  Core API's PostgreSQL next to the order (and is deleted with it), and is delivered **only** to
+  the chat id stored by `/connect_orders` (an admin-connected private staff group). It is never
+  logged, never in an error code, never sent to a customer chat, a channel or any other service.
+  Customer notifications (`order.status_changed`, `order.adjusted`) still carry no address or
+  phone. Anyone added to the staff group sees customers' names, phones and addresses: membership
+  of that group is now a data-access decision for the owner.
 
 ## Consequences
 

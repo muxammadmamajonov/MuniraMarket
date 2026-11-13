@@ -39,6 +39,7 @@ ALLOWED_FIELDS: Final[Mapping[str, frozenset[str]]] = {
             "price_uzs",
             "old_price_uzs",
             "stock_quantity",
+            "safety_stock",
             "is_active",
             "sort_order",
             "image_url",
@@ -46,7 +47,7 @@ ALLOWED_FIELDS: Final[Mapping[str, frozenset[str]]] = {
         }
     ),
     "user": frozenset({"role", "is_blocked"}),
-    "order": frozenset({"status"}),
+    "order": frozenset({"status", "quantity"}),
     "catalog": frozenset(),
 }
 
@@ -62,6 +63,7 @@ ALLOWED_EXTRA: Final = frozenset(
         "unchanged",
         "sku",
         "slug",
+        "marked_out_of_stock",
     }
 )
 # Allow-listed ``extra`` flags whose name contains a denied word ("reason"): only a bool is kept,

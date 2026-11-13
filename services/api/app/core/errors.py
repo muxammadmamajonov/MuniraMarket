@@ -72,6 +72,10 @@ ErrorCode = Literal[
     "order_status_conflict",
     "too_many_open_orders",
     "phone_verification_required",
+    # back office: order lines lowered at picking (ADR 0018)
+    "order_not_adjustable",
+    "order_item_not_found",
+    "invalid_quantity",
     # profile: saved addresses
     "address_not_found",
     "address_limit_reached",
@@ -100,13 +104,15 @@ class ApiErrorBody(BaseModel):
     code: ErrorCode
     message: str
     details: list[ErrorDetail] | None = None
-    # Only set for ``insufficient_stock``: how many units can currently be ordered.
+    # ``insufficient_stock``: how many units can currently be ordered. ``invalid_quantity``: the
+    # order line's current quantity (the most it can be set to).
     available_quantity: int | None = None
     # Order creation: the product a ``product_inactive`` / ``insufficient_stock`` refers to.
     product_id: uuid.UUID | None = None
     # ``price_changed``: the order total now (request a new quote before retrying).
     total_uzs: int | None = None
-    # ``order_not_cancellable`` / ``invalid_status_transition`` / ``order_status_conflict``.
+    # ``order_not_cancellable`` / ``invalid_status_transition`` / ``order_status_conflict`` /
+    # ``order_not_adjustable``.
     current_status: OrderStatus | None = None
 
 

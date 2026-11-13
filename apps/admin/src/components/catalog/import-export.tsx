@@ -36,7 +36,7 @@ function Summary({ result }: { result: CsvImportResult }) {
   ];
   return (
     <section className={CARD} aria-label={copy.title}>
-      <h3 className="text-lg font-semibold">{copy.title}</h3>
+      <h3 className="text-lg leading-6 font-bold tracking-[-0.01em]">{copy.title}</h3>
       <dl className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         {rows.map(([label, value, testId]) => (
           <div key={testId} className="min-w-0">
@@ -81,7 +81,7 @@ function ErrorTable({ result }: { result: CsvImportResult }) {
   ];
   return (
     <section className="flex flex-col gap-3" aria-label={copy.title}>
-      <h3 className="text-lg font-semibold">{copy.title}</h3>
+      <h3 className="text-lg leading-6 font-bold tracking-[-0.01em]">{copy.title}</h3>
       {result.errors_truncated ? (
         <Alert tone="warning" testId="csv-truncated">
           {copy.truncated}
@@ -212,7 +212,7 @@ export function ImportExportView() {
 
       <div className="grid gap-3 sm:grid-cols-2">
         <section className={CARD} aria-label={copy.template.title}>
-          <h2 className="text-lg font-semibold">{copy.template.title}</h2>
+          <h2 className="text-lg leading-6 font-bold tracking-[-0.01em]">{copy.template.title}</h2>
           <p className="text-muted-foreground">{copy.template.description}</p>
           <div>
             <Button
@@ -228,7 +228,7 @@ export function ImportExportView() {
           </div>
         </section>
         <section className={CARD} aria-label={copy.export.title}>
-          <h2 className="text-lg font-semibold">{copy.export.title}</h2>
+          <h2 className="text-lg leading-6 font-bold tracking-[-0.01em]">{copy.export.title}</h2>
           <p className="text-muted-foreground">{copy.export.description}</p>
           <div>
             <Button
@@ -250,7 +250,7 @@ export function ImportExportView() {
       {downloadError === null ? null : <Alert tone="error">{downloadError}</Alert>}
 
       <section className={CARD} aria-labelledby={`${inputId}-title`}>
-        <h2 id={`${inputId}-title`} className="text-lg font-semibold">
+        <h2 id={`${inputId}-title`} className="text-lg leading-6 font-bold tracking-[-0.01em]">
           {copy.upload.title}
         </h2>
         <p className="text-muted-foreground">{copy.columnsHint}</p>

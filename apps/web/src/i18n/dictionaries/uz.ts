@@ -94,6 +94,8 @@ export const uz: Dictionary = {
     productsCount: 'Mahsulotlar: {count}',
     emptyCategory: 'Bu kategoriyada hozircha mahsulot yo‘q.',
     filterLabel: 'Filtr',
+    showResults: 'Natijalarni ko‘rsatish',
+    closeFilters: 'Yopish',
     inStockOnly: 'Faqat mavjudlari',
     noneInStock: 'Hozir mavjud mahsulot yo‘q.',
     clearFilter: 'Filtrni olib tashlash',
@@ -298,6 +300,7 @@ export const uz: Dictionary = {
       cancelReasonHeading: 'Bekor qilish sababi',
       cancelledNotice: 'Bu buyurtma bekor qilingan.',
       productRemoved: 'Mahsulot katalogdan olingan',
+      lineAdjusted: 'Do‘konda yetmadi: {original} {unit} edi',
     },
     cancel: {
       button: 'Buyurtmani bekor qilish',

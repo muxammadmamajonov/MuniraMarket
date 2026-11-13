@@ -1,9 +1,13 @@
 @import 'tailwindcss';
 @import '@muniramarket/ui/styles/tokens.css';
+@import '@muniramarket/ui/styles/photo.css';
 
 /* "Mobile" is 640px and below, so the desktop layout (`sm:`) starts at 641px. */
 @theme {
   --breakpoint-sm: 40.0625rem;
+  /* Same motion tokens as the storefront: `ease-out-strong` for press feedback and entrances. */
+  --ease-out-strong: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
 }
 
 :root {
@@ -121,6 +125,33 @@
 
 ::-webkit-scrollbar-thumb:hover {
   background-color: var(--mm-scrollbar-thumb-hover);
+}
+
+/*
+ * Inside the phone filter sheet (`FilterSheet`, a white panel): chip rails wrap instead of
+ * scrolling, and controls styled for the grey page (white chips, white fields) take the filled
+ * look they have inside white groups.
+ */
+.mm-in-sheet .mm-rail {
+  flex-wrap: wrap;
+  overflow: visible;
+  margin-inline: 0;
+  padding-inline: 0;
+}
+
+.mm-in-sheet .mm-chip-off,
+.mm-in-sheet .mm-field-page {
+  background-color: var(--mm-color-surface-muted);
+  box-shadow: none;
+}
+
+/* Sideways chip rails (`CHIP_RAIL`) scroll by touch and show no bar. */
+.mm-rail {
+  scrollbar-width: none;
+}
+
+.mm-rail::-webkit-scrollbar {
+  display: none;
 }
 
 /* Select lists open with a short fade and 4px drop (transform/opacity only). */

@@ -73,6 +73,7 @@ describe.skipIf(!hasDatabase)('catalog', () => {
           old_price_uzs: null,
           stock_quantity: null,
           in_stock: true,
+          low_stock: false,
           image_url: null,
           category_id: child,
         },
@@ -93,6 +94,7 @@ describe.skipIf(!hasDatabase)('catalog', () => {
       'old_price_uzs',
       'stock_quantity',
       'in_stock',
+      'low_stock',
       'image_url',
       'category_id',
     ]);

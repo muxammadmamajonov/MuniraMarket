@@ -18,7 +18,7 @@ export function PermissionDenied() {
     <section
       role="alert"
       data-testid="permission-denied"
-      className="mx-auto flex w-full max-w-md flex-col items-start gap-3 rounded-xl border border-border bg-surface p-6"
+      className="mx-auto flex w-full max-w-md flex-col items-start gap-3 rounded-3xl bg-surface p-6"
     >
       <h1 className="text-xl font-bold">{dict.permission.title}</h1>
       <p className="text-muted-foreground">{dict.permission.message}</p>
@@ -80,7 +80,7 @@ export function ResourceView<T>({
       <div
         role="alert"
         data-testid="resource-error"
-        className="mm-enter mx-auto flex w-full max-w-md flex-col items-center gap-3 rounded-2xl border border-border bg-surface px-6 py-10 text-center"
+        className="mm-enter mx-auto flex w-full max-w-md flex-col items-center gap-3 rounded-3xl bg-surface px-6 py-10 text-center"
       >
         <h2 className="text-lg font-semibold">{dict.errors.title}</h2>
         <p className="text-muted-foreground">{readErrorMessage(dict, resource.error)}</p>

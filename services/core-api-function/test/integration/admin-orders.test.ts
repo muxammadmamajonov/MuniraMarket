@@ -71,8 +71,15 @@ describe.skipIf(!hasDatabase)('admin orders', () => {
       body = (await response.json()) as Json;
       expect(body['status']).toBe(status);
     }
-    expect(Object.keys(body).slice(-2)).toEqual(['history_detail', 'allowed_transitions']);
+    expect(Object.keys(body).slice(-4)).toEqual([
+      'history_detail',
+      'allowed_transitions',
+      'can_adjust_items',
+      'adjustments',
+    ]);
     expect(body['allowed_transitions']).toEqual([]);
+    expect(body['can_adjust_items']).toBe(false);
+    expect(body['adjustments']).toEqual([]);
     expect(body['can_cancel']).toBe(false);
     const detail = body['history_detail'] as Json[];
     expect(
@@ -110,8 +117,8 @@ describe.skipIf(!hasDatabase)('admin orders', () => {
       ['order.status_changed', 'DELIVERED', customerChat],
       ['order.staff_alert', 'DELIVERED', -100_777],
     ]);
-    // Only the NEW alert carries the drop-off point (for the Yandex Go courier button); no
-    // address text, name or phone ever goes to the group.
+    // Only the NEW alert carries the drop-off point (for the Yandex Go courier button) and the
+    // order details; every alert names the recipient (the private staff group, ADR 0015).
     const alerts = await db.query<{ status: string; payload: Json }>(
       `SELECT payload->>'status' AS status, payload FROM notification_outbox
         WHERE order_id = $1 AND event_type = 'order.staff_alert' ORDER BY created_at`,
@@ -122,8 +129,14 @@ describe.skipIf(!hasDatabase)('admin orders', () => {
       ['OUT_FOR_DELIVERY', null],
       ['DELIVERED', null],
     ]);
-    for (const { payload } of alerts.rows) {
-      expect(JSON.stringify(payload)).not.toMatch(/Demo ko|Demo Mijoz|\+998/);
+    expect(alerts.rows.map((r) => r.payload['recipient_name'])).toEqual([
+      'Demo Mijoz',
+      'Demo Mijoz',
+      'Demo Mijoz',
+    ]);
+    expect(alerts.rows.map((r) => 'details' in r.payload)).toEqual([true, false, false]);
+    for (const { payload } of alerts.rows.slice(1)) {
+      expect(JSON.stringify(payload)).not.toMatch(/Demo ko|\+998/);
     }
     const audits = await db.query<{ actor_role: string; to: string }>(
       `SELECT actor_role::text AS actor_role, details->'changes'->'status'->>'to' AS to

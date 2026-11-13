@@ -34,7 +34,7 @@ export function AuthCard({
     <section
       role={role}
       data-testid={testId}
-      className="mm-enter mx-auto flex w-full max-w-md flex-col gap-5 rounded-2xl border border-border bg-surface p-6 shadow-[0_1px_2px_rgb(20_20_22/0.04),0_8px_24px_-12px_rgb(20_20_22/0.12)] sm:p-8"
+      className="mm-enter mx-auto flex w-full max-w-md flex-col gap-5 rounded-3xl bg-surface p-6 shadow-[0_1px_2px_rgb(20_20_22/0.04),0_8px_24px_-12px_rgb(20_20_22/0.12)] sm:p-8"
     >
       <span
         className={cx(
@@ -52,7 +52,7 @@ export function AuthCard({
       </div>
       {children}
       {footer === undefined ? null : (
-        <div className="border-t border-border pt-4 text-sm text-muted-foreground">{footer}</div>
+        <div className="border-t border-hairline pt-4 text-sm text-muted-foreground">{footer}</div>
       )}
     </section>
   );
@@ -93,12 +93,12 @@ export function AuthCardSkeleton({ label }: { label: string }) {
     <div
       role="status"
       aria-label={label}
-      className="mx-auto flex w-full max-w-md flex-col gap-5 rounded-2xl border border-border bg-surface p-6 sm:p-8"
+      className="mx-auto flex w-full max-w-md flex-col gap-5 rounded-3xl bg-surface p-6 sm:p-8"
     >
       <span className="size-14 rounded-2xl bg-surface-muted" />
       <span className="h-7 w-2/3 rounded-lg bg-surface-muted" />
       <span className="h-4 w-full rounded-lg bg-surface-muted" />
-      <span className="h-12 w-full rounded-xl bg-surface-muted" />
+      <span className="h-12 w-full rounded-2xl bg-surface-muted" />
     </div>
   );
 }
