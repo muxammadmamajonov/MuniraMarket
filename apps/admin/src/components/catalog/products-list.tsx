@@ -17,10 +17,11 @@ import { formatCount } from '@/lib/format';
 import { LIST_PAGE_SIZE, isUuid, parseChoice, parsePageParam, parseText } from '@/lib/list-params';
 import { useApiResource } from '@/lib/use-api-resource';
 import { useUrlParams } from '@/lib/use-url-params';
-import { CHIP, CHIP_OFF, CHIP_ON, LINK_BUTTON_PRIMARY } from '../ui/classes';
+import { CHIP, CHIP_OFF, CHIP_ON, CHIP_RAIL, LINK_BUTTON_PRIMARY } from '../ui/classes';
 import { DataTable, type Column } from '../ui/data-table';
 import { PageHeader } from '../ui/page-header';
 import { Pagination } from '../ui/pagination';
+import { ProductPhoto } from '../ui/product-photo';
 import { ResourceView } from '../ui/resource-view';
 import { SearchBox } from '../ui/search-box';
 import { Select } from '../ui/select';
@@ -77,18 +78,21 @@ export function ProductsList() {
       header: copy.columns.name,
       primary: true,
       cell: (product) => (
-        <>
-          <Link
-            href={productHref(locale, product.id)}
-            data-testid="product-row-link"
-            className="font-semibold underline-offset-2 hover:underline focus-visible:outline-2 focus-visible:outline-focus"
-          >
-            {localName(product, locale)}
-          </Link>
-          <span className="block text-sm text-muted-foreground">
-            {copy.columns.sku}: <span className="font-mono">{product.sku}</span>
+        <span className="flex items-center gap-3">
+          <ProductPhoto src={product.image_url} className="w-12" />
+          <span className="min-w-0">
+            <Link
+              href={productHref(locale, product.id)}
+              data-testid="product-row-link"
+              className="font-semibold underline-offset-2 hover:underline focus-visible:outline-2 focus-visible:outline-focus"
+            >
+              {localName(product, locale)}
+            </Link>
+            <span className="block text-sm text-muted-foreground">
+              {copy.columns.sku}: <span className="font-mono">{product.sku}</span>
+            </span>
           </span>
-        </>
+        </span>
       ),
     },
     {
@@ -157,6 +161,7 @@ export function ProductsList() {
         <div className="flex min-w-0 flex-col gap-1 text-sm font-medium sm:w-60">
           <span id={categoryLabelId}>{copy.categoryFilterLabel}</span>
           <Select
+            onPage
             labelledBy={categoryLabelId}
             value={categoryId}
             onChange={(next) => replace({ category_id: next })}
@@ -172,7 +177,7 @@ export function ProductsList() {
       </div>
 
       <nav aria-label={copy.statusFilterLabel}>
-        <ul className="flex flex-wrap gap-2">
+        <ul className={CHIP_RAIL}>
           {CHOICES.map((choice) => {
             const selected = choice === status;
             return (

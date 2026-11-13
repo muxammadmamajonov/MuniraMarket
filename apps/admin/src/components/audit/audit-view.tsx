@@ -145,6 +145,7 @@ export function AuditView() {
         <div className="flex min-w-0 flex-col gap-1 text-sm font-medium">
           <span id={entityLabelId}>{copy.entityFilter}</span>
           <Select
+            onPage
             labelledBy={entityLabelId}
             value={entity ?? ''}
             testId="audit-entity-filter"
@@ -159,6 +160,7 @@ export function AuditView() {
         <div className="flex min-w-0 flex-col gap-1 text-sm font-medium">
           <span id={actionLabelId}>{copy.actionFilter}</span>
           <Select
+            onPage
             labelledBy={actionLabelId}
             value={action ?? ''}
             testId="audit-action-filter"

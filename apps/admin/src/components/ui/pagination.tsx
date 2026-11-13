@@ -3,11 +3,11 @@
 import Link from 'next/link';
 import { useI18n } from '@/i18n/context';
 import { formatMessage } from '@/i18n/format';
+import { LINK_BUTTON } from './classes';
 
-const LINK =
-  'inline-flex min-h-11 items-center rounded-xl border border-border bg-surface px-4 font-medium transition-transform duration-150 ease-out hover:bg-surface-muted active:scale-[0.98] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus';
+const LINK = LINK_BUTTON;
 const OFF =
-  'inline-flex min-h-11 items-center rounded-xl border border-border px-4 font-medium opacity-50';
+  'inline-flex min-h-11 items-center rounded-2xl bg-surface/60 px-4 font-semibold text-muted-foreground';
 
 /** Previous / next links for a list whose page lives in the URL. `hrefFor` builds the link of a page. */
 export function Pagination({

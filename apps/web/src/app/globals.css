@@ -1,5 +1,6 @@
 @import 'tailwindcss';
 @import '@muniramarket/ui/styles/tokens.css';
+@import '@muniramarket/ui/styles/photo.css';
 
 /*
  * Motion tokens. The built-in easings are too weak for UI: `ease-out-strong` for things that
@@ -9,29 +10,6 @@
 @theme {
   --ease-out-strong: cubic-bezier(0.23, 1, 0.32, 1);
   --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
-}
-
-/*
- * Storefront surfaces. Content sits on borderless grouped surfaces (white on a warm grey page,
- * like a native grouped list), so the page is a shade deeper than the shared token: white blocks
- * read as shapes without a 1px border round every one. Rows inside a group are split by an inset
- * hairline. Contrast on the page: foreground 17:1, muted #5F5D5A 6.1:1, brand-ink 7.0:1.
- */
-:root {
-  --mm-color-background: #f5f3ef;
-  --mm-color-hairline: rgb(20 20 22 / 0.08);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    /* Restated: the light override above comes after the shared dark block. */
-    --mm-color-background: #121214;
-    --mm-color-hairline: rgb(255 255 255 / 0.08);
-  }
-}
-
-@theme inline {
-  --color-hairline: var(--mm-color-hairline);
 }
 
 /*
@@ -105,86 +83,6 @@
   .mm-tone-7 {
     --tone-bg: #251d1e;
     --tone-fg: #e0b1b3;
-  }
-}
-
-/*
- * The photo tile (`components/product-image.tsx`), one surface for every product and category
- * photo: product cards, the product page, cart lines, order thumbnails, the category rail.
- *
- * Our own photos are cut-outs (transparent WebP, the product alone, centred with even padding),
- * so the tile is designed here rather than baked into the files: a warm neutral surface a shade
- * deeper than the page, lit by a soft highlight a little above the centre, and a contact shadow
- * that follows the product's own outline (`drop-shadow` reads the alpha), tight underneath plus a
- * wide, faint ambient one. Light and dark get their own surface and shadow; the files are the same.
- * An inset hairline keeps the tile's edge on white grouped surfaces.
- *
- * Other photos (an admin-pasted URL) have their own background: they fill the tile and, in light
- * mode, are multiplied onto it so a white studio background takes the tile's tone.
- *
- * `[data-cutout='bare']` drops the tile for a cut-out that sits on a surface of its own (the
- * category mosaic's tinted tiles): only the shadow stays.
- */
-:root {
-  --mm-photo-bg: #eeeae4;
-  --mm-photo-light: rgb(255 255 255 / 0.62);
-  --mm-photo-edge: rgb(20 20 22 / 0.045);
-  --mm-photo-shadow: drop-shadow(0 0.5px 1px rgb(58 44 30 / 0.22))
-    drop-shadow(0 6px 9px rgb(58 44 30 / 0.12));
-}
-
-.mm-photo {
-  background-color: var(--mm-photo-bg);
-}
-
-.mm-photo[data-cutout='tile'] {
-  background-image: radial-gradient(120% 95% at 50% 36%, var(--mm-photo-light) 0%, transparent 62%);
-}
-
-.mm-photo[data-cutout='bare'] {
-  background: none;
-  overflow: visible;
-}
-
-.mm-photo > img {
-  mix-blend-mode: multiply;
-}
-
-.mm-photo[data-cutout] > img {
-  mix-blend-mode: normal;
-  filter: var(--mm-photo-shadow);
-}
-
-.mm-photo::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  border-radius: inherit;
-  box-shadow: inset 0 0 0 1px var(--mm-photo-edge);
-  pointer-events: none;
-}
-
-.mm-photo[data-cutout='bare']::after {
-  content: none;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --mm-photo-bg: #1e1d20;
-    --mm-photo-light: rgb(255 248 240 / 0.07);
-    --mm-photo-edge: rgb(255 255 255 / 0.06);
-    --mm-photo-shadow: drop-shadow(0 0.5px 1px rgb(0 0 0 / 0.5))
-      drop-shadow(0 6px 10px rgb(0 0 0 / 0.42));
-  }
-
-  .mm-photo > img {
-    mix-blend-mode: normal;
-    filter: brightness(0.92);
-  }
-
-  /* Cut-outs keep their colour (no backdrop to fight) and only take the shadow. */
-  .mm-photo[data-cutout] > img {
-    filter: var(--mm-photo-shadow);
   }
 }
 

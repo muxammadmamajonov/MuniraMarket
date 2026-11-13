@@ -136,7 +136,7 @@ export const productsDict: Record<Locale, ProductsDict> = {
         sortOrderHint: 'Kichik raqam yuqorida turadi.',
         imageUrl: 'Rasm manzili',
         imageHint:
-          'Faqat https:// bilan boshlanadigan manzil. Server rasmni yuklamaydi, faqat manzilni saqlaydi.',
+          'https:// bilan boshlanadigan manzil yoki do‘kon rasmi (/products/…). Server rasmni yuklamaydi, faqat manzilni saqlaydi.',
         isActive: 'Do‘konda ko‘rsatilsin',
         isActiveHint: 'O‘chirilsa, mahsulot xaridorlarga ko‘rinmaydi.',
       },
@@ -227,7 +227,7 @@ export const productsDict: Record<Locale, ProductsDict> = {
         sortOrderHint: 'Меньшее число — выше в списке.',
         imageUrl: 'Адрес изображения',
         imageHint:
-          'Только адрес, начинающийся с https://. Сервер не загружает изображение, а лишь хранит адрес.',
+          'Адрес, начинающийся с https://, или фото магазина (/products/…). Сервер не загружает изображение, а лишь хранит адрес.',
         isActive: 'Показывать в магазине',
         isActiveHint: 'Если выключить, покупатели не увидят товар.',
       },

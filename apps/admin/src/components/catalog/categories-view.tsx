@@ -28,7 +28,7 @@ import { useSession } from '@/lib/session';
 import { useApiResource } from '@/lib/use-api-resource';
 import { useSingleFlight } from '@/lib/use-single-flight';
 import { Alert } from '../ui/alert';
-import { CARD, CHIP, CHIP_OFF, CHIP_ON } from '../ui/classes';
+import { GROUP, ROWS } from '../ui/classes';
 import { ConfirmDialog } from '../ui/confirm-dialog';
 import {
   CheckboxField,
@@ -39,7 +39,21 @@ import {
 } from '../ui/fields';
 import { Modal } from '../ui/modal';
 import { PageHeader } from '../ui/page-header';
+import { ProductPhoto } from '../ui/product-photo';
 import { ResourceView } from '../ui/resource-view';
+
+/** Active / inactive as a switch: the track carries the state, the word says it. */
+const SWITCH =
+  'inline-flex min-h-11 items-center gap-2 rounded-2xl px-2 text-sm font-semibold ' +
+  'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus ' +
+  'transition-transform duration-150 ease-out-strong active:scale-[0.97] motion-reduce:transition-none';
+
+/** Row actions: quiet tinted buttons, so a long list is not a wall of outlines. */
+const QUIET_BUTTON =
+  'inline-flex min-h-11 items-center justify-center rounded-2xl bg-surface-muted px-3.5 text-sm ' +
+  'font-semibold hover:bg-border focus-visible:outline-2 focus-visible:outline-offset-2 ' +
+  'focus-visible:outline-focus transition-[transform,background-color] duration-150 ease-out-strong ' +
+  'active:scale-[0.97] motion-reduce:transition-none';
 
 type Errors = Partial<Record<FieldKey, string>>;
 
@@ -355,15 +369,17 @@ export function CategoriesView() {
           data.items.length === 0 ? (
             <EmptyState title={copy.empty} />
           ) : (
-            <ul aria-label={copy.list} className="flex flex-col gap-2">
+            <ul aria-label={copy.list} className={`${GROUP} ${ROWS} overflow-hidden`}>
               {rows.map(({ category, depth }) => (
                 <li
                   key={category.id}
                   data-testid="category-row"
-                  className={`${CARD} sm:flex-row sm:items-center sm:justify-between`}
-                  style={{ marginInlineStart: `${Math.min(depth, 5) * 1.25}rem` }}
+                  className="flex flex-wrap items-center gap-x-3 gap-y-2 py-3 pr-3 sm:flex-nowrap sm:pr-4"
+                  // Nesting reads as indentation inside the one list (capped, so deep trees fit).
+                  style={{ paddingInlineStart: `${String(1 + Math.min(depth, 5) * 1.5)}rem` }}
                 >
-                  <div className="min-w-0 flex-1">
+                  <ProductPhoto src={category.image_url} className="w-12" />
+                  <div className="min-w-0 flex-1 basis-40">
                     <p className="font-semibold break-words">{localName(category, locale)}</p>
                     <p className="text-sm text-muted-foreground break-words [overflow-wrap:anywhere]">
                       <span className="font-mono">{category.slug}</span> ·{' '}
@@ -374,7 +390,7 @@ export function CategoriesView() {
                       {formatMessage(copy.childCount, { count: formatCount(category.child_count) })}
                     </p>
                   </div>
-                  <div className="flex flex-wrap items-center gap-2">
+                  <div className="flex flex-wrap items-center gap-1.5 max-sm:w-full max-sm:pl-15">
                     <button
                       type="button"
                       aria-pressed={category.is_active}
@@ -383,27 +399,43 @@ export function CategoriesView() {
                       })}
                       disabled={pending}
                       onClick={() => void toggle(category)}
-                      className={`${CHIP} ${category.is_active ? CHIP_ON : CHIP_OFF} disabled:opacity-50`}
+                      className={`${SWITCH} disabled:opacity-50`}
                     >
-                      {category.is_active ? dict.common.active : dict.common.inactive}
+                      <span
+                        aria-hidden="true"
+                        className={`relative h-6 w-10 shrink-0 rounded-full transition-colors duration-150 ${
+                          category.is_active ? 'bg-success' : 'bg-border-strong'
+                        }`}
+                      >
+                        <span
+                          className={`absolute top-0.5 left-0.5 size-5 rounded-full bg-white shadow-[0_1px_3px_rgb(0_0_0/0.25)] transition-transform duration-200 ease-out-strong ${
+                            category.is_active ? 'translate-x-4' : ''
+                          }`}
+                        />
+                      </span>
+                      <span className="w-16 text-left">
+                        {category.is_active ? dict.common.active : dict.common.inactive}
+                      </span>
                     </button>
-                    <Button
-                      variant="secondary"
+                    <button
+                      type="button"
                       onClick={(event) =>
                         setDialog({ kind: 'form', category, opener: event.currentTarget })
                       }
+                      className={QUIET_BUTTON}
                     >
                       {copy.edit}
-                    </Button>
-                    <Button
-                      variant="secondary"
+                    </button>
+                    <button
+                      type="button"
                       onClick={(event) =>
                         setDialog({ kind: 'delete', category, opener: event.currentTarget })
                       }
                       aria-label={`${copy.remove}: ${localName(category, locale)}`}
+                      className={`${QUIET_BUTTON} text-danger`}
                     >
                       {copy.remove}
-                    </Button>
+                    </button>
                   </div>
                 </li>
               ))}

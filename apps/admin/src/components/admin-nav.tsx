@@ -21,14 +21,14 @@ import { NavIcon } from './nav-icon';
 import { Modal } from './ui/modal';
 
 const ROW =
-  'flex min-h-11 items-center gap-3 rounded-xl px-3 text-base transition-transform ' +
-  'duration-150 ease-out active:scale-[0.98] focus-visible:outline-2 focus-visible:outline-offset-2 ' +
+  'flex min-h-11 items-center gap-3 rounded-2xl px-3 text-[15px] font-medium transition-[transform,background-color] ' +
+  'duration-150 ease-out-strong active:scale-[0.98] focus-visible:outline-2 focus-visible:outline-offset-2 ' +
   'focus-visible:outline-focus';
 // The current page: brand tint and ink, plus a bar on the leading edge (not colour alone).
 const ROW_ON =
   'relative bg-brand-soft font-semibold text-brand-ink before:absolute before:inset-y-2 ' +
   'before:left-0 before:w-1 before:rounded-full before:bg-primary';
-const ROW_OFF = 'hover:bg-surface-muted';
+const ROW_OFF = 'text-foreground/85 hover:bg-surface-muted';
 
 const GROUP_ORDER: NavGroup[] = ['main', 'catalog', 'system'];
 
@@ -45,7 +45,7 @@ function NavLinks({ items, onNavigate }: { items: NavItem[]; onNavigate?: () => 
         return (
           <div key={group} className="flex flex-col gap-1">
             {heading === null ? null : (
-              <p className="px-3 pt-3 text-xs font-semibold tracking-wide text-muted-foreground uppercase">
+              <p className="px-3 pt-4 pb-0.5 text-[13px] font-semibold text-muted-foreground">
                 {heading}
               </p>
             )}
@@ -89,7 +89,7 @@ function Account({ user }: { user: UserPublic }) {
 function Sidebar({ user, isAdmin }: { user: UserPublic; isAdmin: boolean }) {
   const { dict, locale } = useI18n();
   return (
-    <aside className="sticky top-0 hidden h-dvh w-60 shrink-0 flex-col gap-4 overflow-y-auto overscroll-contain border-r border-border bg-surface p-3 sm:flex">
+    <aside className="sticky top-0 hidden h-dvh w-60 shrink-0 flex-col gap-4 overflow-y-auto overscroll-contain border-r border-hairline bg-surface p-3 sm:flex">
       <Link
         href={`/${locale}`}
         className="flex min-h-14 items-center rounded-xl px-2 focus-visible:outline-2 focus-visible:outline-focus"
@@ -99,7 +99,7 @@ function Sidebar({ user, isAdmin }: { user: UserPublic; isAdmin: boolean }) {
       <nav aria-label={dict.nav.label} className="flex flex-1 flex-col gap-2">
         <NavLinks items={navItemsFor(isAdmin)} />
       </nav>
-      <div className="flex flex-col gap-3 border-t border-border pt-3">
+      <div className="flex flex-col gap-3 border-t border-hairline pt-3">
         <Account user={user} />
         <LanguageSwitcher
           locale={locale}
@@ -130,7 +130,7 @@ function MenuSheet({
       <nav aria-label={dict.nav.label} className="flex flex-col gap-2">
         <NavLinks items={navItemsFor(isAdmin)} onNavigate={onClose} />
       </nav>
-      <div className="flex flex-col gap-3 border-t border-border pt-3">
+      <div className="flex flex-col gap-3 border-t border-hairline pt-3">
         <p className="text-xs font-semibold tracking-wide text-muted-foreground uppercase">
           {dict.nav.accountTitle}
         </p>
@@ -167,7 +167,7 @@ function MobileChrome({ user, isAdmin }: { user: UserPublic; isAdmin: boolean })
 
   return (
     <>
-      <header className="sticky top-0 z-30 flex items-center justify-between gap-2 border-b border-border bg-surface px-4 pt-[env(safe-area-inset-top)] sm:hidden">
+      <header className="sticky top-0 z-30 flex items-center justify-between gap-2 border-b border-hairline bg-surface/90 px-4 backdrop-blur-xl pt-[env(safe-area-inset-top)] sm:hidden">
         <Link
           href={`/${locale}`}
           className="flex min-h-14 min-w-0 items-center rounded-xl focus-visible:outline-2 focus-visible:outline-focus"
@@ -178,7 +178,7 @@ function MobileChrome({ user, isAdmin }: { user: UserPublic; isAdmin: boolean })
 
       <nav
         aria-label={dict.nav.quickLabel}
-        className="fixed inset-x-0 bottom-0 z-30 flex border-t border-border bg-surface pb-[env(safe-area-inset-bottom)] sm:hidden"
+        className="fixed inset-x-0 bottom-0 z-30 flex border-t border-hairline bg-surface/90 backdrop-blur-xl pb-[env(safe-area-inset-bottom)] sm:hidden"
       >
         {quick.map((item) => {
           const active = isNavActive(item, locale, pathname);

@@ -23,7 +23,7 @@ export function ProductStatusBadge({ state }: { state: ProductState }) {
     <span
       data-state={state}
       className={cx(
-        'inline-flex items-center rounded-full px-2.5 py-0.5 text-sm font-medium whitespace-nowrap',
+        'inline-flex shrink-0 items-center rounded-full px-2.5 py-0.5 text-[13px] leading-5 font-semibold whitespace-nowrap',
         TONES[state],
       )}
     >

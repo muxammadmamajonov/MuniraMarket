@@ -32,8 +32,8 @@ const ALERT = 'text-sm text-danger';
 
 function Card({ title, children }: { title: string; children: ReactNode }) {
   return (
-    <section className="flex flex-col gap-3 rounded-xl border border-border bg-surface p-4">
-      <h2 className="text-lg font-semibold">{title}</h2>
+    <section className="flex min-w-0 flex-col gap-3 rounded-3xl bg-surface p-4 sm:p-5">
+      <h2 className="text-lg leading-6 font-bold tracking-[-0.01em]">{title}</h2>
       {children}
     </section>
   );
@@ -85,11 +85,11 @@ function OrderBody({ order }: { order: AdminOrderDetail }) {
     <div className="grid gap-4 lg:grid-cols-3">
       <div className="flex flex-col gap-4 lg:col-span-2">
         <Card title={dict.order.items.title}>
-          <ul className="flex flex-col divide-y divide-border">
+          <ul className="flex flex-col divide-y divide-hairline">
             {order.items.map((line, index) => (
               <li
                 key={`${line.sku}-${String(index)}`}
-                className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 py-2 first:pt-0 last:pb-0"
+                className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 py-3 first:pt-0 last:pb-0"
               >
                 <div className="min-w-0">
                   <p className="font-medium break-words">
@@ -109,7 +109,7 @@ function OrderBody({ order }: { order: AdminOrderDetail }) {
               </li>
             ))}
           </ul>
-          <dl className="flex flex-col gap-1 border-t border-border pt-3">
+          <dl className="flex flex-col gap-1 border-t border-hairline pt-3">
             <div className="flex justify-between gap-4">
               <dt className="text-muted-foreground">{dict.order.totals.subtotal}</dt>
               <dd>{formatUZS(order.subtotal_uzs, locale)}</dd>
@@ -126,7 +126,7 @@ function OrderBody({ order }: { order: AdminOrderDetail }) {
             {order.history_detail.map((change, index) => (
               <li
                 key={`${change.at}-${String(index)}`}
-                className="flex flex-col gap-0.5 border-l-2 border-border pl-3"
+                className="flex flex-col gap-0.5 border-l-2 border-hairline pl-3"
               >
                 <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
                   <StatusBadge status={change.status} />
@@ -352,7 +352,7 @@ export function OrderDetailView({ id }: { id: string }) {
     <div className="flex flex-col gap-4">
       {back}
       <div className="flex flex-wrap items-center gap-3">
-        <h1 className="text-2xl font-bold tracking-tight">
+        <h1 className="text-[28px] leading-8 font-bold tracking-[-0.025em] tabular">
           {formatMessage(dict.order.title, { number: order.number })}
         </h1>
         <StatusBadge status={order.status} />
@@ -360,7 +360,7 @@ export function OrderDetailView({ id }: { id: string }) {
 
       <section
         aria-label={dict.order.actions.title}
-        className="flex flex-col gap-3 rounded-xl border border-border bg-surface p-4"
+        className="flex flex-col gap-3 rounded-3xl bg-surface p-4 sm:p-5"
       >
         {notice !== null ? (
           <p role="status" className="font-medium">

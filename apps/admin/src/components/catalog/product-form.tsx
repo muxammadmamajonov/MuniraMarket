@@ -32,12 +32,13 @@ import {
   type ProductFormValues,
 } from '@/lib/catalog';
 import { parseIntegerField } from '@/lib/numbers';
+import { ownPhotoPath } from '@/lib/photo';
 import { slugFromSku } from '@/lib/slug';
 import { useSession } from '@/lib/session';
 import { useApiResource } from '@/lib/use-api-resource';
 import { useSingleFlight } from '@/lib/use-single-flight';
 import { Alert } from '../ui/alert';
-import { CARD, TEXT_LINK } from '../ui/classes';
+import { CARD, SECTION_TITLE, TEXT_LINK } from '../ui/classes';
 import { ConfirmDialog } from '../ui/confirm-dialog';
 import {
   CheckboxField,
@@ -48,6 +49,7 @@ import {
   textInputAttrs,
 } from '../ui/fields';
 import { PageHeader } from '../ui/page-header';
+import { ProductPhoto } from '../ui/product-photo';
 import { PermissionDenied } from '../ui/resource-view';
 import { ProductStatusBadge, productState } from './product-status';
 
@@ -132,6 +134,8 @@ function ProductForm({ categories, product: initial, onReload, created }: FormPr
   const previewEnabled = isImagePreviewEnabled();
   const previewSrc =
     previewEnabled && imageUrl !== '' && isValidImageUrl(imageUrl) ? imageUrl : null;
+  // The store's own photos are served by this origin too (`lib/photo.ts`), so they always preview.
+  const ownPreview = isValidImageUrl(imageUrl) ? ownPhotoPath(imageUrl, 'full') : null;
 
   const handleFailure = (error: Parameters<typeof writeErrorMessage>[1]) => {
     if (error.code === 'validation_error') {
@@ -246,9 +250,12 @@ function ProductForm({ categories, product: initial, onReload, created }: FormPr
       <PageHeader
         title={product === null ? copy.titleNew : nameForTitle}
         subtitle={product === null ? undefined : copy.titleEdit}
-        actions={
-          product === null ? undefined : <ProductStatusBadge state={productState(product)} />
+        leading={
+          product === null ? undefined : (
+            <ProductPhoto src={product.image_url} className="w-16 rounded-2xl max-sm:w-14" />
+          )
         }
+        badge={product === null ? undefined : <ProductStatusBadge state={productState(product)} />}
       />
 
       {notice === null ? null : <Alert tone="success">{notice}</Alert>}
@@ -258,7 +265,7 @@ function ProductForm({ categories, product: initial, onReload, created }: FormPr
       <form ref={formRef} onSubmit={onSubmit} noValidate className="flex flex-col gap-4">
         <fieldset disabled={archived} className="flex min-w-0 flex-col gap-4">
           <section className={CARD} aria-labelledby="sec-identity">
-            <h2 id="sec-identity" className="text-lg font-semibold">
+            <h2 id="sec-identity" className={SECTION_TITLE}>
               {copy.sections.identity}
             </h2>
             <div className="grid gap-4 sm:grid-cols-2">
@@ -406,7 +413,7 @@ function ProductForm({ categories, product: initial, onReload, created }: FormPr
           </section>
 
           <section className={CARD} aria-labelledby="sec-pricing">
-            <h2 id="sec-pricing" className="text-lg font-semibold">
+            <h2 id="sec-pricing" className={SECTION_TITLE}>
               {copy.sections.pricing}
             </h2>
             <div className="grid gap-4 sm:grid-cols-2">
@@ -479,7 +486,7 @@ function ProductForm({ categories, product: initial, onReload, created }: FormPr
           </section>
 
           <section className={CARD} aria-labelledby="sec-image">
-            <h2 id="sec-image" className="text-lg font-semibold">
+            <h2 id="sec-image" className={SECTION_TITLE}>
               {copy.sections.image}
             </h2>
             <div className="flex flex-wrap items-start gap-4">
@@ -507,12 +514,25 @@ function ProductForm({ categories, product: initial, onReload, created }: FormPr
                   }}
                 />
               </div>
-              <div className="flex w-32 shrink-0 flex-col gap-1">
+              <div className="flex w-36 shrink-0 flex-col gap-1.5">
                 <p className="text-sm font-medium">{copy.preview}</p>
-                <ImagePlaceholder src={previewSrc} alt={copy.previewAlt} className="w-32" />
+                {ownPreview === null ? (
+                  <ImagePlaceholder
+                    src={previewSrc}
+                    alt={copy.previewAlt}
+                    className="w-36 rounded-2xl"
+                  />
+                ) : (
+                  <ProductPhoto
+                    src={ownPreview}
+                    alt={copy.previewAlt}
+                    size="full"
+                    className="w-36 rounded-2xl"
+                  />
+                )}
               </div>
             </div>
-            {previewEnabled ? (
+            {ownPreview !== null ? null : previewEnabled ? (
               previewSrc === null ? null : (
                 <p className="text-sm text-muted-foreground">{copy.previewUnavailable}</p>
               )
@@ -525,8 +545,14 @@ function ProductForm({ categories, product: initial, onReload, created }: FormPr
         </fieldset>
 
         {archived ? null : (
-          <div className="flex flex-wrap items-center gap-3">
-            <Button type="submit" disabled={pending} data-testid="save-button">
+          // Stays in reach at the bottom of a long form (above the phone's bottom bar).
+          <div className="sticky bottom-[calc(4.25rem+env(safe-area-inset-bottom))] z-20 flex flex-wrap items-center gap-3 rounded-3xl bg-surface/85 p-2.5 shadow-[0_8px_28px_-12px_rgb(20_20_22/0.28)] ring-1 ring-hairline backdrop-blur-xl sm:bottom-4">
+            <Button
+              type="submit"
+              disabled={pending}
+              data-testid="save-button"
+              className="min-h-12 px-6 max-sm:flex-1"
+            >
               {pending ? dict.common.saving : product === null ? copy.submitNew : copy.submitEdit}
             </Button>
           </div>

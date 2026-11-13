@@ -95,7 +95,7 @@ export function TelegramLoginButton({ label }: { label?: string }) {
           id={errorId}
           role="alert"
           data-testid="login-error"
-          className="flex flex-col gap-2 rounded-xl border border-danger/40 bg-danger-soft p-3 text-left"
+          className="flex flex-col gap-2 rounded-2xl bg-danger-soft p-3 text-left"
         >
           <p className="flex items-start gap-2 text-sm font-medium text-danger">
             <AlertIcon />

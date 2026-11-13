@@ -3,6 +3,7 @@
 import { Button } from '@muniramarket/ui';
 import { useEffect, useId, useRef, useState, type FormEvent, type KeyboardEvent } from 'react';
 import { useI18n } from '@/i18n/context';
+import { TEXTAREA } from './ui/classes';
 
 /** The API requires 3-300 characters for a cancellation reason. */
 export const REASON_MIN = 3;
@@ -100,7 +101,7 @@ export function CancelDialog({
         aria-labelledby={titleId}
         aria-describedby={descriptionId}
         onKeyDown={onKeyDown}
-        className="flex max-h-full w-full max-w-md flex-col gap-3 overflow-y-auto rounded-xl border border-border bg-surface p-5 shadow-xl"
+        className="flex max-h-full w-full max-w-md flex-col gap-3 overflow-y-auto rounded-3xl bg-surface p-5 shadow-xl"
       >
         <h2 id={titleId} className="text-lg font-bold">
           {copy.title}
@@ -123,7 +124,7 @@ export function CancelDialog({
             disabled={pending}
             aria-invalid={invalid}
             aria-describedby={invalid ? errorId : undefined}
-            className="w-full rounded-xl border border-border bg-background p-3 focus-visible:outline-2 focus-visible:outline-focus"
+            className={TEXTAREA}
           />
           {invalid ? (
             <p id={errorId} role="alert" className="text-sm text-danger">

@@ -15,7 +15,7 @@ import { useSession } from '@/lib/session';
 import { useApiResource } from '@/lib/use-api-resource';
 import { useUrlParams } from '@/lib/use-url-params';
 import { Alert } from '../ui/alert';
-import { CHIP, CHIP_OFF, CHIP_ON } from '../ui/classes';
+import { CHIP, CHIP_OFF, CHIP_ON, CHIP_RAIL } from '../ui/classes';
 import { ConfirmDialog } from '../ui/confirm-dialog';
 import { DataTable, type Column } from '../ui/data-table';
 import { Modal } from '../ui/modal';
@@ -86,6 +86,7 @@ function RoleDialog({
       <div className="flex flex-col gap-1.5 font-medium">
         <span id={selectLabelId}>{copy.select}</span>
         <Select
+          onPage
           ref={select}
           labelledBy={selectLabelId}
           value={role}
@@ -160,13 +161,26 @@ export function UsersView() {
       header: copy.columns.user,
       primary: true,
       cell: (user) => (
-        <>
-          <span className="block font-semibold">{userDisplayName(user, copy.telegramId)}</span>
-          <span className="block text-sm text-muted-foreground">
-            {user.username === null || user.username === '' ? null : <>@{user.username} · </>}
-            {copy.telegramId}: <span className="font-mono tabular">{user.telegram_user_id}</span>
+        <span className="flex items-center gap-3">
+          {/* Initial on a tint picked by role: staff in brand red, customers neutral. */}
+          <span
+            aria-hidden="true"
+            className={`flex size-10 shrink-0 items-center justify-center rounded-full text-[15px] font-bold ${
+              user.role === 'customer'
+                ? 'bg-surface-muted text-muted-foreground'
+                : 'bg-brand-soft text-brand-ink'
+            }`}
+          >
+            {(Array.from(user.first_name.trim())[0] ?? '?').toUpperCase()}
           </span>
-        </>
+          <span className="min-w-0">
+            <span className="block font-semibold">{userDisplayName(user, copy.telegramId)}</span>
+            <span className="block text-sm text-muted-foreground">
+              {user.username === null || user.username === '' ? null : <>@{user.username} · </>}
+              {copy.telegramId}: <span className="font-mono tabular">{user.telegram_user_id}</span>
+            </span>
+          </span>
+        </span>
       ),
     },
     { id: 'role', header: copy.columns.role, nowrap: true, cell: (user) => dict.roles[user.role] },
@@ -177,7 +191,7 @@ export function UsersView() {
       cell: (user) => (
         <span
           data-blocked={user.is_blocked}
-          className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-sm font-medium whitespace-nowrap ${
+          className={`inline-flex shrink-0 items-center rounded-full px-2.5 py-0.5 text-[13px] leading-5 font-semibold whitespace-nowrap ${
             user.is_blocked ? 'bg-danger-soft text-danger' : 'bg-success-soft text-success'
           }`}
         >
@@ -233,7 +247,7 @@ export function UsersView() {
       </div>
 
       <nav aria-label={copy.roleFilterLabel}>
-        <ul className="flex flex-wrap gap-2">
+        <ul className={CHIP_RAIL}>
           {[null, ...USER_ROLES].map((choice) => (
             <li key={choice ?? 'all'}>
               <Link
@@ -249,7 +263,7 @@ export function UsersView() {
         </ul>
       </nav>
       <nav aria-label={copy.blockedFilterLabel}>
-        <ul className="flex flex-wrap gap-2">
+        <ul className={CHIP_RAIL}>
           {BLOCKED_CHOICES.map((choice) => (
             <li key={choice}>
               <Link

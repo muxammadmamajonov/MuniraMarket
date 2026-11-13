@@ -99,10 +99,10 @@ export function Modal({
         onKeyDown={onKeyDown}
         className={cx(
           'mm-panel flex max-h-[calc(100dvh-2rem)] w-full flex-col gap-3 overflow-y-auto overscroll-contain',
-          'rounded-t-2xl border border-border bg-surface p-5 pb-[calc(1.25rem+env(safe-area-inset-bottom))] shadow-xl',
+          'rounded-t-3xl bg-surface p-5 pb-[calc(1.25rem+env(safe-area-inset-bottom))] shadow-xl',
           variant === 'dialog'
-            ? 'sm:max-w-lg sm:rounded-2xl sm:pb-5'
-            : 'sm:max-w-sm sm:rounded-2xl',
+            ? 'sm:max-w-lg sm:rounded-3xl sm:pb-5'
+            : 'sm:max-w-sm sm:rounded-3xl',
           className,
         )}
       >
