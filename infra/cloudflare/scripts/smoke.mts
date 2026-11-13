@@ -149,7 +149,7 @@ if (!local) {
     {
       name: 'Core API reachable through the storefront (health, readiness, catalog)',
       run: async () => {
-        for (const path of ['health', 'health/ready', 'categories', 'delivery/zones']) {
+        for (const path of ['health', 'health/ready', 'categories', 'products']) {
           const response = await get(`${web}/api/v1/${path}`);
           expect(response.status === 200, `${path}: status ${response.status}`);
           await response.body?.cancel();
