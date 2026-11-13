@@ -141,6 +141,9 @@ export interface Dictionary {
     productsCount: string;
     emptyCategory: string;
     filterLabel: string;
+    /** Phone filter sheet: closes it and shows the listing. */
+    showResults: string;
+    closeFilters: string;
     /** Toggle: only products that can be added to the cart now. */
     inStockOnly: string;
     /** Empty listing while the in-stock filter is on. */
@@ -358,6 +361,8 @@ export interface Dictionary {
       cancelReasonHeading: string;
       cancelledNotice: string;
       productRemoved: string;
+      /** A line the shop lowered because it ran out (ADR 0018). */
+      lineAdjusted: string;
     };
     cancel: {
       button: string;
