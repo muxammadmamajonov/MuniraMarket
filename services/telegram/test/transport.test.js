@@ -125,27 +125,49 @@ describe('createTelegramBotTransport: staff alerts', () => {
     ...extra,
   });
 
-  it('sends one bilingual plain-text message to the group', async () => {
+  it('sends one Uzbek HTML message to the group', async () => {
     const api = createRecordingApi();
-    const result = await createTelegramBotTransport({ api }).deliver(alert());
+    const result = await createTelegramBotTransport({ api }).deliver(
+      alert({ recipientName: 'Demo <Mijoz>' }),
+    );
     expect(result).toEqual({ outcome: 'delivered' });
     expect(api.calls).toHaveLength(1);
     const { params } = api.calls[0];
     expect(params.chat_id).toBe(GROUP_ID);
-    expect(params).not.toHaveProperty('parse_mode');
+    expect(params.parse_mode).toBe('HTML');
     expect(params.text).toBe(
       [
-        'Buyurtma bekor qilindi №261031-7KQ2MX',
+        '<b>Buyurtma bekor qilindi №261031-7KQ2MX</b>',
         'Holat: Tasdiqlangan → Bekor qilingan',
+        'Qabul qiluvchi: Demo &lt;Mijoz&gt;',
         `Jami: 85${NBSP}000${NBSP}so‘m`,
-        'Mijoz tomonidan bekor qilindi',
-        '',
-        'Заказ отменён №261031-7KQ2MX',
-        'Статус: Подтверждён → Отменён',
-        `Итого: 85${NBSP}000${NBSP}сум`,
-        'Отменён клиентом',
+        '<i>Mijoz tomonidan bekor qilindi</i>',
       ].join('\n'),
     );
+  });
+
+  it('adds an "Adminda ochish" button when the admin origin is an https origin', async () => {
+    const orderId = '00000000-0000-4000-8000-0000000000AB';
+    for (const [adminOrigin, expected] of [
+      [
+        'https://admin.example.uz',
+        'https://admin.example.uz/uz/orders/00000000-0000-4000-8000-0000000000ab',
+      ],
+      [
+        'https://admin.example.uz/',
+        'https://admin.example.uz/uz/orders/00000000-0000-4000-8000-0000000000ab',
+      ],
+      ['http://localhost:3001', null],
+      ['https://admin.example.uz/path', null],
+      [null, null],
+    ]) {
+      const api = createRecordingApi();
+      await createTelegramBotTransport({ api, adminOrigin }).deliver(alert({ orderId }));
+      const markup = api.calls[0].params.reply_markup;
+      if (expected === null) expect(markup).toBeUndefined();
+      else
+        expect(markup).toEqual({ inline_keyboard: [[{ text: 'Adminda ochish', url: expected }]] });
+    }
   });
 
   it('adds the Yandex Go courier button only when the alert has a destination', async () => {
@@ -164,12 +186,12 @@ describe('createTelegramBotTransport: staff alerts', () => {
     expect(api.calls).toHaveLength(2);
     const [first, second] = api.calls.map((call) => call.params);
     expect(first.chat_id).toBe(GROUP_ID);
-    expect(first).not.toHaveProperty('parse_mode');
+    expect(first.parse_mode).toBe('HTML');
     expect(first.reply_markup).toEqual({
       inline_keyboard: [
         [
           {
-            text: 'Yandex chaqirish / Вызвать Яндекс',
+            text: 'Yandex chaqirish',
             url:
               'https://3.redirect.appmetrica.yandex.com/route?end-lat=41.311081&end-lon=69.240562' +
               '&tariffClass=courier&level=courier&ref=muniramarket' +
@@ -235,6 +257,128 @@ describe('createTelegramBotTransport: staff alerts', () => {
       outcome: 'failed',
       errorCode: 'invalid_payload',
     });
+    expect(api.calls).toHaveLength(0);
+  });
+});
+
+describe('createTelegramBotTransport: shortage adjustments (ADR 0018)', () => {
+  const change = { nameUz: 'Olma', nameRu: 'Яблоко', unit: 'kg', fromQuantity: 3, toQuantity: 1 };
+
+  it('tells the customer in their language, as plain text', async () => {
+    const api = createRecordingApi();
+    const transport = createTelegramBotTransport({ api });
+    const message = {
+      kind: 'order_adjusted',
+      chatId: 555,
+      orderNumber: '261031-7KQ2MX',
+      locale: 'ru',
+      totalUzs: 23000,
+      changes: [change],
+    };
+    await expect(transport.deliver(message)).resolves.toEqual({ outcome: 'delivered' });
+    await transport.deliver({ ...message, locale: 'uz' });
+    const [ru, uz] = api.calls.map((call) => call.params);
+    expect(ru).toEqual({
+      chat_id: 555,
+      text: [
+        'Ваш заказ изменён',
+        'Заказ №261031-7KQ2MX',
+        'К сожалению, некоторых товаров оказалось недостаточно:',
+        `• Яблоко: 3${NBSP}кг → 1${NBSP}кг`,
+        `Новая сумма: 23${NBSP}000${NBSP}сум`,
+        '',
+        'Если заказ больше не нужен, его можно отменить в приложении.',
+      ].join('\n'),
+    });
+    expect(uz.text).toBe(
+      [
+        'Buyurtmangiz o‘zgardi',
+        'Buyurtma №261031-7KQ2MX',
+        'Afsuski, ba’zi mahsulotlar yetarli emas ekan:',
+        `• Olma: 3${NBSP}kg → 1${NBSP}kg`,
+        `Yangi jami: 23${NBSP}000${NBSP}so‘m`,
+        '',
+        'Buyurtma endi kerak bo‘lmasa, uni ilovada bekor qilishingiz mumkin.',
+      ].join('\n'),
+    );
+  });
+
+  it('maps a customer who blocked the bot to recipient_blocked', async () => {
+    const api = throwing(new BotApiError(403, 'Forbidden: bot was blocked by the user'));
+    const result = await createTelegramBotTransport({ api }).deliver({
+      kind: 'order_adjusted',
+      chatId: 555,
+      orderNumber: '261031-7KQ2MX',
+      locale: 'uz',
+      totalUzs: 1,
+      changes: [change],
+    });
+    expect(result).toEqual({ outcome: 'recipient_blocked' });
+  });
+
+  it('sends the staff group a short HTML alert with the reason and the admin button', async () => {
+    const api = createRecordingApi();
+    const transport = createTelegramBotTransport({ api, adminOrigin: 'https://admin.example.uz' });
+    await transport.deliver({
+      kind: 'staff_adjusted',
+      chatId: -100500,
+      orderId: '00000000-0000-4000-8000-000000000001',
+      orderNumber: '261031-7KQ2MX',
+      totalUzs: 23000,
+      recipientName: 'Demo Mijoz',
+      changes: [
+        { nameUz: 'Olma', unit: 'kg', fromQuantity: 3, toQuantity: 1, markedOutOfStock: true },
+      ],
+      reason: 'Ikkitasi <ezilgan>',
+    });
+    expect(api.calls[0].params).toEqual({
+      chat_id: -100500,
+      parse_mode: 'HTML',
+      text: [
+        '<b>Buyurtma o‘zgartirildi №261031-7KQ2MX</b>',
+        `Olma: 3${NBSP}kg → 1${NBSP}kg (omborda qolmadi)`,
+        'Sabab: Ikkitasi &lt;ezilgan&gt;',
+        'Qabul qiluvchi: Demo Mijoz',
+        `<b>Yangi jami: 23${NBSP}000${NBSP}so‘m</b>`,
+      ].join('\n'),
+      reply_markup: {
+        inline_keyboard: [
+          [
+            {
+              text: 'Adminda ochish',
+              url: 'https://admin.example.uz/uz/orders/00000000-0000-4000-8000-000000000001',
+            },
+          ],
+        ],
+      },
+    });
+  });
+
+  it('fails an unusable adjustment permanently without calling the API', async () => {
+    const api = createRecordingApi();
+    const transport = createTelegramBotTransport({ api });
+    const results = await Promise.all([
+      transport.deliver({
+        kind: 'order_adjusted',
+        chatId: -5,
+        orderNumber: '261031-7KQ2MX',
+        locale: 'uz',
+        totalUzs: 1,
+        changes: [change],
+      }),
+      transport.deliver({
+        kind: 'staff_adjusted',
+        chatId: 555,
+        orderNumber: '261031-7KQ2MX',
+        totalUzs: 1,
+        changes: [],
+        reason: 'x',
+      }),
+    ]);
+    expect(results).toEqual([
+      { outcome: 'failed', errorCode: 'invalid_payload' },
+      { outcome: 'failed', errorCode: 'invalid_payload' },
+    ]);
     expect(api.calls).toHaveLength(0);
   });
 });

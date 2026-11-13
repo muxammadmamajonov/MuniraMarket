@@ -96,10 +96,15 @@ export async function drainOutbox(options: {
   clock: Clock;
   fetch: FetchFn;
   botToken: string;
+  /** The admin's public origin (`ADMIN_PUBLIC_ORIGIN`): staff alerts link to the order there. */
+  adminOrigin?: string | null;
 }): Promise<DrainCounts> {
   const summary = await drainOrderNotifications({
     coreApi: inProcessOutboxApi(options.db, options.clock),
-    transport: createTelegramBotTransport({ api: createBotApi(options.botToken, options.fetch) }),
+    transport: createTelegramBotTransport({
+      api: createBotApi(options.botToken, options.fetch),
+      adminOrigin: options.adminOrigin ?? null,
+    }),
     limit: DRAIN_LIMIT,
     maxBatches: DRAIN_MAX_BATCHES,
     now: () => options.clock() * 1000,

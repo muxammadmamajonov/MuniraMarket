@@ -13,6 +13,11 @@
  */
 
 /**
+ * Order line unit (as stored on the order line).
+ * @typedef {'piece' | 'kg' | 'g' | 'l' | 'ml'} Unit
+ */
+
+/**
  * Outcome of one notification delivery attempt, as reported to the Core API outbox.
  * @typedef {'delivered' | 'recipient_blocked' | 'retry' | 'failed'} NotificationOutcome
  */

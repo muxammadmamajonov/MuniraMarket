@@ -34,6 +34,7 @@ export function register(router: Router): void {
         clock: () => clock(),
         fetch: deps(c).fetch,
         botToken: token,
+        adminOrigin: settings.adminPublicOrigin,
       });
     } catch (error) {
       logger.error('Outbox drain failed', errorFields(error));
