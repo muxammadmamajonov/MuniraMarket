@@ -122,6 +122,7 @@ describe('parsing', () => {
         sort_order: -5,
         image_url: 'https://cdn.example.com/olma.webp',
         updated_at: null,
+        safety_stock: null,
       },
     ]);
   });
@@ -189,7 +190,7 @@ describe('file-level errors', () => {
     const error = fileError(toCsv([], { header }));
     expect(error.code).toBe('csv_invalid_header');
     expect(error.message).toBe(
-      `The header must be exactly: ${COLUMNS.join(',')} (optionally ,updated_at)`,
+      `The header must be exactly: ${COLUMNS.join(',')} (optionally ,safety_stock and ,updated_at)`,
     );
     expect(error.details).toEqual([
       ['duplicate', 'sku'],
@@ -439,6 +440,7 @@ function existing(
       price_uzs: 12_000,
       old_price_uzs: null,
       stock_quantity: null,
+      safety_stock: 0,
       is_active: true,
       sort_order: 0,
       image_url: null,
@@ -592,6 +594,7 @@ function exportRow(overrides: Partial<ExportRow> = {}): ExportRow {
     price_uzs: 12_000,
     old_price_uzs: 15_000,
     stock_quantity: 0,
+    safety_stock: 2,
     is_active: false,
     sort_order: -3,
     image_url: 'https://cdn.example.com/a.png',
@@ -612,7 +615,7 @@ describe('export', () => {
     expect(text.endsWith('\r\n')).toBe(true);
     expect(text).toContain(
       '"DEMO-0001","demo-olma","mevalar","Demo olma","Демо яблоко","","яблоко\n яблоко","kg",' +
-        '"12000","15000","0","false","-3","https://cdn.example.com/a.png",' +
+        '"12000","15000","0","2","false","-3","https://cdn.example.com/a.png",' +
         '"2026-10-31T07:15:30.123456+00:00"\r\n',
     );
   });
@@ -654,5 +657,58 @@ describe('export', () => {
     expect(parsed.rows[0]?.name_uz).toBe(name);
     expect(parsed.rows[0]?.description_uz).toBe(name);
     expect(parsed.rows[0]?.updated_at).toBe(UPDATED_AT);
+  });
+});
+
+// --- safety stock (ADR 0018) ----------------------------------------------------------------------
+
+describe('safety stock column', () => {
+  const header = [...COLUMNS, 'safety_stock'];
+
+  it('is optional and exported right after stock_quantity', () => {
+    expect(COLUMNS).not.toContain('safety_stock');
+    expect(EXPORT_COLUMNS.indexOf('safety_stock')).toBe(
+      EXPORT_COLUMNS.indexOf('stock_quantity') + 1,
+    );
+    expect(parsedRows(row())[0]?.safety_stock).toBeNull();
+  });
+
+  it.each([
+    ['', 0],
+    ['0', 0],
+    [' 3 ', 3],
+    ['1000000', 1_000_000],
+  ])('cell %j -> %d', (cell, expected) => {
+    const parsed = parseCatalogCsv(toCsv([row({ safety_stock: cell })], { header }));
+    expect(parsed.errors).toEqual([]);
+    expect(parsed.rows[0]?.safety_stock).toBe(expected);
+  });
+
+  it.each(['-1', '1.5', 'abc', '1000001'])('refuses %j', (cell) => {
+    expect(singleError(toCsv([row({ safety_stock: cell })], { header }))).toEqual([
+      'safety_stock',
+      'invalid_safety_stock',
+    ]);
+  });
+
+  it('without the column the product keeps its safety stock; a new one starts at 0', () => {
+    const plan = planImport(
+      parsedRows(row(), row({ sku: 'DEMO-NEW', slug: 'demo-new' })),
+      snapshot(existing('DEMO-0001', { values: { safety_stock: 4 } })),
+    );
+    expect(plan.errors).toEqual([]);
+    const [unchanged, created] = plan.changes;
+    expect(unchanged?.kind).toBe('unchanged');
+    expect(unchanged?.values).not.toHaveProperty('safety_stock');
+    expect(created?.values['safety_stock']).toBe(0);
+  });
+
+  it('with the column the safety stock is updated', () => {
+    const parsed = parseCatalogCsv(toCsv([row({ safety_stock: '2' })], { header }));
+    const plan = planImport(
+      parsed.rows,
+      snapshot(existing('DEMO-0001', { values: { safety_stock: 4 } })),
+    );
+    expect(plan.changes[0]?.changes).toEqual({ safety_stock: [4, 2] });
   });
 });

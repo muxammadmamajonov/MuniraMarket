@@ -3,9 +3,13 @@ import { CoreApiError } from '../tgcloud/lib/coreApi/errors.js';
 import {
   LEASE_MS,
   LEASE_SAFETY_MARGIN_MS,
+  ORDER_ADJUSTED,
+  ORDER_STAFF_ADJUSTED,
   ORDER_STAFF_ALERT,
   drainOrderNotifications,
+  parseOrderAdjustedPayload,
   parseOrderStatusPayload,
+  parseStaffAdjustedPayload,
   parseStaffAlertPayload,
 } from '../tgcloud/lib/notifications/outbox.js';
 
@@ -134,6 +138,7 @@ describe('parseStaffAlertPayload', () => {
     expect(parseStaffAlertPayload(staffPayload())).toEqual({
       kind: 'staff_alert',
       chatId: GROUP_ID,
+      orderId: uuid(901),
       orderNumber: '261031-7KQ2MX',
       status: 'NEW',
       previousStatus: null,
@@ -184,6 +189,7 @@ describe('parseStaffAlertPayload', () => {
     ).toEqual({
       kind: 'staff_alert',
       chatId: GROUP_ID,
+      orderId: uuid(901),
       orderNumber: '261031-7KQ2MX',
       status: 'NEW',
       previousStatus: null,
@@ -747,12 +753,207 @@ describe('transport + outbox together', () => {
       now: () => T0,
     });
     expect(api.calls[0].params.chat_id).toBe(GROUP_ID);
-    expect(api.calls[0].params).not.toHaveProperty('parse_mode');
+    expect(api.calls[0].params.parse_mode).toBe('HTML');
     expect(coreApi.reports).toEqual([
       { id: uuid(1), attempt: 1, outcome: 'delivered' },
       { id: uuid(2), attempt: 1, outcome: 'recipient_blocked' },
       { id: uuid(3), attempt: 1, outcome: 'retry', errorCode: 'bot_api_429' },
     ]);
     expect(summary).toMatchObject({ claimed: 3, delivered: 1, blocked: 1, retried: 1 });
+  });
+});
+
+// --- order details in the staff alert (owner's request) and shortage adjustments (ADR 0018) -----
+
+const details = (extra = {}) => ({
+  items: [
+    { name_uz: 'Olma', quantity: 2, unit: 'kg', line_total_uzs: 30000 },
+    { name_uz: 'Non', quantity: 3, unit: 'piece', line_total_uzs: 12000 },
+  ],
+  subtotal_uzs: 42000,
+  payment_method: 'cash_on_delivery',
+  recipient_phone: '+998001234567',
+  address: {
+    street: 'Demo ko‘cha',
+    house: '15',
+    apartment: '12',
+    entrance: null,
+    floor: '3',
+    landmark: null,
+  },
+  comment: null,
+  created_at: '2026-11-13T10:05:00.123456+00:00',
+  ...extra,
+});
+
+describe('parseStaffAlertPayload: recipient and details', () => {
+  it('carries the recipient name and the details of a NEW order', () => {
+    const alert = parseStaffAlertPayload(
+      staffPayload({ recipient_name: 'Demo Mijoz', details: details() }),
+    );
+    expect(alert?.recipientName).toBe('Demo Mijoz');
+    expect(alert?.details).toEqual({
+      items: [
+        { nameUz: 'Olma', quantity: 2, unit: 'kg', lineTotalUzs: 30000 },
+        { nameUz: 'Non', quantity: 3, unit: 'piece', lineTotalUzs: 12000 },
+      ],
+      subtotalUzs: 42000,
+      paymentMethod: 'cash_on_delivery',
+      recipientPhone: '+998001234567',
+      address: {
+        street: 'Demo ko‘cha',
+        house: '15',
+        apartment: '12',
+        entrance: null,
+        floor: '3',
+        landmark: null,
+      },
+      comment: null,
+      createdAt: '2026-11-13T10:05:00.123456+00:00',
+    });
+  });
+
+  it.each([
+    ['no items', { items: [] }],
+    ['a bad unit', { items: [{ name_uz: 'X', quantity: 1, unit: 'box', line_total_uzs: 1 }] }],
+    ['a bad payment method', { payment_method: 'crypto' }],
+    ['a missing street', { address: { house: '1' } }],
+    ['a numeric comment', { comment: 5 }],
+    ['a fractional subtotal', { subtotal_uzs: 1.5 }],
+  ])('drops details with %s but still delivers the alert', (_label, extra) => {
+    const alert = parseStaffAlertPayload(staffPayload({ details: details(extra) }));
+    expect(alert).not.toBeNull();
+    expect(alert).not.toHaveProperty('details');
+  });
+
+  it('ignores details on any status but NEW, and a non-string recipient', () => {
+    const alert = parseStaffAlertPayload(
+      staffPayload({ status: 'DELIVERED', details: details(), recipient_name: 42 }),
+    );
+    expect(alert).not.toHaveProperty('details');
+    expect(alert).not.toHaveProperty('recipientName');
+  });
+});
+
+const adjustedPayload = (extra = {}) => ({
+  order_id: uuid(902),
+  order_number: '261031-7KQ2MX',
+  status: 'PICKING',
+  locale: 'ru',
+  total_uzs: 23000,
+  chat_id: 555,
+  changes: [{ name_uz: 'Olma', name_ru: 'Яблоко', unit: 'kg', from_quantity: 3, to_quantity: 1 }],
+  ...extra,
+});
+
+describe('parseOrderAdjustedPayload', () => {
+  it('maps a valid payload', () => {
+    expect(ORDER_ADJUSTED).toBe('order.adjusted');
+    expect(parseOrderAdjustedPayload(adjustedPayload())).toEqual({
+      kind: 'order_adjusted',
+      chatId: 555,
+      orderNumber: '261031-7KQ2MX',
+      locale: 'ru',
+      totalUzs: 23000,
+      changes: [{ nameUz: 'Olma', nameRu: 'Яблоко', unit: 'kg', fromQuantity: 3, toQuantity: 1 }],
+    });
+  });
+
+  it.each([
+    ['a group chat', { chat_id: -100 }],
+    ['an unknown locale', { locale: 'en' }],
+    ['no changes', { changes: [] }],
+    [
+      'a raised line',
+      { changes: [{ name_uz: 'a', name_ru: 'a', unit: 'kg', from_quantity: 1, to_quantity: 2 }] },
+    ],
+    [
+      'an unknown unit',
+      { changes: [{ name_uz: 'a', name_ru: 'a', unit: 'box', from_quantity: 2, to_quantity: 1 }] },
+    ],
+    ['a negative total', { total_uzs: -1 }],
+    ['a bad order id', { order_id: 'x' }],
+  ])('rejects %s', (_label, extra) => {
+    expect(parseOrderAdjustedPayload(adjustedPayload(extra))).toBeNull();
+  });
+});
+
+const staffAdjustedPayload = (extra = {}) => ({
+  order_id: uuid(903),
+  order_number: '261031-7KQ2MX',
+  status: 'PICKING',
+  total_uzs: 23000,
+  chat_id: GROUP_ID,
+  recipient_name: 'Demo Mijoz',
+  changes: [
+    {
+      name_uz: 'Olma',
+      name_ru: 'Яблоко',
+      unit: 'kg',
+      from_quantity: 3,
+      to_quantity: 1,
+      marked_out_of_stock: true,
+    },
+  ],
+  reason: 'Ikkitasi ezilgan',
+  ...extra,
+});
+
+describe('parseStaffAdjustedPayload', () => {
+  it('maps a valid payload', () => {
+    expect(ORDER_STAFF_ADJUSTED).toBe('order.staff_adjusted');
+    expect(parseStaffAdjustedPayload(staffAdjustedPayload())).toEqual({
+      kind: 'staff_adjusted',
+      chatId: GROUP_ID,
+      orderId: uuid(903),
+      orderNumber: '261031-7KQ2MX',
+      totalUzs: 23000,
+      recipientName: 'Demo Mijoz',
+      changes: [
+        { nameUz: 'Olma', unit: 'kg', fromQuantity: 3, toQuantity: 1, markedOutOfStock: true },
+      ],
+      reason: 'Ikkitasi ezilgan',
+    });
+  });
+
+  it.each([
+    ['a private chat', { chat_id: 555 }],
+    ['no reason', { reason: undefined }],
+    [
+      'a missing out-of-stock flag',
+      { changes: [{ name_uz: 'a', name_ru: 'a', unit: 'kg', from_quantity: 2, to_quantity: 1 }] },
+    ],
+  ])('rejects %s', (_label, extra) => {
+    expect(parseStaffAdjustedPayload(staffAdjustedPayload(extra))).toBeNull();
+  });
+});
+
+describe('drain: adjustment events', () => {
+  it('delivers both adjustment events through the transport', async () => {
+    const delivered = [];
+    const transport = {
+      async deliver(notification) {
+        delivered.push(notification.kind);
+        return { outcome: 'delivered' };
+      },
+    };
+    const coreApi = createCoreApi({
+      batches: [
+        [
+          message(1, { event_type: 'order.adjusted', payload: adjustedPayload() }),
+          message(2, { event_type: 'order.staff_adjusted', payload: staffAdjustedPayload() }),
+          message(3, { event_type: 'order.adjusted', payload: adjustedPayload({ changes: [] }) }),
+        ],
+      ],
+    });
+    const summary = await drainOrderNotifications({ coreApi, transport, now: () => T0 });
+    expect(delivered).toEqual(['order_adjusted', 'staff_adjusted']);
+    expect(coreApi.reports.at(-1)).toEqual({
+      id: uuid(3),
+      attempt: 1,
+      outcome: 'failed',
+      errorCode: 'invalid_payload',
+    });
+    expect(summary).toMatchObject({ claimed: 3, delivered: 2, failed: 1 });
   });
 });

@@ -135,3 +135,24 @@ export class InvalidStatusTransitionError extends CheckoutError {
     this.currentStatus = currentStatus;
   }
 }
+
+/** Order lines can only be lowered while the order is NEW, CONFIRMED or PICKING. */
+export class OrderNotAdjustableError extends CheckoutError {
+  readonly currentStatus: string;
+  constructor(currentStatus: string) {
+    super(`order lines cannot be changed in status ${currentStatus}`);
+    this.currentStatus = currentStatus;
+  }
+}
+
+/** The order has no line for this product. */
+export class OrderItemNotFoundError extends CheckoutError {}
+
+/** A line can only be lowered (to `0..currentQuantity`), never raised. */
+export class InvalidQuantityError extends CheckoutError {
+  readonly currentQuantity: number;
+  constructor(currentQuantity: number) {
+    super(`quantity must be at most ${currentQuantity}`);
+    this.currentQuantity = currentQuantity;
+  }
+}

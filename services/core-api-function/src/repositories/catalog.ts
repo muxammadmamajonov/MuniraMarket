@@ -130,7 +130,22 @@ export function productIsVisible(alias = 'p'): string {
   return `(${alias}.is_active AND ${alias}.category_id IN (SELECT id FROM visible_category))`;
 }
 
-/** Columns of `ProductSummaryRecord` for product alias `alias`. */
+/**
+ * SQL twin of `sellableQuantity` (ADR 0018): `NULL` while stock is not tracked, else
+ * `stock_quantity - safety_stock`, never below 0.
+ */
+export function sellableStockSql(alias = 'p'): string {
+  return (
+    `(CASE WHEN ${alias}.stock_quantity IS NULL THEN NULL ` +
+    `ELSE GREATEST(${alias}.stock_quantity - ${alias}.safety_stock, 0) END)`
+  );
+}
+
+/**
+ * Columns of `ProductSummaryRecord` for product alias `alias`. `stock_quantity` is the SELLABLE
+ * quantity (`sellableStockSql`), never the physical stock: the storefront sells, shows and
+ * validates against what is left after the safety stock.
+ */
 export function productSummaryColumns(alias = 'p'): string {
   return [
     `${alias}.id::text AS id`,
@@ -141,7 +156,7 @@ export function productSummaryColumns(alias = 'p'): string {
     `${alias}.unit::text AS unit`,
     `${alias}.price_uzs`,
     `${alias}.old_price_uzs`,
-    `${alias}.stock_quantity`,
+    `${sellableStockSql(alias)} AS stock_quantity`,
     `${alias}.image_url`,
     `${alias}.category_id::text AS category_id`,
   ].join(', ');
@@ -197,7 +212,8 @@ export interface ListProductsOptions {
 /**
  * Active products in visible categories, with stable pagination. Throws `CategoryNotFoundError`
  * for an unknown or hidden `categorySlug`. `inStockOnly` keeps untracked products
- * (`stock_quantity IS NULL`) and tracked ones with stock left, the same rule as `isInStock`.
+ * (`stock_quantity IS NULL`) and tracked ones with sellable stock left (above the safety stock),
+ * the same rule as `isInStock`.
  */
 export async function listProducts(
   db: Queryable,
@@ -236,7 +252,7 @@ export async function listProducts(
     );
   }
   if (options.inStockOnly) {
-    conditions.push('(p.stock_quantity IS NULL OR p.stock_quantity > 0)');
+    conditions.push('(p.stock_quantity IS NULL OR p.stock_quantity > p.safety_stock)');
   }
 
   const where = conditions.join(' AND ');

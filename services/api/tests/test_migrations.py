@@ -376,7 +376,7 @@ async def test_an_already_migrated_schema_on_the_search_path_is_never_touched() 
 
         await upgrade(my_engine)
         assert await _scalar(my_engine, tables_in, schema=mine) == 2
-        assert await _scalar(my_engine, "SELECT version_num FROM alembic_version") == "0008"
+        assert await _scalar(my_engine, "SELECT version_num FROM alembic_version") == "0009"
 
         await truncate_app_tables(my_engine)
         assert await _scalar(my_engine, count_other) == 1
@@ -815,7 +815,6 @@ async def test_profile_revision_adds_addresses_and_downgrades(empty_engine: Asyn
         "ck_user_addresses_lon_range",
         "fk_user_addresses_user_id_users",
     }
-    assert await _model_differences(empty_engine) == []
 
     base = {"user_id": user_id, "label": None, "lat": 41.311081, "lon": 69.240562}
     async with empty_engine.connect() as conn:
@@ -868,4 +867,141 @@ async def test_profile_revision_adds_addresses_and_downgrades(empty_engine: Asyn
 
     await upgrade(empty_engine)
     assert await _scalar(empty_engine, "SELECT count(*) FROM user_addresses") == 0
+    assert await _model_differences(empty_engine) == []
+
+
+# --- 0009: safety stock and order-line shortage adjustments (ADR 0018) ---------------------------
+
+
+async def test_shortage_revision_adds_safety_stock_and_adjustments_and_downgrades(
+    empty_engine: AsyncEngine,
+) -> None:
+    """0009 adds ``products.safety_stock`` (default 0), lets an order line (and an order's item
+    count) reach 0 and logs adjustments; the downgrade puts zeroed lines back to their original
+    quantity so the old ``> 0`` checks hold again."""
+    await upgrade(empty_engine, "0008")
+    async with empty_engine.begin() as conn:
+        category_id = (
+            await conn.execute(
+                text(
+                    "INSERT INTO categories (slug, name_uz, name_ru) "
+                    "VALUES ('mevalar', 'Mevalar', 'Фрукты') RETURNING id"
+                )
+            )
+        ).scalar_one()
+        product_id = (
+            await conn.execute(
+                text(
+                    "INSERT INTO products (category_id, sku, slug, name_uz, name_ru, unit, "
+                    "price_uzs, stock_quantity) VALUES (:category_id, 'OLMA', 'olma', 'Olma', "
+                    "'Яблоко', 'kg', 15000, 1) RETURNING id"
+                ),
+                {"category_id": category_id},
+            )
+        ).scalar_one()
+        user_id = (
+            await conn.execute(
+                text(
+                    "INSERT INTO users (telegram_user_id, first_name) "
+                    "VALUES (4001, 'Demo') RETURNING id"
+                )
+            )
+        ).scalar_one()
+        order_id = (
+            await conn.execute(
+                text(
+                    "INSERT INTO orders (number, user_id, subtotal_uzs, total_uzs, item_count, "
+                    "payment_method, recipient_name, recipient_phone, address_snapshot, "
+                    "idempotency_key, idempotency_request_hash) VALUES ('S-1', :user_id, 30000, "
+                    "30000, 2, 'cash_on_delivery', 'Demo', '+998001234567', '{}'::jsonb, 'k-S-1', "
+                    ":hash) RETURNING id"
+                ),
+                {"user_id": user_id, "hash": "0" * 64},
+            )
+        ).scalar_one()
+        item_id = (
+            await conn.execute(
+                text(
+                    "INSERT INTO order_items (order_id, product_id, sku, name_uz, name_ru, unit, "
+                    "unit_price_uzs, quantity, line_total_uzs) VALUES (:order_id, :product_id, "
+                    "'OLMA', 'Olma', 'Яблоко', 'kg', 15000, 2, 30000) RETURNING id"
+                ),
+                {"order_id": order_id, "product_id": product_id},
+            )
+        ).scalar_one()
+
+    await upgrade(empty_engine, "0009")
+    assert await _scalar(empty_engine, "SELECT version_num FROM alembic_version") == "0009"
+    assert await _scalar(empty_engine, "SELECT safety_stock FROM products") == 0
+    assert {"original_quantity", "adjusted_at"} <= await _columns(empty_engine, "order_items")
+    assert await _constraints(empty_engine, "products") >= {"ck_products_safety_stock_non_negative"}
+    assert await _constraints(empty_engine, "order_item_adjustments") >= {
+        "pk_order_item_adjustments",
+        "ck_order_item_adjustments_quantity_decreases",
+        "ck_order_item_adjustments_reason_not_blank",
+        "fk_order_item_adjustments_order_id_orders",
+        "fk_order_item_adjustments_order_item_id_order_items",
+    }
+    assert await _model_differences(empty_engine) == []
+
+    adjustment_sql = text(
+        "INSERT INTO order_item_adjustments (order_id, order_item_id, product_id, from_quantity, "
+        "to_quantity, reason, marked_out_of_stock, actor_role) VALUES (:order_id, :item_id, "
+        ":product_id, :from_q, :to_q, :reason, true, 'operator')"
+    )
+    base = {"order_id": order_id, "item_id": item_id, "product_id": product_id}
+    async with empty_engine.connect() as conn:
+        for sql, constraint in (
+            ("UPDATE products SET safety_stock = -1", "ck_products_safety_stock_non_negative"),
+            (
+                "UPDATE order_items SET original_quantity = 1",
+                "ck_order_items_original_quantity_covers_quantity",
+            ),
+            (
+                "UPDATE order_items SET quantity = -1, unit_price_uzs = 0, line_total_uzs = 0",
+                "ck_order_items_quantity_non_negative",
+            ),
+            ("UPDATE orders SET item_count = -1", "ck_orders_item_count_non_negative"),
+        ):
+            with pytest.raises(IntegrityError, match=constraint):
+                async with conn.begin_nested():
+                    await conn.execute(text(sql))
+        for params, constraint in (
+            ({"from_q": 2, "to_q": 2, "reason": "yo'q"}, "quantity_decreases"),
+            ({"from_q": 2, "to_q": -1, "reason": "yo'q"}, "quantity_decreases"),
+            ({"from_q": 2, "to_q": 0, "reason": "  "}, "reason_not_blank"),
+        ):
+            with pytest.raises(IntegrityError, match=constraint):
+                async with conn.begin_nested():
+                    await conn.execute(adjustment_sql, {**base, **params})
+        # The goods ran out: the line goes to 0 (the order's item count too).
+        await conn.execute(adjustment_sql, {**base, "from_q": 2, "to_q": 0, "reason": "tugadi"})
+        await conn.execute(
+            text(
+                "UPDATE order_items SET original_quantity = 2, quantity = 0, line_total_uzs = 0, "
+                "adjusted_at = now()"
+            )
+        )
+        await conn.execute(
+            text("UPDATE orders SET item_count = 0, subtotal_uzs = 0, total_uzs = 0")
+        )
+        await conn.commit()
+
+    assert await _scalar(empty_engine, "SELECT count(*) FROM order_item_adjustments") == 1
+
+    await downgrade(empty_engine, "0008")
+    assert "order_item_adjustments" not in await _tables(empty_engine)
+    assert "safety_stock" not in await _columns(empty_engine, "products")
+    assert not ({"original_quantity", "adjusted_at"} & await _columns(empty_engine, "order_items"))
+    assert (
+        await _scalar(
+            empty_engine, "SELECT quantity::text || '/' || line_total_uzs::text FROM order_items"
+        )
+        == "2/30000"
+    )
+    assert await _scalar(empty_engine, "SELECT item_count FROM orders") == 2
+    assert await _constraints(empty_engine, "order_items") >= {"ck_order_items_quantity_positive"}
+    assert await _constraints(empty_engine, "orders") >= {"ck_orders_item_count_positive"}
+
+    await upgrade(empty_engine)
     assert await _model_differences(empty_engine) == []

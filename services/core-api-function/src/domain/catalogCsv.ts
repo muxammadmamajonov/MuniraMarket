@@ -4,15 +4,20 @@
  *
  * Format (template, export and import share it):
  * - UTF-8 with a byte-order mark and CRLF line endings; on import the BOM is optional.
- * - The columns in `COLUMNS`, then `updated_at` (`EXPORT_COLUMNS`). An import may order them
- *   differently, but every column of `COLUMNS` must be present exactly once, `updated_at` at most
- *   once, and nothing else.
+ * - The columns in `EXPORT_COLUMNS`: every column of `COLUMNS` plus the optional `safety_stock`
+ *   (after `stock_quantity`) and `updated_at` (last). An import may order them differently, but
+ *   every column of `COLUMNS` must be present exactly once, each optional column at most once,
+ *   and nothing else.
  * - RFC 4180 quoting, parsed exactly like Python's `csv` module in strict mode (a stray quote is
  *   an error, not a silently merged field). Export quotes every cell.
  *
  * Lost updates: `updated_at` is the product's last change as exported (UTC, microseconds). When an
  * imported row carries one and the product's current `updated_at` differs, the row is refused
  * (`stale_row`).
+ *
+ * Safety stock (ADR 0018): `safety_stock` is the number of units kept back for walk-in shoppers.
+ * A file without the column leaves every product's safety stock as it is (0 for a new product);
+ * with the column, an empty cell means 0.
  *
  * Formula injection: a text cell beginning with `= + - @ \t \r` (or `'`) is prefixed with `'` on
  * export; import strips exactly one such `'` again. An unescaped imported text cell beginning
@@ -41,9 +46,27 @@ export const COLUMNS = [
   'sort_order',
   'image_url',
 ] as const;
-/** Optional on import; always written by export and the template (last column). */
-export const OPTIONAL_COLUMNS = ['updated_at'] as const;
-export const EXPORT_COLUMNS = [...COLUMNS, ...OPTIONAL_COLUMNS] as const;
+/** Optional on import; always written by export and the template. */
+export const OPTIONAL_COLUMNS = ['safety_stock', 'updated_at'] as const;
+/** `safety_stock` right after `stock_quantity`; `updated_at` last. */
+export const EXPORT_COLUMNS = [
+  'sku',
+  'slug',
+  'category_slug',
+  'name_uz',
+  'name_ru',
+  'description_uz',
+  'description_ru',
+  'unit',
+  'price_uzs',
+  'old_price_uzs',
+  'stock_quantity',
+  'safety_stock',
+  'is_active',
+  'sort_order',
+  'image_url',
+  'updated_at',
+] as const;
 export type Column = (typeof EXPORT_COLUMNS)[number];
 
 export const MAX_ROWS = 2000;
@@ -103,6 +126,7 @@ export type RowErrorCode =
   | 'invalid_money'
   | 'invalid_old_price'
   | 'invalid_stock'
+  | 'invalid_safety_stock'
   | 'invalid_unit'
   | 'invalid_bool'
   | 'invalid_sort_order'
@@ -171,6 +195,8 @@ export interface CsvRow {
   image_url: string | null;
   /** `updated_at` as exported, in epoch microseconds; `null`: no staleness check. */
   updated_at: bigint | null;
+  /** `null`: the file has no `safety_stock` column (keep the product's; 0 for a new one). */
+  safety_stock: number | null;
 }
 
 export interface ParsedCsv {
@@ -220,7 +246,7 @@ function checkHeader(header: readonly string[]): Map<string, number> {
   if (details.length > 0) {
     throw new CsvFileError(
       'csv_invalid_header',
-      `The header must be exactly: ${COLUMNS.join(',')} (optionally ,updated_at)`,
+      `The header must be exactly: ${COLUMNS.join(',')} (optionally ,safety_stock and ,updated_at)`,
       details,
     );
   }
@@ -516,6 +542,16 @@ function stock(raw: string): number | null {
   return Number(value);
 }
 
+/** An empty cell is 0 (nothing kept back). */
+function safetyStock(raw: string): number {
+  const value = pyStrip(raw);
+  if (!value) return 0;
+  if (!STOCK.test(value) || Number(value) > MAX_STOCK) {
+    throw new CellError('invalid_safety_stock', `Empty (0) or 0..${MAX_STOCK}`);
+  }
+  return Number(value);
+}
+
 function unit(raw: string): Unit {
   const value = pyStrip(raw);
   if (!value) throw new CellError('required', 'Required');
@@ -640,6 +676,16 @@ function parseRow(row: number, cells: ReadonlyMap<string, string>): [CsvRow | nu
       errors.push({ row, column, code: error.code, message: error.message });
     }
   }
+  let safety: number | null = null;
+  const safetyCell = cells.get('safety_stock');
+  if (safetyCell !== undefined) {
+    try {
+      safety = safetyStock(safetyCell);
+    } catch (error) {
+      if (!(error instanceof CellError)) throw error;
+      errors.push({ row, column: 'safety_stock', code: error.code, message: error.message });
+    }
+  }
   if (errors.length > 0) return [null, errors];
   const price = values['price_uzs'] as number;
   const oldPrice = values['old_price_uzs'] as number | null;
@@ -674,6 +720,7 @@ function parseRow(row: number, cells: ReadonlyMap<string, string>): [CsvRow | nu
       sort_order: values['sort_order'] as number,
       image_url: values['image_url'] as string | null,
       updated_at: values['updated_at'] as bigint | null,
+      safety_stock: safety,
     },
     [],
   ];
@@ -693,6 +740,7 @@ export const PRODUCT_FIELDS = [
   'price_uzs',
   'old_price_uzs',
   'stock_quantity',
+  'safety_stock',
   'is_active',
   'sort_order',
   'image_url',
@@ -855,6 +903,9 @@ export function planImport(rows: readonly CsvRow[], snapshot: CatalogSnapshot): 
       image_url: row.image_url,
     };
     if (slugValue !== null) target['slug'] = slugValue;
+    // Without the column a product keeps its safety stock (a new one starts at 0).
+    if (row.safety_stock !== null) target['safety_stock'] = row.safety_stock;
+    else if (existing === undefined) target['safety_stock'] = 0;
     if (existing === undefined) {
       const created: Record<string, readonly [ProductValue, ProductValue]> = {};
       for (const [field, value] of Object.entries(target)) created[field] = [null, value];
@@ -905,6 +956,7 @@ export interface ExportRow {
   price_uzs: number;
   old_price_uzs: number | null;
   stock_quantity: number | null;
+  safety_stock: number;
   is_active: boolean;
   sort_order: number;
   image_url: string | null;

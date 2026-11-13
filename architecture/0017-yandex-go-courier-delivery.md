@@ -27,7 +27,8 @@ entrance?, floor?, landmark?}`; the point is required (WGS84, rounded to 6 decim
 - **Staff group alert.** The `order.staff_alert` outbox payload for a NEW order carries
   `destination: {lat, lon}`; the bot adds a URL button with the link. This relaxes ADR 0015's
   "no address in the group": the group now receives the delivery point (inside the button URL),
-  still no name or phone.
+  still no name or phone. (Since relaxed further on the owner's request: a NEW alert now carries
+  the full order, see the 2026-11-13 update of ADR 0015.)
 - **Data.** Migration 0007 drops the zone, zone-area and slot tables and the order columns that
   referenced them, and the per-order fee column. Historical totals are untouched; the CHECK
   becomes `total_uzs >= subtotal_uzs` (old orders still include the fee they were charged, which

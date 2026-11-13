@@ -117,6 +117,16 @@ export type CreateOrderRequest = Output<typeof createOrderRequest>;
 
 export const cancelOrderRequest = model({ reason });
 
+/** Lower one order line because the goods are not there (ADR 0018). */
+export const orderItemAdjustRequest = model({
+  // The line's new quantity: 0 (none left) up to its current quantity; never more.
+  quantity: int({ ge: 0, le: MAX_LINE_QUANTITY }),
+  // Why (shown in the back office only, never to the customer).
+  reason,
+  // true: the product's stock becomes 0; false: the difference goes back to stock.
+  mark_out_of_stock: withDefault(bool(), false),
+});
+
 export const orderStatusUpdateRequest = model({
   status: oneOf(ORDER_STATUSES),
   // Required (non-blank) when cancelling.

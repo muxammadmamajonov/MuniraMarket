@@ -42,6 +42,10 @@ export const ERROR_CODES = [
   'order_status_conflict',
   'too_many_open_orders',
   'phone_verification_required',
+  // back office: order lines lowered at picking (ADR 0018)
+  'order_not_adjustable',
+  'order_item_not_found',
+  'invalid_quantity',
   // profile: saved addresses
   'address_not_found',
   'address_limit_reached',

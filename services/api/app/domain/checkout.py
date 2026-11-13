@@ -131,3 +131,23 @@ class InvalidStatusTransitionError(CheckoutError):
     def __init__(self, current_status: str) -> None:
         super().__init__(f"transition not allowed from {current_status}")
         self.current_status = current_status
+
+
+class OrderNotAdjustableError(CheckoutError):
+    """Order lines can only be lowered while the order is NEW, CONFIRMED or PICKING."""
+
+    def __init__(self, current_status: str) -> None:
+        super().__init__(f"order lines cannot be changed in status {current_status}")
+        self.current_status = current_status
+
+
+class OrderItemNotFoundError(CheckoutError):
+    """The order has no line for this product."""
+
+
+class InvalidQuantityError(CheckoutError):
+    """A line can only be lowered (to ``0..current_quantity``), never raised."""
+
+    def __init__(self, current_quantity: int) -> None:
+        super().__init__(f"quantity must be at most {current_quantity}")
+        self.current_quantity = current_quantity

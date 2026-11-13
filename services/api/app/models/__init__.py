@@ -5,7 +5,7 @@ from app.models.audit import AuditLog
 from app.models.cart import Cart, CartItem
 from app.models.catalog import Category, Product
 from app.models.notification import NotificationOutbox, StaffNotificationChat
-from app.models.order import Order, OrderItem, OrderStatusHistory
+from app.models.order import Order, OrderItem, OrderItemAdjustment, OrderStatusHistory
 from app.models.security_state import (
     AuthSession,
     OidcLoginState,
@@ -24,6 +24,7 @@ __all__ = [
     "OidcLoginState",
     "Order",
     "OrderItem",
+    "OrderItemAdjustment",
     "OrderStatusHistory",
     "Product",
     "RateLimitCounter",

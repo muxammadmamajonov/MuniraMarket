@@ -24,8 +24,11 @@ from app.domain.checkout import (
     CartEmptyError,
     CheckoutError,
     IdempotencyKeyConflictError,
+    InvalidQuantityError,
     InvalidStatusTransitionError,
     OrderInsufficientStockError,
+    OrderItemNotFoundError,
+    OrderNotAdjustableError,
     OrderNotCancellableError,
     OrderNotFoundError,
     OrderProductUnavailableError,
@@ -61,6 +64,8 @@ ORDERS = "/api/v1/orders"
 ADMIN = "/api/v1/admin/orders"
 KEY = "test-idempotency-key-0001"
 ORDER_ID = uuid.uuid4()
+PRODUCT_ID = uuid.uuid4()
+ADJUST_BODY: dict[str, Any] = {"quantity": 0, "reason": "Javonda qolmadi"}
 
 
 class FakeOrderRepository:
@@ -157,6 +162,27 @@ class FakeOrderRepository:
             actor=actor,
             reason=reason,
             expected_status=expected_status,
+        )
+        return self.order
+
+    async def adjust_item(
+        self,
+        order_id: uuid.UUID,
+        product_id: uuid.UUID,
+        *,
+        quantity: int,
+        reason: str,
+        mark_out_of_stock: bool,
+        actor: Actor,
+    ) -> OrderRecord:
+        self._record(
+            "adjust_item",
+            order_id=order_id,
+            product_id=product_id,
+            quantity=quantity,
+            reason=reason,
+            mark_out_of_stock=mark_out_of_stock,
+            actor=actor,
         )
         return self.order
 
@@ -771,6 +797,7 @@ async def test_every_route_requires_a_session(
         client.get(ADMIN),
         client.get(f"{ADMIN}/{ORDER_ID}"),
         client.patch(f"{ADMIN}/{ORDER_ID}/status", json={"status": "CONFIRMED"}),
+        client.patch(f"{ADMIN}/{ORDER_ID}/items/{PRODUCT_ID}", json=ADJUST_BODY),
     ]
     for request in requests:
         response = await request
@@ -796,6 +823,8 @@ async def test_writes_require_csrf_but_reads_do_not(
     as_role(app, UserRole.OPERATOR)
     assert (await client.get(ADMIN)).status_code == 200
     response = await client.patch(f"{ADMIN}/{ORDER_ID}/status", json={"status": "CONFIRMED"})
+    error_of(response, 403, "csrf_failed")
+    response = await client.patch(f"{ADMIN}/{ORDER_ID}/items/{PRODUCT_ID}", json=ADJUST_BODY)
     error_of(response, 403, "csrf_failed")
     assert orders.names() == ["list_for_user", "get_for_user", "list_all"]
 
@@ -958,6 +987,7 @@ async def test_customers_cannot_use_the_back_office(
         await client.get(ADMIN, params={"status": "NEW"}),
         await client.get(f"{ADMIN}/{ORDER_ID}"),
         await client.patch(f"{ADMIN}/{ORDER_ID}/status", json={"status": "CONFIRMED"}),
+        await client.patch(f"{ADMIN}/{ORDER_ID}/items/{PRODUCT_ID}", json=ADJUST_BODY),
     ):
         assert response.json() == {
             "error": {"code": "forbidden", "message": "Operator role required"}
@@ -1020,6 +1050,92 @@ async def test_admin_status_body_validation(
     as_role(app, UserRole.OPERATOR)
     error_of(await client.patch(f"{ADMIN}/{ORDER_ID}/status", json=body), 422, "validation_error")
     error_of(await client.get(ADMIN, params={"status": "LOST"}), 422, "validation_error")
+    assert orders.calls == []
+
+
+# --- shortage at picking (ADR 0018) ---------------------------------------------------------------
+
+
+@pytest.mark.parametrize("role", [UserRole.OPERATOR, UserRole.ADMIN])
+async def test_staff_can_lower_an_order_line(
+    app: FastAPI, client: httpx.AsyncClient, orders: FakeOrderRepository, role: UserRole
+) -> None:
+    staff = as_role(app, role)
+    response = await client.patch(
+        f"{ADMIN}/{ORDER_ID}/items/{PRODUCT_ID}",
+        json={"quantity": 1, "reason": " Ezilgan ", "mark_out_of_stock": True},
+    )
+    assert response.status_code == 200, response.text
+    assert response.headers["cache-control"] == "no-store"
+    body = response.json()
+    assert body["can_adjust_items"] is True
+    assert body["adjustments"] == []
+    assert orders.calls[-1] == (
+        "adjust_item",
+        {
+            "order_id": ORDER_ID,
+            "product_id": PRODUCT_ID,
+            "quantity": 1,
+            "reason": "Ezilgan",
+            "mark_out_of_stock": True,
+            "actor": Actor(user_id=staff.id, role=role),
+        },
+    )
+    # ``mark_out_of_stock`` defaults to false.
+    await client.patch(f"{ADMIN}/{ORDER_ID}/items/{PRODUCT_ID}", json=ADJUST_BODY)
+    assert orders.calls[-1][1]["mark_out_of_stock"] is False
+
+
+@pytest.mark.parametrize(
+    ("error", "expected"),
+    [
+        (
+            OrderNotAdjustableError("READY_FOR_DELIVERY"),
+            (409, {"code": "order_not_adjustable", "current_status": "READY_FOR_DELIVERY"}),
+        ),
+        (InvalidQuantityError(2), (409, {"code": "invalid_quantity", "available_quantity": 2})),
+        (OrderItemNotFoundError(), (404, {"code": "order_item_not_found"})),
+        (OrderNotFoundError(), (404, {"code": "order_not_found"})),
+    ],
+)
+async def test_adjust_errors(
+    app: FastAPI,
+    client: httpx.AsyncClient,
+    orders: FakeOrderRepository,
+    error: CheckoutError,
+    expected: tuple[int, dict[str, Any]],
+) -> None:
+    as_role(app, UserRole.OPERATOR)
+    orders.error = error
+    response = await client.patch(f"{ADMIN}/{ORDER_ID}/items/{PRODUCT_ID}", json=ADJUST_BODY)
+    status, fields = expected
+    assert response.status_code == status
+    body = response.json()["error"]
+    assert {key: value for key, value in body.items() if key != "message"} == fields
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        {"quantity": -1, "reason": "Javonda qolmadi"},
+        {"quantity": 100, "reason": "Javonda qolmadi"},
+        {"quantity": 1, "reason": "ab"},
+        {"quantity": 1, "reason": "x" * 301},
+        {"quantity": 1},
+        {"reason": "Javonda qolmadi"},
+        {"quantity": 1, "reason": "Javonda qolmadi", "mark_out_of_stock": None},
+        {"quantity": 1, "reason": "Javonda qolmadi", "extra": 1},
+        {"quantity": "1.5", "reason": "Javonda qolmadi"},
+    ],
+)
+async def test_adjust_body_validation(
+    app: FastAPI, client: httpx.AsyncClient, orders: FakeOrderRepository, body: dict[str, Any]
+) -> None:
+    as_role(app, UserRole.OPERATOR)
+    response = await client.patch(f"{ADMIN}/{ORDER_ID}/items/{PRODUCT_ID}", json=body)
+    error_of(response, 422, "validation_error")
+    response = await client.patch(f"{ADMIN}/{ORDER_ID}/items/not-a-uuid", json=ADJUST_BODY)
+    error_of(response, 422, "validation_error")
     assert orders.calls == []
 
 

@@ -14,10 +14,15 @@ from typing import Annotated, Any, Self
 
 from pydantic import AfterValidator, BaseModel, ConfigDict, Field, StringConstraints
 
-from app.domain.cart import CartIssue
+from app.domain.cart import MAX_LINE_QUANTITY, CartIssue
 from app.domain.checkout import QuoteIssue, normalize_uz_phone
 from app.domain.geo import COORDINATE_DECIMALS, snapshot_point
-from app.domain.order_status import ALLOWED_TRANSITIONS, OrderStatus, customer_can_cancel
+from app.domain.order_status import (
+    ALLOWED_TRANSITIONS,
+    OrderStatus,
+    can_adjust_items,
+    customer_can_cancel,
+)
 from app.models.enums import PaymentMethod, Unit, UserRole
 from app.repositories.orders import (
     OrderPageRecord,
@@ -136,6 +141,20 @@ class CancelOrderRequest(BaseModel):
     reason: Reason
 
 
+class OrderItemAdjustRequest(BaseModel):
+    """Lower one order line because the goods are not there (ADR 0018)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    # The line's new quantity: 0 (none left) up to its current quantity; never more.
+    quantity: int = Field(ge=0, le=MAX_LINE_QUANTITY)
+    # Why (shown in the back office only, never to the customer).
+    reason: Reason
+    # true: the goods physically ran out, the product's stock becomes 0. false: the units the line
+    # no longer takes go back to the product's stock.
+    mark_out_of_stock: bool = False
+
+
 class OrderStatusUpdateRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -189,6 +208,10 @@ class OrderLine(BaseModel):
     unit_price_uzs: int
     quantity: int
     line_total_uzs: int
+    # The quantity the customer ordered; differs from ``quantity`` once staff lowered the line
+    # because the goods were not there (``adjusted``).
+    original_quantity: int
+    adjusted: bool
 
 
 class OrderAddress(BaseModel):
@@ -271,6 +294,10 @@ class OrderDetail(BaseModel):
                     unit_price_uzs=item.unit_price_uzs,
                     quantity=item.quantity,
                     line_total_uzs=item.line_total_uzs,
+                    original_quantity=(
+                        item.quantity if item.original_quantity is None else item.original_quantity
+                    ),
+                    adjusted=item.original_quantity is not None,
                 )
                 for item in record.items
             ],
@@ -278,7 +305,7 @@ class OrderDetail(BaseModel):
                 OrderStatusChange(status=change.to_status, at=change.created_at)
                 for change in record.history
             ],
-            can_cancel=customer_can_cancel(record.status),
+            can_cancel=customer_can_cancel(record.status, adjusted=record.adjusted),
         )
 
 
@@ -353,10 +380,32 @@ class AdminStatusChange(BaseModel):
     at: datetime
 
 
+class AdminOrderAdjustment(BaseModel):
+    """One order line lowered at picking: "Olma: 2 kg -> 0 kg, sabab: ..." (ADR 0018)."""
+
+    # ``null`` once the product has been deleted from the catalog.
+    product_id: uuid.UUID | None
+    sku: str
+    name_uz: str
+    name_ru: str
+    unit: Unit
+    from_quantity: int
+    to_quantity: int
+    reason: str
+    # The product's stock was set to 0 (instead of the difference going back to stock).
+    marked_out_of_stock: bool
+    actor_role: UserRole
+    at: datetime
+
+
 class AdminOrderDetail(OrderDetail):
     history_detail: list[AdminStatusChange]
     # Statuses this order may move to next (CANCELLED needs a reason).
     allowed_transitions: list[OrderStatus]
+    # Whether lines can still be lowered (``PATCH .../items/{product_id}``): NEW..PICKING.
+    can_adjust_items: bool
+    # Every line lowered at picking, oldest first.
+    adjustments: list[AdminOrderAdjustment]
 
     @classmethod
     def from_admin_record(cls, record: OrderRecord) -> Self:
@@ -376,10 +425,28 @@ class AdminOrderDetail(OrderDetail):
             allowed_transitions=sorted(
                 ALLOWED_TRANSITIONS[record.status], key=list(OrderStatus).index
             ),
+            can_adjust_items=can_adjust_items(record.status),
+            adjustments=[
+                AdminOrderAdjustment(
+                    product_id=adjustment.product_id,
+                    sku=adjustment.sku,
+                    name_uz=adjustment.name_uz,
+                    name_ru=adjustment.name_ru,
+                    unit=adjustment.unit,
+                    from_quantity=adjustment.from_quantity,
+                    to_quantity=adjustment.to_quantity,
+                    reason=adjustment.reason,
+                    marked_out_of_stock=adjustment.marked_out_of_stock,
+                    actor_role=adjustment.actor_role,
+                    at=adjustment.created_at,
+                )
+                for adjustment in record.adjustments
+            ],
         )
 
 
 __all__ = [
+    "AdminOrderAdjustment",
     "AdminOrderDetail",
     "CancelOrderRequest",
     "CartIssue",
@@ -388,6 +455,7 @@ __all__ = [
     "DeliveryAddress",
     "OrderAddress",
     "OrderDetail",
+    "OrderItemAdjustRequest",
     "OrderPage",
     "OrderStatusUpdateRequest",
     "OrderThumbnail",
