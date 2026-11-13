@@ -16,7 +16,7 @@
     "contracts:generate": "make -C services/api openapi && pnpm --filter @muniramarket/contracts generate"
   },
   "devDependencies": {
-    "@neon/config": "1.13.0",
+    "@neon/config": "1.14.0",
     "prettier": "3.9.10"
   }
 }
