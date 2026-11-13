@@ -360,7 +360,9 @@ export function OrderDetailView({ id }: { id: string }) {
 
       <section
         aria-label={dict.order.actions.title}
-        className="flex flex-col gap-3 rounded-3xl bg-surface p-4 sm:p-5"
+        // Phones: the status actions sit in a bar at the bottom, above the tab bar, in thumb
+        // reach while the order is read from the top (it comes last in the visual order).
+        className="flex flex-col gap-3 rounded-3xl bg-surface p-4 max-sm:sticky max-sm:bottom-[calc(4.25rem+env(safe-area-inset-bottom))] max-sm:z-20 max-sm:order-last max-sm:bg-surface/90 max-sm:p-3 max-sm:shadow-[0_8px_28px_-12px_rgb(20_20_22/0.32)] max-sm:ring-1 max-sm:ring-hairline max-sm:backdrop-blur-xl sm:p-5"
       >
         {notice !== null ? (
           <p role="status" className="font-medium">
@@ -372,7 +374,12 @@ export function OrderDetailView({ id }: { id: string }) {
         ) : (
           <div className="flex flex-wrap gap-2">
             {forward.map((status) => (
-              <Button key={status} onClick={() => void changeStatus(status)} disabled={pending}>
+              <Button
+                key={status}
+                onClick={() => void changeStatus(status)}
+                disabled={pending}
+                className="max-sm:min-h-12 max-sm:flex-1"
+              >
                 {pending ? dict.order.actions.working : dict.actions[status]}
               </Button>
             ))}

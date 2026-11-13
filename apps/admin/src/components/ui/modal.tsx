@@ -106,6 +106,11 @@ export function Modal({
           className,
         )}
       >
+        {/* The sheet's grabber: on phones every modal is a bottom sheet. */}
+        <span
+          aria-hidden="true"
+          className="-mt-2 mb-1 h-1.5 w-10 shrink-0 self-center rounded-full bg-border-strong/70 sm:hidden"
+        />
         <h2 id={titleId} className="text-lg font-bold break-words">
           {title}
         </h2>

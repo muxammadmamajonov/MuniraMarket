@@ -22,7 +22,7 @@ export const CHIP =
   ' ' +
   FOCUS;
 export const CHIP_ON = 'bg-foreground text-background';
-export const CHIP_OFF = 'bg-surface text-foreground hover:bg-surface-muted';
+export const CHIP_OFF = 'mm-chip-off bg-surface text-foreground hover:bg-surface-muted';
 
 /**
  * A row of chips: wraps on wider screens; on phones one line that scrolls sideways edge to edge
@@ -67,7 +67,7 @@ export const INPUT =
 /** The same field standing on the page (search and filter bars): white, with a hairline shadow. */
 export const INPUT_ON_PAGE = INPUT.replace(
   'bg-surface-muted',
-  'bg-surface shadow-[0_1px_2px_rgb(20_20_22/0.06)]',
+  'mm-field-page bg-surface shadow-[0_1px_2px_rgb(20_20_22/0.06)]',
 );
 
 export const TEXTAREA = INPUT.replace('min-h-11 ', 'min-h-24 py-2.5 ');
@@ -82,6 +82,14 @@ export const CARD = `flex min-w-0 flex-col gap-3 ${GROUP} p-4 sm:p-5`;
 
 /** Section heading inside a group. */
 export const SECTION_TITLE = 'text-lg leading-6 font-bold tracking-[-0.01em]';
+
+/**
+ * A tappable list row on phones (inside a `GROUP` with `ROWS`): content first, the whole row opens
+ * the item, a tint while pressed (no scale: rows are wide and many).
+ */
+export const ROW_LINK =
+  'flex min-h-[4.5rem] items-center gap-3 px-4 py-3 transition-colors duration-150 ' +
+  'active:bg-surface-muted focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-focus';
 
 /** Rows inside a `GROUP`: an inset hairline between them, none above the first. */
 export const ROWS = 'divide-y divide-hairline';

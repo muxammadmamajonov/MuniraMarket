@@ -26,6 +26,7 @@ import { parseIntegerField } from '@/lib/numbers';
 import { SLUG_PATTERN } from '@/lib/slug';
 import { useSession } from '@/lib/session';
 import { useApiResource } from '@/lib/use-api-resource';
+import { useIsPhone } from '@/lib/use-phone';
 import { useSingleFlight } from '@/lib/use-single-flight';
 import { Alert } from '../ui/alert';
 import { GROUP, ROWS } from '../ui/classes';
@@ -40,6 +41,7 @@ import {
 import { Modal } from '../ui/modal';
 import { PageHeader } from '../ui/page-header';
 import { ProductPhoto } from '../ui/product-photo';
+import { SwipeActions } from '../ui/swipe-actions';
 import { ResourceView } from '../ui/resource-view';
 
 /** Active / inactive as a switch: the track carries the state, the word says it. */
@@ -315,6 +317,9 @@ export function CategoriesView() {
   const [notice, setNotice] = useState<string | null>(null);
   const [rowError, setRowError] = useState<string | null>(null);
   const { pending, run } = useSingleFlight();
+  const phone = useIsPhone();
+  // Phones: which row has its actions slid out (one at a time, like iOS).
+  const [openRow, setOpenRow] = useState<string | null>(null);
 
   const rows = useMemo(
     () => categoryTree(resource.data?.items ?? [], locale),
@@ -370,75 +375,133 @@ export function CategoriesView() {
             <EmptyState title={copy.empty} />
           ) : (
             <ul aria-label={copy.list} className={`${GROUP} ${ROWS} overflow-hidden`}>
-              {rows.map(({ category, depth }) => (
-                <li
-                  key={category.id}
-                  data-testid="category-row"
-                  className="flex flex-wrap items-center gap-x-3 gap-y-2 py-3 pr-3 sm:flex-nowrap sm:pr-4"
-                  // Nesting reads as indentation inside the one list (capped, so deep trees fit).
-                  style={{ paddingInlineStart: `${String(1 + Math.min(depth, 5) * 1.5)}rem` }}
-                >
-                  <ProductPhoto src={category.image_url} className="w-12" />
-                  <div className="min-w-0 flex-1 basis-40">
-                    <p className="font-semibold break-words">{localName(category, locale)}</p>
-                    <p className="text-sm text-muted-foreground break-words [overflow-wrap:anywhere]">
-                      <span className="font-mono">{category.slug}</span> ·{' '}
-                      {formatMessage(copy.productCount, {
-                        count: formatCount(category.product_count),
-                      })}{' '}
-                      ·{' '}
-                      {formatMessage(copy.childCount, { count: formatCount(category.child_count) })}
-                    </p>
-                  </div>
-                  <div className="flex flex-wrap items-center gap-1.5 max-sm:w-full max-sm:pl-15">
-                    <button
-                      type="button"
-                      aria-pressed={category.is_active}
-                      aria-label={formatMessage(copy.toggleLabel, {
-                        name: localName(category, locale),
-                      })}
-                      disabled={pending}
-                      onClick={() => void toggle(category)}
-                      className={`${SWITCH} disabled:opacity-50`}
+              {rows.map(({ category, depth }) =>
+                phone ? (
+                  <li key={category.id} data-testid="category-row">
+                    <SwipeActions
+                      open={openRow === category.id}
+                      onOpenChange={(next) => setOpenRow(next ? category.id : null)}
+                      actions={[
+                        {
+                          label: category.is_active ? dict.common.inactive : dict.common.active,
+                          accessibleName: formatMessage(copy.toggleLabel, {
+                            name: localName(category, locale),
+                          }),
+                          tone: category.is_active ? 'neutral' : 'success',
+                          disabled: pending,
+                          onSelect: () => void toggle(category),
+                        },
+                        {
+                          label: copy.remove,
+                          accessibleName: `${copy.remove}: ${localName(category, locale)}`,
+                          tone: 'danger',
+                          onSelect: (opener) => setDialog({ kind: 'delete', category, opener }),
+                        },
+                      ]}
                     >
-                      <span
-                        aria-hidden="true"
-                        className={`relative h-6 w-10 shrink-0 rounded-full transition-colors duration-150 ${
-                          category.is_active ? 'bg-success' : 'bg-border-strong'
-                        }`}
+                      {/* View first: the row opens the category; its actions slide out on swipe. */}
+                      <button
+                        type="button"
+                        onClick={(event) =>
+                          setDialog({ kind: 'form', category, opener: event.currentTarget })
+                        }
+                        className="flex min-h-[4.5rem] w-full items-center gap-3 py-3 pr-4 text-left transition-colors duration-150 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-focus active:bg-surface-muted"
+                        style={{
+                          paddingInlineStart: `${String(1 + Math.min(depth, 5) * 1.25)}rem`,
+                        }}
+                        aria-label={`${copy.edit}: ${localName(category, locale)}`}
+                      >
+                        <ProductPhoto src={category.image_url} className="w-12" />
+                        <span className="min-w-0 flex-1">
+                          <span className="block truncate font-semibold">
+                            {localName(category, locale)}
+                          </span>
+                          <span className="block truncate text-[13px] text-muted-foreground">
+                            {formatMessage(copy.productCount, {
+                              count: formatCount(category.product_count),
+                            })}
+                          </span>
+                        </span>
+                        {category.is_active ? null : (
+                          <span className="inline-flex shrink-0 items-center rounded-full bg-surface-muted px-2.5 py-0.5 text-[13px] leading-5 font-semibold text-muted-foreground">
+                            {dict.common.inactive}
+                          </span>
+                        )}
+                      </button>
+                    </SwipeActions>
+                  </li>
+                ) : (
+                  <li
+                    key={category.id}
+                    data-testid="category-row"
+                    className="flex flex-wrap items-center gap-x-3 gap-y-2 py-3 pr-3 sm:flex-nowrap sm:pr-4"
+                    // Nesting reads as indentation inside the one list (capped, so deep trees fit).
+                    style={{ paddingInlineStart: `${String(1 + Math.min(depth, 5) * 1.5)}rem` }}
+                  >
+                    <ProductPhoto src={category.image_url} className="w-12" />
+                    <div className="min-w-0 flex-1 basis-40">
+                      <p className="font-semibold break-words">{localName(category, locale)}</p>
+                      <p className="text-sm text-muted-foreground break-words [overflow-wrap:anywhere]">
+                        <span className="font-mono">{category.slug}</span> ·{' '}
+                        {formatMessage(copy.productCount, {
+                          count: formatCount(category.product_count),
+                        })}{' '}
+                        ·{' '}
+                        {formatMessage(copy.childCount, {
+                          count: formatCount(category.child_count),
+                        })}
+                      </p>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-1.5 max-sm:w-full max-sm:pl-15">
+                      <button
+                        type="button"
+                        aria-pressed={category.is_active}
+                        aria-label={formatMessage(copy.toggleLabel, {
+                          name: localName(category, locale),
+                        })}
+                        disabled={pending}
+                        onClick={() => void toggle(category)}
+                        className={`${SWITCH} disabled:opacity-50`}
                       >
                         <span
-                          className={`absolute top-0.5 left-0.5 size-5 rounded-full bg-white shadow-[0_1px_3px_rgb(0_0_0/0.25)] transition-transform duration-200 ease-out-strong ${
-                            category.is_active ? 'translate-x-4' : ''
+                          aria-hidden="true"
+                          className={`relative h-6 w-10 shrink-0 rounded-full transition-colors duration-150 ${
+                            category.is_active ? 'bg-success' : 'bg-border-strong'
                           }`}
-                        />
-                      </span>
-                      <span className="w-16 text-left">
-                        {category.is_active ? dict.common.active : dict.common.inactive}
-                      </span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={(event) =>
-                        setDialog({ kind: 'form', category, opener: event.currentTarget })
-                      }
-                      className={QUIET_BUTTON}
-                    >
-                      {copy.edit}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={(event) =>
-                        setDialog({ kind: 'delete', category, opener: event.currentTarget })
-                      }
-                      aria-label={`${copy.remove}: ${localName(category, locale)}`}
-                      className={`${QUIET_BUTTON} text-danger`}
-                    >
-                      {copy.remove}
-                    </button>
-                  </div>
-                </li>
-              ))}
+                        >
+                          <span
+                            className={`absolute top-0.5 left-0.5 size-5 rounded-full bg-white shadow-[0_1px_3px_rgb(0_0_0/0.25)] transition-transform duration-200 ease-out-strong ${
+                              category.is_active ? 'translate-x-4' : ''
+                            }`}
+                          />
+                        </span>
+                        <span className="w-16 text-left">
+                          {category.is_active ? dict.common.active : dict.common.inactive}
+                        </span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={(event) =>
+                          setDialog({ kind: 'form', category, opener: event.currentTarget })
+                        }
+                        className={QUIET_BUTTON}
+                      >
+                        {copy.edit}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={(event) =>
+                          setDialog({ kind: 'delete', category, opener: event.currentTarget })
+                        }
+                        aria-label={`${copy.remove}: ${localName(category, locale)}`}
+                        className={`${QUIET_BUTTON} text-danger`}
+                      >
+                        {copy.remove}
+                      </button>
+                    </div>
+                  </li>
+                ),
+              )}
             </ul>
           )
         }

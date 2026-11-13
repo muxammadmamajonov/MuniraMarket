@@ -127,6 +127,24 @@
   background-color: var(--mm-scrollbar-thumb-hover);
 }
 
+/*
+ * Inside the phone filter sheet (`FilterSheet`, a white panel): chip rails wrap instead of
+ * scrolling, and controls styled for the grey page (white chips, white fields) take the filled
+ * look they have inside white groups.
+ */
+.mm-in-sheet .mm-rail {
+  flex-wrap: wrap;
+  overflow: visible;
+  margin-inline: 0;
+  padding-inline: 0;
+}
+
+.mm-in-sheet .mm-chip-off,
+.mm-in-sheet .mm-field-page {
+  background-color: var(--mm-color-surface-muted);
+  box-shadow: none;
+}
+
 /* Sideways chip rails (`CHIP_RAIL`) scroll by touch and show no bar. */
 .mm-rail {
   scrollbar-width: none;

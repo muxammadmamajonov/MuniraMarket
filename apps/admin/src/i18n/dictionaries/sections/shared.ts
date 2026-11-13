@@ -34,6 +34,11 @@ export interface CommonDict {
   apply: string;
   resetFilters: string;
   all: string;
+  /** Phone filter button and sheet. */
+  filters: string;
+  showResults: string;
+  /** Swipe hint for row actions on phones. */
+  moreActions: string;
   active: string;
   inactive: string;
   yes: string;
@@ -165,6 +170,9 @@ const common: Record<Locale, CommonDict> = {
     apply: 'Qo‘llash',
     resetFilters: 'Filtrlarni tozalash',
     all: 'Hammasi',
+    filters: 'Filtrlar',
+    showResults: 'Natijalarni ko‘rsatish',
+    moreActions: 'Amallar',
     active: 'Faol',
     inactive: 'Nofaol',
     yes: 'Ha',
@@ -198,6 +206,9 @@ const common: Record<Locale, CommonDict> = {
     apply: 'Применить',
     resetFilters: 'Сбросить фильтры',
     all: 'Все',
+    filters: 'Фильтры',
+    showResults: 'Показать результаты',
+    moreActions: 'Действия',
     active: 'Активен',
     inactive: 'Неактивен',
     yes: 'Да',

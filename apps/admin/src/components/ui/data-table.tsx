@@ -1,5 +1,7 @@
 import { cx } from '@muniramarket/ui';
 import type { ReactNode } from 'react';
+import { useIsPhone } from '@/lib/use-phone';
+import { GROUP, ROWS } from './classes';
 
 export interface Column<T> {
   id: string;
@@ -29,13 +31,31 @@ export function DataTable<T>({
   rowKey,
   caption,
   rowTestId,
+  mobileRow,
 }: {
   columns: ReadonlyArray<Column<T>>;
   rows: readonly T[];
   rowKey: (row: T) => string;
   caption: string;
   rowTestId?: string;
+  /**
+   * Phones: render each row as a native list row (content first, no label/value pairs) inside
+   * one white group. Without it, phones get one card per row with labelled cells.
+   */
+  mobileRow?: (row: T) => ReactNode;
 }) {
+  const phone = useIsPhone();
+  if (phone && mobileRow !== undefined) {
+    return (
+      <ul aria-label={caption} className={cx(GROUP, ROWS, 'overflow-hidden')}>
+        {rows.map((row) => (
+          <li key={rowKey(row)} data-testid={rowTestId}>
+            {mobileRow(row)}
+          </li>
+        ))}
+      </ul>
+    );
+  }
   return (
     // Desktop: one white group, rows split by an inset hairline. Phones: each row is its own
     // white card on the page (the group wrapper steps aside with `contents`).

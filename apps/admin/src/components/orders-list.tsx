@@ -20,8 +20,9 @@ import {
 import { useSession } from '@/lib/session';
 import { StatusBadge } from './status-badge';
 import { PageHeader } from './ui/page-header';
-import { CHIP, CHIP_OFF, CHIP_ON, CHIP_RAIL, LINK_BUTTON } from './ui/classes';
+import { CHIP, CHIP_OFF, CHIP_ON, CHIP_RAIL, LINK_BUTTON, ROW_LINK } from './ui/classes';
 import { DataTable, type Column } from './ui/data-table';
+import { FilterSheet } from './ui/filter-sheet';
 import { ProductPhoto } from './ui/product-photo';
 
 type Loaded =
@@ -169,6 +170,23 @@ function OrdersTable({ orders }: { orders: OrderPage['items'] }) {
       columns={table}
       rows={orders}
       rowKey={(order) => order.id}
+      mobileRow={(order) => (
+        <Link href={orderHref(locale, order.id)} className={ROW_LINK}>
+          <Thumbnails order={order} />
+          <span className="flex min-w-0 flex-1 flex-col">
+            <span className="truncate font-semibold tabular">{order.number}</span>
+            <span className="text-[13px] text-muted-foreground tabular">
+              {formatDateTime(order.created_at)}
+            </span>
+          </span>
+          <span className="flex shrink-0 flex-col items-end gap-1">
+            <span className="font-semibold whitespace-nowrap tabular">
+              {formatUZS(order.total_uzs, locale)}
+            </span>
+            <StatusBadge status={order.status} />
+          </span>
+        </Link>
+      )}
     />
   );
 }
@@ -250,7 +268,16 @@ export function OrdersList() {
   return (
     <div className="flex flex-col gap-4">
       <PageHeader title={dict.orders.title} />
-      <StatusFilter active={status} />
+      <FilterSheet
+        active={status === null ? 0 : 1}
+        always={
+          <p className="flex min-h-11 items-center text-[15px] font-semibold sm:hidden">
+            {status === null ? dict.orders.filterAll : dict.status[status]}
+          </p>
+        }
+      >
+        <StatusFilter active={status} />
+      </FilterSheet>
       {body}
     </div>
   );
