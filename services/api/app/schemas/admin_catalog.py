@@ -207,7 +207,6 @@ def _none_to_zero(value: int | None) -> int:
     return 0 if value is None else value
 
 
-
 class ProductCreateRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
