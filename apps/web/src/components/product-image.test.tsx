@@ -66,6 +66,28 @@ describe('ProductImage', () => {
     expect(img).toHaveAttribute('sizes', '(min-width: 768px) 25vw, 50vw');
   });
 
+  it('shows our own cut-outs whole on the photo tile', () => {
+    render(<ProductImage src="/products/olma.webp" name="Olma" toneKey="c" />);
+    const img = screen.getByRole('img', { name: 'Olma' });
+    expect(img).toHaveClass('object-contain');
+    expect(img.parentElement).toHaveAttribute('data-cutout', 'tile');
+  });
+
+  it('lets any other photo fill its box, without the cut-out treatment', () => {
+    render(<ProductImage src="https://cdn.example/olma.jpg" name="Olma" toneKey="c" bare />);
+    const img = screen.getByRole('img', { name: 'Olma' });
+    expect(img).toHaveClass('object-cover');
+    expect(img.parentElement).not.toHaveAttribute('data-cutout');
+  });
+
+  it('can stand a cut-out straight on the parent surface', () => {
+    render(<ProductImage src="/categories/sut.webp" name="Sut" toneKey="c" bare />);
+    expect(screen.getByRole('img', { name: 'Sut' }).parentElement).toHaveAttribute(
+      'data-cutout',
+      'bare',
+    );
+  });
+
   it('falls back to the monogram when the photo fails to load', () => {
     render(<ProductImage src="https://cdn.example/broken.jpg" name="Olma" toneKey="c" />);
     fireEvent.error(screen.getByRole('img', { name: 'Olma' }));

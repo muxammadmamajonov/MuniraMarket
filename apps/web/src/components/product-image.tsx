@@ -2,7 +2,7 @@
 
 import { useCallback, useState } from 'react';
 import { cx } from '@muniramarket/ui';
-import { photoSrcSet } from '@/lib/photo';
+import { isCutout, photoSrcSet } from '@/lib/photo';
 import { initialOf, toneFor } from '@/lib/placeholder';
 
 export interface ProductImageProps {
@@ -15,8 +15,11 @@ export interface ProductImageProps {
   className?: string;
   /** Layout width hint for the browser's pick of the 400/800px file (see `PHOTO_SIZES`). */
   sizes?: string;
-  /** `cover` fills the box (the default); `contain` shows the whole photo on the backdrop. */
-  fit?: 'cover' | 'contain';
+  /**
+   * No tile: a cut-out sits straight on the parent's own surface (the category mosaic's tinted
+   * tile) with just its contact shadow. Other photos and the monogram keep their box.
+   */
+  bare?: boolean;
   /** Above the fold (the product page photo): load it eagerly. */
   priority?: boolean;
 }
@@ -30,11 +33,13 @@ export interface ProductImageProps {
 type Shown = { src: string; how: 'pending' | 'fade' | 'instant' } | null;
 
 /**
- * Product (or category) photo in a fixed box, so nothing shifts when it arrives. The box is a
- * warm neutral backdrop (`.mm-photo`): photos shot on white blend into it, so a grid of mixed
- * stock photos reads as one set. The photo fades in once decoded (opacity only; the global
- * reduced-motion rule makes it instant). Without a photo, or when it fails to load, the box shows
- * a soft tinted tile with the name's initial instead.
+ * Product (or category) photo in a fixed box, so nothing shifts when it arrives. The box is the
+ * store's photo tile (`.mm-photo`, globals.css): a warm neutral surface. Our own photos are
+ * transparent cut-outs (`isCutout`), shown whole on the tile with a soft shadow under the
+ * product, so the catalog reads as one set in both themes. Any other photo fills the box and, in
+ * light mode, a white studio background blends into the tile. The photo fades in once decoded
+ * (opacity only; the global reduced-motion rule makes it instant). Without a photo, or when it
+ * fails to load, the box shows a soft tinted tile with the name's initial instead.
  */
 export function ProductImage({
   src,
@@ -42,7 +47,7 @@ export function ProductImage({
   toneKey,
   className,
   sizes,
-  fit = 'cover',
+  bare = false,
   priority = false,
 }: ProductImageProps) {
   // Remember which URL failed or loaded, so a different `src` gets a fresh attempt.
@@ -67,9 +72,11 @@ export function ProductImage({
   const current = shown?.src === src ? shown.how : null;
   const visible = hasPhoto && current !== 'pending';
   const srcSet = hasPhoto ? photoSrcSet(src) : undefined;
+  const cutout = hasPhoto && typeof src === 'string' && isCutout(src);
 
   return (
     <div
+      data-cutout={cutout ? (bare ? 'bare' : 'tile') : undefined}
       className={cx(
         'mm-photo relative isolate overflow-hidden rounded-xl',
         !hasOwnAspect && 'aspect-square',
@@ -104,7 +111,7 @@ export function ProductImage({
           }}
           className={cx(
             'absolute inset-0 h-full w-full select-none',
-            fit === 'contain' ? 'object-contain p-[6%]' : 'object-cover',
+            cutout ? 'object-contain' : 'object-cover',
             visible ? 'opacity-100' : 'opacity-0',
             current === 'fade' && 'transition-opacity duration-300 ease-(--ease-out-strong)',
           )}

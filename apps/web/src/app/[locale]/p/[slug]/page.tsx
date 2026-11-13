@@ -70,7 +70,7 @@ export default async function ProductPage({ params }: PageProps<'/[locale]/p/[sl
             toneKey={product.category_id}
             sizes={PHOTO_SIZES.detail}
             priority
-            className="w-full rounded-3xl max-md:aspect-[6/5] md:max-w-md"
+            className="w-full rounded-3xl max-md:aspect-[6/5] md:max-w-md [&[data-cutout]>img]:p-[5%]"
           />
 
           <div className="flex min-w-0 flex-col gap-4">
