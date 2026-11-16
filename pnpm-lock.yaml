@@ -481,10 +481,10 @@ importers:
     dependencies:
       '@neon/functions':
         specifier: 0.11.0
-        version: 0.11.0(hono@4.13.17)
+        version: 0.11.0(hono@4.13.18)
       hono:
-        specifier: 4.13.17
-        version: 4.13.17
+        specifier: 4.13.18
+        version: 4.13.18
       pg:
         specifier: 8.23.1
         version: 8.23.1
@@ -2599,8 +2599,8 @@ packages:
     resolution: {integrity: sha512-Ox1pJVrDCyGHMG9CFg1tmrRUMRPRsAWYc/PinY0XzJU4K7y7vjNoLKIQ7BR5UJMCxNN8EM1MNDmHWA/B3aZUuw==}
     engines: {node: '>=6'}
 
-  hono@4.13.17:
-    resolution: {integrity: sha512-vZIcbkvjOR5hHRWERbGkr8fGfF0GGM1ooYkuH448iO3b2AdVEr3AXZSw4Z3Kn+1L5z0CVoVeyV29VGYmFh05kQ==}
+  hono@4.13.18:
+    resolution: {integrity: sha512-H9q/E1XizaWstJxUW881dmLxEj+t/TrGGnyxINkm4+sK0qUwsMtFdo2BWI9Vs3cIS19MU6b6iCijoUoEf4f3DA==}
     engines: {node: '>=16.9.0'}
 
   html-encoding-sniffer@7.0.0:
@@ -4582,9 +4582,9 @@ snapshots:
       jiti: 2.7.0
       zod: 4.6.7
 
-  '@neon/functions@0.11.0(hono@4.13.17)':
+  '@neon/functions@0.11.0(hono@4.13.18)':
     optionalDependencies:
-      hono: 4.13.17
+      hono: 4.13.18
 
   '@neon/sdk@7.11.0': {}
 
@@ -6088,7 +6088,7 @@ snapshots:
 
   hex-rgb@4.3.0: {}
 
-  hono@4.13.17: {}
+  hono@4.13.18: {}
 
   html-encoding-sniffer@7.0.0:
     dependencies:
