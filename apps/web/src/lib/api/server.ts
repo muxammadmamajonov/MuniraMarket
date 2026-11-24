@@ -7,6 +7,7 @@ import type {
   ProductSort,
 } from '@muniramarket/contracts';
 import { headers as requestHeaders } from 'next/headers';
+import { cache } from 'react';
 import { getClientIpHeader, internalApiUrl } from '@/lib/config';
 import { clientIpFrom } from './client-ip';
 import { ApiRequestError, readJson } from './errors';
@@ -85,8 +86,11 @@ export async function fetchProducts(query: ProductQuery): Promise<ProductPage> {
   );
 }
 
-/** Product by slug, or `null` when the API answers 404 `product_not_found`. */
-export async function fetchProduct(slug: string): Promise<ProductDetail | null> {
+/**
+ * Product by slug, or `null` when the API answers 404 `product_not_found`. Memoized per request
+ * (`cache`), so `generateMetadata` and the page body share one API call.
+ */
+export const fetchProduct = cache(async (slug: string): Promise<ProductDetail | null> => {
   try {
     return await getJson<ProductDetail>(
       `/products/${encodeURIComponent(slug)}`,
@@ -97,4 +101,4 @@ export async function fetchProduct(slug: string): Promise<ProductDetail | null> 
     if (error instanceof ApiRequestError && error.code === 'product_not_found') return null;
     throw error;
   }
-}
+});

@@ -245,15 +245,18 @@ def test_cancel_reason() -> None:
 
 
 def test_status_update_request() -> None:
-    request = OrderStatusUpdateRequest.model_validate({"status": "CONFIRMED"})
+    request = OrderStatusUpdateRequest.model_validate(
+        {"status": "CONFIRMED", "expected_status": "NEW"}
+    )
     assert request.status is OrderStatus.CONFIRMED
     assert request.reason is None
-    assert request.expected_status is None
+    assert request.expected_status is OrderStatus.NEW
     for body in (
-        {"status": "SHIPPED"},
-        {"status": "CANCELLED", "reason": " "},
+        {"status": "CONFIRMED"},  # expected_status is required
+        {"status": "SHIPPED", "expected_status": "NEW"},
+        {"status": "CANCELLED", "reason": " ", "expected_status": "NEW"},
         {"status": "CONFIRMED", "expected_status": "nope"},
-        {"status": "CONFIRMED", "note": "x"},
+        {"status": "CONFIRMED", "expected_status": "NEW", "note": "x"},
     ):
         with pytest.raises(ValidationError):
             OrderStatusUpdateRequest.model_validate(body)

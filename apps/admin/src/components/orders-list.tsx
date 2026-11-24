@@ -1,10 +1,10 @@
 'use client';
 
 import { ORDER_STATUSES, type OrderPage, type OrderStatus } from '@muniramarket/contracts';
-import { EmptyState, ErrorState, Skeleton, cx, formatUZS } from '@muniramarket/ui';
+import { Button, EmptyState, ErrorState, Skeleton, cx, formatUZS } from '@muniramarket/ui';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useI18n } from '@/i18n/context';
 import { formatMessage } from '@/i18n/format';
 import { readErrorMessage } from '@/lib/api/error-messages';
@@ -18,6 +18,7 @@ import {
   parseStatusFilter,
 } from '@/lib/orders';
 import { useSession } from '@/lib/session';
+import { useRefreshOnReturn } from '@/lib/use-refresh-on-return';
 import { StatusBadge } from './status-badge';
 import { PageHeader } from './ui/page-header';
 import { CHIP, CHIP_OFF, CHIP_ON, CHIP_RAIL, LINK_BUTTON, ROW_LINK } from './ui/classes';
@@ -200,8 +201,16 @@ export function OrdersList() {
   const page = parsePage(params.get('page'));
 
   const [attempt, setAttempt] = useState(0);
+  // Background reloads (focus, visibility, 30 s poll, Refresh) bump `tick`, not `attempt`: the
+  // list stays on screen while it reloads instead of flashing a skeleton.
+  const [tick, setTick] = useState(0);
   const [loaded, setLoaded] = useState<Loaded | null>(null);
+  const [newCount, setNewCount] = useState(0);
+  // Orders the operator has already been shown. Filled by the foreground load of a filter/page.
+  const seen = useRef<{ view: string; ids: Set<string> } | null>(null);
   const key = `${status ?? 'all'}|${String(page)}|${String(attempt)}`;
+  const refresh = useCallback(() => setTick((value) => value + 1), []);
+  useRefreshOnReturn(refresh);
 
   useEffect(() => {
     let cancelled = false;
@@ -214,16 +223,33 @@ export function OrdersList() {
         return readJson<OrderPage>(response);
       })
       .then((result) => {
-        if (!cancelled) setLoaded({ key, page: result, error: null });
+        if (cancelled) return;
+        const ids = result.items.map((order) => order.id);
+        const view = `${status ?? 'all'}|${String(page)}`;
+        if (seen.current?.view !== view) {
+          // A different filter or page starts from what it shows; nothing there is "new".
+          seen.current = { view, ids: new Set(ids) };
+          setNewCount(0);
+        } else {
+          const known = seen.current.ids;
+          const fresh = result.items.filter(
+            (order) => order.status === 'NEW' && !known.has(order.id),
+          );
+          for (const id of ids) known.add(id);
+          if (fresh.length > 0) setNewCount((count) => count + fresh.length);
+        }
+        setLoaded({ key, page: result, error: null });
       })
       .catch((cause: unknown) => {
         const error = cause instanceof ApiRequestError ? cause : ApiRequestError.network(cause);
-        if (!cancelled) setLoaded({ key, page: null, error });
+        // A failed background reload keeps the list the operator is looking at.
+        if (!cancelled)
+          setLoaded((prev) => (prev?.key === key && prev.page ? prev : { key, page: null, error }));
       });
     return () => {
       cancelled = true;
     };
-  }, [apiFetch, status, page, key]);
+  }, [apiFetch, status, page, key, tick]);
 
   // A result that belongs to an earlier filter/page/retry is never shown: the list is "loading".
   const current = loaded?.key === key ? loaded : null;
@@ -267,7 +293,25 @@ export function OrdersList() {
 
   return (
     <div className="flex flex-col gap-4">
-      <PageHeader title={dict.orders.title} />
+      <PageHeader
+        title={dict.orders.title}
+        actions={
+          <Button variant="secondary" onClick={refresh}>
+            {dict.orders.refresh}
+          </Button>
+        }
+      />
+      <div role="status">
+        {newCount > 0 ? (
+          <button
+            type="button"
+            onClick={() => setNewCount(0)}
+            className="flex min-h-11 w-full items-center rounded-2xl bg-brand-soft px-4 text-left font-semibold text-brand-ink"
+          >
+            {formatMessage(dict.orders.newOrders, { count: newCount })}
+          </button>
+        ) : null}
+      </div>
       <FilterSheet
         active={status === null ? 0 : 1}
         always={

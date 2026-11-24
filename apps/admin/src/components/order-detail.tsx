@@ -15,12 +15,13 @@ import { formatMessage } from '@/i18n/format';
 import { readErrorMessage } from '@/lib/api/error-messages';
 import { ApiRequestError, readJson } from '@/lib/api/errors';
 import { formatDateTime, telHref } from '@/lib/format';
-import { ordersHref } from '@/lib/orders';
+import { needsFinalConfirmation, ordersHref } from '@/lib/orders';
 import { useSession } from '@/lib/session';
 import { useIsPhone } from '@/lib/use-phone';
 import { CancelDialog } from './cancel-dialog';
 import { LINK_BUTTON_PRIMARY } from './ui/classes';
 import { AdjustDialog, type OrderLine } from './order-adjust';
+import { Modal } from './ui/modal';
 import { SwipeActions } from './ui/swipe-actions';
 import { StatusBadge } from './status-badge';
 
@@ -305,6 +306,10 @@ export function OrderDetailView({ id }: { id: string }) {
   const inFlight = useRef(false);
   const [notice, setNotice] = useState<Notice | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [confirming, setConfirming] = useState<{
+    status: OrderStatus;
+    opener: HTMLElement;
+  } | null>(null);
   const [cancelOpen, setCancelOpen] = useState(false);
   const [cancelOpener, setCancelOpener] = useState<HTMLElement | null>(null);
   const [adjusting, setAdjusting] = useState<{
@@ -474,7 +479,13 @@ export function OrderDetailView({ id }: { id: string }) {
             {forward.map((status) => (
               <Button
                 key={status}
-                onClick={() => void changeStatus(status)}
+                onClick={(event) => {
+                  if (needsFinalConfirmation(status)) {
+                    setConfirming({ status, opener: event.currentTarget });
+                  } else {
+                    void changeStatus(status);
+                  }
+                }}
                 disabled={pending}
                 className="max-sm:min-h-12 max-sm:flex-1"
               >
@@ -532,6 +543,31 @@ export function OrderDetailView({ id }: { id: string }) {
           }}
         />
       )}
+
+      {confirming !== null && forward.some((status) => status === confirming.status) ? (
+        <Modal
+          title={dict.order.confirmFinal.title}
+          description={dict.order.confirmFinal.description}
+          onClose={() => setConfirming(null)}
+          dismissible={!pending}
+          returnFocusTo={confirming.opener}
+        >
+          <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+            <Button variant="secondary" onClick={() => setConfirming(null)} disabled={pending}>
+              {dict.order.confirmFinal.dismiss}
+            </Button>
+            <Button
+              disabled={pending}
+              onClick={() => {
+                const target = confirming.status;
+                void changeStatus(target).then(() => setConfirming(null));
+              }}
+            >
+              {dict.order.confirmFinal.confirm}
+            </Button>
+          </div>
+        </Modal>
+      ) : null}
 
       {cancelOpen && canCancel ? (
         <CancelDialog

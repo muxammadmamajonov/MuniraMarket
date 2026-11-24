@@ -4,6 +4,9 @@ import { PageContainer } from '@/components/page-container';
 import { AddressesView } from '@/components/profile/addresses-view';
 import { SiteHeader } from '@/components/site-header';
 import { getDictionary } from '@/i18n';
+import { titledMetadata } from '@/lib/page-metadata';
+
+export const generateMetadata = titledMetadata('addresses');
 
 export default async function AddressesPage({ params }: PageProps<'/[locale]/profile/addresses'>) {
   const { locale } = await params;

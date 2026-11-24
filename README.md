@@ -12,7 +12,7 @@ trust a Telegram user ID sent by the client.
 | Part                         | Stack                      | Purpose                                                                 |
 | ---------------------------- | -------------------------- | ----------------------------------------------------------------------- |
 | `apps/web`                   | Next.js, Tailwind CSS      | Storefront website and Telegram Mini App UI                             |
-| `apps/admin`                 | Next.js                    | Catalog, delivery and order administration                              |
+| `apps/admin`                 | Next.js                    | Catalog, order and user administration, audit log                       |
 | `services/core-api-function` | Neon Function (Hono, `pg`) | Production Core API (`coreapi`): catalog, cart, checkout, orders, admin |
 | `services/api-gateway`       | Cloudflare Worker          | Only entrance to the Function; Cron Trigger                             |
 | `services/api`               | FastAPI, PostgreSQL        | Reference Core API, OpenAPI source, Alembic migrations                  |
@@ -40,7 +40,7 @@ cd services/api
 cp .env.example .env                        # local placeholders; never commit .env
 make install
 make migrate                                # local database only
-make seed                                   # synthetic demo catalog, zones and slots
+make seed                                   # synthetic demo catalog
 cd ../..
 # The production Core API code (Neon Function) on http://127.0.0.1:8000, with the same
 # development settings (reads services/api/.env values from your shell):
@@ -62,10 +62,10 @@ Open `http://localhost:3000/uz` (or `/ru`) on a phone-sized window to see the st
 
 `make seed` fills a local database with a made-up Tashkent grocery catalog: about ten categories,
 several dozen products with Uzbek and Russian names, prices in so‘m, kg/piece/litre units and a
-mix of stock states, plus demo delivery zones and time slots. Every product is synthetic: SKUs
-start with `DEMO-`, slugs with `demo-`, brand names are invented, and no product has an image,
-so the storefront shows its placeholder. Real product images will be stored in object storage
-later; the demo never links to external images.
+mix of stock states. Every product is synthetic: SKUs start with `DEMO-`, slugs with `demo-` and
+brand names are invented. Demo products use the bundled demo photos the storefront serves itself
+(`/products/*.webp`); the demo never links to external images. Real product images will be stored
+in object storage later.
 
 The seed refuses to run unless `APP_ENV` is `development` or `test`, and running it twice
 changes nothing.
@@ -103,9 +103,8 @@ changes nothing. The tool never prints the database URL.
 - **Remove:** `uv run python -m app.ops.demo_catalog remove --confirm "REMOVE DEMO CATALOG"` (dry
   run without `--confirm`). It changes demo rows only. Demo products that orders reference are
   archived instead of deleted.
-- **Delivery:** if the database has no delivery zones yet, the import adds zones named
-  "Demo …"/"Демо …" with made-up fees and hours, and no time slots. They are placeholders.
-  Replace them with the real delivery rules in the admin panel before taking real orders.
+- **Delivery:** nothing to set up. Orders are carried by Yandex Go couriers and the customer pays
+  the courier on receipt (ADR 0017), so the import adds no delivery data.
 
 Run `unset DEMO_IMPORT_DATABASE_URL` when you are done.
 

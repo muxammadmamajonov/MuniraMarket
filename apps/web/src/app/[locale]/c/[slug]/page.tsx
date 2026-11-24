@@ -1,4 +1,5 @@
 import { isLocale } from '@muniramarket/contracts';
+import type { Metadata } from 'next';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { CartBar } from '@/components/cart-bar';
@@ -24,6 +25,27 @@ import {
   parsePage,
   parseSort,
 } from '@/lib/catalog';
+import { pageTitle } from '@/lib/page-metadata';
+import { pageAlternates } from '@/lib/site';
+
+export async function generateMetadata({
+  params,
+}: PageProps<'/[locale]/c/[slug]'>): Promise<Metadata> {
+  const { locale, slug } = await params;
+  if (!isLocale(locale)) return {};
+  try {
+    const category = findCategoryPath(await fetchCategories(), slug)?.at(-1);
+    if (category === undefined) return {};
+    return {
+      title: pageTitle(getDictionary(locale), localizedName(category, locale)),
+      // Sort, filter and page variations all point at the plain category URL.
+      alternates: pageAlternates(locale, `/c/${encodeURIComponent(slug)}`),
+    };
+  } catch {
+    // A failing API must not break metadata; the page itself reports the error.
+    return {};
+  }
+}
 
 export default async function CategoryPage({
   params,

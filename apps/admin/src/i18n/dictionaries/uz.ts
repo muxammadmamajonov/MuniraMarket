@@ -57,6 +57,8 @@ export const uz: Dictionary = {
     loading: 'Buyurtmalar yuklanmoqda…',
     empty: 'Hozircha buyurtmalar yo‘q.',
     emptyFiltered: 'Bu holatdagi buyurtmalar yo‘q.',
+    refresh: 'Yangilash',
+    newOrders: 'Yangi buyurtmalar: {count}',
     columns: {
       number: 'Raqam',
       status: 'Holat',
@@ -109,6 +111,12 @@ export const uz: Dictionary = {
       confirm: 'Buyurtmani bekor qilish',
       dismiss: 'Yopish',
     },
+    confirmFinal: {
+      title: 'Buyurtma yetkazildimi?',
+      description: 'Bu oxirgi bosqich: keyin buyurtma holatini o‘zgartirib bo‘lmaydi.',
+      confirm: 'Ha, yetkazildi',
+      dismiss: 'Orqaga',
+    },
     notices: {
       conflict:
         'Buyurtma holati boshqa xodim tomonidan o‘zgartirilgan: hozir «{status}». Sahifa yangilandi, amalni qaytadan tanlang.',
@@ -130,6 +138,10 @@ export const uz: Dictionary = {
       reasonInvalid: 'Sabab 3 dan 300 belgigacha bo‘lsin.',
       markOutOfStock: 'Mahsulotni tugagan deb belgilash',
       markOutOfStockHint: 'Qoldiq 0 bo‘ladi va mahsulot saytda “tugagan” bo‘lib qoladi.',
+      markOutWarning:
+        'Diqqat: mahsulotning butun qoldig‘i 0 bo‘ladi va u saytda barcha mijozlar uchun “tugagan” bo‘lib qoladi, faqat shu buyurtma uchun emas. Ombordagi haqiqiy qoldiq 0 ekaniga ishonchingiz komilmi?',
+      markOutConfirm: 'Ha, qoldiqni 0 qilish',
+      back: 'Orqaga',
       confirm: 'Saqlash',
       dismiss: 'Bekor qilish',
       adjustedFrom: 'Avval: {quantity}',
@@ -182,6 +194,8 @@ export const uz: Dictionary = {
     title: 'Xatolik yuz berdi',
     message: 'Ma’lumotlarni yuklab bo‘lmadi. Internetni tekshirib, qayta urinib ko‘ring.',
     retry: 'Qayta urinish',
+    notFoundTitle: 'Sahifa topilmadi',
+    notFoundMessage: 'Bunday sahifa yo‘q yoki ko‘chirilgan.',
     forbidden: 'Bu ma’lumotlarni ko‘rish huquqingiz yo‘q.',
     rateLimited: 'Juda ko‘p so‘rov. Birozdan keyin qayta urinib ko‘ring.',
     serviceUnavailable: 'Xizmat vaqtincha ishlamayapti. Birozdan keyin qayta urinib ko‘ring.',

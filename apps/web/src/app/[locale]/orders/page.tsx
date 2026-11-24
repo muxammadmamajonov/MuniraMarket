@@ -7,6 +7,9 @@ import { PageContainer } from '@/components/page-container';
 import { SiteHeader } from '@/components/site-header';
 import { getDictionary } from '@/i18n';
 import { parsePage } from '@/lib/catalog';
+import { titledMetadata } from '@/lib/page-metadata';
+
+export const generateMetadata = titledMetadata('orders');
 
 export default async function OrdersPage({ params, searchParams }: PageProps<'/[locale]/orders'>) {
   const { locale } = await params;

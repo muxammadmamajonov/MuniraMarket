@@ -1,4 +1,5 @@
 import { isLocale } from '@muniramarket/contracts';
+import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 import Link from 'next/link';
 import { CartBar } from '@/components/cart-bar';
@@ -15,8 +16,15 @@ import { SiteHeader } from '@/components/site-header';
 import { FOCUS_RING, PRESS } from '@/components/ui-classes';
 import { getDictionary } from '@/i18n';
 import { fetchCategories, fetchProducts } from '@/lib/api/server';
+import { pageAlternates } from '@/lib/site';
 
 const NEWEST_COUNT = 24;
+
+export async function generateMetadata({ params }: PageProps<'/[locale]'>): Promise<Metadata> {
+  const { locale } = await params;
+  if (!isLocale(locale)) return {};
+  return { alternates: pageAlternates(locale, '/') };
+}
 
 export default async function HomePage({ params }: PageProps<'/[locale]'>) {
   const { locale } = await params;

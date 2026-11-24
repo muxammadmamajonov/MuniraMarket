@@ -9,6 +9,8 @@ const staging = {
   MM_API_HOSTNAME: 'api.staging.example.test',
   MM_TELEGRAM_BOT_ID: '1234567890',
   MM_CSRF_TRUSTED_ORIGINS: 'https://shop.staging.example.test,https://admin.staging.example.test',
+  MM_CORE_API_FUNCTION_HOST: 'staging-fn.example.test',
+  MM_PRODUCTION_FUNCTION_HOST: 'production-fn.example.test',
 };
 const variables = (env: Record<string, string | undefined>, mode: 'staging' | 'production') =>
   validateDeployEnv(mode, env).map((p) => p.variable);
@@ -25,7 +27,28 @@ describe('validateDeployEnv', () => {
       'MM_API_HOSTNAME',
       'MM_TELEGRAM_BOT_ID',
       'MM_CSRF_TRUSTED_ORIGINS',
+      'MM_CORE_API_FUNCTION_HOST',
+      'MM_PRODUCTION_FUNCTION_HOST',
     ]);
+  });
+
+  it('refuses a staging deploy that points at the production Core API Function', () => {
+    expect(
+      variables(
+        { ...staging, MM_CORE_API_FUNCTION_HOST: staging.MM_PRODUCTION_FUNCTION_HOST },
+        'staging',
+      ),
+    ).toEqual(['MM_CORE_API_FUNCTION_HOST']);
+    expect(
+      variables({ ...staging, MM_CORE_API_FUNCTION_HOST: 'https://fn.example.test' }, 'staging'),
+    ).toEqual(['MM_CORE_API_FUNCTION_HOST']);
+  });
+
+  it('does not ask production for the staging-only Function hosts', () => {
+    const { MM_CORE_API_FUNCTION_HOST: _a, MM_PRODUCTION_FUNCTION_HOST: _b, ...rest } = staging;
+    expect(variables({ ...rest, MM_TELEGRAM_BOT_ID: '9038491407' }, 'production')).not.toContain(
+      'MM_CORE_API_FUNCTION_HOST',
+    );
   });
 
   it('rejects malformed hostnames and shared origins', () => {

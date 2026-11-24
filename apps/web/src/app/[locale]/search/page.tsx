@@ -17,6 +17,9 @@ import { getDictionary } from '@/i18n';
 import { formatMessage } from '@/i18n/format';
 import { fetchCategories, fetchProducts } from '@/lib/api/server';
 import { firstParam, listingHref, parseInStock, parsePage, parseSort } from '@/lib/catalog';
+import { titledMetadata } from '@/lib/page-metadata';
+
+export const generateMetadata = titledMetadata('search');
 
 /** The API accepts 2..100 characters. */
 const MIN_QUERY = 2;

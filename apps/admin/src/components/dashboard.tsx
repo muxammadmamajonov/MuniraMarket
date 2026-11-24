@@ -3,12 +3,13 @@
 import type { Dashboard, OrderPage } from '@muniramarket/contracts';
 import { Button, Skeleton, cx, formatUZS } from '@muniramarket/ui';
 import Link from 'next/link';
-import type { ReactNode } from 'react';
+import { useCallback, type ReactNode } from 'react';
 import { useI18n } from '@/i18n/context';
 import { formatMessage } from '@/i18n/format';
 import { formatCount, formatDate, formatDateTime } from '@/lib/format';
 import { orderHref, ordersHref } from '@/lib/orders';
 import { useApiResource } from '@/lib/use-api-resource';
+import { useRefreshOnReturn } from '@/lib/use-refresh-on-return';
 import { StatusBadge } from './status-badge';
 import { GROUP, PRESS, ROWS, SECTION_TITLE } from './ui/classes';
 import { PageHeader } from './ui/page-header';
@@ -209,6 +210,16 @@ export function DashboardView() {
     `/admin/orders?page=1&page_size=${String(RECENT_ORDERS)}`,
   );
   const fetching = resource.fetching || recent.fetching;
+  // Back on the tab (or every 30 s while it is open): today's numbers and latest orders reload;
+  // the old data stays on screen meanwhile.
+  const { reload: reloadNumbers } = resource;
+  const { reload: reloadRecent } = recent;
+  useRefreshOnReturn(
+    useCallback(() => {
+      reloadNumbers();
+      reloadRecent();
+    }, [reloadNumbers, reloadRecent]),
+  );
 
   return (
     <div className="flex flex-col gap-5">

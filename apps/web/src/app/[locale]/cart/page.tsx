@@ -4,6 +4,9 @@ import { CartView } from '@/components/cart-view';
 import { PageContainer } from '@/components/page-container';
 import { SiteHeader } from '@/components/site-header';
 import { getDictionary } from '@/i18n';
+import { titledMetadata } from '@/lib/page-metadata';
+
+export const generateMetadata = titledMetadata('cart');
 
 /*
  * Telegram MainButton: `CartView` claims it ("Rasmiylashtirish — <total>", which opens the

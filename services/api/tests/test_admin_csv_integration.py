@@ -447,7 +447,7 @@ async def test_cancel_restock_and_admin_edits_make_an_export_stale(shop: Shop) -
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
         cancelled = await client.patch(
             f"/api/v1/admin/orders/{order['id']}/status",
-            json={"status": "CANCELLED", "reason": "Demo sabab"},
+            json={"status": "CANCELLED", "reason": "Demo sabab", "expected_status": "NEW"},
         )
         assert cancelled.status_code == 200, cancelled.text
     stock, restocked_stamp = await shop.product_state("DEMO-OLMA")

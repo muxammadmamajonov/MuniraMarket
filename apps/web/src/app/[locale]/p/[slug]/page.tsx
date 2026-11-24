@@ -12,6 +12,8 @@ import { PHOTO_SIZES } from '@/lib/photo';
 import { GROUP, ROWS, SECTION_TITLE } from '@/components/ui-classes';
 import { getDictionary } from '@/i18n';
 import { fetchProduct } from '@/lib/api/server';
+import { pageTitle } from '@/lib/page-metadata';
+import { DEFAULT_SHARE_IMAGE, OG_LOCALE, pageAlternates } from '@/lib/site';
 import {
   localizedDescription,
   localizedName,
@@ -27,7 +29,29 @@ export async function generateMetadata({
   if (!isLocale(locale)) return {};
   try {
     const product = await fetchProduct(slug);
-    return product === null ? {} : { title: localizedName(product, locale) };
+    if (product === null) return {};
+    const dict = getDictionary(locale);
+    const description = localizedDescription(product, locale);
+    const name = localizedName(product, locale);
+    const title = pageTitle(dict, name);
+    // The product's own photo when it has one (a bare path resolves against `metadataBase`).
+    const image =
+      product.image_url === null || product.image_url === ''
+        ? DEFAULT_SHARE_IMAGE
+        : { url: product.image_url, alt: name };
+    return {
+      title,
+      ...(description === null ? {} : { description }),
+      alternates: pageAlternates(locale, `/p/${encodeURIComponent(slug)}`),
+      openGraph: {
+        type: 'website',
+        siteName: dict.meta.title,
+        locale: OG_LOCALE[locale],
+        title,
+        ...(description === null ? {} : { description }),
+        images: [image],
+      },
+    };
   } catch {
     // A failing API must not break metadata; the page itself reports the error.
     return {};

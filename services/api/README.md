@@ -344,7 +344,7 @@ Design: `architecture/0010-admin-content-ops.md`. Shared dependencies: `app/api/
 | --------------------------------------------------------- | -------- | --------------------------------------------------------------------------- |
 | `GET /admin/dashboard`                                    | staff    | today (Asia/Tashkent): orders, `NEW` orders, GMV, average order, cancelled  |
 | `GET /admin/orders?status=&page=`, `GET /admin/orders/{id}` | staff  | `AdminOrderDetail`: history with actor role and reason, allowed transitions |
-| `PATCH /admin/orders/{id}/status`                         | staff    | `{status, reason?, expected_status?}`                                       |
+| `PATCH /admin/orders/{id}/status`                         | staff    | `{status, reason?, expected_status}`                                        |
 | `GET/POST /admin/categories`, `PATCH/DELETE …/{id}`       | admin    | flat list with counts; `category_cycle`, `category_not_empty`, `slug_taken` |
 | `GET/POST /admin/products`, `GET/PATCH/DELETE …/{id}`     | admin    | `DELETE` archives (soft); `POST …/{id}/restore`; `sku_taken`, `slug_taken`  |
 | `GET /admin/catalog/csv/template`, `…/csv/export`         | admin    | `text/csv`, UTF-8 BOM, formula-escaped cells                                |
@@ -353,7 +353,7 @@ Design: `architecture/0010-admin-content-ops.md`. Shared dependencies: `app/api/
 | `GET /admin/audit?entity_type=&entity_id=&action=`        | admin    | newest first                                                                |
 
 Order status transitions follow `app/domain/order_status.py` (one step forward, or `CANCELLED` with
-a reason from any non-final status); `expected_status` turns a lost update into
+a reason from any non-final status); `expected_status` is required and turns a lost update into
 `409 order_status_conflict`.
 
 - **Products are never deleted.** Archiving sets `archived_at` and makes the product inactive (a

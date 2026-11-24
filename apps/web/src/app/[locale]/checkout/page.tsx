@@ -4,6 +4,9 @@ import { CheckoutView } from '@/components/checkout/checkout-view';
 import { PageContainer } from '@/components/page-container';
 import { SiteHeader } from '@/components/site-header';
 import { getDictionary } from '@/i18n';
+import { titledMetadata } from '@/lib/page-metadata';
+
+export const generateMetadata = titledMetadata('checkout');
 
 /*
  * Telegram: on this page the native MainButton is the submit control ("Buyurtma berish — <total>",

@@ -2,7 +2,8 @@
  * Validation of the deploy-time (non-secret) variables: the hostnames the Cloudflare
  * configurations read (`MM_*_HOSTNAME`) and the values the Core API Neon Function receives
  * through neon.ts (`MM_TELEGRAM_BOT_ID` -> TELEGRAM_BOT_ID, `MM_CSRF_TRUSTED_ORIGINS` ->
- * CSRF_TRUSTED_ORIGINS, `APP_RELEASE`). Run before every deploy:
+ * CSRF_TRUSTED_ORIGINS, `APP_RELEASE`). Staging also records the Core API Function host it points
+ * at (`MM_CORE_API_FUNCTION_HOST`) and production's (`MM_PRODUCTION_FUNCTION_HOST`). Run before every deploy:
  *
  *   node infra/cloudflare/scripts/validate-deploy-env.mts --mode staging
  *
@@ -112,6 +113,28 @@ export function validateDeployEnv(
       problems.push({
         variable: 'MM_CSRF_TRUSTED_ORIGINS',
         message: 'must be exactly https://<MM_WEB_HOSTNAME>,https://<MM_ADMIN_HOSTNAME>',
+      });
+    }
+  }
+
+  // Staging must never forward to the production Core API Function. The gateway's
+  // CORE_API_FUNCTION_ORIGIN is a Worker secret this script cannot (and must not) read, so the
+  // operator records the Function host it points at, and production's, as plain variables.
+  if (mode === 'staging') {
+    const staging = require('MM_CORE_API_FUNCTION_HOST');
+    const production = require('MM_PRODUCTION_FUNCTION_HOST');
+    for (const [name, host] of [
+      ['MM_CORE_API_FUNCTION_HOST', staging],
+      ['MM_PRODUCTION_FUNCTION_HOST', production],
+    ] as const) {
+      if (host !== '' && !HOSTNAME.test(host)) {
+        problems.push({ variable: name, message: 'must be a lower-case DNS hostname (no scheme)' });
+      }
+    }
+    if (staging !== '' && staging === production) {
+      problems.push({
+        variable: 'MM_CORE_API_FUNCTION_HOST',
+        message: 'is the production Core API Function: staging must not reach production data',
       });
     }
   }

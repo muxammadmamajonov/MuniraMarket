@@ -158,6 +158,14 @@ class Shop:
         )
 
     async def move(self, order_id: str, status: str, **fields: Any) -> httpx.Response:
+        # `expected_status` is required by the API. Unless a test sets it, it is the order's
+        # current status (what an operator's screen would show).
+        if "expected_status" not in fields:
+            shown = await self.client.get(
+                f"{ADMIN}/{order_id}", headers=self.headers(self.operator)
+            )
+            if shown.status_code == 200:
+                fields["expected_status"] = shown.json()["status"]
         return await self.client.patch(
             f"{ADMIN}/{order_id}/status",
             json={"status": status, **fields},

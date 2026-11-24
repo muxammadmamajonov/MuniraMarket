@@ -4,6 +4,9 @@ import { PageContainer } from '@/components/page-container';
 import { AddressEditorView } from '@/components/profile/address-editor-view';
 import { SiteHeader } from '@/components/site-header';
 import { getDictionary } from '@/i18n';
+import { titledMetadata } from '@/lib/page-metadata';
+
+export const generateMetadata = titledMetadata('newAddress');
 
 export default async function NewAddressPage({
   params,
