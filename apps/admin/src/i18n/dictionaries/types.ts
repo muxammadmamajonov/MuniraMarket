@@ -163,6 +163,9 @@ export interface Dictionary {
     title: string;
     message: string;
     retry: string;
+    /** Unknown admin URL (`not-found.tsx`). */
+    notFoundTitle: string;
+    notFoundMessage: string;
     forbidden: string;
     rateLimited: string;
     serviceUnavailable: string;

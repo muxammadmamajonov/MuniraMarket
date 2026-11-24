@@ -194,6 +194,8 @@ export const uz: Dictionary = {
     title: 'Xatolik yuz berdi',
     message: 'Ma’lumotlarni yuklab bo‘lmadi. Internetni tekshirib, qayta urinib ko‘ring.',
     retry: 'Qayta urinish',
+    notFoundTitle: 'Sahifa topilmadi',
+    notFoundMessage: 'Bunday sahifa yo‘q yoki ko‘chirilgan.',
     forbidden: 'Bu ma’lumotlarni ko‘rish huquqingiz yo‘q.',
     rateLimited: 'Juda ko‘p so‘rov. Birozdan keyin qayta urinib ko‘ring.',
     serviceUnavailable: 'Xizmat vaqtincha ishlamayapti. Birozdan keyin qayta urinib ko‘ring.',
