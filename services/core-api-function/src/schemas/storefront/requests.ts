@@ -131,8 +131,9 @@ export const orderStatusUpdateRequest = model({
   status: oneOf(ORDER_STATUSES),
   // Required (non-blank) when cancelling.
   reason: nullable(reason),
-  // Optimistic concurrency: refuse with 409 if the order is no longer in this status.
-  expected_status: nullable(oneOf(ORDER_STATUSES)),
+  // Optimistic concurrency, required: refuse with 409 if the order is no longer in this status,
+  // so one operator never silently overwrites another's change.
+  expected_status: oneOf(ORDER_STATUSES),
 });
 
 // --- profile (`PATCH /me`) and saved addresses -----------------------------------------------------

@@ -240,8 +240,8 @@ export interface paths {
      * Change Status
      * @description Move an order one step forward, or cancel it (``reason`` required; stock is returned).
      *
-     *     Send ``expected_status`` (the status you saw) to get ``409 order_status_conflict`` instead of
-     *     overwriting a colleague's change.
+     *     ``expected_status`` (the status you saw) is required: a colleague's change that already went
+     *     through gets ``409 order_status_conflict`` instead of being overwritten.
      */
     patch: operations['change_status_api_v1_admin_orders__order_id__status_patch'];
     trace?: never;
@@ -1861,7 +1861,7 @@ export interface components {
     OrderStatusGroup: 'all' | 'active' | 'delivering' | 'done' | 'cancelled';
     /** OrderStatusUpdateRequest */
     OrderStatusUpdateRequest: {
-      expected_status?: components['schemas']['OrderStatus'] | null;
+      expected_status: components['schemas']['OrderStatus'];
       /** Reason */
       reason?: string | null;
       status: components['schemas']['OrderStatus'];

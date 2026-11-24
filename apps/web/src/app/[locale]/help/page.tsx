@@ -5,12 +5,16 @@ import { PageContainer } from '@/components/page-container';
 import { SiteHeader } from '@/components/site-header';
 import { CARD, LINK_BUTTON_SECONDARY } from '@/components/ui-classes';
 import { getDictionary } from '@/i18n';
+import { pageAlternates } from '@/lib/site';
 
 export async function generateMetadata({ params }: PageProps<'/[locale]/help'>) {
   const { locale } = await params;
   if (!isLocale(locale)) return {};
   const dict = getDictionary(locale);
-  return { title: `${dict.help.title} · ${dict.meta.title}` };
+  return {
+    title: `${dict.help.title} · ${dict.meta.title}`,
+    alternates: pageAlternates(locale, '/help'),
+  };
 }
 
 /** How the shop works, in plain words. Only what the app really does; no invented promises. */

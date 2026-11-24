@@ -65,9 +65,9 @@ async function get(c: Ctx): Promise<Response> {
 }
 
 /**
- * Move an order one step forward, or cancel it (`reason` required; stock is returned). Send
- * `expected_status` (the status you saw) to get `409 order_status_conflict` instead of
- * overwriting a colleague's change.
+ * Move an order one step forward, or cancel it (`reason` required; stock is returned).
+ * `expected_status` (the status you saw) is required: a colleague's change that already went
+ * through gets `409 order_status_conflict` instead of being overwritten.
  */
 async function updateStatus(c: Ctx): Promise<Response> {
   const body = await readJsonBody(c);

@@ -274,6 +274,38 @@ describe('OrderDetailView: actions', () => {
     expect(screen.getAllByText('Подтверждён').length).toBeGreaterThan(0);
   });
 
+  it('asks before the final "delivered" step and sends nothing until confirmed', async () => {
+    const api = installFakeApi(
+      sessionHandler('operator'),
+      getOrder(orderDetail({ status: 'OUT_FOR_DELIVERY', allowed_transitions: ['DELIVERED'] })),
+      (call) =>
+        call.method === 'PATCH' && call.path === STATUS_PATH
+          ? json(orderDetail({ status: 'DELIVERED', allowed_transitions: [] }))
+          : undefined,
+    );
+    renderAdmin(<OrderDetailView id={ORDER_ID} />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Отметить доставленным' }));
+
+    const dialog = await screen.findByRole('dialog');
+    expect(patches(api)).toHaveLength(0);
+
+    // Cancelling the question changes nothing.
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Назад' }));
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(patches(api)).toHaveLength(0);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Отметить доставленным' }));
+    fireEvent.click(
+      within(await screen.findByRole('dialog')).getByRole('button', { name: 'Да, доставлен' }),
+    );
+    await waitFor(() => expect(patches(api)).toHaveLength(1));
+    expect(patches(api)[0]?.body).toEqual({
+      status: 'DELIVERED',
+      expected_status: 'OUT_FOR_DELIVERY',
+    });
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+  });
+
   it('ignores a second click while the first request is in flight', async () => {
     const gate = deferred<Response>();
     const api = installFakeApi(sessionHandler('operator'), getOrder(orderDetail()), (call) =>

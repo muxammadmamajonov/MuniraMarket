@@ -2206,14 +2206,7 @@
         "additionalProperties": false,
         "properties": {
           "expected_status": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/OrderStatus"
-              },
-              {
-                "type": "null"
-              }
-            ]
+            "$ref": "#/components/schemas/OrderStatus"
           },
           "reason": {
             "anyOf": [
@@ -2233,7 +2226,8 @@
           }
         },
         "required": [
-          "status"
+          "status",
+          "expected_status"
         ],
         "title": "OrderStatusUpdateRequest",
         "type": "object"
@@ -4732,7 +4726,7 @@
     },
     "/api/v1/admin/orders/{order_id}/status": {
       "patch": {
-        "description": "Move an order one step forward, or cancel it (``reason`` required; stock is returned).\n\nSend ``expected_status`` (the status you saw) to get ``409 order_status_conflict`` instead of\noverwriting a colleague's change.",
+        "description": "Move an order one step forward, or cancel it (``reason`` required; stock is returned).\n\n``expected_status`` (the status you saw) is required: a colleague's change that already went\nthrough gets ``409 order_status_conflict`` instead of being overwritten.",
         "operationId": "change_status_api_v1_admin_orders__order_id__status_patch",
         "parameters": [
           {

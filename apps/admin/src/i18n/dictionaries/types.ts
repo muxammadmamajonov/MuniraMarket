@@ -78,6 +78,10 @@ export interface Dictionary {
     loading: string;
     empty: string;
     emptyFiltered: string;
+    /** Button that reloads the list now (the list also reloads by itself). */
+    refresh: string;
+    /** Banner after a background reload found orders the operator had not seen; `{count}`. */
+    newOrders: string;
     columns: { number: string; status: string; items: string; total: string; created: string };
     pagination: { label: string; previous: string; next: string; pageOf: string };
   };
@@ -115,6 +119,8 @@ export interface Dictionary {
       confirm: string;
       dismiss: string;
     };
+    /** Asked before a step that cannot be undone ("delivered" is final). */
+    confirmFinal: { title: string; description: string; confirm: string; dismiss: string };
     notices: { conflict: string; updated: string };
     errors: { invalidTransition: string; failed: string };
     /** A line the shop no longer has (ADR 0018): lower its quantity while picking. */
@@ -129,6 +135,10 @@ export interface Dictionary {
       reasonInvalid: string;
       markOutOfStock: string;
       markOutOfStockHint: string;
+      /** Shown before saving with "mark as out of stock" on: it zeroes the product everywhere. */
+      markOutWarning: string;
+      markOutConfirm: string;
+      back: string;
       confirm: string;
       dismiss: string;
       adjustedFrom: string;

@@ -4,6 +4,9 @@ import { PageContainer } from '@/components/page-container';
 import { SiteHeader } from '@/components/site-header';
 import { ProfileView } from '@/components/profile-view';
 import { getDictionary } from '@/i18n';
+import { titledMetadata } from '@/lib/page-metadata';
+
+export const generateMetadata = titledMetadata('profile');
 
 export default async function ProfilePage({ params }: PageProps<'/[locale]/profile'>) {
   const { locale } = await params;

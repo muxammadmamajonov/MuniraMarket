@@ -26,6 +26,7 @@ operator's records and the deploy environment, never into this repository.
 - [ ] `workers.dev` and preview URLs are off for the three deployed Workers (they are in config).
 - [ ] WAF managed rules on; a rate-limiting rule for `/api/v1/auth/*` on the storefront and
       admin hostnames as a second layer above the API's own limits.
+- [ ] The exact WAF, rate-limit and alert parameters are in `o6-cloudflare-rules.md`.
 - [ ] A rate-limiting rule on the API hostname (`/api/v1/health*` and `/api/v1/internal/*`):
       every request there invokes the `coreapi` Function, and health readiness touches the database.
 - [ ] Optional: Cloudflare Access in front of the admin hostname (staff identity before the app's
@@ -57,7 +58,11 @@ operator's records and the deploy environment, never into this repository.
       and `20-verify-runtime-role.sql` pass.
 - [ ] `MM_APP_DATABASE_URL` connects as `mm_app`; the owner role (incl. Neon's injected
       `DATABASE_URL`) is used by nobody day to day.
-- [ ] Migration `0005` applied (security-state tables); readiness is `200` (it probes them).
+- [ ] Migrations applied up to the latest revision (`alembic current` shows `0009` at the time of
+      writing); readiness is `200`. Readiness probes the security-state tables and the objects added
+      by 0007-0009 (`services/core-api-function/src/readiness.ts`, ADR 0019), so a Function
+      deployed before its migration is unready. It cannot read `alembic_version`: still confirm
+      the revision explicitly before deploying the Function.
 - [ ] Restore drill done once (infra/neon/README.md), time-to-restore recorded.
 - [ ] Production contains no seed/demo data (`make seed` refuses outside development/test).
 

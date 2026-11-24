@@ -593,7 +593,9 @@ async def test_admin_status_errors(
 ) -> None:
     as_role(app, UserRole.OPERATOR)
     orders.error = error
-    response = await client.patch(f"{ADMIN}/{ORDER_ID}/status", json={"status": "PICKING"})
+    response = await client.patch(
+        f"{ADMIN}/{ORDER_ID}/status", json={"status": "PICKING", "expected_status": "NEW"}
+    )
     assert response.status_code == 409
     body = response.json()["error"]
     assert {key: value for key, value in body.items() if key != "message"} == expected
@@ -606,7 +608,9 @@ async def test_admin_unknown_order_is_404(
     as_role(app, UserRole.ADMIN)
     error_of(await client.get(f"{ADMIN}/{uuid.uuid4()}"), 404, "order_not_found")
     orders.error = OrderNotFoundError()
-    response = await client.patch(f"{ADMIN}/{uuid.uuid4()}/status", json={"status": "CONFIRMED"})
+    response = await client.patch(
+        f"{ADMIN}/{uuid.uuid4()}/status", json={"status": "CONFIRMED", "expected_status": "NEW"}
+    )
     error_of(response, 404, "order_not_found")
 
 
@@ -796,7 +800,9 @@ async def test_every_route_requires_a_session(
         *_customer_requests(client),
         client.get(ADMIN),
         client.get(f"{ADMIN}/{ORDER_ID}"),
-        client.patch(f"{ADMIN}/{ORDER_ID}/status", json={"status": "CONFIRMED"}),
+        client.patch(
+            f"{ADMIN}/{ORDER_ID}/status", json={"status": "CONFIRMED", "expected_status": "NEW"}
+        ),
         client.patch(f"{ADMIN}/{ORDER_ID}/items/{PRODUCT_ID}", json=ADJUST_BODY),
     ]
     for request in requests:
@@ -822,7 +828,9 @@ async def test_writes_require_csrf_but_reads_do_not(
         error_of(response, 403, "csrf_failed")
     as_role(app, UserRole.OPERATOR)
     assert (await client.get(ADMIN)).status_code == 200
-    response = await client.patch(f"{ADMIN}/{ORDER_ID}/status", json={"status": "CONFIRMED"})
+    response = await client.patch(
+        f"{ADMIN}/{ORDER_ID}/status", json={"status": "CONFIRMED", "expected_status": "NEW"}
+    )
     error_of(response, 403, "csrf_failed")
     response = await client.patch(f"{ADMIN}/{ORDER_ID}/items/{PRODUCT_ID}", json=ADJUST_BODY)
     error_of(response, 403, "csrf_failed")
@@ -936,7 +944,9 @@ async def test_real_session_and_csrf_wiring(clock: FakeClock) -> None:
         before = len(repository.calls)
         error_of(await client.get(ADMIN, headers=session), 403, "forbidden")
         response = await client.patch(
-            f"{ADMIN}/{ORDER_ID}/status", json={"status": "CONFIRMED"}, headers=csrf
+            f"{ADMIN}/{ORDER_ID}/status",
+            json={"status": "CONFIRMED", "expected_status": "NEW"},
+            headers=csrf,
         )
         error_of(response, 403, "forbidden")
         assert len(repository.calls) == before
@@ -947,7 +957,9 @@ async def test_real_session_and_csrf_wiring(clock: FakeClock) -> None:
         users.users[record.telegram_user_id] = dataclasses.replace(record, role=UserRole.OPERATOR)
         error_of(await client.get(ADMIN, headers=session), 403, "forbidden")
         response = await client.patch(
-            f"{ADMIN}/{ORDER_ID}/status", json={"status": "CONFIRMED"}, headers=csrf
+            f"{ADMIN}/{ORDER_ID}/status",
+            json={"status": "CONFIRMED", "expected_status": "NEW"},
+            headers=csrf,
         )
         error_of(response, 403, "forbidden")
         assert len(repository.calls) == before
@@ -967,11 +979,15 @@ async def test_real_session_and_csrf_wiring(clock: FakeClock) -> None:
         }
         assert (await client.get(ADMIN, headers=admin_session)).status_code == 200
         response = await client.patch(
-            f"{ADMIN}/{ORDER_ID}/status", json={"status": "CONFIRMED"}, headers=admin_session
+            f"{ADMIN}/{ORDER_ID}/status",
+            json={"status": "CONFIRMED", "expected_status": "NEW"},
+            headers=admin_session,
         )
         error_of(response, 403, "csrf_failed")
         response = await client.patch(
-            f"{ADMIN}/{ORDER_ID}/status", json={"status": "CONFIRMED"}, headers=admin_csrf
+            f"{ADMIN}/{ORDER_ID}/status",
+            json={"status": "CONFIRMED", "expected_status": "NEW"},
+            headers=admin_csrf,
         )
         assert response.status_code == 200
 
@@ -986,7 +1002,9 @@ async def test_customers_cannot_use_the_back_office(
         await client.get(ADMIN),
         await client.get(ADMIN, params={"status": "NEW"}),
         await client.get(f"{ADMIN}/{ORDER_ID}"),
-        await client.patch(f"{ADMIN}/{ORDER_ID}/status", json={"status": "CONFIRMED"}),
+        await client.patch(
+            f"{ADMIN}/{ORDER_ID}/status", json={"status": "CONFIRMED", "expected_status": "NEW"}
+        ),
         await client.patch(f"{ADMIN}/{ORDER_ID}/items/{PRODUCT_ID}", json=ADJUST_BODY),
     ):
         assert response.json() == {
@@ -1040,7 +1058,8 @@ async def test_staff_can_use_the_back_office(
         {"status": "SHIPPED"},
         {"status": "CANCELLED", "reason": "  "},
         {"status": "CONFIRMED", "expected_status": "LOST"},
-        {"status": "CONFIRMED", "extra": 1},
+        {"status": "CONFIRMED"},  # expected_status is required
+        {"status": "CONFIRMED", "expected_status": "NEW", "extra": 1},
         {},
     ],
 )

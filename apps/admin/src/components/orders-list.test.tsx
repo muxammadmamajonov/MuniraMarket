@@ -78,6 +78,38 @@ describe('OrdersList', () => {
     expect(screen.queryByRole('navigation', { name: 'Страницы' })).not.toBeInTheDocument();
   });
 
+  it('reloads in the background on Refresh and announces orders it had not shown', async () => {
+    const NEW_ID = '9d1c3a55-6e0b-4b7a-a1c2-3f4e5d6c7b88';
+    let calls = 0;
+    installFakeApi(sessionHandler('operator'), () => {
+      calls += 1;
+      return json(
+        orderPage(
+          calls === 1
+            ? [orderSummary()]
+            : [orderSummary({ id: NEW_ID, number: 'MM-000200' }), orderSummary()],
+        ),
+      );
+    });
+    renderAdmin(<OrdersList />);
+    await screen.findByRole('link', { name: 'MM-000123' });
+    expect(screen.queryByRole('button', { name: /Новых заказов/ })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Обновить' }));
+    // The list never turns into a skeleton while it reloads.
+    expect(screen.getByRole('link', { name: 'MM-000123' })).toBeInTheDocument();
+    expect(await screen.findByRole('link', { name: 'MM-000200' })).toBeInTheDocument();
+    const banner = await screen.findByRole('button', { name: 'Новых заказов: 1' });
+
+    // A second reload with the same orders does not count them again.
+    fireEvent.click(screen.getByRole('button', { name: 'Обновить' }));
+    await waitFor(() => expect(calls).toBe(3));
+    expect(screen.getByRole('button', { name: 'Новых заказов: 1' })).toBe(banner);
+
+    fireEvent.click(banner);
+    expect(screen.queryByRole('button', { name: /Новых заказов/ })).not.toBeInTheDocument();
+  });
+
   it('renders the uz copy and currency', async () => {
     installFakeApi(sessionHandler('operator'), () => json(orderPage([orderSummary()])));
     renderAdmin(<OrdersList />, 'uz');

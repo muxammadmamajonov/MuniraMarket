@@ -34,13 +34,24 @@ describe.skipIf(!hasDatabase)('admin orders', () => {
 
   const staffGet = (path: string, session: TestSession = operator.session) =>
     call(app, 'GET', path, { entrance: 'admin', cookie: session.cookie });
-  const move = (orderId: string, body: Json, session: TestSession = operator.session) =>
-    call(app, 'PATCH', `${ADMIN}/${orderId}/status`, {
+  // `expected_status` is required by the API. Unless a test sets it, it is the order's current
+  // status (what an operator's screen would show).
+  const move = async (orderId: string, body: Json, session: TestSession = operator.session) => {
+    let json = body;
+    if (!('expected_status' in body)) {
+      const { rows } = await db.query<{ status: string }>(
+        'SELECT status::text AS status FROM orders WHERE id = $1',
+        [orderId],
+      );
+      json = rows[0] === undefined ? body : { ...body, expected_status: rows[0].status };
+    }
+    return call(app, 'PATCH', `${ADMIN}/${orderId}/status`, {
       entrance: 'admin',
       cookie: session.cookie,
       headers: session.writeHeaders,
-      json: body,
+      json,
     });
+  };
   const newOrder = async (): Promise<Json & { id: string; number: string }> => {
     await addToCart(app, me, apple, 2);
     return (await place(app, me)) as Json & { id: string; number: string };
@@ -183,7 +194,19 @@ describe.skipIf(!hasDatabase)('admin orders', () => {
       'order_status_conflict',
     );
     expect(conflict['current_status']).toBe('CONFIRMED');
-    await errorOf(await move(crypto.randomUUID(), { status: 'CONFIRMED' }), 404, 'order_not_found');
+    await errorOf(
+      await move(crypto.randomUUID(), { status: 'CONFIRMED', expected_status: 'NEW' }),
+      404,
+      'order_not_found',
+    );
+    // Omitting expected_status is a validation error, never a silent overwrite.
+    const omitted = await call(app, 'PATCH', `${ADMIN}/${order.id}/status`, {
+      entrance: 'admin',
+      cookie: operator.session.cookie,
+      headers: operator.session.writeHeaders,
+      json: { status: 'PICKING' },
+    });
+    await errorOf(omitted, 422, 'validation_error');
     await errorOf(await move(order.id, { status: 'SHIPPED' }), 422, 'validation_error');
     await errorOf(
       await move(order.id, { status: 'CANCELLED', reason: '  ' }),
@@ -251,7 +274,7 @@ describe.skipIf(!hasDatabase)('admin orders', () => {
     const noCsrf = await call(app, 'PATCH', `${ADMIN}/${order.id}/status`, {
       entrance: 'admin',
       cookie: operator.session.cookie,
-      json: { status: 'CONFIRMED' },
+      json: { status: 'CONFIRMED', expected_status: 'NEW' },
     });
     await errorOf(noCsrf, 403, 'csrf_failed');
     const { rows } = await db.query<{ status: string }>(

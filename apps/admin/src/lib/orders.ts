@@ -33,3 +33,8 @@ export function orderHref(locale: Locale, id: string): string {
 
 /** Order ids are UUIDs; anything else cannot exist, so no request is made for it. */
 export const ORDER_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** Forward steps that cannot be undone: the operator is asked once more before they are sent. */
+export function needsFinalConfirmation(status: OrderStatus): boolean {
+  return status === 'DELIVERED';
+}

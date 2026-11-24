@@ -85,8 +85,8 @@ async def change_status(
 ) -> AdminOrderDetail:
     """Move an order one step forward, or cancel it (``reason`` required; stock is returned).
 
-    Send ``expected_status`` (the status you saw) to get ``409 order_status_conflict`` instead of
-    overwriting a colleague's change.
+    ``expected_status`` (the status you saw) is required: a colleague's change that already went
+    through gets ``409 order_status_conflict`` instead of being overwritten.
     """
     try:
         record = await orders.change_status(

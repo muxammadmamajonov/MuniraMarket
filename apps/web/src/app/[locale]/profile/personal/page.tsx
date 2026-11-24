@@ -4,6 +4,9 @@ import { PageContainer } from '@/components/page-container';
 import { PersonalInfoView } from '@/components/profile/personal-info-view';
 import { SiteHeader } from '@/components/site-header';
 import { getDictionary } from '@/i18n';
+import { titledMetadata } from '@/lib/page-metadata';
+
+export const generateMetadata = titledMetadata('personal');
 
 export default async function PersonalInfoPage({
   params,

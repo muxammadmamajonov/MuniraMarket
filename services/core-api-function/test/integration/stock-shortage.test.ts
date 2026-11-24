@@ -49,8 +49,17 @@ describe.skipIf(!hasDatabase)('stock shortages (ADR 0018)', () => {
       reason: 'Javonda qolmadi',
       ...extra,
     });
-  const move = (orderId: string, status: string) =>
-    staff('PATCH', `${ADMIN}/${orderId}/status`, { status });
+  // `expected_status` is required by the API: use the order's current status, as the screen would.
+  const move = async (orderId: string, status: string) => {
+    const { rows } = await db.query<{ status: string }>(
+      'SELECT status::text AS status FROM orders WHERE id = $1',
+      [orderId],
+    );
+    return staff('PATCH', `${ADMIN}/${orderId}/status`, {
+      status,
+      expected_status: rows[0]?.status,
+    });
+  };
   const outbox = async (orderId: string) =>
     (
       await db.query<{ event_type: string; payload: Json }>(

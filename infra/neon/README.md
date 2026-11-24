@@ -144,6 +144,12 @@ timestamp; promoting it (or pointing `MM_APP_DATABASE_URL` at it) is the restore
   redeploy the matching Function code. Orders written after the restore point must be
   reconciled by hand from the audit log and logs; write that down in the incident.
 
+**Restore drill and logical backup:** the procedure below points a laptop at restored data, which
+contradicts this README's own rule. Use [backup-restore-runbook.md](backup-restore-runbook.md)
+instead (restore into a branch from a CI job, encrypted logical dump, acceptance checklist).
+SQL Editor queries for review (S2 grant, object inventory, RLS preflight) are in
+[review/](review/README.md); the RLS design is in [rls-review.md](rls-review.md).
+
 **Restore drill (before launch, then quarterly)**
 
 - [ ] Create a branch from production at "now minus 1 hour" (before launch: from the empty,

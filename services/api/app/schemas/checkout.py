@@ -161,8 +161,9 @@ class OrderStatusUpdateRequest(BaseModel):
     status: OrderStatus
     # Required (non-blank) when cancelling.
     reason: Reason | None = None
-    # Optimistic concurrency: refuse with 409 if the order is no longer in this status.
-    expected_status: OrderStatus | None = None
+    # Optimistic concurrency, required: refuse with 409 if the order is no longer in this status,
+    # so one operator never silently overwrites another's change.
+    expected_status: OrderStatus
 
 
 # --- responses ------------------------------------------------------------------------------------

@@ -31,7 +31,8 @@ customer's phone number or address: use a staff test account and a test address.
 - [ ] Rate limit (tap retry repeatedly) → readable wait message, buttons locked, recovers.
 - [ ] Orders list and order detail; cancel a `NEW` order with a reason.
 - [ ] Back/forward navigation, pull-to-refresh, rotate to landscape.
-- [ ] Screen reader quick pass (VoiceOver, TalkBack): slot chips announced as tabs, windows as radios.
+- [ ] Screen reader quick pass (VoiceOver, TalkBack): the tab bar, cart steppers, address picker
+      and checkout form are announced sensibly and every control is reachable.
 
 ## Telegram Mini App
 

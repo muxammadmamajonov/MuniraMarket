@@ -13,5 +13,11 @@ MM_TELEGRAM_BOT_ID=0000000000
 # Also the Function's CSRF_TRUSTED_ORIGINS (neon.ts).
 MM_CSRF_TRUSTED_ORIGINS=https://shop.staging.example.test,https://admin.staging.example.test
 
+# STAGING ONLY. The host (no scheme) of the Core API Function the staging gateway's secret
+# CORE_API_FUNCTION_ORIGIN points at, and of the production one. The validator refuses a staging
+# deploy where they are equal. Not secrets; look them up with `neon functions get coreapi`.
+MM_CORE_API_FUNCTION_HOST=
+MM_PRODUCTION_FUNCTION_HOST=
+
 # Release label stamped on every Core API log line (the Function's APP_RELEASE). Required in production.
 APP_RELEASE=

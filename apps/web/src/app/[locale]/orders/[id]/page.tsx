@@ -5,6 +5,9 @@ import { PageContainer } from '@/components/page-container';
 import { SiteHeader } from '@/components/site-header';
 import { getDictionary } from '@/i18n';
 import { firstParam } from '@/lib/catalog';
+import { titledMetadata } from '@/lib/page-metadata';
+
+export const generateMetadata = titledMetadata('order');
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 

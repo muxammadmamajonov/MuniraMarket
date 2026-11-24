@@ -7,7 +7,6 @@ import Script from 'next/script';
 import { BottomNav } from '@/components/bottom-nav';
 import { LocaleSync } from '@/components/locale-sync';
 import { TelegramChrome } from '@/components/telegram-chrome';
-import { ZoomGuard } from '@/components/zoom-guard';
 import { getDictionary } from '@/i18n';
 import { LocaleProvider } from '@/i18n/context';
 import { CartProvider } from '@/lib/cart';
@@ -15,6 +14,7 @@ import { nonceFromContentSecurityPolicy } from '@/lib/csp';
 import { readYandexMapsGeocoderApiKey, readYandexMapsJavaScriptApiKey } from '@/lib/maps/config';
 import { MapsConfigProvider } from '@/lib/maps/use-yandex-maps';
 import { SessionProvider } from '@/lib/session';
+import { DEFAULT_SHARE_IMAGE, OG_LOCALE, siteOrigin } from '@/lib/site';
 import { TELEGRAM_WEB_APP_SCRIPT_URL, TelegramProvider } from '@/lib/telegram';
 import { BotUsernameProvider } from '@/lib/telegram/bot-link';
 import { readTelegramBotUsername } from '@/lib/telegram/bot-username';
@@ -30,11 +30,8 @@ export function generateStaticParams() {
 export const viewport: Viewport = {
   width: 'device-width',
   initialScale: 1,
-  // No pinch or double-tap zoom: the storefront is an app, laid out for the phone it runs on.
-  // iOS WebKit may ignore these two, so `components/zoom-guard.tsx` and `touch-action` in
-  // globals.css block the gestures as well. Text inputs are 16px, so focusing one never zooms.
-  maximumScale: 1,
-  userScalable: false,
+  // Zoom is left on (no `maximum-scale`, no `user-scalable=no`): disabling it fails WCAG 1.4.4.
+  // Text inputs are 16px, so focusing one never zooms on iOS.
   // Lets `env(safe-area-inset-*)` work (notch / home indicator), including in the Mini App; the
   // shell pads by the `--mm-inset-*` variables built from it (globals.css).
   viewportFit: 'cover',
@@ -52,8 +49,20 @@ export async function generateMetadata({ params }: LayoutProps<'/[locale]'>): Pr
   if (!isLocale(locale)) return {};
   const { meta } = getDictionary(locale);
   return {
+    // Resolves every relative URL in the metadata (canonical, hreflang, share images).
+    metadataBase: new URL(siteOrigin()),
     title: meta.title,
     description: meta.description,
+    // A page that sets its own `openGraph` replaces this object, so it repeats these fields.
+    openGraph: {
+      type: 'website',
+      siteName: meta.title,
+      locale: OG_LOCALE[locale],
+      title: meta.title,
+      description: meta.description,
+      images: [DEFAULT_SHARE_IMAGE],
+    },
+    twitter: { card: 'summary' },
     // Generated from the shared mark by `scripts/export-brand.mts`.
     icons: {
       icon: [{ url: '/brand/munira-mark.svg', type: 'image/svg+xml' }],
@@ -97,7 +106,6 @@ export default async function RootLayout({ children, params }: LayoutProps<'/[lo
             <TelegramProvider>
               <SessionProvider>
                 <TelegramChrome />
-                <ZoomGuard />
                 <LocaleSync />
                 <CartProvider>
                   <MapsConfigProvider apiKey={mapsApiKey} geocoderApiKey={geocoderApiKey}>

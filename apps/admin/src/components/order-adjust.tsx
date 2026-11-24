@@ -44,7 +44,9 @@ export function AdjustDialog({
 
   const [quantity, setQuantity] = useState('0');
   const [reason, setReason] = useState(copy.reasons[0] ?? '');
-  const [markOut, setMarkOut] = useState(true);
+  // Off by default: zeroing the product's stock for everyone is a separate, deliberate decision.
+  const [markOut, setMarkOut] = useState(false);
+  const [confirmingMarkOut, setConfirmingMarkOut] = useState(false);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [touched, setTouched] = useState(false);
@@ -57,6 +59,11 @@ export function AdjustDialog({
     event.preventDefault();
     setTouched(true);
     if (!quantityOk || !reasonOk || pending) return;
+    // Zeroing the stock hides the product from every customer: ask once more before sending.
+    if (markOut && !confirmingMarkOut) {
+      setConfirmingMarkOut(true);
+      return;
+    }
     setPending(true);
     setError(null);
     try {
@@ -172,7 +179,10 @@ export function AdjustDialog({
           <input
             type="checkbox"
             checked={markOut}
-            onChange={(event) => setMarkOut(event.target.checked)}
+            onChange={(event) => {
+              setMarkOut(event.target.checked);
+              setConfirmingMarkOut(false);
+            }}
             data-testid="adjust-mark-out"
             className="mt-0.5 size-5 shrink-0 accent-(--mm-color-primary)"
           />
@@ -181,6 +191,16 @@ export function AdjustDialog({
             <span className="block text-sm text-muted-foreground">{copy.markOutOfStockHint}</span>
           </span>
         </label>
+
+        {confirmingMarkOut ? (
+          <p
+            role="alert"
+            data-testid="adjust-mark-out-warning"
+            className="rounded-2xl bg-danger-soft px-4 py-3 text-sm font-medium text-danger"
+          >
+            {copy.markOutWarning}
+          </p>
+        ) : null}
 
         {error === null ? null : (
           <p
@@ -192,11 +212,21 @@ export function AdjustDialog({
         )}
 
         <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-          <Button variant="secondary" onClick={onClose} disabled={pending}>
-            {copy.dismiss}
-          </Button>
+          {confirmingMarkOut ? (
+            <Button
+              variant="secondary"
+              onClick={() => setConfirmingMarkOut(false)}
+              disabled={pending}
+            >
+              {copy.back}
+            </Button>
+          ) : (
+            <Button variant="secondary" onClick={onClose} disabled={pending}>
+              {copy.dismiss}
+            </Button>
+          )}
           <Button type="submit" disabled={pending} data-testid="adjust-confirm">
-            {copy.confirm}
+            {confirmingMarkOut ? copy.markOutConfirm : copy.confirm}
           </Button>
         </div>
       </form>

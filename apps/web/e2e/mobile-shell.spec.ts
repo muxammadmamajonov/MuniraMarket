@@ -12,7 +12,7 @@ import { expect, test, type Page } from '@playwright/test';
  * - The header slot: the logo at home, the page title everywhere else (cut to fit between
  *   Telegram's Close and "…" at 320px); no in-app back control anywhere, only Telegram's native
  *   BackButton (hidden on the tab roots, history first, then the logical parent on a deep link).
- * - No pinch or double-tap zoom, native vertical overscroll.
+ * - Pinch zoom stays available (WCAG 1.4.4), double-tap zoom off, native vertical overscroll.
  * - 320px, 390px, desktop, dark mode, long Uzbek/Russian labels, a huge cart count, a long
  *   profile name, offline and a keyboard-sized viewport: never a sideways scroll.
  *
@@ -691,12 +691,15 @@ test.describe('Telegram fullscreen: page titles and the native BackButton', () =
 test.describe('zoom and scrolling', () => {
   test.beforeEach(async ({ page }) => browseAnonymously(page));
 
-  test('no pinch or double-tap zoom; vertical overscroll left native', async ({ page }) => {
+  test('pinch zoom allowed, no double-tap delay; vertical overscroll left native', async ({
+    page,
+  }) => {
     await page.goto('/uz/catalog');
     await pageSettled(page);
     const viewport = await page.locator('meta[name="viewport"]').getAttribute('content');
-    expect(viewport).toContain('maximum-scale=1');
-    expect(viewport).toContain('user-scalable=no');
+    // Zoom must stay available to low-vision users (WCAG 1.4.4 / 1.4.10).
+    expect(viewport).not.toContain('maximum-scale');
+    expect(viewport).not.toContain('user-scalable');
     const root = await page.evaluate(() => {
       const style = getComputedStyle(document.documentElement);
       return {
@@ -705,7 +708,7 @@ test.describe('zoom and scrolling', () => {
         overscrollX: style.overscrollBehaviorX,
       };
     });
-    expect(root.touchAction).toBe('pan-x pan-y');
+    expect(root.touchAction).toBe('manipulation');
     expect(root.overscrollY).toBe('auto');
     expect(root.overscrollX).toBe('none');
     // The sticky header is solid: no backdrop blur re-composited on every scroll frame.
@@ -715,14 +718,14 @@ test.describe('zoom and scrolling', () => {
         .first()
         .evaluate((element) => getComputedStyle(element).backdropFilter),
     ).toBe('none');
-    // WebKit's pinch gesture is cancelled.
+    // WebKit's pinch gesture is no longer cancelled.
     expect(
       await page.evaluate(() => {
         const event = new Event('gesturestart', { cancelable: true, bubbles: true });
         document.body.dispatchEvent(event);
         return event.defaultPrevented;
       }),
-    ).toBe(true);
+    ).toBe(false);
     // The catalog is a normal document scroll (no nested scroller to get stuck in).
     await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
     await expect.poll(() => page.evaluate(() => window.scrollY)).toBeGreaterThan(0);

@@ -9,6 +9,9 @@ import { SearchForm } from '@/components/search-form';
 import { SiteHeader } from '@/components/site-header';
 import { getDictionary } from '@/i18n';
 import { fetchCategories } from '@/lib/api/server';
+import { titledMetadata } from '@/lib/page-metadata';
+
+export const generateMetadata = titledMetadata('catalog', { indexable: true, path: '/catalog' });
 
 /** The whole catalog: search and every top-level category. The "Catalog" tab lands here. */
 export default async function CatalogPage({ params }: PageProps<'/[locale]/catalog'>) {

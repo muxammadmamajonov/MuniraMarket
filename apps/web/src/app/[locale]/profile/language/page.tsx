@@ -4,6 +4,9 @@ import { LanguageSetting } from '@/components/language-setting';
 import { PageContainer } from '@/components/page-container';
 import { SiteHeader } from '@/components/site-header';
 import { getDictionary } from '@/i18n';
+import { titledMetadata } from '@/lib/page-metadata';
+
+export const generateMetadata = titledMetadata('language');
 
 export default async function LanguagePage({ params }: PageProps<'/[locale]/profile/language'>) {
   const { locale } = await params;
