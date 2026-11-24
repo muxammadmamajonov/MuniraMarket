@@ -192,6 +192,8 @@ jobs:
           MM_API_HOSTNAME: api.staging.example.test
           MM_TELEGRAM_BOT_ID: '1234567890'
           MM_CSRF_TRUSTED_ORIGINS: https://shop.staging.example.test,https://admin.staging.example.test
+          MM_CORE_API_FUNCTION_HOST: staging-core-api-function.example.test
+          MM_PRODUCTION_FUNCTION_HOST: production-core-api-function.example.test
         run: |
           node infra/cloudflare/scripts/validate-deploy-env.mts --mode staging
           # Production must refuse fixture hostnames and a missing release (fail closed).

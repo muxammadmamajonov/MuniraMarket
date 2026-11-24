@@ -7,6 +7,7 @@
 ## Completed work (from P0 and ongoing)
 
 ### Admin app improvements (P0)
+
 - ✓ Error boundaries: `apps/admin/src/app/[locale]/error.tsx` (generic error display, support code, retry)
 - ✓ Not-found handler: `apps/admin/src/app/[locale]/not-found.tsx` (404 with locale-aware link)
 - ✓ i18n: added `errors.notFoundTitle` and `errors.notFoundMessage` to `uz.ts`, `ru.ts`, `types.ts`
@@ -14,6 +15,7 @@
 - ✓ Verification: 371/371 admin tests passing, eslint clean, typecheck clean
 
 ### Roadmap and documentation
+
 - ✓ `infra/launch/roadmap.md`: canonical P0/P1/P2 list (P0 committed in cefd503)
 - ✓ `infra/launch/p1-handoff.md`: detailed state of each P1 item (prepared/open/closed)
 - ✓ Verified: ADR 0019, readiness probes, migration-policy test all in place
@@ -21,6 +23,7 @@
 ## P1 Gate items status
 
 ### D1: Expand-then-contract migration policy
+
 - **State:** Prepared, documented, enforcement test active
 - **What's done:**
   - `architecture/0019-expand-then-contract-migrations.md` written and marked accepted
@@ -33,6 +36,7 @@
 - **Gate line:** D1 policy accepted; the branch readiness check seen (503 then 200)
 
 ### S2: Revoke DELETE on `orders`, `order_items`, `order_status_history`
+
 - **State:** SQL prepared, documented, ready for branch run
 - **What's done:**
   - Audit complete: no deletes of these tables in Function code
@@ -46,6 +50,7 @@
 - **Gate line:** S2 revoke run on branch, integration suite green, run on production, `10`/`20` updated
 
 ### P1: Cart-read optimization
+
 - **State:** Not started (requires security review)
 - **What's needed:**
   - [ ] Security team approves session/rate-limit transaction changes
@@ -55,6 +60,7 @@
 - **Gate line:** P1 cart-read optimization approved, done and measured
 
 ### O4: Staging environment isolation strategy
+
 - **State:** Dual-layer protection verified, decision framework created
 - **What's done:**
   - `validate-deploy-env.mts --mode staging` enforces config-time check (tested)
@@ -68,6 +74,7 @@
 - **Gate line:** O4 decision taken (and the Function check built, or "no staging" recorded)
 
 ### O5: Inventory and PUBLIC privilege audit
+
 - **State:** SQL prepared, ready for branch run
 - **What's done:**
   - `infra/neon/review/o5-inventory-and-public-privileges.sql` with 15 read-only queries
@@ -79,6 +86,7 @@
 - **Gate line:** O5 results reviewed and any follow-up decided
 
 ### O6: Cloudflare WAF and rate-limit rules
+
 - **State:** Rules documented, ready for Cloudflare dashboard
 - **What's done:**
   - `infra/launch/o6-cloudflare-rules.md` with detailed rule parameters
@@ -90,6 +98,7 @@
 - **Gate line:** O6 rules and alerts live and tested
 
 ### O7: Backups and restore time
+
 - **State:** Runbook documented, ready for setup
 - **What's done:**
   - `infra/neon/backup-restore-runbook.md` with backup strategy and restore drill procedure

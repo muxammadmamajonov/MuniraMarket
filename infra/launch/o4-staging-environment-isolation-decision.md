@@ -23,11 +23,13 @@ The gateway Worker (`muniramarket-api-gateway-staging`) holds a secret `CORE_API
 **What:** The gateway sends an `APP_ENV` header (or query param) on each request; the Function rejects requests where `APP_ENV` does not match its own environment (from the Function secret `APP_ENV=staging|production`).
 
 **Benefits:**
+
 - Fail-closed: prevents staging from reaching production _even if_ the gateway's `CORE_API_FUNCTION_ORIGIN` secret is misconfigured to point to production
 - Does not depend on secrets being different
 - Transparent to the client (not part of the API contract)
 
 **Drawbacks:**
+
 - Requires changes to gateway-to-Function authentication (critical path)
 - Adds latency: one more header validation in every request
 - Increases complexity: introduces `APP_ENV` as a new required Function secret

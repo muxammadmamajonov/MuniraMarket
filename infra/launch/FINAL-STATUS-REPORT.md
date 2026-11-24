@@ -26,13 +26,13 @@ All P0 items shipped and committed:
 
 ### Documentation created/updated
 
-| File | Purpose | Status |
-|------|---------|--------|
-| `infra/launch/roadmap.md` | Canonical P0/P1/P2 roadmap | ✅ Created |
-| `infra/launch/p1-handoff.md` | Detailed state of each P1 item | ✅ Created |
-| `infra/launch/launch-checklist.md` | Production launch steps | ✅ **Updated with D1** |
-| `infra/launch/P1-PREPARATION-SUMMARY.md` | This session's work summary | ✅ Created |
-| `infra/launch/o4-staging-environment-isolation-decision.md` | O4 decision framework | ✅ Created |
+| File                                                        | Purpose                        | Status                 |
+| ----------------------------------------------------------- | ------------------------------ | ---------------------- |
+| `infra/launch/roadmap.md`                                   | Canonical P0/P1/P2 roadmap     | ✅ Created             |
+| `infra/launch/p1-handoff.md`                                | Detailed state of each P1 item | ✅ Created             |
+| `infra/launch/launch-checklist.md`                          | Production launch steps        | ✅ **Updated with D1** |
+| `infra/launch/P1-PREPARATION-SUMMARY.md`                    | This session's work summary    | ✅ Created             |
+| `infra/launch/o4-staging-environment-isolation-decision.md` | O4 decision framework          | ✅ Created             |
 
 ### ADR 0019 (Expand-then-contract migrations)
 
@@ -43,15 +43,15 @@ All P0 items shipped and committed:
 
 ### P1 Gate: 7-item checklist
 
-| Item | Prepared | Needs | Blocker |
-|------|----------|-------|---------|
-| **D1** Expand-then-contract policy | ✅ Docs + code + tests | Team approves + branch test | Decision |
-| **S2** Revoke DELETE | ✅ SQL ready | Branch run + prod run | DB access |
-| **P1** Cart-read optimization | ❌ Not started | Security review + measurement | Security team |
-| **O4** Staging isolation | ✅ Decision framework | Choose Option A/B | Decision |
-| **O5** Privilege audit | ✅ SQL ready | Branch run + review | DB access |
-| **O6** Cloudflare rules | ✅ Rules documented | Dashboard creation | Dashboard |
-| **O7** Backups + restore | ✅ Runbook ready | Setup + drill + time record | Storage/setup |
+| Item                               | Prepared               | Needs                         | Blocker       |
+| ---------------------------------- | ---------------------- | ----------------------------- | ------------- |
+| **D1** Expand-then-contract policy | ✅ Docs + code + tests | Team approves + branch test   | Decision      |
+| **S2** Revoke DELETE               | ✅ SQL ready           | Branch run + prod run         | DB access     |
+| **P1** Cart-read optimization      | ❌ Not started         | Security review + measurement | Security team |
+| **O4** Staging isolation           | ✅ Decision framework  | Choose Option A/B             | Decision      |
+| **O5** Privilege audit             | ✅ SQL ready           | Branch run + review           | DB access     |
+| **O6** Cloudflare rules            | ✅ Rules documented    | Dashboard creation            | Dashboard     |
+| **O7** Backups + restore           | ✅ Runbook ready       | Setup + drill + time record   | Storage/setup |
 
 ---
 
@@ -162,6 +162,7 @@ Once all 7 items are done, P2 work can begin.
 ## Constraints (from session start)
 
 Adhered to throughout:
+
 - ✅ No production deploys
 - ✅ No git commits/pushes
 - ✅ No database writes
