@@ -1,5 +1,6 @@
 @import 'tailwindcss';
 @import '@muniramarket/ui/styles/tokens.css';
+@import '@muniramarket/ui/styles/photo.css';
 
 /*
  * Motion tokens. The built-in easings are too weak for UI: `ease-out-strong` for things that
@@ -101,13 +102,16 @@
   --mm-tg-content-bottom: 0px;
   --mm-tg-content-left: 0px;
   --mm-tg-content-right: 0px;
-  --mm-inset-top: max(
-    env(safe-area-inset-top, 0px),
-    calc(var(--mm-tg-safe-top) + var(--mm-tg-content-top))
-  );
+  /* Device inset only (status bar / notch). In Telegram fullscreen the Close / "…" row sits
+     right below it, `--mm-tg-content-top` tall: Telegram reports the content inset *relative to*
+     the device safe area, so the two add up. Taking the max of them let the page start under
+     Telegram's buttons. The header fills that row with the centred logo (site-header.tsx). */
+  --mm-safe-top: max(env(safe-area-inset-top, 0px), var(--mm-tg-safe-top));
+  --mm-inset-top: calc(var(--mm-safe-top) + var(--mm-tg-content-top));
   --mm-inset-bottom: max(
     env(safe-area-inset-bottom, 0px),
-    calc(var(--mm-tg-safe-bottom) + var(--mm-tg-content-bottom))
+    var(--mm-tg-safe-bottom),
+    var(--mm-tg-content-bottom)
   );
   --mm-inset-left: max(
     env(safe-area-inset-left, 0px),
@@ -118,6 +122,10 @@
     calc(var(--mm-tg-safe-right) + var(--mm-tg-content-right))
   );
   --mm-nav-h: 0px;
+  /* Room kept on each side of the header title for Telegram's own Close and "…" buttons in
+     fullscreen (Close is the wider one, about 100px with its margin in Russian, "Закрыть").
+     Symmetric, so the title stays centred on the screen. */
+  --mm-tg-controls: 6.5rem;
 }
 
 /* Matches the bottom navigation's `md:hidden`: below 48rem, and only while it is rendered. */
@@ -129,13 +137,50 @@
 
 @layer base {
   html {
+    /* The page never jumps sideways when content starts or stops overflowing. */
+    scrollbar-gutter: stable;
+    scrollbar-width: thin;
+    scrollbar-color: var(--mm-color-border-strong) transparent;
     -webkit-text-size-adjust: 100%;
     -webkit-tap-highlight-color: transparent;
-    overscroll-behavior: none;
+    /*
+     * Vertical overscroll is left native on purpose. `overscroll-behavior: none` here switched off
+     * WebKit's rubber band for the whole page, so in Telegram on iOS a flick on a short page (the
+     * catalog scrolls only a screen or so) hit a dead stop, and a drag at the top went nowhere:
+     * that read as a stuck page. Telegram's swipe-to-close no longer needs it either:
+     * `disableVerticalSwipes()` (components/telegram-chrome.tsx) keeps that gesture for the
+     * page. Only the sideways bounce stays off; the page never pans horizontally.
+     */
+    overscroll-behavior-x: none;
+    /*
+     * Panning only: no pinch zoom and no double-tap zoom anywhere (and no 300ms tap delay).
+     * Effective `touch-action` is the intersection with every ancestor, so this covers the whole
+     * page. The map sets `touch-action: none` and zooms itself in JavaScript.
+     */
+    touch-action: pan-x pan-y;
   }
 
   body {
     @apply bg-background font-sans text-foreground antialiased;
+    /* Long Uzbek/Russian words and very narrow screens never widen the page. */
+    min-width: 20rem;
+    overflow-wrap: break-word;
+  }
+
+  /* WebKit/Blink without `scrollbar-width`: a thin, quiet thumb that turns brand red on hover. */
+  ::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  ::-webkit-scrollbar-thumb {
+    border-radius: 9999px;
+    background-color: var(--mm-color-border-strong);
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background-color: var(--mm-color-primary);
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
   }
 
   input,
@@ -252,7 +297,6 @@
   overscroll-behavior-x: contain;
   scroll-snap-type: x proximity;
   scrollbar-width: none;
-  -webkit-overflow-scrolling: touch;
 }
 
 .mm-rail::-webkit-scrollbar {

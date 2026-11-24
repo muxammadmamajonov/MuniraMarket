@@ -2,9 +2,9 @@ import {
   IDEMPOTENT_REPLAYED_HEADER,
   type CheckoutQuote,
   type CreateOrderRequest,
-  type DistrictCode,
   type OrderDetail,
   type OrderPage,
+  type OrderStatusGroup,
 } from '@muniramarket/contracts';
 import type { ApiFetch } from './cart';
 import { ApiRequestError, readJson } from './errors';
@@ -26,12 +26,13 @@ import { JSON_HEADERS, requestJson } from './request';
 export const QUOTE_TIMEOUT_MS = 20_000;
 export const ORDER_TIMEOUT_MS = 30_000;
 
-/** `POST /checkout/quote`: re-checks the cart and prices delivery for `district`. */
-export function quoteCheckout(apiFetch: ApiFetch, district: DistrictCode): Promise<CheckoutQuote> {
+/**
+ * `POST /checkout/quote`: re-checks the cart and prices it. No body: delivery is done by a Yandex
+ * Go courier and paid to the courier, so the quote does not depend on the address.
+ */
+export function quoteCheckout(apiFetch: ApiFetch): Promise<CheckoutQuote> {
   return requestJson<CheckoutQuote>(apiFetch, '/checkout/quote', {
     method: 'POST',
-    headers: JSON_HEADERS,
-    body: JSON.stringify({ district }),
     signal: AbortSignal.timeout(QUOTE_TIMEOUT_MS),
   });
 }
@@ -68,6 +69,8 @@ export async function createOrder(
 export interface ListOrdersParams {
   page?: number;
   pageSize?: number;
+  /** Status filter; `all` (the API default) is not sent. */
+  statusGroup?: OrderStatusGroup;
 }
 
 /** `GET /orders`: the signed-in customer's orders, newest first. */
@@ -75,6 +78,9 @@ export function listOrders(apiFetch: ApiFetch, params: ListOrdersParams = {}): P
   const search = new URLSearchParams();
   if (params.page !== undefined) search.set('page', String(params.page));
   if (params.pageSize !== undefined) search.set('page_size', String(params.pageSize));
+  if (params.statusGroup !== undefined && params.statusGroup !== 'all') {
+    search.set('status_group', params.statusGroup);
+  }
   const query = search.toString();
   return requestJson<OrderPage>(apiFetch, `/orders${query === '' ? '' : `?${query}`}`, {
     method: 'GET',

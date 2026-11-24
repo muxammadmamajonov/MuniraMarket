@@ -2,6 +2,7 @@ import { isLocale } from '@muniramarket/contracts';
 import { notFound } from 'next/navigation';
 import { CheckoutView } from '@/components/checkout/checkout-view';
 import { PageContainer } from '@/components/page-container';
+import { SiteHeader } from '@/components/site-header';
 import { getDictionary } from '@/i18n';
 
 /*
@@ -16,11 +17,13 @@ export default async function CheckoutPage({ params }: PageProps<'/[locale]/chec
   const dict = getDictionary(locale);
 
   return (
-    <main className="flex-1">
-      <PageContainer className="flex flex-col gap-4 py-6">
-        <h1 className="text-2xl font-bold tracking-tight">{dict.checkout.title}</h1>
-        <CheckoutView />
-      </PageContainer>
-    </main>
+    <>
+      <SiteHeader locale={locale} dict={dict} title={dict.pageTitles.checkout} />
+      <main className="flex-1">
+        <PageContainer className="flex flex-col gap-4 py-4">
+          <CheckoutView />
+        </PageContainer>
+      </main>
+    </>
   );
 }

@@ -8,6 +8,7 @@ import {
   sessionHandler,
   type FakeHandler,
 } from '@/test-utils/fake-api';
+import { chooseOption } from '@/test-utils/select';
 import { IDS, category, product, subcategory } from '@/test-utils/fixtures';
 import { setLocation } from '@/test-utils/navigation';
 import { ProductFormView } from './product-form';
@@ -207,7 +208,7 @@ describe('ProductFormView: create', () => {
 
     type('product-name-uz', 'Sut');
     type('product-name-ru', 'Молоко');
-    type('product-category', IDS.subcategory);
+    chooseOption('product-category', IDS.subcategory);
     type('price-input', '12500');
     fireEvent.click(screen.getByTestId('save-button'));
 

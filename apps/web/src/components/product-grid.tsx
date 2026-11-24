@@ -12,7 +12,10 @@ export interface ProductGridProps {
  */
 export function ProductGrid({ products, label }: ProductGridProps) {
   return (
-    <ul aria-label={label} className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
+    <ul
+      aria-label={label}
+      className="grid grid-cols-2 gap-x-3 gap-y-6 sm:grid-cols-3 md:grid-cols-4"
+    >
       {products.map((product) => (
         <li key={product.id} className="flex min-w-0">
           <ProductTile product={product} />

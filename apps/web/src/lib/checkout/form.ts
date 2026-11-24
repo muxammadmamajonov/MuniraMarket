@@ -1,24 +1,15 @@
-import type {
-  ApiErrorDetail,
-  CreateOrderRequest,
-  DistrictCode,
-  PaymentMethod,
-} from '@muniramarket/contracts';
+import type { ApiErrorDetail, CreateOrderRequest, PaymentMethod } from '@muniramarket/contracts';
+import { isCompleteAddress, toAddressRequest, type Address } from '@/lib/address/address';
 
 /**
  * Checkout form state, validation and request building. Limits mirror the Core API
  * (`app/schemas/checkout.py`); the server stays the authority and its 422 answers are mapped back
- * onto fields by {@link serverFieldErrors}.
+ * onto fields by {@link serverFieldErrors}. The delivery address is edited in the map picker and
+ * held as one {@link Address}; the form only knows whether it is there and valid.
  */
 
 export interface CheckoutFormValues {
-  district: DistrictCode | '';
-  street: string;
-  house: string;
-  apartment: string;
-  entrance: string;
-  floor: string;
-  landmark: string;
+  address: Address | null;
   recipientName: string;
   recipientPhone: string;
   paymentMethod: PaymentMethod | '';
@@ -41,13 +32,7 @@ export type FormErrors = Partial<Record<FieldName, FieldError>>;
 
 /** Fields in page order, used to focus the first invalid one. */
 export const FIELD_ORDER: readonly FieldName[] = [
-  'district',
-  'street',
-  'house',
-  'apartment',
-  'entrance',
-  'floor',
-  'landmark',
+  'address',
   'recipientName',
   'recipientPhone',
   'paymentMethod',
@@ -60,12 +45,6 @@ interface Limit {
 }
 
 export const LIMITS = {
-  street: { min: 2, max: 200 },
-  house: { min: 1, max: 32 },
-  apartment: { min: 0, max: 16 },
-  entrance: { min: 0, max: 16 },
-  floor: { min: 0, max: 8 },
-  landmark: { min: 0, max: 200 },
   recipientName: { min: 2, max: 100 },
   comment: { min: 0, max: 500 },
 } as const satisfies Record<string, Limit>;
@@ -74,13 +53,7 @@ export const PHONE_PREFIX = '+998 ';
 
 export function emptyFormValues(): CheckoutFormValues {
   return {
-    district: '',
-    street: '',
-    house: '',
-    apartment: '',
-    entrance: '',
-    floor: '',
-    landmark: '',
+    address: null,
     recipientName: '',
     recipientPhone: PHONE_PREFIX,
     paymentMethod: '',
@@ -136,13 +109,8 @@ export function validateForm(values: CheckoutFormValues): FormErrors {
     if (error !== null) errors[field] = error;
   };
 
-  if (values.district === '') errors.district = { kind: 'required' };
-  set('street', checkText(values.street, LIMITS.street, { singleLine: true }));
-  set('house', checkText(values.house, LIMITS.house, { singleLine: true }));
-  set('apartment', checkText(values.apartment, LIMITS.apartment, { singleLine: true }));
-  set('entrance', checkText(values.entrance, LIMITS.entrance, { singleLine: true }));
-  set('floor', checkText(values.floor, LIMITS.floor, { singleLine: true }));
-  set('landmark', checkText(values.landmark, LIMITS.landmark, { singleLine: true }));
+  if (values.address === null) errors.address = { kind: 'required' };
+  else if (!isCompleteAddress(values.address)) errors.address = { kind: 'invalid' };
   set('recipientName', checkText(values.recipientName, LIMITS.recipientName, { singleLine: true }));
 
   const phone = values.recipientPhone.trim();
@@ -167,39 +135,26 @@ function optional(raw: string): string | undefined {
 /**
  * The `POST /orders` body, or `null` while the form is invalid. Text is trimmed and blank optional
  * fields are left out, as the server would normalize them; the key order is fixed so that the same
- * form always serializes to the same string (the idempotency fingerprint). `deliverySlotId` is part
- * of the body only when a slot was chosen, so choosing another slot yields another fingerprint and
- * therefore another idempotency key.
+ * form always serializes to the same string (the idempotency fingerprint): another address (or
+ * another pin) yields another fingerprint and therefore another idempotency key.
  */
 export function buildOrderRequest(
   values: CheckoutFormValues,
   expectedTotalUzs: number,
-  deliverySlotId: string | null = null,
 ): CreateOrderRequest | null {
   if (Object.keys(validateForm(values)).length > 0) return null;
   const phone = normalizePhone(values.recipientPhone);
-  if (values.district === '' || values.paymentMethod === '' || phone === null) return null;
+  if (!isCompleteAddress(values.address) || values.paymentMethod === '' || phone === null) {
+    return null;
+  }
 
-  const apartment = optional(values.apartment);
-  const entrance = optional(values.entrance);
-  const floor = optional(values.floor);
-  const landmark = optional(values.landmark);
   const comment = optional(values.comment);
   return {
-    address: {
-      district: values.district,
-      street: values.street.trim(),
-      house: values.house.trim(),
-      ...(apartment === undefined ? {} : { apartment }),
-      ...(entrance === undefined ? {} : { entrance }),
-      ...(floor === undefined ? {} : { floor }),
-      ...(landmark === undefined ? {} : { landmark }),
-    },
+    address: toAddressRequest(values.address),
     recipient_name: values.recipientName.trim(),
     recipient_phone: phone,
     payment_method: values.paymentMethod,
     ...(comment === undefined ? {} : { comment }),
-    ...(deliverySlotId === null ? {} : { delivery_slot_id: deliverySlotId }),
     expected_total_uzs: expectedTotalUzs,
   };
 }
@@ -210,13 +165,15 @@ export function requestFingerprint(request: CreateOrderRequest): string {
 }
 
 const SERVER_FIELD_BY_LOC: Readonly<Record<string, FieldName>> = {
-  street: 'street',
-  house: 'house',
-  apartment: 'apartment',
-  entrance: 'entrance',
-  floor: 'floor',
-  landmark: 'landmark',
-  district: 'district',
+  address: 'address',
+  lat: 'address',
+  lon: 'address',
+  street: 'address',
+  house: 'address',
+  apartment: 'address',
+  entrance: 'address',
+  floor: 'address',
+  landmark: 'address',
   recipient_name: 'recipientName',
   recipient_phone: 'recipientPhone',
   payment_method: 'paymentMethod',

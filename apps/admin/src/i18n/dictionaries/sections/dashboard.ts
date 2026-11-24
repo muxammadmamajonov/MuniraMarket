@@ -12,6 +12,8 @@ export interface DashboardDict {
   gmvHint: string;
   averageOrderValue: string;
   cancelledToday: string;
+  recentTitle: string;
+  recentAll: string;
 }
 
 export const dashboardDict: Record<Locale, DashboardDict> = {
@@ -27,6 +29,8 @@ export const dashboardDict: Record<Locale, DashboardDict> = {
     gmvHint: 'Bekor qilinganlarsiz',
     averageOrderValue: 'O‘rtacha chek',
     cancelledToday: 'Bugun bekor qilinganlar',
+    recentTitle: 'So‘nggi buyurtmalar',
+    recentAll: 'Barchasi',
   },
   ru: {
     title: 'Показатели за сегодня',
@@ -40,5 +44,7 @@ export const dashboardDict: Record<Locale, DashboardDict> = {
     gmvHint: 'Без отменённых',
     averageOrderValue: 'Средний чек',
     cancelledToday: 'Отменено сегодня',
+    recentTitle: 'Последние заказы',
+    recentAll: 'Все',
   },
 };

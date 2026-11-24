@@ -39,9 +39,23 @@ CUSTOMER_CANCELLABLE_STATUSES: frozenset[OrderStatus] = frozenset(
     {OrderStatus.NEW, OrderStatus.CONFIRMED}
 )
 
+# Staff may lower an order line (the goods are not there, ADR 0018) until the order is packed.
+ADJUSTABLE_STATUSES: frozenset[OrderStatus] = frozenset(
+    {OrderStatus.NEW, OrderStatus.CONFIRMED, OrderStatus.PICKING}
+)
 
-def customer_can_cancel(current: OrderStatus) -> bool:
-    return current in CUSTOMER_CANCELLABLE_STATUSES
+
+def customer_can_cancel(current: OrderStatus, *, adjusted: bool = False) -> bool:
+    """Before picking always; while PICKING only when staff lowered a line of the order
+    (``adjusted``): the customer did not agree to the smaller order and may back out (ADR 0018).
+    """
+    if current in CUSTOMER_CANCELLABLE_STATUSES:
+        return True
+    return adjusted and current is OrderStatus.PICKING
+
+
+def can_adjust_items(current: OrderStatus) -> bool:
+    return current in ADJUSTABLE_STATUSES
 
 
 class InvalidOrderTransitionError(ValueError):
@@ -73,3 +87,28 @@ def ensure_transition(
 ) -> None:
     if not can_transition(current, target, cancel_reason=cancel_reason):
         raise InvalidOrderTransitionError(f"Cannot move order from {current} to {target}")
+
+
+class OrderStatusGroup(StrEnum):
+    """Tabs of the customer's order history (``GET /orders?status_group=``)."""
+
+    ALL = "all"
+    ACTIVE = "active"
+    DELIVERING = "delivering"
+    DONE = "done"
+    CANCELLED = "cancelled"
+
+
+# The statuses each group lists; ``ALL`` lists every status.
+ORDER_STATUS_GROUP_STATUSES: dict[OrderStatusGroup, tuple[OrderStatus, ...]] = {
+    OrderStatusGroup.ALL: tuple(OrderStatus),
+    OrderStatusGroup.ACTIVE: (
+        OrderStatus.NEW,
+        OrderStatus.CONFIRMED,
+        OrderStatus.PICKING,
+        OrderStatus.READY_FOR_DELIVERY,
+    ),
+    OrderStatusGroup.DELIVERING: (OrderStatus.OUT_FOR_DELIVERY,),
+    OrderStatusGroup.DONE: (OrderStatus.DELIVERED,),
+    OrderStatusGroup.CANCELLED: (OrderStatus.CANCELLED,),
+}

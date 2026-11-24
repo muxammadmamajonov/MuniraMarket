@@ -44,6 +44,8 @@ CHECKOUT_QUOTE: Final = RateLimitRule("checkout_quote", 60, 60)  # per user
 ORDER_CREATE: Final = RateLimitRule("order_create", 10, 60)  # per user
 ORDER_READ: Final = RateLimitRule("order_read", 120, 60)  # per user
 ORDER_CANCEL: Final = RateLimitRule("order_cancel", 20, 60)  # per user
+# Own preferences (language) from the storefront profile.
+PREFERENCES_WRITE: Final = RateLimitRule("preferences_write", 20, 60)  # per user
 # Operator/admin back office.
 ADMIN_IP: Final = RateLimitRule("admin_ip", 600, 60)  # per IP
 ADMIN_READ: Final = RateLimitRule("admin_read", 300, 60)  # per user

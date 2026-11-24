@@ -1,19 +1,22 @@
 /**
  * Pure request policy of the Core API gateway: which paths each entrance may reach and which
- * headers reach the container. No Workers APIs here, so it runs under plain Vitest.
+ * headers reach the Core API Neon Function. No Workers APIs here, so it runs under plain Vitest.
  *
  * Four entrances (see README.md):
  *
  * - `public`: the Worker's own hostname, reached from the internet. Only liveness/readiness and
- *   the service-signed Telegram Serverless routes (`/api/v1/internal/telegram/**`, ADR 0003).
+ *   the service-signed routes Telegram Serverless calls (ADR 0003): user sync
+ *   (`internal/telegram/session`), staff group connect (`internal/telegram/staff-chat/connect`),
+ *   the onboarding language (`PUT internal/telegram/language`) and the user's own contact
+ *   (`POST internal/telegram/phone`).
  * - `storefront`: the `StorefrontApi` entrypoint, reachable only through the web Worker's service
  *   binding. Everything the storefront proxy forwards, never `admin/**` or `internal/**`.
  * - `admin`: the `AdminApi` entrypoint, reachable only through the admin Worker's service
  *   binding. `admin/**` plus the Telegram OIDC sign-in and session routes, mirroring
  *   `apps/admin/src/lib/api/api-proxy.ts`.
  * - `scheduler`: never reachable from outside. Used only by this Worker's own Cron Trigger
- *   (`scheduled()` in index.ts) to drain the notification outbox and run housekeeping: exactly
- *   the claim/result routes and `internal/maintenance/cleanup`, POST only.
+ *   (`scheduled()` in index.ts), which only signs two POSTs: `internal/scheduler/notifications/drain`
+ *   (the Function drains the outbox and talks to the Bot API) and `internal/maintenance/cleanup`.
  *
  * Each app proxy already enforces its own list; this is the second, independent fence, so a bug
  * in one app cannot widen what reaches the API.
@@ -31,22 +34,20 @@ const ADMIN_AUTH_ROUTES: ReadonlySet<string> = new Set([
   'auth/telegram/oidc/callback',
 ]);
 
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
 /** The only routes the Cron Trigger calls (signed, empty actor). */
-function isSchedulerRoute(segments: readonly string[]): boolean {
-  const route = segments.join('/');
-  if (route === 'internal/telegram/notifications/claim') return true;
-  if (route === 'internal/maintenance/cleanup') return true;
-  return (
-    segments.length === 5 &&
-    segments[0] === 'internal' &&
-    segments[1] === 'telegram' &&
-    segments[2] === 'notifications' &&
-    UUID.test(segments[3] ?? '') &&
-    segments[4] === 'result'
-  );
-}
+const SCHEDULER_ROUTES: ReadonlySet<string> = new Set([
+  'internal/scheduler/notifications/drain',
+  'internal/maintenance/cleanup',
+]);
+
+/** The only routes Telegram Serverless calls through the public hostname, with their method. */
+const TELEGRAM_PUBLIC_ROUTES: ReadonlyMap<string, string> = new Map([
+  ['internal/telegram/session', 'POST'],
+  ['internal/telegram/staff-chat/connect', 'POST'],
+  // Bot onboarding language choice and the user's own shared contact (ADR 0003, signed).
+  ['internal/telegram/language', 'PUT'],
+  ['internal/telegram/phone', 'POST'],
+]);
 
 const HEALTH_ROUTES: ReadonlySet<string> = new Set(['health', 'health/ready']);
 
@@ -88,16 +89,16 @@ export function isAllowed(entrance: Entrance, method: string, pathname: string):
   const route = segments.join('/');
   const upper = method.toUpperCase();
 
-  // Exactly three POST routes; not even the health checks.
-  if (entrance === 'scheduler') return upper === 'POST' && isSchedulerRoute(segments);
+  // Exactly two POST routes; not even the health checks.
+  if (entrance === 'scheduler') return upper === 'POST' && SCHEDULER_ROUTES.has(route);
 
   // GET only: the API's health routes do not answer HEAD.
   if (HEALTH_ROUTES.has(route)) return upper === 'GET';
 
   switch (entrance) {
     case 'public':
-      // Telegram Serverless calls only signed POSTs (claim/result, user sync).
-      return upper === 'POST' && segments[0] === 'internal' && segments[1] === 'telegram';
+      // Telegram Serverless calls only these signed routes, each with one method.
+      return TELEGRAM_PUBLIC_ROUTES.get(route) === upper;
     case 'storefront':
       return segments[0] !== 'admin' && segments[0] !== 'internal';
     case 'admin':
@@ -105,7 +106,10 @@ export function isAllowed(entrance: Entrance, method: string, pathname: string):
   }
 }
 
-/** Request headers the container may see. Anything else (Host, CF-*, X-Forwarded-*) is dropped. */
+/**
+ * Request headers the Function may see. Anything else (Host, CF-*, X-Forwarded-*, and above all
+ * `X-MM-Gateway-Secret`, which only this Worker sets) is dropped, so a caller cannot spoof them.
+ */
 const FORWARDED_HEADERS: Readonly<Record<Entrance, readonly string[]>> = {
   public: [
     'content-type',
@@ -164,6 +168,54 @@ export function singleIp(value: string | null): string | null {
 
 const REQUEST_ID = /^[A-Za-z0-9._-]{8,128}$/;
 
+/**
+ * The only route whose redirect the gateway passes on: the end of the Telegram OIDC sign-in
+ * (ADR 0014). The Function always answers it `303` with a same-origin, path-absolute `Location`
+ * (the `return_to` page or `/<locale>/auth/telegram?status=...`) plus the session cookie on
+ * success. Only browser entrances reach it.
+ */
+export const OIDC_CALLBACK_ROUTE = 'auth/telegram/oidc/callback';
+
+/** Whether this request is the OIDC callback on a browser entrance (GET only). */
+export function isOidcCallback(entrance: Entrance, method: string, pathname: string): boolean {
+  if (entrance !== 'storefront' && entrance !== 'admin') return false;
+  if (method.toUpperCase() !== 'GET') return false;
+  return apiSegments(pathname)?.join('/') === OIDC_CALLBACK_ROUTE;
+}
+
+/**
+ * `true` for a same-origin, path-absolute `Location` such as `/uz/orders?x=1`: a single leading
+ * `/` (not `//`, protocol-relative), no backslash (browsers read `/\` like `//`), no control
+ * characters or spaces, and it still resolves to the same origin. Mirrors the admin and web
+ * proxies' check, so the gateway never hands a browser an off-site redirect.
+ */
+export function isSafeRelativeLocation(location: string): boolean {
+  if (location.length === 0 || location.length > 2048) return false;
+  if (!location.startsWith('/') || location.startsWith('//')) return false;
+  // eslint-disable-next-line no-control-regex
+  if (/[\u0000-\u0020\u007f\\]/.test(location)) return false;
+  try {
+    const base = 'http://same-origin.invalid';
+    return new URL(location, base).origin === base;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * The request id the Function (and every gateway log line and response) uses: the caller's
+ * `X-Request-ID` on the browser entrances when it is well-formed (the app proxies generate one
+ * per request, so the browser, the app, the gateway and the Function share it), otherwise the
+ * fallback (the Cloudflare ray id, or a UUID).
+ */
+export function requestIdFor(entrance: Entrance, incoming: Headers, fallback: string): string {
+  const requestId = incoming.get('x-request-id');
+  const callerMayChooseId = entrance === 'storefront' || entrance === 'admin';
+  return requestId !== null && REQUEST_ID.test(requestId) && callerMayChooseId
+    ? requestId
+    : fallback;
+}
+
 export interface UpstreamContext {
   entrance: Entrance;
   /**
@@ -176,11 +228,18 @@ export interface UpstreamContext {
   fallbackRequestId: string;
 }
 
+/** Header carrying the gateway -> Function shared secret (`CORE_API_FUNCTION_SECRET`). */
+export const GATEWAY_SECRET_HEADER = 'x-mm-gateway-secret';
+
 /**
- * Headers for the container request. `X-Forwarded-For` is always written here (or removed), so
- * the API's proxy-header trust (`FORWARDED_ALLOW_IPS`) only ever sees a value this gateway set.
+ * Headers for the Function request, built from an allow-list (never a copy of the incoming
+ * headers). `X-Forwarded-For`, `X-MM-Entrance`, `X-Request-ID` and the gateway secret are always
+ * written here, so the Function only ever sees values this gateway set.
  */
-export function upstreamHeaders(incoming: Headers, context: UpstreamContext): Headers {
+export function upstreamHeaders(
+  incoming: Headers,
+  context: UpstreamContext & { gatewaySecret: string },
+): Headers {
   const headers = new Headers();
   for (const name of FORWARDED_HEADERS[context.entrance]) {
     const value = incoming.get(name);
@@ -193,29 +252,52 @@ export function upstreamHeaders(incoming: Headers, context: UpstreamContext): He
   // (whatever the caller sent is dropped above). The Core API uses it to pick the Telegram OIDC
   // redirect origin (storefront vs admin public origin) and to bind browser sessions to the
   // entrance they were created on, so a storefront session cannot be replayed on the admin.
-  // Containers are reachable only through this gateway.
+  // The Function rejects any request without the gateway secret.
   headers.set('x-mm-entrance', context.entrance);
-  const requestId = incoming.get('x-request-id');
-  const callerMayChooseId = context.entrance === 'storefront' || context.entrance === 'admin';
-  headers.set(
-    'x-request-id',
-    requestId !== null && REQUEST_ID.test(requestId) && callerMayChooseId
-      ? requestId
-      : context.fallbackRequestId,
-  );
+  headers.set(GATEWAY_SECRET_HEADER, context.gatewaySecret);
+  headers.set('x-request-id', requestIdFor(context.entrance, incoming, context.fallbackRequestId));
   return headers;
 }
 
-/** The JSON error envelope the Core API uses, so clients see one shape. */
-export function errorResponse(status: number, code: string, message: string): Response {
-  return Response.json(
-    { error: { code, message } },
-    { status, headers: { 'cache-control': 'no-store' } },
-  );
+/**
+ * The JSON error envelope the Core API uses, so clients see one shape. With a request id it is
+ * also sent as `X-Request-ID`, so an error the gateway produced itself (timeout, network failure,
+ * refused redirect) can still be matched to the gateway's log line.
+ */
+export function errorResponse(
+  status: number,
+  code: string,
+  message: string,
+  requestId?: string,
+): Response {
+  const headers: Record<string, string> = { 'cache-control': 'no-store' };
+  if (requestId !== undefined) headers['x-request-id'] = requestId;
+  return Response.json({ error: { code, message } }, { status, headers });
 }
 
-/** Picks one of `count` interchangeable container instances. */
-export function instanceName(count: number, random: () => number = Math.random): string {
-  const size = Number.isInteger(count) && count > 0 ? count : 1;
-  return `core-api-${Math.min(size - 1, Math.floor(random() * size))}`;
+/**
+ * The Function's origin (`https://<branch>-coreapi.compute.<cell>...neon.tech`) from the
+ * `CORE_API_FUNCTION_ORIGIN` secret, or `null` when it is missing or not a bare https origin.
+ * The upstream URL is always built from this origin plus the request's path and query, assigned
+ * separately, so a request path can never change the authority.
+ */
+export function functionOrigin(raw: string | undefined): string | null {
+  let url: URL;
+  try {
+    url = new URL((raw ?? '').trim());
+  } catch {
+    return null;
+  }
+  if (url.protocol !== 'https:' || url.username || url.password || url.search || url.hash) {
+    return null;
+  }
+  if (url.pathname !== '/' && url.pathname !== '') return null;
+  return url.origin;
+}
+
+export function upstreamUrl(origin: string, requestUrl: URL): URL {
+  const upstream = new URL(origin);
+  upstream.pathname = requestUrl.pathname;
+  upstream.search = requestUrl.search;
+  return upstream;
 }

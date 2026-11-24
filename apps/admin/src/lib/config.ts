@@ -42,7 +42,9 @@ export function getClientIpHeader(): string | null {
  *
  * Always `false` for now: the admin's Content-Security-Policy is `img-src 'self' data:` (see
  * `csp.ts`) and must stay that way, so an external image would only be blocked and reported as a
- * violation. Until image storage (R2) is enabled the form shows its placeholder and a note. This
+ * violation. Until image storage (R2) is enabled the form shows its placeholder and a note for
+ * such URLs (the store's own `/products/*.webp` photos are same-origin and always preview, see
+ * `lib/photo.ts`). This
  * flips to `true` together with allow-listing the R2 CDN hostname in `img-src`; both changes
  * belong in one commit. The `image_url` field itself, its validation and saving are unaffected
  * (an https URL still works on the storefront).

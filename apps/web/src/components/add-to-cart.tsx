@@ -8,14 +8,16 @@ import { useI18n } from '@/i18n/context';
 import { formatMessage } from '@/i18n/format';
 import { addCartItem } from '@/lib/api/cart';
 import { ApiRequestError } from '@/lib/api/errors';
-import { useCartSync } from '@/lib/cart';
+import { useCartSync, useOptionalCart } from '@/lib/cart';
 import { addToCartErrorMessage } from '@/lib/cart/messages';
 import { MAX_LINE_QUANTITY, maxQuantityFor } from '@/lib/catalog';
 import { retryAfterSeconds } from '@/lib/checkout/failures';
 import { useSession } from '@/lib/session';
 import { useHaptics, useMainButton } from '@/lib/telegram';
 import { useCooldown } from '@/lib/use-cooldown';
+import { CheckIcon } from './icons';
 import { SignInPrompt } from './sign-in-prompt';
+import { FOCUS_RING } from './ui-classes';
 
 type Phase =
   | { kind: 'idle' }
@@ -42,6 +44,7 @@ export function AddToCart({ product }: AddToCartProps) {
   const [phase, setPhase] = useState<Phase>({ kind: 'idle' });
   const { seconds: waitSeconds, start: startCooldown } = useCooldown();
   const syncCart = useCartSync();
+  const inCart = useOptionalCart()?.quantityOf(product.id) ?? 0;
 
   const quantity = Math.min(requested, max);
   const authenticated = session.status === 'authenticated';
@@ -87,7 +90,7 @@ export function AddToCart({ product }: AddToCartProps) {
     <div className="flex flex-col gap-3">
       {session.status === 'anonymous' || session.status === 'error' ? <SignInPrompt /> : null}
 
-      <div className="flex flex-wrap items-center gap-3">
+      <div className="flex items-center gap-2.5">
         <QuantityStepper
           value={quantity}
           min={1}
@@ -99,9 +102,15 @@ export function AddToCart({ product }: AddToCartProps) {
           label={dict.product.quantity}
           decreaseLabel={dict.product.decrease}
           increaseLabel={dict.product.increase}
+          className="h-13 shrink-0 rounded-full border-0 bg-surface px-1 [&_button]:rounded-full"
         />
-        <Button size="lg" disabled={!canAdd} onClick={() => void add()} className="flex-1">
-          {pending ? dict.product.adding : dict.product.addToCart}
+        <Button
+          size="lg"
+          disabled={!canAdd}
+          onClick={() => void add()}
+          className="min-h-13 min-w-0 flex-1 rounded-2xl text-[17px]"
+        >
+          <span className="truncate">{pending ? dict.product.adding : dict.product.addToCart}</span>
         </Button>
       </div>
 
@@ -112,10 +121,20 @@ export function AddToCart({ product }: AddToCartProps) {
       ) : null}
 
       <div aria-live="polite" className="min-h-6">
-        {phase.kind === 'added' ? (
-          <p className="flex flex-wrap items-center gap-2 font-medium" data-testid="added-message">
-            <span>{dict.product.added}</span>
-            <Link href={`/${locale}/cart`} className="underline underline-offset-2">
+        {phase.kind === 'added' || inCart > 0 ? (
+          <p
+            className="mm-enter flex flex-wrap items-center gap-x-2 gap-y-1 font-medium"
+            {...(phase.kind === 'added' ? { 'data-testid': 'added-message' } : {})}
+          >
+            <CheckIcon aria-hidden="true" width={18} height={18} className="text-primary" />
+            <span>
+              {phase.kind === 'added' ? `${dict.product.added}. ` : ''}
+              {inCart > 0 ? formatMessage(dict.product.inCart, { count: inCart }) : null}
+            </span>
+            <Link
+              href={`/${locale}/cart`}
+              className={`rounded-md font-semibold text-brand-ink underline-offset-2 hover:underline ${FOCUS_RING}`}
+            >
               {dict.product.viewCart}
             </Link>
           </p>

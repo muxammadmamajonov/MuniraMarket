@@ -18,9 +18,7 @@ import type {
   PermissionDict,
   ValidationDict,
 } from './sections/shared';
-import type { SlotsDict } from './sections/slots';
 import type { UsersDict } from './sections/users';
-import type { ZonesDict } from './sections/zones';
 
 /**
  * Shape every dictionary must satisfy. `uz.ts` and `ru.ts` are both typed as `Dictionary`, so a
@@ -34,6 +32,8 @@ export interface Dictionary {
   };
   header: {
     appName: string;
+    /** Small tag under the logo that marks the back office ("Admin panel"). */
+    brandTag: string;
     logout: string;
     language: { label: string; names: Record<Locale, string> };
   };
@@ -62,6 +62,14 @@ export interface Dictionary {
     /** Message per `?status=` of the sign-in failure page (unknown values use `failed`). */
     callbackStatus: Record<TelegramOidcFailureStatus, string>;
     callbackBack: string;
+    /** Button that starts a new sign-in after a failure. */
+    tryAgain: string;
+    /** `{code}`: the short request id ("support code") of a failed request. */
+    supportCode: string;
+    /** What to do with the support code. */
+    supportCodeHint: string;
+    /** Short line under the sign-in card: who may use this panel. */
+    staffOnly: string;
   };
   orders: {
     title: string;
@@ -80,20 +88,20 @@ export interface Dictionary {
     notFoundMessage: string;
     loading: string;
     createdAt: string;
-    deliverySlot: string;
     payment: string;
     items: { title: string; sku: string };
-    totals: { subtotal: string; delivery: string; total: string };
+    totals: { subtotal: string; total: string };
     recipient: { title: string; name: string; phone: string };
     address: {
       title: string;
-      district: string;
       street: string;
       house: string;
       apartment: string;
       entrance: string;
       floor: string;
       landmark: string;
+      /** External link that opens Yandex Go with a courier order to the delivery point. */
+      callYandex: string;
     };
     comment: string;
     cancelReason: string;
@@ -109,6 +117,31 @@ export interface Dictionary {
     };
     notices: { conflict: string; updated: string };
     errors: { invalidTransition: string; failed: string };
+    /** A line the shop no longer has (ADR 0018): lower its quantity while picking. */
+    adjust: {
+      button: string;
+      title: string;
+      description: string;
+      quantityLabel: string;
+      quantityHint: string;
+      reasonLabel: string;
+      reasons: string[];
+      reasonInvalid: string;
+      markOutOfStock: string;
+      markOutOfStockHint: string;
+      confirm: string;
+      dismiss: string;
+      adjustedFrom: string;
+      done: string;
+      cancelledAll: string;
+      historyTitle: string;
+      outOfStockNote: string;
+      errors: {
+        notAdjustable: string;
+        invalidQuantity: string;
+        failed: string;
+      };
+    };
   };
   status: Record<OrderStatus, string>;
   /** Label of the button that moves an order *to* the given status. */
@@ -133,8 +166,6 @@ export interface Dictionary {
   products: ProductsDict;
   categories: CategoriesDict;
   csv: CsvDict;
-  zones: ZonesDict;
-  slots: SlotsDict;
   users: UsersDict;
   audit: AuditDict;
 }

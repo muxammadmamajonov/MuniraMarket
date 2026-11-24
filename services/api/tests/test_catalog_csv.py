@@ -415,6 +415,7 @@ def existing(
         "price_uzs": 12_000,
         "old_price_uzs": None,
         "stock_quantity": None,
+        "safety_stock": 0,
         "is_active": True,
         "sort_order": 0,
         "image_url": None,
@@ -532,6 +533,50 @@ def test_updated_at_for_an_unknown_sku_is_stale() -> None:
     assert [(error.column, error.code) for error in plan.errors] == [("updated_at", "stale_row")]
 
 
+# --- safety stock (ADR 0018) ----------------------------------------------------------------------
+
+
+def test_safety_stock_column_is_optional_and_after_stock_quantity() -> None:
+    assert "safety_stock" not in COLUMNS
+    assert EXPORT_COLUMNS.index("safety_stock") == EXPORT_COLUMNS.index("stock_quantity") + 1
+    # A file made before the column existed parses; the row carries no safety stock.
+    assert parsed_rows(row())[0].safety_stock is None
+
+
+@pytest.mark.parametrize(("cell", "expected"), [("", 0), ("0", 0), (" 3 ", 3), ("1000000", 10**6)])
+def test_safety_stock_cell(cell: str, expected: int) -> None:
+    header = [*COLUMNS, "safety_stock"]
+    parsed = parse_catalog_csv(to_csv([row(safety_stock=cell)], header=header))
+    assert parsed.errors == ()
+    assert parsed.rows[0].safety_stock == expected
+
+
+@pytest.mark.parametrize("cell", ["-1", "1.5", "abc", "1000001"])
+def test_invalid_safety_stock(cell: str) -> None:
+    header = [*COLUMNS, "safety_stock"]
+    assert single_error(to_csv([row(safety_stock=cell)], header=header)) == (
+        "safety_stock",
+        "invalid_safety_stock",
+    )
+
+
+def test_without_the_column_the_safety_stock_is_kept_and_new_products_start_at_0() -> None:
+    rows = parsed_rows(row(), row(sku="DEMO-NEW", slug="demo-new"))
+    plan = plan_import(rows, snapshot(existing(safety_stock=4)))
+    assert plan.errors == ()
+    unchanged, created = plan.changes
+    assert unchanged.kind == "unchanged"
+    assert "safety_stock" not in unchanged.values
+    assert created.values["safety_stock"] == 0
+
+
+def test_with_the_column_the_safety_stock_is_updated() -> None:
+    header = [*COLUMNS, "safety_stock"]
+    parsed = parse_catalog_csv(to_csv([row(safety_stock="2")], header=header))
+    plan = plan_import(parsed.rows, snapshot(existing(safety_stock=4)))
+    assert plan.changes[0].changes == {"safety_stock": (4, 2)}
+
+
 def test_derive_slug() -> None:
     assert derive_slug("DEMO_0001.a") == "demo-0001-a"
     assert derive_slug("x--Y") == "x-y"
@@ -561,6 +606,7 @@ def export_row(**overrides: Any) -> ExportRow:
         "price_uzs": 12_000,
         "old_price_uzs": 15_000,
         "stock_quantity": 0,
+        "safety_stock": 2,
         "is_active": False,
         "sort_order": -3,
         "image_url": "https://cdn.example.com/a.png",
@@ -579,7 +625,7 @@ def test_export_format() -> None:
     assert text.endswith("\r\n")
     assert (
         '"DEMO-0001","demo-olma","mevalar","Demo olma","Демо яблоко","","яблоко\n яблоко","kg",'
-        '"12000","15000","0","false","-3","https://cdn.example.com/a.png",'
+        '"12000","15000","0","2","false","-3","https://cdn.example.com/a.png",'
         '"2026-10-31T07:15:30.123456+00:00"\r\n'
     ) in text
 
@@ -702,6 +748,7 @@ def test_export_then_import_round_trips(name: str) -> None:
                     description_uz=name,
                     old_price_uzs=15_000,
                     stock_quantity=0,
+                    safety_stock=2,
                     is_active=False,
                     sort_order=-3,
                     image_url="https://cdn.example.com/a.png",

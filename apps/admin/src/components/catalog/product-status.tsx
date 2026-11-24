@@ -12,9 +12,9 @@ export function productState(
 }
 
 const TONES: Record<ProductState, string> = {
-  active: 'bg-green-100 text-green-900 dark:bg-green-950 dark:text-green-200',
-  inactive: 'bg-zinc-200 text-zinc-900 dark:bg-zinc-800 dark:text-zinc-200',
-  archived: 'bg-amber-100 text-amber-900 dark:bg-amber-950 dark:text-amber-200',
+  active: 'bg-success-soft text-success',
+  inactive: 'bg-surface-muted text-muted-foreground ring-1 ring-border ring-inset',
+  archived: 'bg-warning-soft text-warning',
 };
 
 export function ProductStatusBadge({ state }: { state: ProductState }) {
@@ -23,7 +23,7 @@ export function ProductStatusBadge({ state }: { state: ProductState }) {
     <span
       data-state={state}
       className={cx(
-        'inline-flex items-center rounded-full px-2.5 py-0.5 text-sm font-medium whitespace-nowrap',
+        'inline-flex shrink-0 items-center rounded-full px-2.5 py-0.5 text-[13px] leading-5 font-semibold whitespace-nowrap',
         TONES[state],
       )}
     >

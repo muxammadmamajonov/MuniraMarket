@@ -22,6 +22,7 @@ from pydantic import (
     model_validator,
 )
 
+from app.domain.cart import sellable_quantity
 from app.domain.catalog_csv import (
     MAX_DESCRIPTION_LENGTH,
     MAX_NAME_LENGTH,
@@ -202,6 +203,10 @@ class AdminCategoryList(BaseModel):
 # --- products ---------------------------------------------------------------------------------
 
 
+def _none_to_zero(value: int | None) -> int:
+    return 0 if value is None else value
+
+
 class ProductCreateRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -216,6 +221,11 @@ class ProductCreateRequest(BaseModel):
     price_uzs: Price
     old_price_uzs: Price | None = Field(default=None, description="null, or above price_uzs")
     stock_quantity: Stock | None = None
+    # Units kept back for walk-in shoppers (ADR 0018); only matters while stock is tracked.
+    # Optional: absent or null means 0.
+    safety_stock: Annotated[Stock | None, AfterValidator(_none_to_zero)] = Field(
+        default=None, description="Units kept back for walk-in shoppers; absent or null = 0"
+    )
     image_url: ImageUrl = None
     sort_order: SortOrder = 0
     is_active: bool = True
@@ -245,6 +255,7 @@ class ProductUpdateRequest(_PatchModel):
     price_uzs: Price | None = None
     old_price_uzs: Price | None = None
     stock_quantity: Stock | None = None
+    safety_stock: Stock | None = None
     image_url: ImageUrl = None
     sort_order: SortOrder | None = None
     is_active: bool | None = None
@@ -262,8 +273,13 @@ class AdminProduct(BaseModel):
     unit: Unit
     price_uzs: int
     old_price_uzs: int | None
-    # null = stock is not tracked for this product.
+    # Physical stock; null = stock is not tracked for this product.
     stock_quantity: int | None
+    # Units kept back for walk-in shoppers (ADR 0018).
+    safety_stock: int
+    # What the online store may sell: ``stock_quantity - safety_stock``, never below 0; null when
+    # stock is not tracked. The storefront's ``stock_quantity`` is this number.
+    sellable_quantity: int | None
     image_url: str | None
     sort_order: int
     is_active: bool
@@ -287,6 +303,8 @@ class AdminProduct(BaseModel):
             price_uzs=record.price_uzs,
             old_price_uzs=record.old_price_uzs,
             stock_quantity=record.stock_quantity,
+            safety_stock=record.safety_stock,
+            sellable_quantity=sellable_quantity(record.stock_quantity, record.safety_stock),
             image_url=record.image_url,
             sort_order=record.sort_order,
             is_active=record.is_active,

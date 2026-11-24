@@ -1,25 +1,15 @@
 'use client';
 
-import type {
-  Cart,
-  CheckoutQuote,
-  DeliveryZone,
-  DistrictCode,
-  OrderDetail,
-  OrderSummary,
-} from '@muniramarket/contracts';
+import type { Cart, CheckoutQuote, OrderDetail, OrderSummary } from '@muniramarket/contracts';
 import { useCallback, useEffect, useRef, useState } from 'react';
+import type { Address } from '@/lib/address/address';
+import { readDeliveryAddress, writeDeliveryAddress } from '@/lib/address/storage';
 import { getCart } from '@/lib/api/cart';
-import { getDeliveryZones } from '@/lib/api/delivery';
 import { ApiRequestError } from '@/lib/api/errors';
 import { createOrder, listOrders, quoteCheckout } from '@/lib/api/orders';
-import {
-  readDistrictPreference,
-  writeDistrictPreference,
-} from '@/lib/delivery/district-preference';
 import { useSession } from '@/lib/session';
 import { useCooldown } from '@/lib/use-cooldown';
-import { classifyCheckoutError, type CheckoutFailure, type SlotFailureReason } from './failures';
+import { classifyCheckoutError, type CheckoutFailure } from './failures';
 import {
   buildOrderRequest,
   clampChars,
@@ -34,8 +24,6 @@ import {
 } from './form';
 import { useSubmissionController } from './idempotency';
 import { clearPendingAttempt, findOrderForAttempt, readPendingAttempt } from './pending-attempt';
-import { bookableSlot, todayInTashkent } from './slots';
-import { zoneForDistrict } from './zones';
 
 /** A quote older than this is re-fetched before the order is placed (prices and stock move). */
 export const QUOTE_MAX_AGE_MS = 60_000;
@@ -48,7 +36,6 @@ export type CheckoutLoad =
   | {
       kind: 'ready';
       cart: Cart;
-      zones: DeliveryZone[];
       /**
        * The order an earlier, unconfirmed attempt in this tab created (found after a reload: the
        * cart came back empty because the order took its items).
@@ -59,10 +46,9 @@ export type CheckoutLoad =
 
 export type QuoteState =
   | { kind: 'idle' }
-  /** `previous` is the last quote that arrived, so the slot picker can stay put while re-quoting. */
-  | { kind: 'loading'; district: DistrictCode; previous: CheckoutQuote | null }
-  | { kind: 'ready'; district: DistrictCode; quote: CheckoutQuote; fetchedAt: number }
-  | { kind: 'failed'; district: DistrictCode; failure: CheckoutFailure };
+  | { kind: 'loading' }
+  | { kind: 'ready'; quote: CheckoutQuote; fetchedAt: number }
+  | { kind: 'failed'; failure: CheckoutFailure };
 
 /** The customer confirmed `from`; the server would now charge `to`. Needs an explicit confirm. */
 export interface PriceChange {
@@ -71,10 +57,10 @@ export interface PriceChange {
 }
 
 /**
- * A form field, the delivery-slot group, or the summary's "could not price the cart" message: the
- * last two are not form fields of their own, but a refused submit moves the customer to them.
+ * A form field, or the summary's "could not price the cart" message: not a form field of its own,
+ * but a refused submit moves the customer to it.
  */
-export type FocusTarget = FieldName | 'deliverySlot' | 'quote';
+export type FocusTarget = FieldName | 'quote';
 
 export interface CheckoutFlowOptions {
   /**
@@ -95,15 +81,21 @@ function displayName(user: { first_name: string; last_name: string | null } | nu
 }
 
 /**
- * State machine behind the checkout page: loads the cart and delivery zones, prices the cart per
- * district, and places the order with idempotency and double-submit protection.
+ * State machine behind the checkout page: loads and prices the cart, holds the delivery address
+ * (prefilled from the one saved on this device), and places the order with idempotency and
+ * double-submit protection. Delivery itself is not priced: a Yandex Go courier brings the order
+ * and the customer pays the courier.
  */
 export function useCheckoutFlow({ onPlaced, onSuccess, onError, focusField }: CheckoutFlowOptions) {
   const { status, user, apiFetch, retry } = useSession();
   const controller = useSubmissionController();
 
   const [load, setLoad] = useState<CheckoutLoad>({ kind: 'loading' });
-  const [values, setValues] = useState<CheckoutFormValues>(emptyFormValues);
+  // The address saved on this device (home card or an earlier checkout) is the starting point.
+  const [values, setValues] = useState<CheckoutFormValues>(() => ({
+    ...emptyFormValues(),
+    address: readDeliveryAddress(),
+  }));
   const [prefilled, setPrefilled] = useState(false);
   const [touched, setTouched] = useState<Partial<Record<FieldName, true>>>({});
   const [submitAttempted, setSubmitAttempted] = useState(false);
@@ -111,15 +103,9 @@ export function useCheckoutFlow({ onPlaced, onSuccess, onError, focusField }: Ch
   const [quote, setQuote] = useState<QuoteState>({ kind: 'idle' });
   const [priceChange, setPriceChange] = useState<PriceChange | null>(null);
   const [failure, setFailure] = useState<CheckoutFailure | null>(null);
-  const [slotId, setSlotId] = useState<string | null>(null);
-  const [slotNotice, setSlotNotice] = useState<SlotFailureReason | null>(null);
-  // The day "Today" means for the windows on screen: Tashkent's date when the quote arrived
-  // (read in a callback, never while rendering).
-  const [today, setToday] = useState(() => todayInTashkent());
   const [submitting, setSubmitting] = useState(false);
   const { seconds: cooldown, start: startCooldown } = useCooldown();
   const quoteSeq = useRef(0);
-  const lastQuote = useRef<CheckoutQuote | null>(null);
 
   // Prefill the recipient's name once, from the signed-in user (adjusting state while rendering is
   // the supported way to derive state from a value that arrives later).
@@ -151,9 +137,9 @@ export function useCheckoutFlow({ onPlaced, onSuccess, onError, focusField }: Ch
   const loadData = useCallback(async () => {
     setLoad({ kind: 'loading' });
     try {
-      const [cart, zones] = await Promise.all([getCart(apiFetch), getDeliveryZones(apiFetch)]);
+      const cart = await getCart(apiFetch);
       const recovered = cart.items.length === 0 ? await recoverOrder() : null;
-      setLoad({ kind: 'ready', cart, zones: zones.items, recovered });
+      setLoad({ kind: 'ready', cart, recovered });
       // A "session ended" notice from before the re-login no longer applies.
       setFailure((current) => (current?.kind === 'session' ? null : current));
     } catch (error) {
@@ -169,45 +155,41 @@ export function useCheckoutFlow({ onPlaced, onSuccess, onError, focusField }: Ch
     void loadData();
   }, [status, loadData]);
 
-  /** Prices the cart for `district`. Resolves with the quote, or `null` when it failed. */
-  const refreshQuote = useCallback(
-    async (district: DistrictCode): Promise<CheckoutQuote | null> => {
-      quoteSeq.current += 1;
-      const sequence = quoteSeq.current;
-      setQuote({ kind: 'loading', district, previous: lastQuote.current });
-      try {
-        const result = await quoteCheckout(apiFetch, district);
-        if (sequence === quoteSeq.current) {
-          lastQuote.current = result;
-          setToday(todayInTashkent());
-          setQuote({ kind: 'ready', district, quote: result, fetchedAt: Date.now() });
-          // A choice the new quote no longer offers (another zone, a slot that filled up) is
-          // dropped rather than sent.
-          setSlotId((current) =>
-            bookableSlot(result.delivery_slots, current) === null ? null : current,
-          );
-        }
-        return result;
-      } catch (error) {
-        const classified = classifyCheckoutError(error);
-        if (classified.kind === 'session') retry();
-        // A refused quote is waited out like a refused order: whatever would ask again (the retry
-        // button, the submit control) stays disabled until `Retry-After` has passed.
-        if (classified.kind === 'rate_limited') startCooldown(classified.seconds);
-        if (sequence === quoteSeq.current) {
-          setQuote({ kind: 'failed', district, failure: classified });
-        }
-        return null;
+  /** Prices the cart. Resolves with the quote, or `null` when it failed. */
+  const refreshQuote = useCallback(async (): Promise<CheckoutQuote | null> => {
+    quoteSeq.current += 1;
+    const sequence = quoteSeq.current;
+    setQuote({ kind: 'loading' });
+    try {
+      const result = await quoteCheckout(apiFetch);
+      if (sequence === quoteSeq.current) {
+        setQuote({ kind: 'ready', quote: result, fetchedAt: Date.now() });
       }
-    },
-    [apiFetch, retry, startCooldown],
-  );
+      return result;
+    } catch (error) {
+      const classified = classifyCheckoutError(error);
+      if (classified.kind === 'session') retry();
+      // A refused quote is waited out like a refused order: whatever would ask again (the retry
+      // button, the submit control) stays disabled until `Retry-After` has passed.
+      if (classified.kind === 'rate_limited') startCooldown(classified.seconds);
+      if (sequence === quoteSeq.current) setQuote({ kind: 'failed', failure: classified });
+      return null;
+    }
+  }, [apiFetch, retry, startCooldown]);
+
+  // Price the cart once it has loaded (and again after a reload of the page data).
+  useEffect(() => {
+    if (load.kind !== 'ready' || load.cart.items.length === 0) return;
+    // The request is async; its state changes happen when it settles.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    void refreshQuote();
+  }, [load, refreshQuote]);
 
   /** Asks again for the quote that failed (the summary's retry button). */
   const retryQuote = useCallback(() => {
-    if (cooldown > 0 || values.district === '') return;
-    void refreshQuote(values.district);
-  }, [cooldown, values.district, refreshQuote]);
+    if (cooldown > 0) return;
+    void refreshQuote();
+  }, [cooldown, refreshQuote]);
 
   const setField = useCallback(<K extends FieldName>(field: K, value: CheckoutFormValues[K]) => {
     setValues((current) => ({ ...current, [field]: value }));
@@ -219,38 +201,14 @@ export function useCheckoutFlow({ onPlaced, onSuccess, onError, focusField }: Ch
     });
   }, []);
 
-  const setDistrict = useCallback(
-    (district: DistrictCode | '') => {
-      setField('district', district);
-      setPriceChange(null);
-      setSlotNotice(null);
-      if (district === '') {
-        quoteSeq.current += 1;
-        lastQuote.current = null;
-        setSlotId(null);
-        setQuote({ kind: 'idle' });
-      } else {
-        void refreshQuote(district);
-        // The storefront remembers only this code (never the address); see district-preference.ts.
-        writeDistrictPreference(district);
-      }
+  /** The address from the map picker; also remembered on this device for the next order. */
+  const setAddress = useCallback(
+    (address: Address) => {
+      setField('address', address);
+      writeDeliveryAddress(address);
     },
-    [setField, refreshQuote],
+    [setField],
   );
-
-  // Preselect the district the customer chose on the storefront, once, if this checkout still
-  // serves it. It is only a starting point: the quote re-checks it, and the select can change it.
-  const districtPrefilled = useRef(false);
-  useEffect(() => {
-    if (districtPrefilled.current || load.kind !== 'ready') return;
-    districtPrefilled.current = true;
-    if (values.district !== '') return;
-    const saved = readDistrictPreference();
-    if (saved === null || zoneForDistrict(load.zones, saved) === null) return;
-    // One-time sync from storage after the zones arrive; the quote request it starts is async.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setDistrict(saved);
-  }, [load, values.district, setDistrict]);
 
   const touch = useCallback((field: FieldName) => {
     setTouched((current) => (current[field] === true ? current : { ...current, [field]: true }));
@@ -278,45 +236,7 @@ export function useCheckoutFlow({ onPlaced, onSuccess, onError, focusField }: Ch
     if (error !== undefined) visibleErrors[field] ??= error;
   }
 
-  const readyQuote =
-    quote.kind === 'ready' && quote.district === values.district ? quote.quote : null;
-
-  const selectSlot = useCallback((id: string) => {
-    setSlotId(id);
-    setSlotNotice(null);
-  }, []);
-  const clearSlot = useCallback(() => {
-    setSlotId(null);
-    setSlotNotice(null);
-  }, []);
-
-  // The picker follows the quote for the chosen district. While that is being re-fetched it keeps
-  // showing the previous quote's windows (dimmed) as long as they belong to the same zone, so
-  // the list does not vanish and come back under the customer's finger.
-  const districtZone = load.kind === 'ready' ? zoneForDistrict(load.zones, values.district) : null;
-  const slotSource: CheckoutQuote | null =
-    readyQuote ??
-    (quote.kind === 'loading' &&
-    quote.district === values.district &&
-    quote.previous !== null &&
-    districtZone !== null &&
-    quote.previous.zone.id === districtZone.id
-      ? quote.previous
-      : null);
-  const slotView =
-    slotSource === null || (slotSource.delivery_slots.length === 0 && !slotSource.slot_required)
-      ? null
-      : {
-          slots: slotSource.delivery_slots,
-          required: slotSource.slot_required,
-          stale: readyQuote === null,
-        };
-  const selectedSlot = slotView === null ? null : bookableSlot(slotView.slots, slotId);
-  /** The order cannot be placed yet: this zone needs a delivery window and none is chosen. */
-  const slotMissing =
-    readyQuote !== null &&
-    readyQuote.slot_required &&
-    bookableSlot(readyQuote.delivery_slots, slotId) === null;
+  const readyQuote = quote.kind === 'ready' ? quote.quote : null;
 
   const focusFirstInvalid = useCallback(
     (errors: FormErrors) => {
@@ -335,7 +255,7 @@ export function useCheckoutFlow({ onPlaced, onSuccess, onError, focusField }: Ch
     setFailure(null);
     setSubmitAttempted(true);
     const errors = validateForm(values);
-    if (Object.keys(errors).length > 0 || values.district === '') {
+    if (Object.keys(errors).length > 0) {
       onError?.();
       focusFirstInvalid(errors);
       return;
@@ -348,33 +268,16 @@ export function useCheckoutFlow({ onPlaced, onSuccess, onError, focusField }: Ch
     try {
       // 1. Make sure the quote is current. The total the customer has seen is the one on screen,
       //    or the one they just confirmed after a price change.
-      const shown = quote.kind === 'ready' && quote.district === values.district ? quote : null;
+      const shown = quote.kind === 'ready' ? quote : null;
       const seenTotal = priceChange?.to ?? shown?.quote.total_uzs ?? null;
       const fresh =
         shown !== null && Date.now() - shown.fetchedAt < QUOTE_MAX_AGE_MS
           ? shown.quote
-          : await refreshQuote(values.district);
+          : await refreshQuote();
       if (fresh === null) {
         // The summary says why (and offers a retry); take the customer there.
         onError?.();
         focusField?.('quote');
-        return;
-      }
-      // The window must still be bookable in the quote we are about to order against. If the
-      // customer's choice vanished (or they never made one) say so by the picker instead of
-      // sending a request the server would refuse.
-      const slot = bookableSlot(fresh.delivery_slots, slotId);
-      if ((fresh.slot_required && slot === null) || (slotId !== null && slot === null)) {
-        const reason: SlotFailureReason =
-          slotId === null
-            ? 'required'
-            : fresh.delivery_slots.some((candidate) => candidate.id === slotId)
-              ? 'full'
-              : 'unavailable';
-        setSlotId(null);
-        setSlotNotice(reason);
-        onError?.();
-        focusField?.('deliverySlot');
         return;
       }
       if (seenTotal !== null && fresh.total_uzs !== seenTotal) {
@@ -388,7 +291,7 @@ export function useCheckoutFlow({ onPlaced, onSuccess, onError, focusField }: Ch
       }
 
       // 2. Place the order. Same body -> same key; any change -> a new key.
-      const request = buildOrderRequest(values, fresh.total_uzs, slot?.id ?? null);
+      const request = buildOrderRequest(values, fresh.total_uzs);
       if (request === null) return;
       const key = controller.keyFor(requestFingerprint(request), {
         owner,
@@ -404,21 +307,11 @@ export function useCheckoutFlow({ onPlaced, onSuccess, onError, focusField }: Ch
       } catch (error) {
         const classified = classifyCheckoutError(error);
         onError?.();
-        if (classified.kind === 'slot') {
-          // The server refused the window. Re-price (that refreshes the offered windows), forget
-          // the choice, and use a new key for whatever is sent next.
-          controller.reset();
-          setSlotId(null);
-          setSlotNotice(classified.reason);
-          void refreshQuote(values.district);
-          focusField?.('deliverySlot');
-          return;
-        }
         setFailure(classified);
         switch (classified.kind) {
           case 'price_changed':
             setPriceChange({ from: fresh.total_uzs, to: classified.newTotal });
-            void refreshQuote(values.district);
+            void refreshQuote();
             break;
           case 'validation':
             setServerErrors(classified.fields);
@@ -436,9 +329,7 @@ export function useCheckoutFlow({ onPlaced, onSuccess, onError, focusField }: Ch
           case 'insufficient_stock':
           case 'product_inactive':
           case 'cart_empty':
-          case 'below_min_order':
-          case 'district_not_served':
-            void refreshQuote(values.district);
+            void refreshQuote();
             break;
           default:
             break;
@@ -459,7 +350,6 @@ export function useCheckoutFlow({ onPlaced, onSuccess, onError, focusField }: Ch
     values,
     quote,
     priceChange,
-    slotId,
     refreshQuote,
     apiFetch,
     retry,
@@ -477,22 +367,12 @@ export function useCheckoutFlow({ onPlaced, onSuccess, onError, focusField }: Ch
     reload: loadData,
     values,
     setField,
-    setDistrict,
+    setAddress,
     touch,
     errors: visibleErrors,
     formValid,
     quote,
     readyQuote,
-    slots: {
-      view: slotView,
-      selectedId: selectedSlot?.id ?? null,
-      selected: selectedSlot,
-      today,
-      missing: slotMissing,
-      notice: slotNotice,
-      select: selectSlot,
-      clear: clearSlot,
-    },
     priceChange,
     failure,
     submitting,

@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from enum import StrEnum
 from typing import Any, Protocol
 
-from sqlalchemy import CTE, ColumnElement, and_, func, or_, select
+from sqlalchemy import CTE, ColumnElement, and_, case, func, null, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.catalog import Category, Product
@@ -95,7 +95,7 @@ class CatalogRepository(Protocol):
         """Raises ``CategoryNotFoundError`` for an unknown or hidden ``category_slug``.
 
         ``in_stock_only`` keeps untracked products (``stock_quantity IS NULL``) and tracked ones
-        with stock left, the same rule as ``is_in_stock``.
+        with sellable stock left (above the safety stock), the same rule as ``is_in_stock``.
         """
         ...
 
@@ -173,6 +173,17 @@ def product_is_visible(visible: CTE) -> ColumnElement[bool]:
     return and_(Product.is_active.is_(True), Product.category_id.in_(select(visible.c.id)))
 
 
+def sellable_stock() -> ColumnElement[int | None]:
+    """SQL twin of ``app.domain.cart.sellable_quantity``: ``NULL`` while stock is not tracked,
+    else ``stock_quantity - safety_stock``, never below 0 (ADR 0018)."""
+    return case(
+        (Product.stock_quantity.is_(None), null()),
+        else_=func.greatest(Product.stock_quantity - Product.safety_stock, 0),
+    )
+
+
+# ``stock_quantity`` here is the SELLABLE quantity (``sellable_stock``), never the physical stock:
+# the storefront sells, shows and validates against what is left after the safety stock.
 PRODUCT_SUMMARY_COLUMNS = (
     Product.id,
     Product.slug,
@@ -182,7 +193,7 @@ PRODUCT_SUMMARY_COLUMNS = (
     Product.unit,
     Product.price_uzs,
     Product.old_price_uzs,
-    Product.stock_quantity,
+    sellable_stock().label("stock_quantity"),
     Product.image_url,
     Product.category_id,
 )
@@ -302,7 +313,12 @@ class SqlAlchemyCatalogRepository:
         if query is not None:
             conditions.append(_search_filter(query))
         if in_stock_only:
-            conditions.append(or_(Product.stock_quantity.is_(None), Product.stock_quantity > 0))
+            conditions.append(
+                or_(
+                    Product.stock_quantity.is_(None),
+                    Product.stock_quantity > Product.safety_stock,
+                )
+            )
 
         total = (
             await self._session.execute(

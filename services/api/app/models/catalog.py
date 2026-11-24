@@ -61,6 +61,11 @@ class Product(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     old_price_uzs: Mapped[int | None] = mapped_column(BigInteger)
     # NULL means stock is not tracked for this product.
     stock_quantity: Mapped[int | None] = mapped_column(Integer)
+    # Units of a tracked product kept back for walk-in shoppers (ADR 0018): the storefront sells
+    # ``stock_quantity - safety_stock`` (never below 0). Ignored while stock is not tracked.
+    safety_stock: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default=text("0")
+    )
     image_url: Mapped[str | None] = mapped_column(String(2048))
     sort_order: Mapped[int] = mapped_column(
         Integer, nullable=False, default=0, server_default=text("0")
@@ -79,6 +84,7 @@ class Product(UUIDPrimaryKeyMixin, TimestampMixin, Base):
             "old_price_uzs IS NULL OR old_price_uzs >= 0", name="old_price_non_negative"
         ),
         CheckConstraint("stock_quantity IS NULL OR stock_quantity >= 0", name="stock_non_negative"),
+        CheckConstraint("safety_stock >= 0", name="safety_stock_non_negative"),
         Index("ix_products_category_id", "category_id"),
         # Catalog listing: active products, filtered by category.
         Index("ix_products_is_active_category_id", "is_active", "category_id"),

@@ -2,7 +2,10 @@
 
 import { useId, type ReactNode } from 'react';
 import { ALERT_TEXT, INPUT, TEXTAREA } from './classes';
+import { Select, type SelectOption } from './select';
 import { cx } from '@muniramarket/ui';
+
+export type { SelectOption };
 
 export interface ControlProps {
   id: string;
@@ -17,8 +20,11 @@ export interface FieldProps {
   hint?: ReactNode;
   error?: string | null;
   className?: string;
-  /** Renders the control with the ids that tie label, hint and error to it. */
-  children: (control: ControlProps) => ReactNode;
+  /**
+   * Renders the control with the ids that tie label, hint and error to it. `labelId` is for
+   * controls a `<label for>` cannot name (the custom select names itself with it).
+   */
+  children: (control: ControlProps, labelId: string) => ReactNode;
 }
 
 /** Label + control + hint + error, wired with `htmlFor`, `aria-describedby` and `aria-invalid`. */
@@ -26,6 +32,7 @@ export function Field({ label, optionalLabel, hint, error, className, children }
   const id = useId();
   const hintId = `${id}-hint`;
   const errorId = `${id}-error`;
+  const labelId = `${id}-label`;
   const hasError = error !== undefined && error !== null && error !== '';
   const describedBy =
     [hint === undefined ? null : hintId, hasError ? errorId : null].filter(Boolean).join(' ') ||
@@ -33,13 +40,13 @@ export function Field({ label, optionalLabel, hint, error, className, children }
 
   return (
     <div className={cx('flex min-w-0 flex-col gap-1.5', className)}>
-      <label htmlFor={id} className="font-medium">
+      <label id={labelId} htmlFor={id} className="font-medium">
         {label}
         {optionalLabel === undefined ? null : (
           <span className="font-normal text-muted-foreground"> ({optionalLabel})</span>
         )}
       </label>
-      {children({ id, 'aria-describedby': describedBy, 'aria-invalid': hasError })}
+      {children({ id, 'aria-describedby': describedBy, 'aria-invalid': hasError }, labelId)}
       {hint === undefined ? null : (
         <p id={hintId} className="text-sm text-muted-foreground">
           {hint}
@@ -84,11 +91,6 @@ export function TextAreaField({ textarea, testId, ...field }: TextAreaFieldProps
   );
 }
 
-export interface SelectOption {
-  value: string;
-  label: string;
-}
-
 export interface SelectFieldProps extends Omit<FieldProps, 'children'> {
   value: string;
   onChange: (value: string) => void;
@@ -98,6 +100,7 @@ export interface SelectFieldProps extends Omit<FieldProps, 'children'> {
   testId?: string;
 }
 
+/** A labelled {@link Select} (never a native `<select>`). */
 export function SelectField({
   value,
   onChange,
@@ -109,22 +112,17 @@ export function SelectField({
 }: SelectFieldProps) {
   return (
     <Field {...field}>
-      {(control) => (
-        <select
+      {(control, labelId) => (
+        <Select
           {...control}
+          labelledBy={labelId}
           value={value}
-          disabled={disabled}
-          data-testid={testId}
-          onChange={(event) => onChange(event.target.value)}
-          className={INPUT}
-        >
-          {placeholder === undefined ? null : <option value="">{placeholder}</option>}
-          {options.map((option) => (
-            <option key={option.value} value={option.value}>
-              {option.label}
-            </option>
-          ))}
-        </select>
+          onChange={onChange}
+          options={options}
+          {...(placeholder === undefined ? {} : { placeholder })}
+          {...(disabled === undefined ? {} : { disabled })}
+          {...(testId === undefined ? {} : { testId })}
+        />
       )}
     </Field>
   );

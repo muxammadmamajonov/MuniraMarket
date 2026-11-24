@@ -1,15 +1,16 @@
 'use client';
 
 import type { AuthConfig } from '@muniramarket/contracts';
-import { ErrorState, Skeleton } from '@muniramarket/ui';
 import { useEffect, useState } from 'react';
 import { useI18n } from '@/i18n/context';
-import { readJson } from '@/lib/api/errors';
+import { ApiRequestError, readJson } from '@/lib/api/errors';
 import { useSession } from '@/lib/session';
+import { AuthCard, AuthCardSkeleton, AuthErrorCard } from './auth-card';
 import { TelegramLoginButton } from './telegram-login-button';
 
 type ConfigState =
-  { key: number; status: 'ready'; config: AuthConfig } | { key: number; status: 'failed' };
+  | { key: number; status: 'ready'; config: AuthConfig }
+  | { key: number; status: 'failed'; error: ApiRequestError };
 
 /** `GET /auth/config`, fetched while a visitor without a session needs to sign in. */
 function useAuthConfig(attempt: number): ConfigState | null {
@@ -20,12 +21,13 @@ function useAuthConfig(attempt: number): ConfigState | null {
     let cancelled = false;
     apiFetch('/auth/config')
       .then(async (response) => {
-        if (!response.ok) throw new Error('auth config unavailable');
+        if (!response.ok) throw await ApiRequestError.fromResponse(response);
         const config = await readJson<AuthConfig>(response);
         if (!cancelled) setState({ key: attempt, status: 'ready', config });
       })
-      .catch(() => {
-        if (!cancelled) setState({ key: attempt, status: 'failed' });
+      .catch((cause: unknown) => {
+        const error = cause instanceof ApiRequestError ? cause : ApiRequestError.network(cause);
+        if (!cancelled) setState({ key: attempt, status: 'failed', error });
       });
     return () => {
       cancelled = true;
@@ -38,26 +40,22 @@ function useAuthConfig(attempt: number): ConfigState | null {
 
 /**
  * Shown to a visitor without a session: the "Sign in with Telegram" button when the API enables
- * it, a clear "not configured" screen when it does not. Nothing here touches order data.
+ * it, a clear "not configured" screen when it does not, and a retryable error with a support code
+ * when the settings could not be loaded. Nothing here touches order data.
  */
 export function SignInPanel() {
   const { dict } = useI18n();
   const [attempt, setAttempt] = useState(0);
   const config = useAuthConfig(attempt);
 
-  if (config === null) {
-    return (
-      <div role="status" aria-label={dict.auth.checking} className="mx-auto w-full max-w-md">
-        <Skeleton className="h-24 w-full" />
-      </div>
-    );
-  }
+  if (config === null) return <AuthCardSkeleton label={dict.auth.checking} />;
 
   if (config.status === 'failed') {
     return (
-      <ErrorState
+      <AuthErrorCard
         title={dict.errors.title}
         description={dict.auth.configFailed}
+        supportCode={config.error.supportCode}
         retryLabel={dict.auth.retry}
         onRetry={() => setAttempt((value) => value + 1)}
       />
@@ -66,21 +64,22 @@ export function SignInPanel() {
 
   if (!config.config.telegram_oidc.enabled) {
     return (
-      <section
+      <AuthCard
         role="status"
-        className="mx-auto flex w-full max-w-md flex-col gap-2 rounded-xl border border-border bg-surface p-6"
-      >
-        <h1 className="text-xl font-bold">{dict.auth.notConfiguredTitle}</h1>
-        <p className="text-muted-foreground">{dict.auth.notConfiguredMessage}</p>
-      </section>
+        title={dict.auth.notConfiguredTitle}
+        description={dict.auth.notConfiguredMessage}
+      />
     );
   }
 
   return (
-    <section className="mx-auto flex w-full max-w-md flex-col gap-3 rounded-xl border border-border bg-surface p-6">
-      <h1 className="text-xl font-bold">{dict.auth.signInTitle}</h1>
-      <p className="text-muted-foreground">{dict.auth.signInHint}</p>
+    <AuthCard
+      title={dict.auth.signInTitle}
+      description={dict.auth.signInHint}
+      footer={dict.auth.staffOnly}
+      testId="sign-in-card"
+    >
       <TelegramLoginButton />
-    </section>
+    </AuthCard>
   );
 }

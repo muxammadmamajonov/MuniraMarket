@@ -13,6 +13,7 @@ export function makeProduct(overrides: Partial<ProductSummary> = {}): ProductSum
     old_price_uzs: null,
     stock_quantity: null,
     in_stock: true,
+    low_stock: false,
     image_url: null,
     category_id: 'c1',
     ...overrides,

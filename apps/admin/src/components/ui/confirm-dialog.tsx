@@ -72,7 +72,7 @@ export function ConfirmDialog({
           type="button"
           onClick={onClose}
           disabled={pending}
-          className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-xl border border-border bg-surface px-4 font-semibold transition-transform duration-150 ease-out hover:bg-surface-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50"
+          className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-2xl bg-surface-muted px-4 font-semibold transition-transform duration-150 ease-out hover:bg-border focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50"
         >
           {dict.common.cancel}
         </button>

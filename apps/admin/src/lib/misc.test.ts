@@ -4,14 +4,11 @@ import { fieldErrorsFrom } from './api/field-errors';
 import { writeErrorMessage } from './api/error-messages';
 import { auditDetailLines } from './audit';
 import { MAX_CSV_BYTES, csvFileProblem, formatBytes } from './csv';
-import { DISTRICT_CODES, districtName } from './districts';
-import { formatCount, formatDate, formatSlotWindow } from './format';
-import { buildZoneUpdate, validateZone, zoneToForm } from './zones';
-import { zone } from '@/test-utils/fixtures';
+import { formatCount, formatDate } from './format';
 import { getDictionary } from '@/i18n';
 
 describe('API errors', () => {
-  it('keeps field details and the district from the envelope', async () => {
+  it('keeps field details from the envelope', async () => {
     const error = await ApiRequestError.fromResponse(
       Response.json(
         {
@@ -20,7 +17,7 @@ describe('API errors', () => {
             message: 'x',
             details: [
               { loc: ['body', 'price_uzs'], msg: 'bad' },
-              { loc: ['body', 'districts', 0], msg: 'bad' },
+              { loc: ['body', 'items', 0], msg: 'bad' },
               { loc: ['query', 'page'], msg: 'bad' },
             ],
           },
@@ -28,14 +25,7 @@ describe('API errors', () => {
         { status: 422 },
       ),
     );
-    expect(Object.keys(fieldErrorsFrom(error)).sort()).toEqual(['', 'districts', 'price_uzs']);
-    const taken = await ApiRequestError.fromResponse(
-      Response.json(
-        { error: { code: 'district_taken', message: 'x', district: 'sergeli' } },
-        { status: 409 },
-      ),
-    );
-    expect(taken.district).toBe('sergeli');
+    expect(Object.keys(fieldErrorsFrom(error)).sort()).toEqual(['', 'items', 'price_uzs']);
   });
 
   it('puts a 422 without details on the form level', () => {
@@ -47,25 +37,17 @@ describe('API errors', () => {
     for (const locale of ['uz', 'ru'] as const) {
       const dict = getDictionary(locale);
       for (const code of Object.keys(dict.apiErrors.codes)) {
-        const error = new ApiRequestError({
-          status: 409,
-          code: code as never,
-          message: 'x',
-          district: 'mirobod',
-        });
-        const text = writeErrorMessage(dict, locale, error);
+        const error = new ApiRequestError({ status: 409, code: code as never, message: 'x' });
+        const text = writeErrorMessage(dict, error);
         expect(text).not.toBe('');
         expect(text).not.toContain('{');
       }
     }
     const dict = getDictionary('ru');
-    expect(writeErrorMessage(dict, 'ru', ApiRequestError.network())).toBe(
-      dict.errors.serviceUnavailable,
-    );
+    expect(writeErrorMessage(dict, ApiRequestError.network())).toBe(dict.errors.serviceUnavailable);
     expect(
       writeErrorMessage(
         dict,
-        'ru',
         new ApiRequestError({ status: 409, code: 'bad_request', message: 'x' }),
       ),
     ).toBe(dict.apiErrors.writeFailed);
@@ -83,20 +65,12 @@ describe('csv helpers', () => {
   });
 });
 
-describe('formatting and districts', () => {
-  it('formats counts, dates and slot windows', () => {
+describe('formatting', () => {
+  it('formats counts and dates', () => {
     expect(formatCount(1284)).toBe('1 284');
     expect(formatCount(-5)).toBe('-5');
     expect(formatDate('2026-10-31')).toBe('31.10.2026');
     expect(formatDate('garbage')).toBe('garbage');
-    expect(formatSlotWindow('2026-11-02', '14:00:00', '16:00')).toBe('02.11.2026, 14:00–16:00');
-  });
-
-  it('names all twelve districts in both languages', () => {
-    expect(DISTRICT_CODES).toHaveLength(12);
-    expect(districtName('chilonzor', 'ru')).toBe('Чиланзарский');
-    expect(districtName('mirzo_ulugbek', 'uz')).toBe('Mirzo Ulug‘bek');
-    expect(districtName('unknown', 'uz')).toBe('unknown');
   });
 });
 
@@ -114,22 +88,5 @@ describe('audit details', () => {
     ]);
     expect(auditDetailLines({})).toEqual([]);
     expect(auditDetailLines({ changes: 'oops' })).toEqual([]);
-  });
-});
-
-describe('zone form', () => {
-  it('validates hours, districts and money, and diffs districts regardless of order', () => {
-    const values = zoneToForm(zone());
-    expect(validateZone(values)).toEqual({});
-    expect(validateZone({ ...values, districts: [] })).toHaveProperty('districts');
-    expect(validateZone({ ...values, opens_at: '21:00', closes_at: '09:00' })).toHaveProperty(
-      'closes_at',
-    );
-    expect(validateZone({ ...values, fee: '' })).toHaveProperty('delivery_fee_uzs');
-    expect(validateZone({ ...values, free_threshold: '' })).toEqual({});
-    expect(buildZoneUpdate(values, zone())).toEqual({});
-    expect(buildZoneUpdate({ ...values, free_threshold: '' }, zone())).toEqual({
-      free_delivery_threshold_uzs: null,
-    });
   });
 });

@@ -1,16 +1,9 @@
-import type {
-  AdminCategory,
-  AdminProduct,
-  AdminUser,
-  DeliverySlotAdmin,
-  DeliveryZoneAdmin,
-} from '@muniramarket/contracts';
-import { DISTRICT_CODES } from '@/lib/districts';
-import { IDS, auditEntry, category, product, slot, subcategory, zone, adminUser } from './fixtures';
+import type { AdminCategory, AdminProduct, AdminUser } from '@muniramarket/contracts';
+import { IDS, auditEntry, category, product, subcategory, adminUser } from './fixtures';
 
 /**
  * Worst realistic data for the back-office screens (break-ui): every value is a real naming
- * pattern or the API's own limit (255-char names, 64-char SKUs, 10 000 capacity, 1e12 prices).
+ * pattern or the API's own limit (255-char names, 64-char SKUs, 1e12 prices).
  * Kept as the regression fixture for the next change to these screens.
  */
 export const LONG_NAME =
@@ -92,30 +85,6 @@ export const worstUsers: AdminUser[] = [
     username: 'x',
     telegram_user_id: 78,
   }),
-];
-
-export const worstZone: DeliveryZoneAdmin = zone({
-  name_uz: 'Toshkent shahri markaziy va chekka tumanlari, shu jumladan Yangihayot',
-  name_ru: 'Центральные и окраинные районы города Ташкента, включая Янгихаётский',
-  delivery_fee_uzs: 999_999_999_999,
-  free_delivery_threshold_uzs: null,
-  min_order_uzs: 0,
-  opens_at: '00:00',
-  closes_at: '23:59',
-  is_active: false,
-  districts: DISTRICT_CODES.map((code) => ({ code, name_uz: code, name_ru: code })),
-});
-
-export const worstSlots: DeliverySlotAdmin[] = [
-  slot({
-    starts_at: '00:00',
-    ends_at: '23:59',
-    capacity: 10_000,
-    reserved_count: 9_999,
-    remaining: 1,
-  }),
-  slot({ id: 's2', capacity: 0, reserved_count: 0, remaining: 0, is_active: false }),
-  slot({ id: 's3', slot_date: '2026-11-03', capacity: 1, reserved_count: 1, remaining: 0 }),
 ];
 
 export const worstAudit = auditEntry({

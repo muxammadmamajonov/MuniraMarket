@@ -13,6 +13,11 @@
  */
 
 /**
+ * Order line unit (as stored on the order line).
+ * @typedef {'piece' | 'kg' | 'g' | 'l' | 'ml'} Unit
+ */
+
+/**
  * Outcome of one notification delivery attempt, as reported to the Core API outbox.
  * @typedef {'delivered' | 'recipient_blocked' | 'retry' | 'failed'} NotificationOutcome
  */
@@ -47,6 +52,8 @@
  * @property {(method: string, path: string, options?: {actorTelegramUserId?: number, json?: unknown}) => Promise<unknown>} request
  * @property {(user: TelegramUser) => Promise<unknown>} syncTelegramUser
  * @property {(telegramUserId: number) => Promise<unknown>} getMe
+ * @property {(telegramUserId: number, language: Locale) => Promise<unknown>} setLanguage
+ * @property {(telegramUserId: number, phoneNumber: string) => Promise<unknown>} recordOwnPhone
  * @property {(input: { actorTelegramUserId: number, chatId: number, chatType: 'group' | 'supergroup' }) => Promise<unknown>} connectStaffChat
  * @property {(options: { limit: number }) => Promise<unknown>} claimNotifications
  * @property {(id: string, result: { attempt: number, outcome: NotificationOutcome, errorCode?: string }) => Promise<null>} reportNotification

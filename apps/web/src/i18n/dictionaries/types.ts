@@ -47,6 +47,8 @@ export interface Dictionary {
     title: string;
     tagline: string;
     categoriesHeading: string;
+    /** Link from a home section heading to the full list (the catalog). */
+    seeAll: string;
     newestHeading: string;
     /** Shown instead of the sections when the catalog has no categories and no products. */
     emptyTitle: string;
@@ -55,50 +57,66 @@ export interface Dictionary {
     info: {
       paymentTitle: string;
       paymentText: string;
+      /** Who brings the order and who is paid for delivery. */
+      courierTitle: string;
+      courierText: string;
     };
   };
-  /** The storefront's delivery-district chooser. Never claims the location was detected. */
-  delivery: {
-    /** Visible label of the chooser once a district is set (small, above the name). */
+  /** The delivery address card at the top of the storefront (opens the map picker). */
+  address: {
+    /** Small label above a chosen address. */
     heading: string;
     /** Before a choice: the one line on the card, which is itself the button. */
     choosePrompt: string;
     change: string;
-    sheetTitle: string;
-    confirm: string;
-    close: string;
-    /** Legend of the district list in the sheet. */
-    districtsLegend: string;
-    /** Zones could not be loaded; catalog browsing still works. */
-    unavailable: string;
-    noZones: string;
-    /** The remembered district is no longer served by any active zone. */
-    previousUnavailable: string;
-    /** Screen-reader announcement after a choice. `{district}` */
+    /** Screen-reader announcement after saving. */
     saved: string;
+    /** Parts of the one-line address. `{value}` */
+    apartmentShort: string;
+    entranceShort: string;
+    floorShort: string;
   };
-  /** The optional map view (Yandex Maps): orientation only, it selects and saves nothing. */
+  /**
+   * The address picker (Yandex Maps + address form): the customer moves the map under a centre
+   * pin, the point is reverse-geocoded into street and house, and "Deliver here" saves the address.
+   */
   map: {
-    /** Button in the district sheet that opens the picker. */
-    open: string;
     title: string;
     close: string;
     /** Accessible name of the map canvas, including how to pan it by keyboard. */
     canvasLabel: string;
     loading: string;
+    /** No Maps key configured: a point cannot be chosen. */
     unavailableTitle: string;
     unavailableText: string;
-    backToList: string;
     errorTitle: string;
     offlineTitle: string;
     errorText: string;
     retry: string;
-    /** Under the map: orientation only; the district is chosen in the list, the address at checkout. */
+    /** Above the form: how the centre pin works. */
     hint: string;
     myLocation: string;
     locating: string;
     locationDenied: string;
     locationUnavailable: string;
+    /** Accessible description of the centre pin. */
+    pinLabel: string;
+    /** While the pin's street and house are being looked up. */
+    geocoding: string;
+    /** The lookup found no street/house: the customer types them. */
+    geocodeFailed: string;
+    street: string;
+    house: string;
+    apartment: string;
+    entrance: string;
+    floor: string;
+    landmark: string;
+    landmarkPlaceholder: string;
+    optional: string;
+    /** "Deliver here" before the pin was ever placed (moved or located). */
+    placePin: string;
+    /** Saves the address and closes the picker. */
+    deliverHere: string;
   };
   search: {
     label: string;
@@ -123,6 +141,9 @@ export interface Dictionary {
     productsCount: string;
     emptyCategory: string;
     filterLabel: string;
+    /** Phone filter sheet: closes it and shows the listing. */
+    showResults: string;
+    closeFilters: string;
     /** Toggle: only products that can be added to the cart now. */
     inStockOnly: string;
     /** Empty listing while the in-stock filter is on. */
@@ -140,6 +161,10 @@ export interface Dictionary {
     sku: string;
     brand: string;
     description: string;
+    /** Heading of the product's details block (description, SKU, brand). */
+    about: string;
+    /** `{count}`: how much of this product the cart already holds (units of its own measure). */
+    inCart: string;
     category: string;
     inStock: string;
     outOfStock: string;
@@ -174,6 +199,8 @@ export interface Dictionary {
     empty: string;
     emptyHint: string;
     continueShopping: string;
+    /** Under the cart total: delivery is paid to the courier, not to the store. */
+    deliveryNote: string;
     /** `{count}` */
     itemCount: string;
     subtotal: string;
@@ -211,7 +238,6 @@ export interface Dictionary {
       hint: string;
       action: string;
     };
-    backToCart: string;
     optional: string;
     sections: {
       delivery: string;
@@ -221,49 +247,25 @@ export interface Dictionary {
       summary: string;
     };
     labels: {
-      district: string;
-      street: string;
-      house: string;
-      apartment: string;
-      entrance: string;
-      floor: string;
-      landmark: string;
       recipientName: string;
       recipientPhone: string;
       comment: string;
     };
-    districtPlaceholder: string;
-    /** Option group label. `{zone}`, `{fee}` */
-    zoneGroup: string;
-    noZones: string;
-    /** `{time}` */
-    zoneHours: string;
-    /** `{min}` */
-    zoneMinOrder: string;
-    /** `{threshold}` */
-    zoneFreeFrom: string;
-    /** Shown when the zone is closed right now. `{time}` */
-    closedNow: string;
     paymentHint: string;
+    /** One plain line: who brings the order and who is paid for delivery. */
+    courierNote: string;
+    /** Step 1 before an address is chosen: opens the map picker. */
+    chooseAddress: string;
+    changeAddress: string;
     commentPlaceholder: string;
     /** `{count}`, `{max}` */
     charCounter: string;
     summary: {
       items: PluralForms;
-      subtotal: string;
-      delivery: string;
-      free: string;
-      pickDistrict: string;
       total: string;
       calculating: string;
-      /** `{amount}` */
-      freeRemaining: string;
-      freeReached: string;
-      /** `{min}` */
-      belowMin: string;
       cartIssues: string;
       quoteFailed: string;
-      districtNotServed: string;
       /** `{hint}` shown when the submit button is disabled because of the form. */
       fixFields: string;
     };
@@ -282,41 +284,6 @@ export interface Dictionary {
       /** Summary shown above the form after a failed submit. */
       formInvalid: string;
     };
-    /** Delivery time windows offered for zones that use them. */
-    slots: {
-      /** Section heading and the accessible name of the radio group. */
-      title: string;
-      /** Shown while a window is required. Also the reason the submit control is disabled. */
-      hintRequired: string;
-      hintOptional: string;
-      today: string;
-      tomorrow: string;
-      /** Full weekday names, Sunday first (index = `Date#getUTCDay`). */
-      weekdays: readonly [string, string, string, string, string, string, string];
-      /** Accessible name of the row of day chips. */
-      daysLabel: string;
-      /** Compact hint under a day chip: how many windows can still be booked. `{count}` */
-      dayFree: string;
-      /** Screen-reader note on the day chip that holds the chosen window. */
-      dayChosen: string;
-      /** Describes the windows of the shown day when the chosen window is on another day. `{when}` */
-      chosenElsewhere: string;
-      /** Low availability on an option. `{count}` */
-      remaining: PluralForms;
-      /** Marks a window with no places left; it stays visible but cannot be chosen. */
-      full: string;
-      /** Every window is full (or there are none). */
-      noneAvailable: string;
-      /** Clears an optional choice. */
-      clear: string;
-      /** Label of the chosen window in the order summary. */
-      summary: string;
-      notice: {
-        full: string;
-        unavailable: string;
-        required: string;
-      };
-    };
     failures: {
       priceChangedTitle: string;
       /** `{from}`, `{to}` */
@@ -328,8 +295,6 @@ export interface Dictionary {
       insufficientStockUnknown: string;
       productInactive: string;
       cartEmpty: string;
-      belowMin: string;
-      districtNotServed: string;
       /** `{seconds}` */
       rateLimited: string;
       session: string;
@@ -363,7 +328,6 @@ export interface Dictionary {
     status: Record<OrderStatus, string>;
     payment: Record<PaymentMethod, string>;
     detail: {
-      back: string;
       /** `{number}` */
       loadingLabel: string;
       placedTitle: string;
@@ -379,14 +343,10 @@ export interface Dictionary {
       itemsHeading: string;
       /** `{quantity}`, `{price}`, `{unit}` */
       lineBreakdown: string;
-      subtotal: string;
-      deliveryFee: string;
-      free: string;
       total: string;
       deliveryHeading: string;
-      /** The booked delivery window of the order. */
-      slot: string;
-      district: string;
+      /** Who brings the order and who is paid for delivery. */
+      courierNote: string;
       street: string;
       house: string;
       apartment: string;
@@ -401,6 +361,8 @@ export interface Dictionary {
       cancelReasonHeading: string;
       cancelledNotice: string;
       productRemoved: string;
+      /** A line the shop lowered because it ran out (ADR 0018). */
+      lineAdjusted: string;
     };
     cancel: {
       button: string;
@@ -450,6 +412,14 @@ export interface Dictionary {
     accountBlocked: string;
     rateLimited: string;
     serviceUnavailable: string;
+    /** Branded sign-in screen (cart, orders, profile, checkout). */
+    screenTitle: string;
+    screenSubtitle: string;
+    benefits: readonly string[];
+    /** Under the button: what signing in with Telegram does and does not do. */
+    trust: string;
+    /** The sign-in options could not be loaded. */
+    configFailed: string;
     logout: string;
     /** `{name}` */
     signedInAs: string;
@@ -478,22 +448,214 @@ export interface Dictionary {
   };
   profile: {
     title: string;
-    /** Section with the signed-in account. */
-    accountHeading: string;
     /** Shown while the session is still being checked. */
     checking: string;
     anonymousTitle: string;
     /** Why to sign in; the sign-in control itself is the shared `SignInPrompt`. */
     anonymousText: string;
-    ordersLink: string;
-    languageHeading: string;
+    /** Under the language choice: it is one setting shared with the bot. */
+    languageHint: string;
+    /** Inline error when the language could not be saved. */
+    languageFailed: string;
+    /** Footer line in the Mini App: no sign-out, the Telegram account is the session. */
+    miniAppSession: string;
+  };
+  /** Account phone: shared from Telegram (Mini App) or via the bot (browser). Never typed. */
+  phone: {
+    heading: string;
+    verified: string;
+    notVerified: string;
+    /** Why the number is needed; only what it is really used for. */
+    why: string;
+    share: string;
+    update: string;
+    updateHint: string;
+    waiting: string;
+    success: string;
+    cancelled: string;
+    timeout: string;
+    checkAgain: string;
+    /** Browser: open the bot, which asks for the number. */
+    openBot: string;
+    browserHint: string;
+    /** Browser without a configured bot link. */
+    openInTelegram: string;
+    /** Telegram app too old for `requestContact`. */
+    unsupported: string;
+    checkoutTitle: string;
+    checkoutText: string;
+  };
+  /** `/<locale>/help`: how the shop works; only what the app really does. */
+  help: {
+    title: string;
+    intro: string;
+    orderingTitle: string;
+    orderingSteps: readonly string[];
+    paymentTitle: string;
+    paymentText: string;
+    deliveryTitle: string;
+    deliveryText: string;
+    deliveryLink: string;
+    statusTitle: string;
+    statusText: string;
+    phoneTitle: string;
+    phoneText: string;
+    languageTitle: string;
+    languageText: string;
   };
   catalogPage: {
     title: string;
-    /** Under the title: how many categories. `{count}` */
-    count: string;
     emptyTitle: string;
     emptyHint: string;
+  };
+  /** The profile hub: grouped rows that open each settings page. */
+  account: {
+    accountSection: string;
+    settingsSection: string;
+    supportSection: string;
+    personalLink: string;
+    ordersLink: string;
+    addressesLink: string;
+    languageLink: string;
+    helpLink: string;
+    /** Under the name when the account has no phone yet. */
+    phoneMissing: string;
+    logout: string;
+  };
+  /** `/<locale>/profile/personal`: name, birthday and phone. */
+  personal: {
+    nameSection: string;
+    firstName: string;
+    lastName: string;
+    optional: string;
+    firstNameRequired: string;
+    /** `{max}` characters. */
+    tooLong: string;
+    singleLine: string;
+    birthDate: string;
+    birthPlaceholder: string;
+    openCalendar: string;
+    pickerDone: string;
+    pickerDay: string;
+    pickerMonth: string;
+    pickerYear: string;
+    /** January..December, as shown in the date wheel. */
+    months: readonly string[];
+    birthIncomplete: string;
+    birthInvalid: string;
+    birthFuture: string;
+    birthTooOld: string;
+    save: string;
+    saving: string;
+    saved: string;
+    saveFailed: string;
+    phoneSection: string;
+    phoneNone: string;
+    verifiedBadge: string;
+    unverifiedBadge: string;
+    /** A typed number is not verified; ordering needs the Telegram contact. */
+    unverifiedHint: string;
+    changePhone: string;
+    addPhone: string;
+    phoneSheetTitle: string;
+    phoneSheetText: string;
+    shareContact: string;
+    shareHint: string;
+    orDivider: string;
+    manualLabel: string;
+    manualHint: string;
+    phoneIncomplete: string;
+    phoneInvalid: string;
+    savePhone: string;
+    phoneSaved: string;
+    close: string;
+  };
+  /** `/<locale>/profile/addresses` and the saved-address chooser. */
+  addresses: {
+    loading: string;
+    loadFailed: string;
+    retry: string;
+    emptyTitle: string;
+    emptyHint: string;
+    add: string;
+    delete: string;
+    /** Accessible name of a row's delete action; `{label}` is the address name or line. */
+    deleteNamed: string;
+    deleted: string;
+    deleteFailed: string;
+    isDefault: string;
+    makeDefault: string;
+    labelSection: string;
+    labelHome: string;
+    labelWork: string;
+    labelOther: string;
+    labelPlaceholder: string;
+    untitled: string;
+    /** `{max}` addresses. */
+    limitReached: string;
+    pointSection: string;
+    chooseOnMap: string;
+    changeOnMap: string;
+    needPoint: string;
+    save: string;
+    saving: string;
+    saved: string;
+    saveFailed: string;
+    notFound: string;
+    deleteTitle: string;
+    deleteText: string;
+    keep: string;
+    close: string;
+    chooserTitle: string;
+    newAddress: string;
+    saveForLater: string;
+    savedToList: string;
+    /** Swipe hint for screen readers / keyboard: the delete button follows each row. */
+    rowActionsHint: string;
+  };
+  /** Status filter on the orders page. */
+  orderTabs: {
+    label: string;
+    all: string;
+    active: string;
+    delivering: string;
+    done: string;
+    cancelled: string;
+    emptyAll: string;
+    emptyAllHint: string;
+    emptyActive: string;
+    emptyActiveHint: string;
+    emptyDelivering: string;
+    emptyDeliveringHint: string;
+    emptyDone: string;
+    emptyDoneHint: string;
+    emptyCancelled: string;
+    emptyCancelledHint: string;
+    /** Extra items beyond the thumbnails, e.g. `+3`. */
+    moreItems: string;
+  };
+  /**
+   * Page titles shown in the header slot (Telegram's own top row in fullscreen), so they must be
+   * short: the slot is about 120px wide on a 320px phone and longer text is cut with an ellipsis.
+   * Category and product pages use their own names instead.
+   */
+  pageTitles: {
+    catalog: string;
+    search: string;
+    cart: string;
+    checkout: string;
+    orders: string;
+    order: string;
+    profile: string;
+    help: string;
+    personal: string;
+    addresses: string;
+    address: string;
+    newAddress: string;
+    language: string;
+    signIn: string;
+    notFound: string;
+    error: string;
   };
   language: {
     label: string;

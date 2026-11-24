@@ -154,7 +154,7 @@ function SheetContent({
         tabIndex={-1}
         data-closing={closing}
         className={
-          'relative flex max-h-[90dvh] w-full max-w-lg flex-col rounded-t-2xl bg-background shadow-xl outline-none ' +
+          'relative flex max-h-[90dvh] w-full max-w-lg flex-col rounded-t-3xl bg-background shadow-xl outline-none ' +
           'transform-[translateY(0)] opacity-100 transition-[transform,opacity] duration-200 ease-drawer ' +
           'starting:transform-[translateY(100%)] starting:opacity-0 ' +
           'data-[closing=true]:transform-[translateY(100%)] data-[closing=true]:opacity-0 ' +

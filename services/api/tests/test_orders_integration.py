@@ -1,8 +1,9 @@
 """Checkout and orders over HTTP against a real PostgreSQL schema built by the Alembic migrations.
 
-Covers zone matching and pricing, the order transaction (stock, snapshots, cart, history,
-outbox), idempotency, refusals that must leave nothing behind, cancellation and the operator
-lifecycle, user isolation and, with real concurrent requests, the locking strategy.
+Covers the quote (total = subtotal: the customer pays the Yandex Go courier), the order
+transaction (stock, snapshots, cart, history, outbox), idempotency, refusals that must leave
+nothing behind, cancellation and the operator lifecycle, user isolation and, with real concurrent
+requests, the locking strategy.
 """
 
 import asyncio
@@ -20,10 +21,9 @@ from app.domain.checkout import MAX_OPEN_ORDERS
 from app.domain.order_status import OrderStatus
 from app.models.cart import CartItem
 from app.models.catalog import Category, Product
-from app.models.delivery import DeliveryZone
 from app.models.enums import UserRole
 from app.models.notification import NotificationOutbox, StaffNotificationChat
-from app.models.order import Order, OrderStatusHistory
+from app.models.order import Order, OrderItemAdjustment, OrderStatusHistory
 from app.repositories import orders as order_repository
 from app.repositories.users import UserRecord
 from tests.db_data import (
@@ -32,7 +32,6 @@ from tests.db_data import (
     add_category,
     add_product,
     add_user,
-    add_zone,
     build_app,
     update_row,
 )
@@ -55,7 +54,7 @@ def new_key() -> str:
 
 
 class Shop:
-    """Signed-in customers and an operator, a catalog category and delivery zones."""
+    """Signed-in customers and an operator, and a catalog category."""
 
     def __init__(
         self,
@@ -63,13 +62,11 @@ class Shop:
         factory: SessionFactory,
         users: list[UserRecord],
         category: Category,
-        zone: DeliveryZone,
     ) -> None:
         self.client = client
         self.factory = factory
         self.user, self.other_user, self.operator, *self.crowd = users
         self.category = category
-        self.zone = zone
 
     # --- data ---
 
@@ -123,10 +120,8 @@ class Shop:
         )
         assert response.status_code == 200, response.text
 
-    async def quote(self, district: str = "chilonzor", *, user: UserRecord | None = None) -> Any:
-        return await self.client.post(
-            QUOTE, json={"district": district}, headers=self.headers(user)
-        )
+    async def quote(self, *, user: UserRecord | None = None) -> Any:
+        return await self.client.post(QUOTE, headers=self.headers(user))
 
     async def quoted_total(self, *, user: UserRecord | None = None) -> int:
         response = await self.quote(user=user)
@@ -179,12 +174,10 @@ async def shop(session_factory: SessionFactory) -> AsyncIterator[Shop]:
     ]
     users += [await add_user(session_factory) for _ in range(EXTRA_CUSTOMERS)]
     category = await add_category(session_factory, "orders-cat")
-    zone = await add_zone(session_factory, "demo-markaziy", ["chilonzor", "olmazor"])
-    await add_zone(session_factory, "demo-yopiq", ["bektemir"], is_active=False)
     app = build_app(session_factory, users)
     transport = httpx.ASGITransport(app=app, raise_app_exceptions=True)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
-        yield Shop(client, session_factory, users, category, zone)
+        yield Shop(client, session_factory, users, category)
 
 
 def error(response: httpx.Response, status: int, code: str) -> dict[str, Any]:
@@ -197,75 +190,36 @@ def error(response: httpx.Response, status: int, code: str) -> dict[str, Any]:
 # --- quote ----------------------------------------------------------------------------------------
 
 
-async def test_quote_prices_delivery_for_the_matching_zone(shop: Shop) -> None:
+async def test_quote_total_is_the_subtotal(shop: Shop) -> None:
     await shop.add(await shop.product("apple", price=25_000), 2)
-    response = await shop.quote("olmazor")
+    response = await shop.quote()
     assert response.status_code == 200, response.text
     assert response.headers["cache-control"] == "no-store"
     body = response.json()
-    assert (body["subtotal_uzs"], body["delivery_fee_uzs"], body["total_uzs"]) == (
-        50_000,
-        15_000,
-        65_000,
-    )
-    assert body["free_delivery_remaining_uzs"] == 250_000
-    assert body["zone"]["slug"] == "demo-markaziy"
-    assert body["zone"]["id"] == str(shop.zone.id)
-    assert [d["code"] for d in body["zone"]["districts"]] == ["chilonzor", "olmazor"]
+    assert (body["subtotal_uzs"], body["total_uzs"]) == (50_000, 50_000)
     assert body["issues"] == []
     assert body["can_place_order"] is True
 
 
-async def test_unserved_districts(shop: Shop) -> None:
-    await shop.add(await shop.product("apple", price=60_000))
-    # In an inactive zone, and in no zone at all.
-    for district in ("bektemir", "sergeli"):
-        error(await shop.quote(district), 409, "district_not_served")
-    response = await shop.order(
-        75_000, address={"district": "bektemir", "street": "Demo ko'cha", "house": "1"}
-    )
-    error(response, 409, "district_not_served")
-    assert await shop.count(Order) == 0
-    # Re-activating the zone makes it deliver.
-    async with shop.factory() as session:
-        zone_id = (
-            await session.execute(select(DeliveryZone.id).where(DeliveryZone.slug == "demo-yopiq"))
-        ).scalar_one()
-    await update_row(shop.factory, DeliveryZone, zone_id, is_active=True)
-    assert (await shop.quote("bektemir")).status_code == 200
-
-
-async def test_free_delivery_threshold_and_minimum_order(shop: Shop) -> None:
-    cheap = await shop.product("cheap", price=20_000)
-    await shop.add(cheap)
+async def test_any_amount_can_be_ordered(shop: Shop) -> None:
+    # No minimum order and no delivery charge: delivery is on demand by a Yandex Go courier.
+    await shop.add(await shop.product("cheap", price=1_000))
     body = (await shop.quote()).json()
-    # 20 000 + 15 000 delivery would pass 50 000, but the minimum applies to the subtotal.
-    assert body["total_uzs"] == 35_000
-    assert body["issues"] == ["below_min_order"]
-    assert body["can_place_order"] is False
-    error(await shop.order(35_000), 409, "below_min_order")
-
-    await shop.add(await shop.product("big", price=280_000))
-    body = (await shop.quote()).json()
-    assert (body["subtotal_uzs"], body["delivery_fee_uzs"], body["total_uzs"]) == (
-        300_000,
-        0,
-        300_000,
-    )
-    assert body["free_delivery_remaining_uzs"] == 0
-    assert body["can_place_order"] is True
+    assert (body["total_uzs"], body["issues"], body["can_place_order"]) == (1_000, [], True)
+    order = await shop.place()
+    assert (order["subtotal_uzs"], order["total_uzs"]) == (1_000, 1_000)
 
 
 async def test_empty_cart(shop: Shop) -> None:
     body = (await shop.quote()).json()
     assert body["issues"] == ["cart_empty"]
-    assert body["total_uzs"] == 15_000
-    error(await shop.order(15_000), 409, "cart_empty")
+    assert body["total_uzs"] == 0
+    error(await shop.order(0), 409, "cart_empty")
     # A cart that existed but was emptied is refused the same way.
     apple = await shop.product("apple")
     await shop.add(apple)
     await shop.client.delete(f"{ITEMS}/{apple.id}", headers=shop.headers())
-    error(await shop.order(15_000), 409, "cart_empty")
+    error(await shop.order(0), 409, "cart_empty")
 
 
 # --- placing an order -----------------------------------------------------------------------------
@@ -277,13 +231,19 @@ async def test_happy_path(shop: Shop) -> None:
     await shop.add(tracked, 2)
     await shop.add(untracked, 3)
     total = await shop.quoted_total()
-    assert total == 80_000 + 15_000
+    assert total == 80_000
 
     response = await shop.order(
         total,
         recipient_phone="+998 00 123-45-67",
         comment=" Demo izoh ",
-        address={"district": "chilonzor", "street": " Demo ko'cha ", "house": "7", "floor": ""},
+        address={
+            "lat": 41.3110814999,
+            "lon": 69.2405625,
+            "street": " Demo ko'cha ",
+            "house": "7",
+            "floor": "",
+        },
     )
     assert response.status_code == 201, response.text
     assert response.headers["cache-control"] == "no-store"
@@ -291,19 +251,15 @@ async def test_happy_path(shop: Shop) -> None:
     order = response.json()
     assert ORDER_NUMBER.fullmatch(order["number"])
     assert order["status"] == "NEW"
-    assert (order["subtotal_uzs"], order["delivery_fee_uzs"], order["total_uzs"]) == (
-        80_000,
-        15_000,
-        95_000,
-    )
+    assert (order["subtotal_uzs"], order["total_uzs"]) == (80_000, 80_000)
     assert order["item_count"] == 5
     assert order["recipient_phone"] == DEMO_PHONE
     assert order["comment"] == "Demo izoh"
     assert order["address"]["street"] == "Demo ko'cha"
     assert order["address"]["floor"] is None
+    # The map point is stored with 6 decimals.
+    assert (order["address"]["lat"], order["address"]["lon"]) == (41.311081, 69.240562)
     assert order["can_cancel"] is True
-    # The zone has no delivery slots: none is required and none is booked.
-    assert order["delivery_slot"] is None
     assert [change["status"] for change in order["history"]] == ["NEW"]
     lines = {line["sku"]: line for line in order["items"]}
     assert lines["DEMO-0100"] == {
@@ -315,6 +271,8 @@ async def test_happy_path(shop: Shop) -> None:
         "unit_price_uzs": 25_000,
         "quantity": 2,
         "line_total_uzs": 50_000,
+        "original_quantity": 2,
+        "adjusted": False,
     }
     assert lines["DEMO-0200"]["line_total_uzs"] == 30_000
 
@@ -325,12 +283,21 @@ async def test_happy_path(shop: Shop) -> None:
     assert await shop.count(CartItem) == 0
     cart = (await shop.client.get("/api/v1/cart", headers=shop.headers())).json()
     assert cart["items"] == []
-    # The zone is recorded.
+    # The address snapshot is what was validated (trimmed, blanks as null, 6-decimal point).
     async with shop.factory() as session:
         stored = (
             await session.execute(select(Order).where(Order.id == uuid.UUID(order["id"])))
         ).scalar_one()
-    assert stored.delivery_zone_id == shop.zone.id
+    assert stored.address_snapshot == {
+        "lat": 41.311081,
+        "lon": 69.240562,
+        "street": "Demo ko'cha",
+        "house": "7",
+        "apartment": None,
+        "entrance": None,
+        "floor": None,
+        "landmark": None,
+    }
     assert len(stored.idempotency_request_hash) == 64
 
     # History: one NEW entry by the customer.
@@ -348,7 +315,7 @@ async def test_happy_path(shop: Shop) -> None:
         "order_number": order["number"],
         "status": "NEW",
         "locale": "uz",
-        "total_uzs": 95_000,
+        "total_uzs": 80_000,
         "chat_id": shop.user.telegram_user_id,
     }
     serialized = str(message.payload)
@@ -359,7 +326,7 @@ async def test_happy_path(shop: Shop) -> None:
         DEMO_PHONE[4:],
         "Demo ko'cha",
         "Demo Mijoz",
-        "chilonzor",
+        "41.311081",
         "Demo izoh",
     ):
         assert personal not in serialized
@@ -368,7 +335,7 @@ async def test_happy_path(shop: Shop) -> None:
     await update_row(shop.factory, Product, tracked.id, price_uzs=99_000, name_uz="Demo yangi")
     again = (await shop.client.get(f"{ORDERS}/{order['id']}", headers=shop.headers())).json()
     assert again["items"] == order["items"]
-    assert again["total_uzs"] == 95_000
+    assert again["total_uzs"] == 80_000
 
 
 # --- idempotency ----------------------------------------------------------------------------------
@@ -398,10 +365,9 @@ async def test_same_key_and_body_replays_the_order(shop: Shop) -> None:
 
     # Keys are per user: another customer may use the same one.
     await shop.add(apple, 1, user=shop.other_user)
-    other = await shop.order(30_000 + 15_000, key=key, user=shop.other_user)
-    error(other, 409, "below_min_order")  # proves it was evaluated, not replayed
-    await shop.add(apple, 1, user=shop.other_user)
-    other = await shop.order(60_000 + 15_000, key=key, user=shop.other_user)
+    other = await shop.order(total, key=key, user=shop.other_user)
+    error(other, 409, "price_changed")  # proves it was evaluated, not replayed
+    other = await shop.order(30_000, key=key, user=shop.other_user)
     assert other.status_code == 201
     assert other.json()["id"] != first.json()["id"]
 
@@ -433,7 +399,7 @@ async def test_parallel_orders_never_oversell(shop: Shop) -> None:
     for buyer in buyers:
         await shop.add(scarce, 1, user=buyer)
 
-    responses = await asyncio.gather(*(shop.order(75_000, user=buyer) for buyer in buyers))
+    responses = await asyncio.gather(*(shop.order(60_000, user=buyer) for buyer in buyers))
     created = [r for r in responses if r.status_code == 201]
     refused = [r for r in responses if r.status_code != 201]
     assert len(created) == 3, [r.text for r in responses]
@@ -457,7 +423,7 @@ async def test_parallel_orders_of_overlapping_carts_do_not_deadlock(shop: Shop) 
         pair = (first, second) if index % 2 else (second, first)
         for product in pair:
             await shop.add(product, 1, user=buyer)
-    responses = await asyncio.gather(*(shop.order(75_000, user=buyer) for buyer in shop.crowd))
+    responses = await asyncio.gather(*(shop.order(60_000, user=buyer) for buyer in shop.crowd))
     assert [r.status_code for r in responses] == [201] * len(shop.crowd), [
         r.text for r in responses
     ]
@@ -472,23 +438,19 @@ async def test_price_change_between_quote_and_order(shop: Shop) -> None:
     apple = await shop.product("apple", price=30_000, stock=5)
     await shop.add(apple, 2)
     shown = await shop.quoted_total()
-    assert shown == 75_000
+    assert shown == 60_000
 
     await update_row(shop.factory, Product, apple.id, price_uzs=35_000)
     body = error(await shop.order(shown), 409, "price_changed")
-    assert body["total_uzs"] == 85_000
+    assert body["total_uzs"] == 70_000
     assert await shop.stock(apple) == 5
     assert await shop.count(CartItem) == 1
     assert await shop.count(Order) == 0
     assert await shop.count(OrderStatusHistory) == 0
     assert await shop.count(NotificationOutbox) == 0
 
-    # A zone fee change is caught the same way.
-    await update_row(shop.factory, DeliveryZone, shop.zone.id, delivery_fee_uzs=20_000)
-    body = error(await shop.order(85_000), 409, "price_changed")
-    assert body["total_uzs"] == 90_000
     # Ordering at the new total works.
-    assert (await shop.order(90_000)).status_code == 201
+    assert (await shop.order(70_000)).status_code == 201
 
 
 async def test_inactive_products_are_refused(shop: Shop) -> None:
@@ -498,7 +460,7 @@ async def test_inactive_products_are_refused(shop: Shop) -> None:
 
     await update_row(shop.factory, Product, apple.id, is_active=False)
     quote = (await shop.quote()).json()
-    assert quote["issues"] == ["cart_has_issues", "below_min_order"]
+    assert quote["issues"] == ["cart_has_issues"]
     body = error(await shop.order(total), 409, "product_inactive")
     assert body["product_id"] == str(apple.id)
 
@@ -692,7 +654,8 @@ async def test_concurrent_cancels_restock_once(shop: Shop) -> None:
 
 async def test_staff_group_gets_alerts_for_new_orders_and_key_statuses(shop: Shop) -> None:
     """ADR 0015: with a group connected, the same transaction also enqueues staff alerts for
-    NEW, OUT_FOR_DELIVERY, DELIVERED and CANCELLED, without customer personal data."""
+    NEW, OUT_FOR_DELIVERY, DELIVERED and CANCELLED. Every alert names the recipient; the NEW
+    alert carries the whole order (owner's request) for the private staff group."""
     plain = await shop.product("plain", price=30_000, stock=10)
     await shop.add(plain, 2)
     before = await shop.place()  # no group yet: customer notification only
@@ -720,7 +683,31 @@ async def test_staff_group_gets_alerts_for_new_orders_and_key_statuses(shop: Sho
         "total_uzs",
         "chat_id",
         "cancelled_by_customer",
+        "recipient_name",
+        "details",
+        "destination",
     }
+    # The drop-off point (for the "call a Yandex Go courier" button), only on the NEW alert.
+    assert alerts[0].payload["destination"] == {"lat": 41.311081, "lon": 69.240562}
+    assert all("destination" not in m.payload for m in alerts[1:])
+    assert all(m.payload["recipient_name"] == "Demo Mijoz" for m in alerts)
+    details = alerts[0].payload["details"]
+    assert details["items"] == [
+        {"name_uz": "Demo apple", "quantity": 2, "unit": "piece", "line_total_uzs": 60_000}
+    ]
+    assert (details["subtotal_uzs"], details["payment_method"]) == (60_000, "cash_on_delivery")
+    assert details["recipient_phone"] == DEMO_PHONE
+    assert details["address"] == {
+        "street": "Demo ko'cha",
+        "house": "12",
+        "apartment": None,
+        "entrance": None,
+        "floor": None,
+        "landmark": None,
+    }
+    assert details["comment"] is None
+    assert details["created_at"].endswith("+00:00")
+    assert all("details" not in m.payload for m in alerts[1:])
     customer = [m for m in await shop.outbox(order["id"]) if m.event_type != "order.staff_alert"]
     assert len(customer) == 6  # the customer's own notifications are unchanged
 
@@ -732,6 +719,26 @@ async def test_staff_group_gets_alerts_for_new_orders_and_key_statuses(shop: Sho
     ]
     assert cancel_alert.payload["status"] == "CANCELLED"
     assert cancel_alert.payload["cancelled_by_customer"] is True
+    assert "destination" not in cancel_alert.payload
+
+
+async def test_an_order_placed_before_courier_delivery_reads_without_coordinates(
+    shop: Shop,
+) -> None:
+    """A stored address of the old shape (no map point, an area key) reads as null coordinates."""
+    apple = await shop.product("apple", price=30_000, stock=10)
+    await shop.add(apple)
+    order = await shop.place()
+    async with shop.factory() as session:
+        stored = await session.get(Order, uuid.UUID(order["id"]))
+        assert stored is not None
+        stored.address_snapshot = {"region": "chilonzor", "street": "Demo ko'cha", "house": "1"}
+        await session.commit()
+    detail = (await shop.client.get(f"{ORDERS}/{order['id']}", headers=shop.headers())).json()
+    assert detail["address"]["lat"] is None
+    assert detail["address"]["lon"] is None
+    assert detail["address"]["street"] == "Demo ko'cha"
+    assert "region" not in detail["address"]
 
 
 # --- isolation ------------------------------------------------------------------------------------
@@ -792,6 +799,7 @@ async def test_customer_order_list_is_newest_first_and_paginated(shop: Shop) -> 
         "total_uzs",
         "item_count",
         "created_at",
+        "thumbnails",
     }
     beyond = (
         await shop.client.get(ORDERS, params={"page": 9, "page_size": 2}, headers=shop.headers())
@@ -889,7 +897,7 @@ async def test_lost_idempotency_race_replays_the_winner(
     apple = await shop.product("apple", price=60_000, stock=5)
     await shop.add(apple)
     key = new_key()
-    first = await shop.order(75_000, key=key)
+    first = await shop.order(60_000, key=key)
     assert first.status_code == 201
     await shop.add(apple)  # something to order again
 
@@ -906,7 +914,7 @@ async def test_lost_idempotency_race_replays_the_winner(
     monkeypatch.setattr(
         order_repository.SqlAlchemyOrderRepository, "_order_id_for_key", missing_once
     )
-    replay = await shop.order(75_000, key=key)
+    replay = await shop.order(60_000, key=key)
     assert replay.status_code == 200, replay.text
     assert replay.headers["idempotent-replayed"] == "true"
     assert replay.json()["id"] == first.json()["id"]
@@ -915,3 +923,286 @@ async def test_lost_idempotency_race_replays_the_winner(
     assert await shop.count(NotificationOutbox) == 1
     assert await shop.stock(apple) == 4
     assert await shop.count(CartItem) == 1
+
+
+# --- safety stock (ADR 0018) ----------------------------------------------------------------------
+
+
+async def test_safety_stock_limits_what_the_storefront_sells(shop: Shop) -> None:
+    """3 apples on the shelf, 2 kept back for walk-in shoppers: only 1 can be ordered online."""
+    apple = await shop.product("apple", price=10_000, stock=3, safety_stock=2)
+    listed = (await shop.client.get("/api/v1/products/apple")).json()
+    assert (listed["stock_quantity"], listed["in_stock"], listed["low_stock"]) == (1, True, True)
+
+    response = await shop.client.post(
+        ITEMS, json={"product_id": str(apple.id), "quantity": 2}, headers=shop.headers()
+    )
+    assert error(response, 409, "insufficient_stock")["available_quantity"] == 1
+    await shop.add(apple, 1)
+    # The kept-back units grow under the cart line: the quote reports it, the order is refused.
+    await update_row(shop.factory, Product, apple.id, safety_stock=3)
+    quote = (await shop.quote()).json()
+    assert quote["items"][0]["issue"] == "insufficient_stock"
+    assert quote["items"][0]["product"]["stock_quantity"] == 0
+    refused = error(await shop.order(10_000), 409, "insufficient_stock")
+    assert refused["available_quantity"] == 0
+    assert await shop.stock(apple) == 3
+
+    await update_row(shop.factory, Product, apple.id, safety_stock=2)
+    order = await shop.place()
+    assert order["total_uzs"] == 10_000
+    # The order took the physical stock; the safety stock is left on the shelf.
+    assert await shop.stock(apple) == 2
+    sold_out = (await shop.client.get("/api/v1/products/apple")).json()
+    assert (sold_out["stock_quantity"], sold_out["in_stock"]) == (0, False)
+    in_stock_slugs = {
+        item["slug"]
+        for item in (await shop.client.get("/api/v1/products", params={"in_stock": "true"})).json()[
+            "items"
+        ]
+    }
+    assert "apple" not in in_stock_slugs
+
+
+# --- shortage at picking (ADR 0018) ---------------------------------------------------------------
+
+
+class Picking:
+    def __init__(self, shop: Shop) -> None:
+        self.shop = shop
+
+    async def adjust(
+        self,
+        order_id: str,
+        product: Product,
+        quantity: int,
+        *,
+        reason: str = "Javonda qolmadi",
+        mark_out_of_stock: bool = False,
+        user: UserRecord | None = None,
+    ) -> httpx.Response:
+        return await self.shop.client.patch(
+            f"{ADMIN}/{order_id}/items/{product.id}",
+            json={"quantity": quantity, "reason": reason, "mark_out_of_stock": mark_out_of_stock},
+            headers=self.shop.headers(user or self.shop.operator),
+        )
+
+
+async def _group(shop: Shop) -> None:
+    async with shop.factory() as session:
+        if await session.get(StaffNotificationChat, 1) is None:
+            session.add(StaffNotificationChat(id=1, chat_id=-1001234567890))
+            await session.commit()
+
+
+async def test_lowering_a_line_returns_stock_and_tells_everyone(shop: Shop) -> None:
+    await _group(shop)
+    apple = await shop.product("apple", price=15_000, stock=5)
+    bread = await shop.product("bread", price=4_000, stock=None)
+    await shop.add(apple, 3)
+    await shop.add(bread, 2)
+    order = await shop.place()
+    assert await shop.stock(apple) == 2
+    picking = Picking(shop)
+
+    response = await picking.adjust(order["id"], apple, 1, reason="Ikkitasi ezilgan")
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert (body["subtotal_uzs"], body["total_uzs"], body["item_count"]) == (23_000, 23_000, 3)
+    lines = {line["sku"]: line for line in body["items"]}
+    assert lines["DEMO-apple"] | {"product_id": None} == {
+        "product_id": None,
+        "sku": "DEMO-apple",
+        "name_uz": "Demo apple",
+        "name_ru": "Демо apple",
+        "unit": "piece",
+        "unit_price_uzs": 15_000,
+        "quantity": 1,
+        "line_total_uzs": 15_000,
+        "original_quantity": 3,
+        "adjusted": True,
+    }
+    assert (lines["DEMO-bread"]["original_quantity"], lines["DEMO-bread"]["adjusted"]) == (2, False)
+    assert body["can_adjust_items"] is True
+    [adjustment] = body["adjustments"]
+    assert adjustment | {"at": None, "product_id": None} == {
+        "product_id": None,
+        "sku": "DEMO-apple",
+        "name_uz": "Demo apple",
+        "name_ru": "Демо apple",
+        "unit": "piece",
+        "from_quantity": 3,
+        "to_quantity": 1,
+        "reason": "Ikkitasi ezilgan",
+        "marked_out_of_stock": False,
+        "actor_role": "operator",
+        "at": None,
+    }
+    assert adjustment["product_id"] == str(apple.id)
+    # The two units the line no longer takes are back on sale; the status did not change.
+    assert await shop.stock(apple) == 4
+    assert body["status"] == "NEW"
+    assert [change["status"] for change in body["history"]] == ["NEW"]
+
+    events = [(m.event_type, m.payload) for m in await shop.outbox(order["id"])]
+    customer = [payload for kind, payload in events if kind == "order.adjusted"]
+    staff = [payload for kind, payload in events if kind == "order.staff_adjusted"]
+    assert customer == [
+        {
+            "order_id": order["id"],
+            "order_number": order["number"],
+            "status": "NEW",
+            "locale": "uz",
+            "total_uzs": 23_000,
+            "chat_id": shop.user.telegram_user_id,
+            "changes": [
+                {
+                    "name_uz": "Demo apple",
+                    "name_ru": "Демо apple",
+                    "unit": "piece",
+                    "from_quantity": 3,
+                    "to_quantity": 1,
+                }
+            ],
+        }
+    ]
+    assert len(staff) == 1
+    assert staff[0]["reason"] == "Ikkitasi ezilgan"
+    assert staff[0]["recipient_name"] == "Demo Mijoz"
+    assert staff[0]["changes"][0]["marked_out_of_stock"] is False
+
+    # Retrying the same request changes nothing.
+    again = await picking.adjust(order["id"], apple, 1, reason="Ikkitasi ezilgan")
+    assert again.status_code == 200
+    assert len(again.json()["adjustments"]) == 1
+    assert await shop.stock(apple) == 4
+    assert len(await shop.outbox(order["id"])) == len(events)
+
+
+async def test_out_of_stock_zeroes_the_product_and_an_untracked_line_returns_nothing(
+    shop: Shop,
+) -> None:
+    apple = await shop.product("apple", price=15_000, stock=5)
+    bread = await shop.product("bread", price=4_000, stock=None)
+    await shop.add(apple, 1)
+    await shop.add(bread, 2)
+    order = await shop.place()
+    assert await shop.stock(apple) == 4
+    picking = Picking(shop)
+
+    response = await picking.adjust(order["id"], apple, 0, mark_out_of_stock=True)
+    assert response.status_code == 200, response.text
+    assert response.json()["total_uzs"] == 8_000
+    # The goods physically ran out: the product is out of stock, nothing went back.
+    assert await shop.stock(apple) == 0
+    # An untracked line gives nothing back.
+    assert (await picking.adjust(order["id"], bread, 1)).status_code == 200
+    assert await shop.stock(bread) is None
+    detail = await shop.client.get(f"{ADMIN}/{order['id']}", headers=shop.headers(shop.operator))
+    assert [a["to_quantity"] for a in detail.json()["adjustments"]] == [0, 1]
+    assert detail.json()["status"] == "NEW"
+
+
+async def test_when_every_line_runs_out_the_order_is_cancelled(shop: Shop) -> None:
+    await _group(shop)
+    apple = await shop.product("apple", price=15_000, stock=5)
+    await shop.add(apple, 2)
+    order = await shop.place()
+    assert (await shop.move(order["id"], "CONFIRMED")).status_code == 200
+    picking = Picking(shop)
+
+    response = await picking.adjust(order["id"], apple, 0)
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["status"] == "CANCELLED"
+    assert body["cancel_reason"] == "Mahsulotlar tugab qoldi"
+    assert (body["subtotal_uzs"], body["total_uzs"], body["item_count"]) == (0, 0, 0)
+    assert body["can_adjust_items"] is False
+    # The two units went back once (by the adjustment), not twice.
+    assert await shop.stock(apple) == 5
+    kinds = [m.event_type for m in await shop.outbox(order["id"])]
+    assert "order.adjusted" not in kinds
+    assert "order.staff_adjusted" not in kinds
+    cancelled = [
+        m.payload
+        for m in await shop.outbox(order["id"])
+        if m.event_type == "order.status_changed" and m.payload["status"] == "CANCELLED"
+    ]
+    assert cancelled[0]["cancel_reason"] == "Mahsulotlar tugab qoldi"
+
+
+async def test_adjustment_refusals(shop: Shop) -> None:
+    apple = await shop.product("apple", price=15_000, stock=5)
+    pear = await shop.product("pear", price=9_000, stock=5)
+    await shop.add(apple, 2)
+    order = await shop.place()
+    picking = Picking(shop)
+
+    assert (
+        error(await picking.adjust(order["id"], apple, 3), 409, "invalid_quantity")[
+            "available_quantity"
+        ]
+        == 2
+    )
+    error(await picking.adjust(order["id"], pear, 0), 404, "order_item_not_found")
+    error(await picking.adjust(str(uuid.uuid4()), apple, 0), 404, "order_not_found")
+    error(await picking.adjust(order["id"], apple, 1, reason="x"), 422, "validation_error")
+    error(await picking.adjust(order["id"], apple, -1), 422, "validation_error")
+    # Customers cannot reach the back office.
+    assert (await picking.adjust(order["id"], apple, 1, user=shop.user)).status_code == 403
+
+    for status in ("CONFIRMED", "PICKING", "READY_FOR_DELIVERY"):
+        assert (await shop.move(order["id"], status)).status_code == 200
+    refused = error(await picking.adjust(order["id"], apple, 1), 409, "order_not_adjustable")
+    assert refused["current_status"] == "READY_FOR_DELIVERY"
+    assert await shop.stock(apple) == 3
+    assert await shop.count(OrderItemAdjustment) == 0
+
+
+async def test_an_adjusted_order_can_be_cancelled_by_the_customer_while_picking(
+    shop: Shop,
+) -> None:
+    apple = await shop.product("apple", price=15_000, stock=5)
+    bread = await shop.product("bread", price=4_000, stock=5)
+    await shop.add(apple, 2)
+    await shop.add(bread, 1)
+    order = await shop.place()
+    for status in ("CONFIRMED", "PICKING"):
+        assert (await shop.move(order["id"], status)).status_code == 200
+    detail = (await shop.client.get(f"{ORDERS}/{order['id']}", headers=shop.headers())).json()
+    assert detail["can_cancel"] is False
+    error(await shop.cancel(order["id"]), 409, "order_not_cancellable")
+
+    assert (await Picking(shop).adjust(order["id"], apple, 1)).status_code == 200
+    detail = (await shop.client.get(f"{ORDERS}/{order['id']}", headers=shop.headers())).json()
+    assert detail["can_cancel"] is True
+    assert (await shop.cancel(order["id"], "Kerak emas")).status_code == 200
+    # Everything the order still held went back.
+    assert (await shop.stock(apple), await shop.stock(bread)) == (5, 5)
+
+
+async def test_concurrent_adjustments_and_status_changes_serialise(shop: Shop) -> None:
+    """An adjustment and a status change racing on one order: both are serialised by the order
+    lock, so the adjustment either happens before READY_FOR_DELIVERY or is refused after it."""
+    apple = await shop.product("apple", price=15_000, stock=10)
+    await shop.add(apple, 4)
+    order = await shop.place()
+    for status in ("CONFIRMED", "PICKING"):
+        assert (await shop.move(order["id"], status)).status_code == 200
+    picking = Picking(shop)
+    adjust, move = await asyncio.gather(
+        picking.adjust(order["id"], apple, 1), shop.move(order["id"], "READY_FOR_DELIVERY")
+    )
+    assert move.status_code == 200
+    assert adjust.status_code in (200, 409)
+    expected_stock = 9 if adjust.status_code == 200 else 6
+    assert await shop.stock(apple) == expected_stock
+    # Two concurrent identical adjustments return the stock once.
+    other = await shop.product("other", price=1_000, stock=10)
+    await shop.add(other, 5)
+    second = await shop.place()
+    first, repeat = await asyncio.gather(
+        picking.adjust(second["id"], other, 2), picking.adjust(second["id"], other, 2)
+    )
+    assert (first.status_code, repeat.status_code) == (200, 200)
+    assert await shop.stock(other) == 8

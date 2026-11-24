@@ -4,7 +4,7 @@ import type { AdminUser, AdminUserPage, UserRole } from '@muniramarket/contracts
 import { USER_ROLES } from '@muniramarket/contracts';
 import { Button, EmptyState } from '@muniramarket/ui';
 import Link from 'next/link';
-import { useRef, useState } from 'react';
+import { useId, useRef, useState } from 'react';
 import { useI18n } from '@/i18n/context';
 import { formatMessage } from '@/i18n/format';
 import { writeErrorMessage } from '@/lib/api/error-messages';
@@ -15,14 +15,17 @@ import { useSession } from '@/lib/session';
 import { useApiResource } from '@/lib/use-api-resource';
 import { useUrlParams } from '@/lib/use-url-params';
 import { Alert } from '../ui/alert';
-import { CHIP, CHIP_OFF, CHIP_ON, INPUT } from '../ui/classes';
+import { CHIP, CHIP_OFF, CHIP_ON, CHIP_RAIL } from '../ui/classes';
 import { ConfirmDialog } from '../ui/confirm-dialog';
 import { DataTable, type Column } from '../ui/data-table';
+import { FilterSheet } from '../ui/filter-sheet';
 import { Modal } from '../ui/modal';
 import { PageHeader } from '../ui/page-header';
 import { Pagination } from '../ui/pagination';
 import { ResourceView } from '../ui/resource-view';
 import { SearchBox } from '../ui/search-box';
+import { Select } from '../ui/select';
+import { SwipeActions } from '../ui/swipe-actions';
 
 const BLOCKED_CHOICES = ['all', 'blocked', 'active'] as const;
 type BlockedChoice = (typeof BLOCKED_CHOICES)[number];
@@ -44,14 +47,15 @@ function RoleDialog({
   onClose: () => void;
   onDone: () => void;
 }) {
-  const { dict, locale } = useI18n();
+  const { dict } = useI18n();
   const copy = dict.users.roleDialog;
   const { apiFetch } = useSession();
   const [role, setRole] = useState<UserRole>(user.role);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const flying = useRef(false);
-  const select = useRef<HTMLSelectElement>(null);
+  const select = useRef<HTMLButtonElement>(null);
+  const selectLabelId = useId();
   const same = role === user.role;
 
   const submit = async () => {
@@ -67,7 +71,7 @@ function RoleDialog({
     flying.current = false;
     setPending(false);
     if (result.ok) onDone();
-    else setError(writeErrorMessage(dict, locale, result.error));
+    else setError(writeErrorMessage(dict, result.error));
   };
 
   return (
@@ -81,23 +85,19 @@ function RoleDialog({
       returnFocusTo={opener}
       initialFocusRef={select}
     >
-      <label className="flex flex-col gap-1.5 font-medium">
-        {copy.select}
-        <select
+      <div className="flex flex-col gap-1.5 font-medium">
+        <span id={selectLabelId}>{copy.select}</span>
+        <Select
+          onPage
           ref={select}
+          labelledBy={selectLabelId}
           value={role}
           disabled={pending}
-          data-testid="role-select"
-          onChange={(event) => setRole(event.target.value as UserRole)}
-          className={INPUT}
-        >
-          {USER_ROLES.map((item) => (
-            <option key={item} value={item}>
-              {dict.roles[item]}
-            </option>
-          ))}
-        </select>
-      </label>
+          testId="role-select"
+          onChange={(next) => setRole(next as UserRole)}
+          options={USER_ROLES.map((item) => ({ value: item, label: dict.roles[item] }))}
+        />
+      </div>
       {same ? (
         <p className="text-sm text-muted-foreground">
           {formatMessage(copy.unchanged, { role: dict.roles[user.role] })}
@@ -124,9 +124,25 @@ type DialogState =
   | { kind: 'role'; user: AdminUser; opener: HTMLElement | null }
   | { kind: 'block'; user: AdminUser; opener: HTMLElement | null };
 
+/** Initial on a tint picked by role: staff in brand red, customers neutral. */
+function Avatar({ user }: { user: AdminUser }) {
+  return (
+    <span
+      aria-hidden="true"
+      className={`flex size-10 shrink-0 items-center justify-center rounded-full text-[15px] font-bold ${
+        user.role === 'customer'
+          ? 'bg-surface-muted text-muted-foreground'
+          : 'bg-brand-soft text-brand-ink'
+      }`}
+    >
+      {(Array.from(user.first_name.trim())[0] ?? '?').toUpperCase()}
+    </span>
+  );
+}
+
 /** Users: search, role/blocked filters, change role and block/unblock (both with confirmation). */
 export function UsersView() {
-  const { dict, locale } = useI18n();
+  const { dict } = useI18n();
   const copy = dict.users;
   const { apiFetch } = useSession();
   const { params, replace, hrefWith } = useUrlParams();
@@ -144,6 +160,8 @@ export function UsersView() {
   const resource = useApiResource<AdminUserPage>(`/admin/users?${query.toString()}`);
   const [dialog, setDialog] = useState<DialogState | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  // Phones: which row has its actions slid out (one at a time, like iOS).
+  const [openRow, setOpenRow] = useState<string | null>(null);
 
   const changeBlock = async (user: AdminUser): Promise<string | null> => {
     const result = await request<AdminUser>(
@@ -151,7 +169,7 @@ export function UsersView() {
       `/admin/users/${encodeURIComponent(user.id)}`,
       jsonInit('PATCH', { is_blocked: !user.is_blocked }),
     );
-    if (!result.ok) return writeErrorMessage(dict, locale, result.error);
+    if (!result.ok) return writeErrorMessage(dict, result.error);
     setNotice(user.is_blocked ? copy.unblocked : copy.blocked);
     resource.reload();
     return null;
@@ -163,13 +181,16 @@ export function UsersView() {
       header: copy.columns.user,
       primary: true,
       cell: (user) => (
-        <>
-          <span className="block font-semibold">{userDisplayName(user, copy.telegramId)}</span>
-          <span className="block text-sm text-muted-foreground">
-            {user.username === null || user.username === '' ? null : <>@{user.username} · </>}
-            {copy.telegramId}: <span className="font-mono tabular">{user.telegram_user_id}</span>
+        <span className="flex items-center gap-3">
+          <Avatar user={user} />
+          <span className="min-w-0">
+            <span className="block font-semibold">{userDisplayName(user, copy.telegramId)}</span>
+            <span className="block text-sm text-muted-foreground">
+              {user.username === null || user.username === '' ? null : <>@{user.username} · </>}
+              {copy.telegramId}: <span className="font-mono tabular">{user.telegram_user_id}</span>
+            </span>
           </span>
-        </>
+        </span>
       ),
     },
     { id: 'role', header: copy.columns.role, nowrap: true, cell: (user) => dict.roles[user.role] },
@@ -180,10 +201,8 @@ export function UsersView() {
       cell: (user) => (
         <span
           data-blocked={user.is_blocked}
-          className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-sm font-medium whitespace-nowrap ${
-            user.is_blocked
-              ? 'bg-red-100 text-red-900 dark:bg-red-950 dark:text-red-200'
-              : 'bg-green-100 text-green-900 dark:bg-green-950 dark:text-green-200'
+          className={`inline-flex shrink-0 items-center rounded-full px-2.5 py-0.5 text-[13px] leading-5 font-semibold whitespace-nowrap ${
+            user.is_blocked ? 'bg-danger-soft text-danger' : 'bg-success-soft text-success'
           }`}
         >
           {user.is_blocked ? copy.blockedBadge : copy.activeBadge}
@@ -227,48 +246,52 @@ export function UsersView() {
       <PageHeader title={copy.title} />
       {notice === null ? null : <Alert tone="success">{notice}</Alert>}
 
-      <div className="flex flex-wrap items-end gap-3">
-        <SearchBox
-          value={q}
-          onSearch={(next) => replace({ q: next })}
-          label={copy.searchLabel}
-          placeholder={copy.searchPlaceholder}
-          testId="user-search"
-        />
-      </div>
-
-      <nav aria-label={copy.roleFilterLabel}>
-        <ul className="flex flex-wrap gap-2">
-          {[null, ...USER_ROLES].map((choice) => (
-            <li key={choice ?? 'all'}>
-              <Link
-                href={hrefWith({ role: choice })}
-                replace
-                aria-current={choice === role ? 'true' : undefined}
-                className={`${CHIP} ${choice === role ? CHIP_ON : CHIP_OFF}`}
-              >
-                {choice === null ? dict.common.all : dict.roles[choice]}
-              </Link>
-            </li>
-          ))}
-        </ul>
-      </nav>
-      <nav aria-label={copy.blockedFilterLabel}>
-        <ul className="flex flex-wrap gap-2">
-          {BLOCKED_CHOICES.map((choice) => (
-            <li key={choice}>
-              <Link
-                href={hrefWith({ blocked: choice === 'all' ? null : choice })}
-                replace
-                aria-current={choice === blocked ? 'true' : undefined}
-                className={`${CHIP} ${choice === blocked ? CHIP_ON : CHIP_OFF}`}
-              >
-                {copy.blockedChoices[choice]}
-              </Link>
-            </li>
-          ))}
-        </ul>
-      </nav>
+      <FilterSheet
+        active={(role === null ? 0 : 1) + (blocked === 'all' ? 0 : 1)}
+        onReset={() => replace({ role: null, blocked: null })}
+        always={
+          <SearchBox
+            value={q}
+            onSearch={(next) => replace({ q: next })}
+            label={copy.searchLabel}
+            placeholder={copy.searchPlaceholder}
+            testId="user-search"
+          />
+        }
+      >
+        <nav aria-label={copy.roleFilterLabel}>
+          <ul className={CHIP_RAIL}>
+            {[null, ...USER_ROLES].map((choice) => (
+              <li key={choice ?? 'all'}>
+                <Link
+                  href={hrefWith({ role: choice })}
+                  replace
+                  aria-current={choice === role ? 'true' : undefined}
+                  className={`${CHIP} ${choice === role ? CHIP_ON : CHIP_OFF}`}
+                >
+                  {choice === null ? dict.common.all : dict.roles[choice]}
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </nav>
+        <nav aria-label={copy.blockedFilterLabel}>
+          <ul className={CHIP_RAIL}>
+            {BLOCKED_CHOICES.map((choice) => (
+              <li key={choice}>
+                <Link
+                  href={hrefWith({ blocked: choice === 'all' ? null : choice })}
+                  replace
+                  aria-current={choice === blocked ? 'true' : undefined}
+                  className={`${CHIP} ${choice === blocked ? CHIP_ON : CHIP_OFF}`}
+                >
+                  {copy.blockedChoices[choice]}
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </nav>
+      </FilterSheet>
 
       <ResourceView resource={resource} loadingLabel={copy.loading}>
         {(data) =>
@@ -285,6 +308,49 @@ export function UsersView() {
                 rows={data.items}
                 rowKey={(user) => user.id}
                 rowTestId="user-row"
+                mobileRow={(user) => {
+                  const name = userDisplayName(user, copy.telegramId);
+                  return (
+                    <SwipeActions
+                      open={openRow === user.id}
+                      onOpenChange={(next) => setOpenRow(next ? user.id : null)}
+                      actions={[
+                        {
+                          label: copy.changeRole,
+                          accessibleName: `${copy.changeRole}: ${name}`,
+                          tone: 'neutral',
+                          testId: 'change-role',
+                          onSelect: (opener) => setDialog({ kind: 'role', user, opener }),
+                        },
+                        {
+                          label: user.is_blocked ? copy.unblock : copy.block,
+                          accessibleName: `${user.is_blocked ? copy.unblock : copy.block}: ${name}`,
+                          tone: user.is_blocked ? 'success' : 'danger',
+                          testId: 'toggle-block',
+                          onSelect: (opener) => setDialog({ kind: 'block', user, opener }),
+                        },
+                      ]}
+                    >
+                      <div className="flex min-h-[4.5rem] items-center gap-3 px-4 py-3">
+                        <Avatar user={user} />
+                        <span className="min-w-0 flex-1">
+                          <span className="block truncate font-semibold">{name}</span>
+                          <span className="block truncate text-[13px] text-muted-foreground">
+                            {dict.roles[user.role]}
+                            {user.username === null || user.username === ''
+                              ? null
+                              : ` · @${user.username}`}
+                          </span>
+                        </span>
+                        {user.is_blocked ? (
+                          <span className="inline-flex shrink-0 items-center rounded-full bg-danger-soft px-2.5 py-0.5 text-[13px] leading-5 font-semibold text-danger">
+                            {copy.blockedBadge}
+                          </span>
+                        ) : null}
+                      </div>
+                    </SwipeActions>
+                  );
+                }}
               />
               <Pagination
                 page={page}

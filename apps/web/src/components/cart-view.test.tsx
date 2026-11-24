@@ -33,6 +33,7 @@ function product(overrides: Partial<ProductSummary> = {}): ProductSummary {
     old_price_uzs: null,
     stock_quantity: null,
     in_stock: true,
+    low_stock: false,
     image_url: null,
     category_id: 'c1',
     ...overrides,
@@ -165,6 +166,7 @@ describe('CartView', () => {
                 slug: 'demo-pear',
                 name_uz: 'Demo nok',
                 in_stock: false,
+                low_stock: false,
               }),
               quantity: 1,
               line_total_uzs: 12000,
@@ -314,13 +316,13 @@ describe('CartView', () => {
     });
   });
 
-  it('shows the sign-in prompt instead of the cart when anonymous', () => {
+  it('shows the sign-in prompt instead of the cart when anonymous', async () => {
     session.status = 'anonymous';
     session.apiFetch.mockResolvedValue(respond({ telegram_oidc: { enabled: false } }));
     renderCart();
-    expect(screen.getByRole('status')).toHaveTextContent(
-      'Savatdan foydalanish uchun saytni Telegram orqali oching.',
-    );
+    expect(
+      await screen.findByText('Savatdan foydalanish uchun saytni Telegram orqali oching.'),
+    ).toBeInTheDocument();
     expect(session.apiFetch).not.toHaveBeenCalledWith('/cart', expect.anything());
   });
 
@@ -378,5 +380,24 @@ describe('CartView in the Telegram Mini App', () => {
     unmount();
     expect(webApp.MainButton.hide).toHaveBeenCalled();
     expect(webApp.MainButton.offClick).toHaveBeenCalled();
+  });
+});
+
+describe('CartView delivery note', () => {
+  it('says the Yandex courier is paid separately, with no fee, threshold or zone lookup', async () => {
+    session.apiFetch.mockResolvedValue(respond(cart()));
+    renderCart();
+    await screen.findByTestId('cart-total');
+    expect(screen.getByText('Yetkazishni Yandex kuryeriga alohida to‘laysiz.')).toBeVisible();
+    expect(document.body.textContent).not.toMatch(/bepul|hudud|zona/i);
+    expect(session.apiFetch).toHaveBeenCalledTimes(1);
+    expect(session.apiFetch).toHaveBeenCalledWith('/cart', { method: 'GET' });
+  });
+
+  it('is localized (ru)', async () => {
+    session.apiFetch.mockResolvedValue(respond(cart()));
+    renderCart('ru');
+    await screen.findByTestId('cart-total');
+    expect(screen.getByText('Доставку оплачиваете курьеру Яндекса отдельно.')).toBeVisible();
   });
 });

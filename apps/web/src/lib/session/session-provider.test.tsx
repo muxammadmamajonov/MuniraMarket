@@ -15,6 +15,9 @@ const USER = {
   username: null,
   language: 'uz',
   role: 'customer',
+  language_confirmed: true,
+  phone_verified: true,
+  birth_date: null,
 } as const;
 
 function session(csrf: string): SessionResponse {

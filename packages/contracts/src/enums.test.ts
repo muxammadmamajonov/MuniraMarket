@@ -1,11 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import {
-  DISTRICT_CODES,
   ORDER_STATUSES,
   PAYMENT_METHODS,
   PRODUCT_UNITS,
   USER_ROLES,
-  isDistrictCode,
   isOrderStatus,
   isPaymentMethod,
   isProductUnit,
@@ -29,14 +27,6 @@ describe('enums', () => {
     expect(USER_ROLES).toEqual(['customer', 'operator', 'admin']);
     expect(PAYMENT_METHODS).toEqual(['cash_on_delivery', 'card_on_delivery']);
     expect(PRODUCT_UNITS).toEqual(['piece', 'kg', 'g', 'l', 'ml']);
-  });
-
-  it('district guard accepts the twelve Tashkent codes only', () => {
-    expect(DISTRICT_CODES).toHaveLength(12);
-    for (const code of DISTRICT_CODES) expect(isDistrictCode(code)).toBe(true);
-    expect(isDistrictCode('Chilonzor')).toBe(false);
-    expect(isDistrictCode('')).toBe(false);
-    expect(isDistrictCode(null)).toBe(false);
   });
 
   it('type guards accept every member and reject everything else', () => {

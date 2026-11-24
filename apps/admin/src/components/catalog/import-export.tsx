@@ -36,7 +36,7 @@ function Summary({ result }: { result: CsvImportResult }) {
   ];
   return (
     <section className={CARD} aria-label={copy.title}>
-      <h3 className="text-lg font-semibold">{copy.title}</h3>
+      <h3 className="text-lg leading-6 font-bold tracking-[-0.01em]">{copy.title}</h3>
       <dl className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         {rows.map(([label, value, testId]) => (
           <div key={testId} className="min-w-0">
@@ -81,7 +81,7 @@ function ErrorTable({ result }: { result: CsvImportResult }) {
   ];
   return (
     <section className="flex flex-col gap-3" aria-label={copy.title}>
-      <h3 className="text-lg font-semibold">{copy.title}</h3>
+      <h3 className="text-lg leading-6 font-bold tracking-[-0.01em]">{copy.title}</h3>
       {result.errors_truncated ? (
         <Alert tone="warning" testId="csv-truncated">
           {copy.truncated}
@@ -100,7 +100,7 @@ function ErrorTable({ result }: { result: CsvImportResult }) {
 
 /** Download template / export, and the two-step import: check (dry run), then apply. */
 export function ImportExportView() {
-  const { dict, locale } = useI18n();
+  const { dict } = useI18n();
   const copy = dict.csv;
   const { apiFetch } = useSession();
   const fileInput = useRef<HTMLInputElement>(null);
@@ -124,9 +124,7 @@ export function ImportExportView() {
       try {
         const response = await apiFetch(path, { headers: { accept: 'text/csv' } });
         if (!response.ok) {
-          setDownloadError(
-            writeErrorMessage(dict, locale, await ApiRequestError.fromResponse(response)),
-          );
+          setDownloadError(writeErrorMessage(dict, await ApiRequestError.fromResponse(response)));
           return;
         }
         saveBlob(await response.blob(), filename);
@@ -134,7 +132,6 @@ export function ImportExportView() {
         setDownloadError(
           writeErrorMessage(
             dict,
-            locale,
             cause instanceof ApiRequestError ? cause : ApiRequestError.network(cause),
           ),
         );
@@ -196,7 +193,7 @@ export function ImportExportView() {
       if (!response.ok) {
         setChecked(null);
         setResult(null);
-        setFailure(writeErrorMessage(dict, locale, response.error));
+        setFailure(writeErrorMessage(dict, response.error));
         return;
       }
       const data = response.data;
@@ -215,7 +212,7 @@ export function ImportExportView() {
 
       <div className="grid gap-3 sm:grid-cols-2">
         <section className={CARD} aria-label={copy.template.title}>
-          <h2 className="text-lg font-semibold">{copy.template.title}</h2>
+          <h2 className="text-lg leading-6 font-bold tracking-[-0.01em]">{copy.template.title}</h2>
           <p className="text-muted-foreground">{copy.template.description}</p>
           <div>
             <Button
@@ -231,7 +228,7 @@ export function ImportExportView() {
           </div>
         </section>
         <section className={CARD} aria-label={copy.export.title}>
-          <h2 className="text-lg font-semibold">{copy.export.title}</h2>
+          <h2 className="text-lg leading-6 font-bold tracking-[-0.01em]">{copy.export.title}</h2>
           <p className="text-muted-foreground">{copy.export.description}</p>
           <div>
             <Button
@@ -253,7 +250,7 @@ export function ImportExportView() {
       {downloadError === null ? null : <Alert tone="error">{downloadError}</Alert>}
 
       <section className={CARD} aria-labelledby={`${inputId}-title`}>
-        <h2 id={`${inputId}-title`} className="text-lg font-semibold">
+        <h2 id={`${inputId}-title`} className="text-lg leading-6 font-bold tracking-[-0.01em]">
           {copy.upload.title}
         </h2>
         <p className="text-muted-foreground">{copy.columnsHint}</p>

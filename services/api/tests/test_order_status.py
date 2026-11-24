@@ -7,7 +7,9 @@ from app.domain.order_status import (
     FINAL_STATUSES,
     InvalidOrderTransitionError,
     OrderStatus,
+    can_adjust_items,
     can_transition,
+    customer_can_cancel,
     ensure_transition,
 )
 
@@ -63,3 +65,19 @@ def test_ensure_transition_raises_on_invalid() -> None:
         ensure_transition(OrderStatus.DELIVERED, OrderStatus.NEW)
     with pytest.raises(InvalidOrderTransitionError):
         ensure_transition(OrderStatus.NEW, OrderStatus.CANCELLED)
+
+
+@pytest.mark.parametrize("status", list(OrderStatus))
+def test_customer_can_cancel_an_adjusted_order_while_picking(status: OrderStatus) -> None:
+    before_picking = status in {OrderStatus.NEW, OrderStatus.CONFIRMED}
+    assert customer_can_cancel(status) is before_picking
+    assert customer_can_cancel(status, adjusted=True) is (
+        before_picking or status is OrderStatus.PICKING
+    )
+
+
+@pytest.mark.parametrize("status", list(OrderStatus))
+def test_lines_can_be_lowered_until_the_order_is_packed(status: OrderStatus) -> None:
+    assert can_adjust_items(status) is (
+        status in {OrderStatus.NEW, OrderStatus.CONFIRMED, OrderStatus.PICKING}
+    )

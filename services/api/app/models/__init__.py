@@ -1,11 +1,11 @@
 """Import every model so ``Base.metadata`` is complete (Alembic autogenerate relies on it)."""
 
+from app.models.address import UserAddress
 from app.models.audit import AuditLog
 from app.models.cart import Cart, CartItem
 from app.models.catalog import Category, Product
-from app.models.delivery import DeliverySlot, DeliveryZone, DeliveryZoneDistrict
 from app.models.notification import NotificationOutbox, StaffNotificationChat
-from app.models.order import Order, OrderItem, OrderStatusHistory
+from app.models.order import Order, OrderItem, OrderItemAdjustment, OrderStatusHistory
 from app.models.security_state import (
     AuthSession,
     OidcLoginState,
@@ -20,17 +20,16 @@ __all__ = [
     "Cart",
     "CartItem",
     "Category",
-    "DeliverySlot",
-    "DeliveryZone",
-    "DeliveryZoneDistrict",
     "NotificationOutbox",
     "OidcLoginState",
     "Order",
     "OrderItem",
+    "OrderItemAdjustment",
     "OrderStatusHistory",
     "Product",
     "RateLimitCounter",
     "ServiceRequestNonce",
     "StaffNotificationChat",
     "User",
+    "UserAddress",
 ]

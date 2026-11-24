@@ -22,7 +22,7 @@ export function LoginCallback() {
 
   return (
     <PageContainer className="flex flex-col items-start gap-4 py-8">
-      <h1 className="text-xl font-bold">{dict.auth.callbackTitle}</h1>
+      <h2 className="text-xl font-bold">{dict.auth.callbackTitle}</h2>
       <p role="alert">{dict.auth.callbackStatus[status]}</p>
       {status === 'blocked' ? null : <TelegramLoginButton returnTo={`/${locale}/cart`} />}
       <Link

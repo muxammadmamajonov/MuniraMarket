@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { canonicalString, signRequest } from '../tgcloud/lib/coreApi/signer.js';
 import { generateNonce } from '../tgcloud/lib/coreApi/nonce.js';
-import { ADR_VECTOR, createRng } from './helpers.js';
+import { ADR_VECTOR } from './helpers.js';
 
 const base = () => ({
   keyId: ADR_VECTOR.keyId,
@@ -128,20 +128,10 @@ describe('generateNonce', () => {
     expect(nonce).toHaveLength(24);
   });
 
-  it('falls back to timestamp + counter + Math.random and stays unique and well-formed', () => {
-    const rng = createRng(9);
-    const seen = new Set();
-    for (let i = 0; i < 2000; i += 1) {
-      // Fixed clock and low-quality random: the counter alone must still keep nonces distinct.
-      const nonce = generateNonce({
-        getRandomValues: null,
-        random: () => 0.5 + rng() * 0,
-        now: () => 1767225600000,
-      });
-      expect(nonce).toMatch(NONCE_RE);
-      seen.add(nonce);
-    }
-    expect(seen.size).toBe(2000);
+  it('fails closed when secure randomness is unavailable', () => {
+    expect(() => generateNonce({ getRandomValues: null })).toThrow(
+      'Secure randomness is unavailable',
+    );
   });
 
   it('works with the real platform sources', () => {

@@ -7,8 +7,12 @@ import { upstreamFetch } from './upstream-fetch';
 /** Largest request body the proxy forwards. The API's own limit is at least as strict. */
 export const MAX_BODY_BYTES = 64 * 1024;
 
-/** How long we wait for the Core API before answering 504. */
-export const UPSTREAM_TIMEOUT_MS = 15_000;
+/**
+ * How long we wait for the Core API before answering 504. Longer than the API gateway's own
+ * 20 s budget (which covers a Neon Function cold start), so the gateway answers first and the
+ * proxy never cuts off a request that would have succeeded.
+ */
+export const UPSTREAM_TIMEOUT_MS = 25_000;
 
 /**
  * Which entrance this app is, sent to the Core API as `x-mm-entrance` on every upstream request.

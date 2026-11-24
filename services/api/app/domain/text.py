@@ -1,6 +1,6 @@
 """Invisible and direction-changing characters in names and descriptions.
 
-A product, category or zone name is shown to customers, operators and in Telegram messages. Unicode
+A product or category name is shown to customers, operators and in Telegram messages. Unicode
 *format* characters (category ``Cf``: bidi overrides/isolates such as U+202E, zero-width spaces and
 joiners such as U+200B, the byte-order mark U+FEFF, the soft hyphen, ...) render as nothing but
 change how the text around them is displayed or compared, so two names can look identical while

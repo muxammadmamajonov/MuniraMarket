@@ -17,6 +17,8 @@ import { signRequest } from './signer.js';
 export const DEFAULT_TIMEOUT_MS = 8000;
 const SESSION_PATH = '/api/v1/internal/telegram/session';
 const ME_PATH = '/api/v1/internal/telegram/me';
+const LANGUAGE_PATH = '/api/v1/internal/telegram/language';
+const PHONE_PATH = '/api/v1/internal/telegram/phone';
 const NOTIFICATIONS_PATH = '/api/v1/internal/telegram/notifications';
 const STAFF_CHAT_CONNECT_PATH = '/api/v1/internal/telegram/staff-chat/connect';
 const MIN_GROUP_CHAT_ID = -(10 ** 15);
@@ -184,6 +186,37 @@ export function createCoreApiClient({
           username: user.username ?? null,
           language_code: user.language_code ?? null,
         },
+      });
+    },
+
+    /**
+     * Saves the language the user picked in the bot (the same preference the shop profile sets).
+     * @param {number} telegramUserId
+     * @param {'uz' | 'ru'} language
+     */
+    setLanguage(telegramUserId, language) {
+      assertTelegramUserId(telegramUserId);
+      if (language !== 'uz' && language !== 'ru') throw new TypeError('Invalid language');
+      return request('PUT', LANGUAGE_PATH, {
+        actorTelegramUserId: telegramUserId,
+        json: { language },
+      });
+    },
+
+    /**
+     * Stores the sender's OWN shared contact as the verified account phone. Callers must pass
+     * only a platform-verified `message.contact` whose `user_id` equals `message.from.id`.
+     * @param {number} telegramUserId
+     * @param {string} phoneNumber never logged
+     */
+    recordOwnPhone(telegramUserId, phoneNumber) {
+      assertTelegramUserId(telegramUserId);
+      if (typeof phoneNumber !== 'string' || phoneNumber.length < 7 || phoneNumber.length > 32) {
+        throw new TypeError('Invalid phone number');
+      }
+      return request('POST', PHONE_PATH, {
+        actorTelegramUserId: telegramUserId,
+        json: { contact_user_id: telegramUserId, phone_number: phoneNumber },
       });
     },
 

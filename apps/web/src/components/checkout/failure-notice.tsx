@@ -56,12 +56,8 @@ export const FailureNotice = forwardRef<HTMLDivElement, FailureNoticeProps>(func
         message = f.cartEmpty;
         toCart = true;
         break;
-      case 'below_min_order':
-        message = f.belowMin;
-        toCart = true;
-        break;
-      case 'district_not_served':
-        message = f.districtNotServed;
+      case 'phone_verification_required':
+        message = dict.phone.checkoutText;
         break;
       case 'too_many_open_orders':
         message = f.tooManyOpenOrders;
@@ -102,7 +98,7 @@ export const FailureNotice = forwardRef<HTMLDivElement, FailureNoticeProps>(func
         <div
           role="alert"
           data-testid="price-changed"
-          className="mm-enter flex flex-col gap-3 rounded-xl border border-warning bg-warning-soft p-4 text-foreground"
+          className="mm-enter flex flex-col gap-3 rounded-3xl border border-warning bg-warning-soft p-4 text-foreground"
         >
           <p className="font-bold">{f.priceChangedTitle}</p>
           <dl className="grid grid-cols-[auto_1fr] items-baseline gap-x-3 gap-y-1">

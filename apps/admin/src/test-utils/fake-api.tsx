@@ -35,8 +35,12 @@ export function apiError(
   status: number,
   code: string,
   extra: Record<string, unknown> = {},
+  requestId?: string,
 ): Response {
-  return json({ error: { code, message: 'test', ...extra } }, { status });
+  return json(
+    { error: { code, message: 'test', ...extra } },
+    { status, ...(requestId === undefined ? {} : { headers: { 'x-request-id': requestId } }) },
+  );
 }
 
 export function userWithRole(role: UserRole): UserPublic {
@@ -48,6 +52,9 @@ export function userWithRole(role: UserRole): UserPublic {
     username: null,
     language: 'uz',
     role,
+    language_confirmed: true,
+    phone_verified: false,
+    birth_date: null,
   };
 }
 
@@ -113,6 +120,7 @@ export function orderSummary(overrides: Partial<OrderSummary> = {}): OrderSummar
     item_count: 3,
     total_uzs: 125000,
     created_at: '2026-10-31T09:05:00Z',
+    thumbnails: [],
     ...overrides,
   };
 }
@@ -135,15 +143,13 @@ export function orderDetail(overrides: Partial<AdminOrderDetail> = {}): AdminOrd
     status: 'NEW',
     item_count: 2,
     subtotal_uzs: 110000,
-    delivery_fee_uzs: 15000,
-    total_uzs: 125000,
+    total_uzs: 110000,
     payment_method: 'cash_on_delivery',
     recipient_name: 'Test Recipient',
     recipient_phone: '+998 00 000 00 00',
     address: {
-      district: 'chilonzor',
-      district_name_uz: 'Chilonzor',
-      district_name_ru: 'Чиланзар',
+      lat: 41.311081,
+      lon: 69.240562,
       street: 'Test street',
       house: '12',
       apartment: '34',
@@ -154,6 +160,8 @@ export function orderDetail(overrides: Partial<AdminOrderDetail> = {}): AdminOrd
     comment: 'Call before arriving',
     cancel_reason: null,
     can_cancel: true,
+    can_adjust_items: true,
+    adjustments: [],
     created_at: '2026-10-31T09:05:00Z',
     updated_at: '2026-10-31T09:05:00Z',
     items: [
@@ -164,6 +172,8 @@ export function orderDetail(overrides: Partial<AdminOrderDetail> = {}): AdminOrd
         name_ru: 'Тестовое яблоко',
         unit: 'kg',
         quantity: 2,
+        original_quantity: 2,
+        adjusted: false,
         unit_price_uzs: 30000,
         line_total_uzs: 60000,
       },
@@ -174,6 +184,8 @@ export function orderDetail(overrides: Partial<AdminOrderDetail> = {}): AdminOrd
         name_ru: 'Тестовый хлеб',
         unit: 'piece',
         quantity: 5,
+        original_quantity: 5,
+        adjusted: false,
         unit_price_uzs: 10000,
         line_total_uzs: 50000,
       },
@@ -188,7 +200,6 @@ export function orderDetail(overrides: Partial<AdminOrderDetail> = {}): AdminOrd
         at: '2026-10-31T09:05:00Z',
       },
     ],
-    delivery_slot: null,
     allowed_transitions: ['CONFIRMED', 'CANCELLED'],
     ...overrides,
   };

@@ -1,19 +1,23 @@
 import { SUPPORTED_LOCALES, isLocale } from '@muniramarket/contracts';
 import type { Metadata, Viewport } from 'next';
+import { headers } from 'next/headers';
 import { notFound } from 'next/navigation';
 import { connection } from 'next/server';
 import Script from 'next/script';
 import { BottomNav } from '@/components/bottom-nav';
-import { OfflineBanner } from '@/components/offline-banner';
-import { SiteHeader } from '@/components/site-header';
+import { LocaleSync } from '@/components/locale-sync';
 import { TelegramChrome } from '@/components/telegram-chrome';
+import { ZoomGuard } from '@/components/zoom-guard';
 import { getDictionary } from '@/i18n';
 import { LocaleProvider } from '@/i18n/context';
 import { CartProvider } from '@/lib/cart';
-import { readYandexMapsApiKey } from '@/lib/maps/config';
+import { nonceFromContentSecurityPolicy } from '@/lib/csp';
+import { readYandexMapsGeocoderApiKey, readYandexMapsJavaScriptApiKey } from '@/lib/maps/config';
 import { MapsConfigProvider } from '@/lib/maps/use-yandex-maps';
 import { SessionProvider } from '@/lib/session';
 import { TELEGRAM_WEB_APP_SCRIPT_URL, TelegramProvider } from '@/lib/telegram';
+import { BotUsernameProvider } from '@/lib/telegram/bot-link';
+import { readTelegramBotUsername } from '@/lib/telegram/bot-username';
 import '../globals.css';
 
 // Only the supported locales exist; anything else is a 404 without rendering.
@@ -26,6 +30,11 @@ export function generateStaticParams() {
 export const viewport: Viewport = {
   width: 'device-width',
   initialScale: 1,
+  // No pinch or double-tap zoom: the storefront is an app, laid out for the phone it runs on.
+  // iOS WebKit may ignore these two, so `components/zoom-guard.tsx` and `touch-action` in
+  // globals.css block the gestures as well. Text inputs are 16px, so focusing one never zooms.
+  maximumScale: 1,
+  userScalable: false,
   // Lets `env(safe-area-inset-*)` work (notch / home indicator), including in the Mini App; the
   // shell pads by the `--mm-inset-*` variables built from it (globals.css).
   viewportFit: 'cover',
@@ -33,7 +42,7 @@ export const viewport: Viewport = {
   interactiveWidget: 'resizes-content',
   colorScheme: 'light dark',
   themeColor: [
-    { media: '(prefers-color-scheme: light)', color: '#faf8f5' },
+    { media: '(prefers-color-scheme: light)', color: '#f5f3ef' },
     { media: '(prefers-color-scheme: dark)', color: '#121214' },
   ],
 };
@@ -61,43 +70,49 @@ export default async function RootLayout({ children, params }: LayoutProps<'/[lo
 
   const { locale } = await params;
   if (!isLocale(locale)) notFound();
-  const dict = getDictionary(locale);
   // Read per request like the other runtime settings; `null` (unset or malformed) keeps the map
   // picker in its custom "map unavailable" state and nothing is ever loaded from Yandex.
-  const mapsApiKey = readYandexMapsApiKey();
+  const mapsApiKey = readYandexMapsJavaScriptApiKey();
+  const geocoderApiKey = readYandexMapsGeocoderApiKey();
+  // The per-request nonce from src/proxy.ts, passed to `<Script>` explicitly so the client renders
+  // the same `nonce` as the server HTML (see `nonceFromContentSecurityPolicy`).
+  const nonce = nonceFromContentSecurityPolicy((await headers()).get('content-security-policy'));
 
   return (
-    <html lang={locale}>
+    // `suppressHydrationWarning` covers only this element's own attributes: the Telegram script
+    // below runs before hydration and sets `--tg-viewport-*` inline styles on <html>, which the
+    // client render does not have. Nothing below <html> is affected.
+    <html lang={locale} suppressHydrationWarning>
       <head>
         {/*
           Official Telegram Web Apps script. It must run before hydration so that
           `window.Telegram.WebApp` exists on first client render. It is mutable and cannot be
           pinned with SRI; it is loaded from Telegram's own origin by design.
         */}
-        <Script src={TELEGRAM_WEB_APP_SCRIPT_URL} strategy="beforeInteractive" />
+        <Script src={TELEGRAM_WEB_APP_SCRIPT_URL} strategy="beforeInteractive" nonce={nonce} />
       </head>
       <body>
         <LocaleProvider locale={locale}>
-          <TelegramProvider>
-            <SessionProvider>
-              <TelegramChrome />
-              <CartProvider>
-                <MapsConfigProvider apiKey={mapsApiKey}>
-                  {/* Bottom padding: the home indicator / Telegram's bottom inset, plus the mobile
+          <BotUsernameProvider username={readTelegramBotUsername()}>
+            <TelegramProvider>
+              <SessionProvider>
+                <TelegramChrome />
+                <ZoomGuard />
+                <LocaleSync />
+                <CartProvider>
+                  <MapsConfigProvider apiKey={mapsApiKey} geocoderApiKey={geocoderApiKey}>
+                    {/* Bottom padding: the home indicator / Telegram's bottom inset, plus the mobile
                       tab bar while it is shown (`--mm-nav-h`, see globals.css). */}
-                  <div className="flex min-h-dvh flex-col pb-[calc(var(--mm-inset-bottom)+var(--mm-nav-h))]">
-                    {/* Below the header: the header pads itself by the top safe-area inset, so a
-                        banner above it would sit under the notch / status bar in fullscreen and
-                        installed modes. */}
-                    <SiteHeader locale={locale} dict={dict} />
-                    <OfflineBanner />
-                    {children}
-                  </div>
-                  <BottomNav />
-                </MapsConfigProvider>
-              </CartProvider>
-            </SessionProvider>
-          </TelegramProvider>
+                    <div className="flex min-h-dvh flex-col pb-[calc(var(--mm-inset-bottom)+var(--mm-nav-h))]">
+                      {/* Each page renders its own `SiteHeader` (title or logo) first. */}
+                      {children}
+                    </div>
+                    <BottomNav />
+                  </MapsConfigProvider>
+                </CartProvider>
+              </SessionProvider>
+            </TelegramProvider>
+          </BotUsernameProvider>
         </LocaleProvider>
       </body>
     </html>

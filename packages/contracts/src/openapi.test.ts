@@ -1,7 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import openapi from '../openapi.json';
-import { API_ERROR_CODES, PRODUCT_SORTS } from './api';
-import { DISTRICT_CODES, PRODUCT_UNITS, USER_ROLES } from './enums';
+import {
+  API_ERROR_CODES,
+  ORDER_STATUS_GROUPS,
+  ORDER_STATUS_GROUP_STATUSES,
+  PRODUCT_SORTS,
+} from './api';
+import { ORDER_STATUSES, PRODUCT_UNITS, USER_ROLES } from './enums';
 import { SUPPORTED_LOCALES } from './locale';
 
 /**
@@ -30,9 +35,17 @@ describe('openapi.json', () => {
     expect([...PRODUCT_SORTS]).toEqual(enumOf('ProductSort'));
   });
 
-  it('DISTRICT_CODES equals the District.code enum', () => {
-    const district = schemas['District'] as { properties: { code: EnumSchema } };
-    expect([...DISTRICT_CODES].sort()).toEqual([...district.properties.code.enum].sort());
+  it('ORDER_STATUS_GROUPS equals the OrderStatusGroup enum, in the same order', () => {
+    expect([...ORDER_STATUS_GROUPS]).toEqual(enumOf('OrderStatusGroup'));
+  });
+
+  it('ORDER_STATUS_GROUP_STATUSES partitions the order statuses', () => {
+    expect([...ORDER_STATUS_GROUP_STATUSES.all]).toEqual([...ORDER_STATUSES]);
+    const grouped = ORDER_STATUS_GROUPS.filter((group) => group !== 'all').flatMap((group) => [
+      ...ORDER_STATUS_GROUP_STATUSES[group],
+    ]);
+    expect([...grouped].sort()).toEqual([...ORDER_STATUSES].sort());
+    expect(new Set(grouped).size).toBe(grouped.length);
   });
 
   it('shared enums match the API', () => {
@@ -60,6 +73,21 @@ describe('openapi.json', () => {
     'CartLine',
     'AddCartItemRequest',
     'SetCartItemQuantityRequest',
+    // checkout / orders
+    'CheckoutQuote',
+    'CreateOrderRequest',
+    'DeliveryAddress',
+    'OrderAddress',
+    'OrderDetail',
+    'AdminOrderDetail',
+    'OrderSummary',
+    'OrderThumbnail',
+    'OrderStatusGroup',
+    // profile
+    'UpdateProfileRequest',
+    'SavedAddress',
+    'SavedAddressRequest',
+    'SavedAddressList',
     // auth
     'UserPublic',
     'SessionResponse',
@@ -70,6 +98,37 @@ describe('openapi.json', () => {
     'OidcStartResponse',
   ])('declares the %s schema', (name) => {
     expect(Object.keys(schemas)).toContain(name);
+  });
+
+  it('takes a map point in the delivery address and no request body for the quote', () => {
+    const address = schemas['DeliveryAddress'] as {
+      properties: Record<string, unknown>;
+      required: string[];
+      additionalProperties: boolean;
+    };
+    expect(address.required.sort()).toEqual(['house', 'lat', 'lon', 'street']);
+    expect(address.additionalProperties).toBe(false);
+    const quote = (openapi.paths as Record<string, { post?: { requestBody?: unknown } }>)[
+      '/api/v1/checkout/quote'
+    ];
+    expect(quote?.post).toBeDefined();
+    expect(quote?.post?.requestBody).toBeUndefined();
+  });
+
+  it('serves the profile hub routes', () => {
+    const paths = openapi.paths as Record<string, Record<string, unknown>>;
+    expect(Object.keys(paths['/api/v1/me'] ?? {})).toEqual(['patch']);
+    expect(Object.keys(paths['/api/v1/me/addresses'] ?? {}).sort()).toEqual(['get', 'post']);
+    expect(Object.keys(paths['/api/v1/me/addresses/{address_id}'] ?? {}).sort()).toEqual([
+      'delete',
+      'put',
+    ]);
+    const request = schemas['SavedAddressRequest'] as {
+      required: string[];
+      additionalProperties: boolean;
+    };
+    expect(request.required.sort()).toEqual(['house', 'lat', 'lon', 'street']);
+    expect(request.additionalProperties).toBe(false);
   });
 
   it('mounts every public route under the v1 prefix', () => {

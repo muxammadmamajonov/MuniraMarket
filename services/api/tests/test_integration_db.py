@@ -78,7 +78,6 @@ async def test_database_constraints(session_factory: async_sessionmaker[AsyncSes
                 user_id=user.id,
                 status=OrderStatus.CANCELLED,
                 subtotal_uzs=1,
-                delivery_fee_uzs=0,
                 total_uzs=1,
                 item_count=1,
                 payment_method=PaymentMethod.CASH_ON_DELIVERY,

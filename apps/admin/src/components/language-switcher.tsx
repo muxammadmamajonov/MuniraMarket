@@ -22,7 +22,7 @@ export function LanguageSwitcher({ locale, label, names }: LanguageSwitcherProps
 
   return (
     <nav aria-label={label}>
-      <ul className="flex items-center gap-1">
+      <ul className="inline-flex items-center gap-1 rounded-2xl bg-surface-muted p-1">
         {SUPPORTED_LOCALES.map((target) => {
           const active = target === locale;
           return (
@@ -34,11 +34,13 @@ export function LanguageSwitcher({ locale, label, names }: LanguageSwitcherProps
                 aria-current={active ? 'true' : undefined}
                 onClick={() => persistLocale(target)}
                 className={
-                  'inline-flex min-h-11 min-w-11 items-center justify-center rounded-xl px-3 text-sm font-medium ' +
-                  'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus ' +
+                  // A segmented control: the current language is the raised white segment.
+                  'inline-flex min-h-11 min-w-11 items-center justify-center rounded-xl px-3.5 text-sm font-semibold ' +
+                  'transition-[transform,background-color] duration-150 ease-out-strong active:scale-[0.97] ' +
+                  'motion-reduce:transition-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus ' +
                   (active
-                    ? 'bg-primary text-primary-foreground'
-                    : 'text-foreground hover:bg-surface-muted')
+                    ? 'bg-surface text-foreground shadow-[0_1px_3px_rgb(20_20_22/0.12)]'
+                    : 'text-muted-foreground hover:text-foreground')
                 }
               >
                 {names[target]}

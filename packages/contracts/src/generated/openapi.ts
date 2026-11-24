@@ -159,104 +159,6 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
-  '/api/v1/admin/delivery/slots': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /**
-     * List Slots
-     * @description Slots by date and start time, optionally of one zone and a date range (at most 1000).
-     */
-    get: operations['list_slots_api_v1_admin_delivery_slots_get'];
-    put?: never;
-    /**
-     * Create Slot
-     * @description ``cutoff_at`` may not be after the slot starts (Asia/Tashkent); ``409 slot_exists`` when
-     *     the zone already has a slot starting at that date and time.
-     */
-    post: operations['create_slot_api_v1_admin_delivery_slots_post'];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/api/v1/admin/delivery/slots/{slot_id}': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    post?: never;
-    /**
-     * Delete Slot
-     * @description Only a slot with nothing booked and no order referring to it (``409 slot_in_use``).
-     */
-    delete: operations['delete_slot_api_v1_admin_delivery_slots__slot_id__delete'];
-    options?: never;
-    head?: never;
-    /**
-     * Update Slot
-     * @description Change only the fields sent. ``409 capacity_below_reserved`` below the booked places;
-     *     ``409 slot_in_use`` when moving (date/times) a slot with booked places.
-     */
-    patch: operations['update_slot_api_v1_admin_delivery_slots__slot_id__patch'];
-    trace?: never;
-  };
-  '/api/v1/admin/delivery/zones': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /**
-     * List Zones
-     * @description Every zone (inactive ones too), in display order, with its districts.
-     */
-    get: operations['list_zones_api_v1_admin_delivery_zones_get'];
-    put?: never;
-    /**
-     * Create Zone
-     * @description ``409 district_taken`` (with ``district``) when a district already belongs to a zone.
-     */
-    post: operations['create_zone_api_v1_admin_delivery_zones_post'];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/api/v1/admin/delivery/zones/{zone_id}': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    post?: never;
-    /**
-     * Delete Zone
-     * @description Only a zone no order and no slot refers to (``409 zone_in_use``); else deactivate it.
-     */
-    delete: operations['delete_zone_api_v1_admin_delivery_zones__zone_id__delete'];
-    options?: never;
-    head?: never;
-    /**
-     * Update Zone
-     * @description Change only the fields sent; ``districts`` replaces the zone's whole district set.
-     */
-    patch: operations['update_zone_api_v1_admin_delivery_zones__zone_id__patch'];
-    trace?: never;
-  };
   '/api/v1/admin/orders': {
     parameters: {
       query?: never;
@@ -292,6 +194,33 @@ export interface paths {
     options?: never;
     head?: never;
     patch?: never;
+    trace?: never;
+  };
+  '/api/v1/admin/orders/{order_id}/items/{product_id}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    /**
+     * Adjust Item
+     * @description Lower one order line because the goods are not there (ADR 0018).
+     *
+     *     Only while the order is NEW, CONFIRMED or PICKING (else ``409 order_not_adjustable``), and
+     *     only down (``0..current quantity``; more is ``409 invalid_quantity``). The units the line no
+     *     longer takes go back to stock, or, with ``mark_out_of_stock``, the product's stock becomes 0.
+     *     The totals are recomputed and the customer is told (they may then cancel in the app). A line
+     *     already at ``quantity`` is returned unchanged, so a retry is harmless. When every line reaches
+     *     0 the order is cancelled ("Mahsulotlar tugab qoldi").
+     */
+    patch: operations['adjust_item_api_v1_admin_orders__order_id__items__product_id__patch'];
     trace?: never;
   };
   '/api/v1/admin/orders/{order_id}/status': {
@@ -666,35 +595,13 @@ export interface paths {
     put?: never;
     /**
      * Quote
-     * @description Re-check the cart (status, current price, stock) and price delivery for a district.
+     * @description Re-check the cart (status, current price, stock). No request body.
      *
      *     Never fails because of the cart's contents: problems are reported in ``issues`` and
-     *     ``can_place_order``. ``409 district_not_served`` when no active zone covers the district.
-     *     ``slot_required`` and ``delivery_slots`` say whether (and which) delivery slot to book.
+     *     ``can_place_order``. ``total_uzs`` equals ``subtotal_uzs``: delivery is by a Yandex Go courier
+     *     whom the customer pays directly.
      */
     post: operations['quote_api_v1_checkout_quote_post'];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/api/v1/delivery/zones': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /**
-     * List Zones
-     * @description Active zones with their districts, fees, minimum order and Asia/Tashkent hours.
-     *
-     *     ``is_open_now`` is as of the response; it may be up to a minute stale from a cache.
-     */
-    get: operations['list_zones_api_v1_delivery_zones_get'];
-    put?: never;
-    post?: never;
     delete?: never;
     options?: never;
     head?: never;
@@ -765,6 +672,26 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/v1/internal/telegram/language': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    /**
+     * Set Language
+     * @description The language the user picked in the bot's onboarding (same column as the shop profile).
+     */
+    put: operations['set_language_api_v1_internal_telegram_language_put'];
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/v1/internal/telegram/me': {
     parameters: {
       query?: never;
@@ -822,6 +749,28 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/v1/internal/telegram/phone': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Record Phone
+     * @description Store the sender's OWN shared Telegram contact as the verified account phone.
+     *
+     *     The number is never logged or returned.
+     */
+    post: operations['record_phone_api_v1_internal_telegram_phone_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/v1/internal/telegram/session': {
     parameters: {
       query?: never;
@@ -862,6 +811,101 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/v1/me': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    /**
+     * Update Profile
+     * @description Edit the profile: name, birth date and phone. Only the keys sent are changed.
+     *
+     *     Editing the name stops Telegram sign-ins from overwriting it. A ``phone`` different from the
+     *     stored number is saved *unverified* (only the Telegram contact verifies a phone); the same
+     *     number keeps its verification; ``null`` removes the phone.
+     */
+    patch: operations['update_profile_api_v1_me_patch'];
+    trace?: never;
+  };
+  '/api/v1/me/addresses': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * List Addresses
+     * @description The saved addresses: the default first, then the most recently updated.
+     */
+    get: operations['list_addresses_api_v1_me_addresses_get'];
+    put?: never;
+    /**
+     * Create Address
+     * @description Save an address (at most 10: ``409 address_limit_reached``). The first one becomes the
+     *     default; ``is_default: true`` moves the default to the new address.
+     */
+    post: operations['create_address_api_v1_me_addresses_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/me/addresses/{address_id}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    /**
+     * Replace Address
+     * @description Replace every field of one of the user's addresses. ``is_default: true`` makes it the
+     *     default, ``false`` (on the default) leaves the user without one, omitted keeps it.
+     */
+    put: operations['replace_address_api_v1_me_addresses__address_id__put'];
+    post?: never;
+    /**
+     * Delete Address
+     * @description Delete one of the user's addresses. Deleting the default promotes the most recently
+     *     updated remaining address.
+     */
+    delete: operations['delete_address_api_v1_me_addresses__address_id__delete'];
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/me/language': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    /**
+     * Set Language
+     * @description Save the storefront language. The same value the bot uses; the URL locale follows it.
+     */
+    put: operations['set_language_api_v1_me_language_put'];
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/v1/orders': {
     parameters: {
       query?: never;
@@ -871,7 +915,11 @@ export interface paths {
     };
     /**
      * List Orders
-     * @description The signed-in customer's orders, newest first.
+     * @description The signed-in customer's orders, newest first, optionally one tab of the history.
+     *
+     *     ``status_group``: ``active`` (NEW, CONFIRMED, PICKING, READY_FOR_DELIVERY), ``delivering``
+     *     (OUT_FOR_DELIVERY), ``done`` (DELIVERED), ``cancelled`` (CANCELLED) or ``all``; ``total`` and
+     *     ``total_pages`` count that group only.
      */
     get: operations['list_orders_api_v1_orders_get'];
     put?: never;
@@ -881,8 +929,8 @@ export interface paths {
      *
      *     The same ``Idempotency-Key`` with the same body returns the original order (``200`` and
      *     ``Idempotent-Replayed: true``); with a different body it is ``409 idempotency_key_conflict``.
-     *     When the zone has delivery slots, ``delivery_slot_id`` is required (``409 slot_required``) and
-     *     booked atomically (``409 slot_full`` / ``slot_unavailable``).
+     *     Delivery is on demand (no zone, hours or slot check). Without a verified account
+     *     phone it is ``409 phone_verification_required`` (unless disabled by configuration).
      */
     post: operations['create_order_api_v1_orders_post'];
     delete?: never;
@@ -1026,11 +1074,44 @@ export interface components {
       /** Items */
       items: components['schemas']['AdminCategory'][];
     };
+    /**
+     * AdminOrderAdjustment
+     * @description One order line lowered at picking: "Olma: 2 kg -> 0 kg, sabab: ..." (ADR 0018).
+     */
+    AdminOrderAdjustment: {
+      actor_role: components['schemas']['UserRole'];
+      /**
+       * At
+       * Format: date-time
+       */
+      at: string;
+      /** From Quantity */
+      from_quantity: number;
+      /** Marked Out Of Stock */
+      marked_out_of_stock: boolean;
+      /** Name Ru */
+      name_ru: string;
+      /** Name Uz */
+      name_uz: string;
+      /** Product Id */
+      product_id: string | null;
+      /** Reason */
+      reason: string;
+      /** Sku */
+      sku: string;
+      /** To Quantity */
+      to_quantity: number;
+      unit: components['schemas']['Unit'];
+    };
     /** AdminOrderDetail */
     AdminOrderDetail: {
       address: components['schemas']['OrderAddress'];
+      /** Adjustments */
+      adjustments: components['schemas']['AdminOrderAdjustment'][];
       /** Allowed Transitions */
       allowed_transitions: components['schemas']['OrderStatus'][];
+      /** Can Adjust Items */
+      can_adjust_items: boolean;
       /** Can Cancel */
       can_cancel: boolean;
       /** Cancel Reason */
@@ -1042,9 +1123,6 @@ export interface components {
        * Format: date-time
        */
       created_at: string;
-      /** Delivery Fee Uzs */
-      delivery_fee_uzs: number;
-      delivery_slot: components['schemas']['OrderDeliverySlot'] | null;
       /** History */
       history: components['schemas']['OrderStatusChange'][];
       /** History Detail */
@@ -1111,6 +1189,10 @@ export interface components {
       old_price_uzs: number | null;
       /** Price Uzs */
       price_uzs: number;
+      /** Safety Stock */
+      safety_stock: number;
+      /** Sellable Quantity */
+      sellable_quantity: number | null;
       /** Sku */
       sku: string;
       /** Slug */
@@ -1222,9 +1304,7 @@ export interface components {
         | 'insufficient_stock'
         | 'cart_limit_reached'
         | 'cart_item_not_found'
-        | 'district_not_served'
         | 'cart_empty'
-        | 'below_min_order'
         | 'price_changed'
         | 'idempotency_key_conflict'
         | 'order_not_found'
@@ -1232,6 +1312,12 @@ export interface components {
         | 'invalid_status_transition'
         | 'order_status_conflict'
         | 'too_many_open_orders'
+        | 'phone_verification_required'
+        | 'order_not_adjustable'
+        | 'order_item_not_found'
+        | 'invalid_quantity'
+        | 'address_not_found'
+        | 'address_limit_reached'
         | 'slug_taken'
         | 'sku_taken'
         | 'category_cycle'
@@ -1243,22 +1329,10 @@ export interface components {
         | 'csv_too_many_rows'
         | 'user_not_found'
         | 'last_admin'
-        | 'cannot_block_self'
-        | 'slot_required'
-        | 'slot_unavailable'
-        | 'slot_full'
-        | 'zone_not_found'
-        | 'zone_in_use'
-        | 'district_taken'
-        | 'slot_not_found'
-        | 'slot_exists'
-        | 'slot_in_use'
-        | 'capacity_below_reserved';
+        | 'cannot_block_self';
       current_status?: components['schemas']['OrderStatus'] | null;
       /** Details */
       details?: components['schemas']['ErrorDetail'][] | null;
-      /** District */
-      district?: string | null;
       /** Message */
       message: string;
       /** Product Id */
@@ -1432,45 +1506,16 @@ export interface components {
     CheckoutQuote: {
       /** Can Place Order */
       can_place_order: boolean;
-      /** Delivery Fee Uzs */
-      delivery_fee_uzs: number;
-      /** Delivery Slots */
-      delivery_slots: components['schemas']['DeliverySlotOption'][];
-      /** Free Delivery Remaining Uzs */
-      free_delivery_remaining_uzs: number | null;
       /** Issues */
-      issues: ('cart_empty' | 'cart_has_issues' | 'below_min_order')[];
+      issues: ('cart_empty' | 'cart_has_issues')[];
       /** Item Count */
       item_count: number;
       /** Items */
       items: components['schemas']['CartLine'][];
-      /** Slot Required */
-      slot_required: boolean;
       /** Subtotal Uzs */
       subtotal_uzs: number;
       /** Total Uzs */
       total_uzs: number;
-      zone: components['schemas']['DeliveryZonePublic'];
-    };
-    /** CheckoutQuoteRequest */
-    CheckoutQuoteRequest: {
-      /**
-       * District
-       * @enum {string}
-       */
-      district:
-        | 'bektemir'
-        | 'chilonzor'
-        | 'mirobod'
-        | 'mirzo_ulugbek'
-        | 'olmazor'
-        | 'sergeli'
-        | 'shayxontohur'
-        | 'uchtepa'
-        | 'yakkasaroy'
-        | 'yangihayot'
-        | 'yashnobod'
-        | 'yunusobod';
     };
     /** ClaimResponse */
     ClaimResponse: {
@@ -1492,8 +1537,6 @@ export interface components {
       address: components['schemas']['DeliveryAddress'];
       /** Comment */
       comment?: string | null;
-      /** Delivery Slot Id */
-      delivery_slot_id?: string | null;
       /** Expected Total Uzs */
       expected_total_uzs: number;
       payment_method: components['schemas']['PaymentMethod'];
@@ -1543,6 +1586,7 @@ export interface components {
         | 'invalid_money'
         | 'invalid_old_price'
         | 'invalid_stock'
+        | 'invalid_safety_stock'
         | 'invalid_unit'
         | 'invalid_bool'
         | 'invalid_sort_order'
@@ -1566,6 +1610,7 @@ export interface components {
             | 'price_uzs'
             | 'old_price_uzs'
             | 'stock_quantity'
+            | 'safety_stock'
             | 'is_active'
             | 'sort_order'
             | 'image_url'
@@ -1601,27 +1646,14 @@ export interface components {
        */
       timezone: 'Asia/Tashkent';
     };
-    /** DeliveryAddress */
+    /**
+     * DeliveryAddress
+     * @description Where the Yandex Go courier takes the order: the map point plus what the courier needs to
+     *     find the door.
+     */
     DeliveryAddress: {
       /** Apartment */
       apartment?: string | null;
-      /**
-       * District
-       * @enum {string}
-       */
-      district:
-        | 'bektemir'
-        | 'chilonzor'
-        | 'mirobod'
-        | 'mirzo_ulugbek'
-        | 'olmazor'
-        | 'sergeli'
-        | 'shayxontohur'
-        | 'uchtepa'
-        | 'yakkasaroy'
-        | 'yangihayot'
-        | 'yashnobod'
-        | 'yunusobod';
       /** Entrance */
       entrance?: string | null;
       /** Floor */
@@ -1630,192 +1662,18 @@ export interface components {
       house: string;
       /** Landmark */
       landmark?: string | null;
+      /**
+       * Lat
+       * @description WGS84 latitude, -90..90
+       */
+      lat: number;
+      /**
+       * Lon
+       * @description WGS84 longitude, -180..180
+       */
+      lon: number;
       /** Street */
       street: string;
-    };
-    /** DeliverySlotAdmin */
-    DeliverySlotAdmin: {
-      /** Capacity */
-      capacity: number;
-      /**
-       * Created At
-       * Format: date-time
-       */
-      created_at: string;
-      /**
-       * Cutoff At
-       * Format: date-time
-       */
-      cutoff_at: string;
-      /** Ends At */
-      ends_at: string;
-      /**
-       * Id
-       * Format: uuid
-       */
-      id: string;
-      /** Is Active */
-      is_active: boolean;
-      /** Remaining */
-      remaining: number;
-      /** Reserved Count */
-      reserved_count: number;
-      /**
-       * Slot Date
-       * Format: date
-       */
-      slot_date: string;
-      /** Starts At */
-      starts_at: string;
-      /**
-       * Updated At
-       * Format: date-time
-       */
-      updated_at: string;
-      /**
-       * Zone Id
-       * Format: uuid
-       */
-      zone_id: string;
-    };
-    /** DeliverySlotAdminList */
-    DeliverySlotAdminList: {
-      /** Items */
-      items: components['schemas']['DeliverySlotAdmin'][];
-      /** Truncated */
-      truncated: boolean;
-    };
-    /**
-     * DeliverySlotOption
-     * @description A bookable delivery window offered at checkout (local Asia/Tashkent date and times).
-     */
-    DeliverySlotOption: {
-      /**
-       * Date
-       * Format: date
-       */
-      date: string;
-      /** Ends At */
-      ends_at: string;
-      /**
-       * Id
-       * Format: uuid
-       */
-      id: string;
-      /** Is Full */
-      is_full: boolean;
-      /** Remaining */
-      remaining: number;
-      /** Starts At */
-      starts_at: string;
-    };
-    /** DeliveryZoneAdmin */
-    DeliveryZoneAdmin: {
-      /** Closes At */
-      closes_at: string;
-      /**
-       * Created At
-       * Format: date-time
-       */
-      created_at: string;
-      /** Delivery Fee Uzs */
-      delivery_fee_uzs: number;
-      /** Districts */
-      districts: components['schemas']['District'][];
-      /** Free Delivery Threshold Uzs */
-      free_delivery_threshold_uzs: number | null;
-      /**
-       * Id
-       * Format: uuid
-       */
-      id: string;
-      /** Is Active */
-      is_active: boolean;
-      /** Min Order Uzs */
-      min_order_uzs: number;
-      /** Name Ru */
-      name_ru: string;
-      /** Name Uz */
-      name_uz: string;
-      /** Opens At */
-      opens_at: string;
-      /** Slug */
-      slug: string;
-      /** Sort Order */
-      sort_order: number;
-      /**
-       * Updated At
-       * Format: date-time
-       */
-      updated_at: string;
-    };
-    /** DeliveryZoneAdminList */
-    DeliveryZoneAdminList: {
-      /** Items */
-      items: components['schemas']['DeliveryZoneAdmin'][];
-    };
-    /** DeliveryZoneList */
-    DeliveryZoneList: {
-      /** Items */
-      items: components['schemas']['DeliveryZonePublic'][];
-      /**
-       * Timezone
-       * @default Asia/Tashkent
-       * @constant
-       */
-      timezone: 'Asia/Tashkent';
-    };
-    /** DeliveryZonePublic */
-    DeliveryZonePublic: {
-      /** Closes At */
-      closes_at: string;
-      /** Delivery Fee Uzs */
-      delivery_fee_uzs: number;
-      /** Districts */
-      districts: components['schemas']['District'][];
-      /** Free Delivery Threshold Uzs */
-      free_delivery_threshold_uzs: number | null;
-      /**
-       * Id
-       * Format: uuid
-       */
-      id: string;
-      /** Is Open Now */
-      is_open_now: boolean;
-      /** Min Order Uzs */
-      min_order_uzs: number;
-      /** Name Ru */
-      name_ru: string;
-      /** Name Uz */
-      name_uz: string;
-      /** Opens At */
-      opens_at: string;
-      /** Slug */
-      slug: string;
-    };
-    /** District */
-    District: {
-      /**
-       * Code
-       * @enum {string}
-       */
-      code:
-        | 'bektemir'
-        | 'chilonzor'
-        | 'mirobod'
-        | 'mirzo_ulugbek'
-        | 'olmazor'
-        | 'sergeli'
-        | 'shayxontohur'
-        | 'uchtepa'
-        | 'yakkasaroy'
-        | 'yangihayot'
-        | 'yashnobod'
-        | 'yunusobod';
-      /** Name Ru */
-      name_ru: string;
-      /** Name Uz */
-      name_uz: string;
     };
     /** ErrorDetail */
     ErrorDetail: {
@@ -1895,27 +1753,6 @@ export interface components {
     OrderAddress: {
       /** Apartment */
       apartment: string | null;
-      /**
-       * District
-       * @enum {string}
-       */
-      district:
-        | 'bektemir'
-        | 'chilonzor'
-        | 'mirobod'
-        | 'mirzo_ulugbek'
-        | 'olmazor'
-        | 'sergeli'
-        | 'shayxontohur'
-        | 'uchtepa'
-        | 'yakkasaroy'
-        | 'yangihayot'
-        | 'yashnobod'
-        | 'yunusobod';
-      /** District Name Ru */
-      district_name_ru: string;
-      /** District Name Uz */
-      district_name_uz: string;
       /** Entrance */
       entrance: string | null;
       /** Floor */
@@ -1924,23 +1761,12 @@ export interface components {
       house: string;
       /** Landmark */
       landmark: string | null;
+      /** Lat */
+      lat: number | null;
+      /** Lon */
+      lon: number | null;
       /** Street */
       street: string;
-    };
-    /**
-     * OrderDeliverySlot
-     * @description The booked delivery window (local Asia/Tashkent date, ``HH:MM`` times).
-     */
-    OrderDeliverySlot: {
-      /**
-       * Date
-       * Format: date
-       */
-      date: string;
-      /** Ends At */
-      ends_at: string;
-      /** Starts At */
-      starts_at: string;
     };
     /** OrderDetail */
     OrderDetail: {
@@ -1956,9 +1782,6 @@ export interface components {
        * Format: date-time
        */
       created_at: string;
-      /** Delivery Fee Uzs */
-      delivery_fee_uzs: number;
-      delivery_slot: components['schemas']['OrderDeliverySlot'] | null;
       /** History */
       history: components['schemas']['OrderStatusChange'][];
       /**
@@ -1988,14 +1811,33 @@ export interface components {
        */
       updated_at: string;
     };
+    /**
+     * OrderItemAdjustRequest
+     * @description Lower one order line because the goods are not there (ADR 0018).
+     */
+    OrderItemAdjustRequest: {
+      /**
+       * Mark Out Of Stock
+       * @default false
+       */
+      mark_out_of_stock: boolean;
+      /** Quantity */
+      quantity: number;
+      /** Reason */
+      reason: string;
+    };
     /** OrderLine */
     OrderLine: {
+      /** Adjusted */
+      adjusted: boolean;
       /** Line Total Uzs */
       line_total_uzs: number;
       /** Name Ru */
       name_ru: string;
       /** Name Uz */
       name_uz: string;
+      /** Original Quantity */
+      original_quantity: number;
       /** Product Id */
       product_id: string | null;
       /** Quantity */
@@ -2040,6 +1882,12 @@ export interface components {
       at: string;
       status: components['schemas']['OrderStatus'];
     };
+    /**
+     * OrderStatusGroup
+     * @description Tabs of the customer's order history (``GET /orders?status_group=``).
+     * @enum {string}
+     */
+    OrderStatusGroup: 'all' | 'active' | 'delivering' | 'done' | 'cancelled';
     /** OrderStatusUpdateRequest */
     OrderStatusUpdateRequest: {
       expected_status?: components['schemas']['OrderStatus'] | null;
@@ -2064,8 +1912,24 @@ export interface components {
       /** Number */
       number: string;
       status: components['schemas']['OrderStatus'];
+      /** Thumbnails */
+      thumbnails: components['schemas']['OrderThumbnail'][];
       /** Total Uzs */
       total_uzs: number;
+    };
+    /**
+     * OrderThumbnail
+     * @description One of the first order lines, for the order list card.
+     */
+    OrderThumbnail: {
+      /** Image Url */
+      image_url: string | null;
+      /** Name Ru */
+      name_ru: string;
+      /** Name Uz */
+      name_uz: string;
+      /** Product Id */
+      product_id: string | null;
     };
     /** OutboxMessagePublic */
     OutboxMessagePublic: {
@@ -2120,6 +1984,11 @@ export interface components {
       old_price_uzs?: number | null;
       /** Price Uzs */
       price_uzs: number;
+      /**
+       * Safety Stock
+       * @description Units kept back for walk-in shoppers; absent or null = 0
+       */
+      safety_stock?: number | null;
       /** Sku */
       sku: string;
       /** Slug */
@@ -2156,6 +2025,8 @@ export interface components {
       image_url: string | null;
       /** In Stock */
       in_stock: boolean;
+      /** Low Stock */
+      low_stock: boolean;
       /** Name Ru */
       name_ru: string;
       /** Name Uz */
@@ -2211,6 +2082,8 @@ export interface components {
       image_url: string | null;
       /** In Stock */
       in_stock: boolean;
+      /** Low Stock */
+      low_stock: boolean;
       /** Name Ru */
       name_ru: string;
       /** Name Uz */
@@ -2253,6 +2126,8 @@ export interface components {
       old_price_uzs?: number | null;
       /** Price Uzs */
       price_uzs?: number | null;
+      /** Safety Stock */
+      safety_stock?: number | null;
       /** Sku */
       sku?: string | null;
       /** Slug */
@@ -2274,6 +2149,88 @@ export interface components {
        */
       status: 'ok' | 'unavailable';
     };
+    /** SavedAddress */
+    SavedAddress: {
+      /** Apartment */
+      apartment: string | null;
+      /**
+       * Created At
+       * Format: date-time
+       */
+      created_at: string;
+      /** Entrance */
+      entrance: string | null;
+      /** Floor */
+      floor: string | null;
+      /** House */
+      house: string;
+      /**
+       * Id
+       * Format: uuid
+       */
+      id: string;
+      /** Is Default */
+      is_default: boolean;
+      /** Label */
+      label: string | null;
+      /** Landmark */
+      landmark: string | null;
+      /** Lat */
+      lat: number;
+      /** Lon */
+      lon: number;
+      /** Street */
+      street: string;
+      /**
+       * Updated At
+       * Format: date-time
+       */
+      updated_at: string;
+    };
+    /**
+     * SavedAddressList
+     * @description ``GET /me/addresses``: the default first, then the most recently updated.
+     */
+    SavedAddressList: {
+      /** Items */
+      items: components['schemas']['SavedAddress'][];
+    };
+    /**
+     * SavedAddressRequest
+     * @description Body of ``POST /me/addresses`` and ``PUT /me/addresses/{id}`` (a full replacement).
+     *
+     *     ``is_default: true`` makes this the default address (the previous default is unset);
+     *     ``false`` on the current default leaves the user without a default; omitted keeps the current
+     *     state (a user's first address always becomes the default).
+     */
+    SavedAddressRequest: {
+      /** Apartment */
+      apartment?: string | null;
+      /** Entrance */
+      entrance?: string | null;
+      /** Floor */
+      floor?: string | null;
+      /** House */
+      house: string;
+      /** Is Default */
+      is_default?: boolean;
+      /** Label */
+      label?: string | null;
+      /** Landmark */
+      landmark?: string | null;
+      /**
+       * Lat
+       * @description WGS84 latitude, -90..90
+       */
+      lat: number;
+      /**
+       * Lon
+       * @description WGS84 longitude, -180..180
+       */
+      lon: number;
+      /** Street */
+      street: string;
+    };
     /**
      * SessionResponse
      * @description Returned by every login and by ``GET /auth/session``.
@@ -2291,65 +2248,36 @@ export interface components {
       /** Quantity */
       quantity: number;
     };
-    /** SlotCreateRequest */
-    SlotCreateRequest: {
-      /** Capacity */
-      capacity: number;
-      /**
-       * Cutoff At
-       * Format: date-time
-       */
-      cutoff_at: string;
-      /**
-       * Ends At
-       * @example 09:00
-       */
-      ends_at: string;
-      /**
-       * Is Active
-       * @default true
-       */
-      is_active: boolean;
-      /**
-       * Slot Date
-       * Format: date
-       */
-      slot_date: string;
-      /**
-       * Starts At
-       * @example 09:00
-       */
-      starts_at: string;
-      /**
-       * Zone Id
-       * Format: uuid
-       */
-      zone_id: string;
-    };
     /**
-     * SlotUpdateRequest
-     * @description Only the fields sent are changed. Date and times can change only while nothing is booked;
-     *     capacity cannot drop below what is already booked.
+     * SetLanguageRequest
+     * @description Body of ``PUT /me/language`` and ``PUT /internal/telegram/language``.
      */
-    SlotUpdateRequest: {
-      /** Capacity */
-      capacity?: number | null;
-      /** Cutoff At */
-      cutoff_at?: string | null;
-      /** Ends At */
-      ends_at?: string | null;
-      /** Is Active */
-      is_active?: boolean | null;
-      /** Slot Date */
-      slot_date?: string | null;
-      /** Starts At */
-      starts_at?: string | null;
+    SetLanguageRequest: {
+      language: components['schemas']['Language'];
     };
     /**
      * Unit
      * @enum {string}
      */
     Unit: 'piece' | 'kg' | 'g' | 'l' | 'ml';
+    /**
+     * UpdateProfileRequest
+     * @description Body of ``PATCH /me``. Every key is optional, but at least one must be sent.
+     *
+     *     ``first_name`` cannot be null; ``last_name``, ``birth_date`` and ``phone`` are cleared by
+     *     ``null``. A ``phone`` different from the stored one is saved *unverified*; the same number
+     *     keeps its verification.
+     */
+    UpdateProfileRequest: {
+      /** Birth Date */
+      birth_date?: string | null;
+      /** First Name */
+      first_name?: string;
+      /** Last Name */
+      last_name?: string | null;
+      /** Phone */
+      phone?: string | null;
+    };
     /** UserEnvelope */
     UserEnvelope: {
       user: components['schemas']['UserPublic'];
@@ -2359,6 +2287,8 @@ export interface components {
      * @description The only user shape exposed to clients (no phone, no internal flags).
      */
     UserPublic: {
+      /** Birth Date */
+      birth_date: string | null;
       /** First Name */
       first_name: string;
       /**
@@ -2367,8 +2297,20 @@ export interface components {
        */
       id: string;
       language: components['schemas']['Language'];
+      /**
+       * Language Confirmed
+       * @default false
+       */
+      language_confirmed: boolean;
       /** Last Name */
       last_name: string | null;
+      /** Phone Hint */
+      phone_hint?: string | null;
+      /**
+       * Phone Verified
+       * @default false
+       */
+      phone_verified: boolean;
       role: components['schemas']['UserRole'];
       /** Telegram User Id */
       telegram_user_id: number;
@@ -2401,102 +2343,6 @@ export interface components {
       msg: string;
       /** Error Type */
       type: string;
-    };
-    /** ZoneCreateRequest */
-    ZoneCreateRequest: {
-      /**
-       * Closes At
-       * @example 09:00
-       */
-      closes_at: string;
-      /** Delivery Fee Uzs */
-      delivery_fee_uzs: number;
-      /** Districts */
-      districts: (
-        | 'bektemir'
-        | 'chilonzor'
-        | 'mirobod'
-        | 'mirzo_ulugbek'
-        | 'olmazor'
-        | 'sergeli'
-        | 'shayxontohur'
-        | 'uchtepa'
-        | 'yakkasaroy'
-        | 'yangihayot'
-        | 'yashnobod'
-        | 'yunusobod'
-      )[];
-      /** Free Delivery Threshold Uzs */
-      free_delivery_threshold_uzs?: number | null;
-      /**
-       * Is Active
-       * @default true
-       */
-      is_active: boolean;
-      /**
-       * Min Order Uzs
-       * @default 0
-       */
-      min_order_uzs: number;
-      /** Name Ru */
-      name_ru: string;
-      /** Name Uz */
-      name_uz: string;
-      /**
-       * Opens At
-       * @example 09:00
-       */
-      opens_at: string;
-      /** Slug */
-      slug: string;
-      /**
-       * Sort Order
-       * @default 0
-       */
-      sort_order: number;
-    };
-    /**
-     * ZoneUpdateRequest
-     * @description Only the fields sent are changed; ``districts`` replaces the whole set.
-     */
-    ZoneUpdateRequest: {
-      /** Closes At */
-      closes_at?: string | null;
-      /** Delivery Fee Uzs */
-      delivery_fee_uzs?: number | null;
-      /** Districts */
-      districts?:
-        | (
-            | 'bektemir'
-            | 'chilonzor'
-            | 'mirobod'
-            | 'mirzo_ulugbek'
-            | 'olmazor'
-            | 'sergeli'
-            | 'shayxontohur'
-            | 'uchtepa'
-            | 'yakkasaroy'
-            | 'yangihayot'
-            | 'yashnobod'
-            | 'yunusobod'
-          )[]
-        | null;
-      /** Free Delivery Threshold Uzs */
-      free_delivery_threshold_uzs?: number | null;
-      /** Is Active */
-      is_active?: boolean | null;
-      /** Min Order Uzs */
-      min_order_uzs?: number | null;
-      /** Name Ru */
-      name_ru?: string | null;
-      /** Name Uz */
-      name_uz?: string | null;
-      /** Opens At */
-      opens_at?: string | null;
-      /** Slug */
-      slug?: string | null;
-      /** Sort Order */
-      sort_order?: number | null;
     };
   };
   responses: never;
@@ -3153,642 +2999,6 @@ export interface operations {
       };
     };
   };
-  list_slots_api_v1_admin_delivery_slots_get: {
-    parameters: {
-      query?: {
-        zone_id?: string | null;
-        /** @description Local date, inclusive */
-        date_from?: string | null;
-        /** @description Local date, inclusive */
-        date_to?: string | null;
-      };
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['DeliverySlotAdminList'];
-        };
-      };
-      /** @description Unauthorized */
-      401: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['ErrorEnvelope'];
-        };
-      };
-      /** @description Forbidden */
-      403: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['ErrorEnvelope'];
-        };
-      };
-      /** @description Unprocessable Content */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['ErrorEnvelope'];
-        };
-      };
-      /** @description Too Many Requests */
-      429: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['ErrorEnvelope'];
-        };
-      };
-      /** @description Service Unavailable */
-      503: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['ErrorEnvelope'];
-        };
-      };
-    };
-  };
-  create_slot_api_v1_admin_delivery_slots_post: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        'application/json': components['schemas']['SlotCreateRequest'];
-      };
-    };
-    responses: {
-      /** @description Successful Response */
-      201: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['DeliverySlotAdmin'];
-        };
-      };
-      /** @description Unauthorized */
-      401: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['ErrorEnvelope'];
-        };
-      };
-      /** @description Forbidden */
-      403: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['ErrorEnvelope'];
-        };
-      };
-      /** @description Not Found */
-      404: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['ErrorEnvelope'];
-        };
-      };
-      /** @description Conflict */
-      409: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['ErrorEnvelope'];
-        };
-      };
-      /** @description Unprocessable Content */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['ErrorEnvelope'];
-        };
-      };
-      /** @description Too Many Requests */
-      429: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['ErrorEnvelope'];
-        };
-      };
-      /** @description Service Unavailable */
-      503: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['ErrorEnvelope'];
-        };
-      };
-    };
-  };
-  delete_slot_api_v1_admin_delivery_slots__slot_id__delete: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        slot_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      204: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content?: never;
-      };
-      /** @description Unauthorized */
-      401: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['ErrorEnvelope'];
-        };
-      };
-      /** @description Forbidden */
-      403: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['ErrorEnvelope'];
-        };
-      };
-      /** @description Not Found */
-      404: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['ErrorEnvelope'];
-        };
-      };
-      /** @description Conflict */
-      409: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['ErrorEnvelope'];
-        };
-      };
-      /** @description Unprocessable Content */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['ErrorEnvelope'];
-        };
-      };
-      /** @description Too Many Requests */
-      429: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['ErrorEnvelope'];
-        };
-      };
-      /** @description Service Unavailable */
-      503: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['ErrorEnvelope'];
-        };
-      };
-    };
-  };
-  update_slot_api_v1_admin_delivery_slots__slot_id__patch: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        slot_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        'application/json': components['schemas']['SlotUpdateRequest'];
-      };
-    };
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['DeliverySlotAdmin'];
-        };
-      };
-      /** @description Unauthorized */
-      401: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['ErrorEnvelope'];
-        };
-      };
-      /** @description Forbidden */
-      403: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['ErrorEnvelope'];
-        };
-      };
-      /** @description Not Found */
-      404: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['ErrorEnvelope'];
-        };
-      };
-      /** @description Conflict */
-      409: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['ErrorEnvelope'];
-        };
-      };
-      /** @description Unprocessable Content */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['ErrorEnvelope'];
-        };
-      };
-      /** @description Too Many Requests */
-      429: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['ErrorEnvelope'];
-        };
-      };
-      /** @description Service Unavailable */
-      503: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['ErrorEnvelope'];
-        };
-      };
-    };
-  };
-  list_zones_api_v1_admin_delivery_zones_get: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['DeliveryZoneAdminList'];
-        };
-      };
-      /** @description Unauthorized */
-      401: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['ErrorEnvelope'];
-        };
-      };
-      /** @description Forbidden */
-      403: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['ErrorEnvelope'];
-        };
-      };
-      /** @description Too Many Requests */
-      429: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['ErrorEnvelope'];
-        };
-      };
-      /** @description Service Unavailable */
-      503: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['ErrorEnvelope'];
-        };
-      };
-    };
-  };
-  create_zone_api_v1_admin_delivery_zones_post: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        'application/json': components['schemas']['ZoneCreateRequest'];
-      };
-    };
-    responses: {
-      /** @description Successful Response */
-      201: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['DeliveryZoneAdmin'];
-        };
-      };
-      /** @description Unauthorized */
-      401: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['ErrorEnvelope'];
-        };
-      };
-      /** @description Forbidden */
-      403: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['ErrorEnvelope'];
-        };
-      };
-      /** @description Conflict */
-      409: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['ErrorEnvelope'];
-        };
-      };
-      /** @description Unprocessable Content */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['ErrorEnvelope'];
-        };
-      };
-      /** @description Too Many Requests */
-      429: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['ErrorEnvelope'];
-        };
-      };
-      /** @description Service Unavailable */
-      503: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['ErrorEnvelope'];
-        };
-      };
-    };
-  };
-  delete_zone_api_v1_admin_delivery_zones__zone_id__delete: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        zone_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      204: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content?: never;
-      };
-      /** @description Unauthorized */
-      401: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['ErrorEnvelope'];
-        };
-      };
-      /** @description Forbidden */
-      403: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['ErrorEnvelope'];
-        };
-      };
-      /** @description Not Found */
-      404: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['ErrorEnvelope'];
-        };
-      };
-      /** @description Conflict */
-      409: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['ErrorEnvelope'];
-        };
-      };
-      /** @description Unprocessable Content */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['ErrorEnvelope'];
-        };
-      };
-      /** @description Too Many Requests */
-      429: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['ErrorEnvelope'];
-        };
-      };
-      /** @description Service Unavailable */
-      503: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['ErrorEnvelope'];
-        };
-      };
-    };
-  };
-  update_zone_api_v1_admin_delivery_zones__zone_id__patch: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        zone_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        'application/json': components['schemas']['ZoneUpdateRequest'];
-      };
-    };
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['DeliveryZoneAdmin'];
-        };
-      };
-      /** @description Unauthorized */
-      401: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['ErrorEnvelope'];
-        };
-      };
-      /** @description Forbidden */
-      403: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['ErrorEnvelope'];
-        };
-      };
-      /** @description Not Found */
-      404: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['ErrorEnvelope'];
-        };
-      };
-      /** @description Conflict */
-      409: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['ErrorEnvelope'];
-        };
-      };
-      /** @description Unprocessable Content */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['ErrorEnvelope'];
-        };
-      };
-      /** @description Too Many Requests */
-      429: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['ErrorEnvelope'];
-        };
-      };
-      /** @description Service Unavailable */
-      503: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['ErrorEnvelope'];
-        };
-      };
-    };
-  };
   list_orders_api_v1_admin_orders_get: {
     parameters: {
       query?: {
@@ -3898,6 +3108,96 @@ export interface operations {
       };
       /** @description Not Found */
       404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Unprocessable Content */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Too Many Requests */
+      429: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Service Unavailable */
+      503: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+    };
+  };
+  adjust_item_api_v1_admin_orders__order_id__items__product_id__patch: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        order_id: string;
+        product_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['OrderItemAdjustRequest'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['AdminOrderDetail'];
+        };
+      };
+      /** @description Unauthorized */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Forbidden */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Not Found */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Conflict */
+      409: {
         headers: {
           [name: string]: unknown;
         };
@@ -5340,11 +4640,7 @@ export interface operations {
       path?: never;
       cookie?: never;
     };
-    requestBody: {
-      content: {
-        'application/json': components['schemas']['CheckoutQuoteRequest'];
-      };
-    };
+    requestBody?: never;
     responses: {
       /** @description Successful Response */
       200: {
@@ -5371,62 +4667,6 @@ export interface operations {
         };
         content: {
           'application/json': components['schemas']['ErrorEnvelope'];
-        };
-      };
-      /** @description Conflict */
-      409: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['ErrorEnvelope'];
-        };
-      };
-      /** @description Unprocessable Content */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['ErrorEnvelope'];
-        };
-      };
-      /** @description Too Many Requests */
-      429: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['ErrorEnvelope'];
-        };
-      };
-      /** @description Service Unavailable */
-      503: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['ErrorEnvelope'];
-        };
-      };
-    };
-  };
-  list_zones_api_v1_delivery_zones_get: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['DeliveryZoneList'];
         };
       };
       /** @description Too Many Requests */
@@ -5513,6 +4753,32 @@ export interface operations {
           [name: string]: unknown;
         };
         content?: never;
+      };
+    };
+  };
+  set_language_api_v1_internal_telegram_language_put: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': {
+          language: components['schemas']['Language'];
+        };
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['UserEnvelope'];
+        };
       };
     };
   };
@@ -5609,6 +4875,35 @@ export interface operations {
       };
     };
   };
+  record_phone_api_v1_internal_telegram_phone_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': {
+          /** Contact User Id */
+          contact_user_id: number;
+          /** Phone Number */
+          phone_number: string;
+        };
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['UserEnvelope'];
+        };
+      };
+    };
+  };
   create_session_api_v1_internal_telegram_session_post: {
     parameters: {
       query?: never;
@@ -5683,11 +4978,447 @@ export interface operations {
       };
     };
   };
+  update_profile_api_v1_me_patch: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['UpdateProfileRequest'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['UserEnvelope'];
+        };
+      };
+      /** @description Unauthorized */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Forbidden */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Not Found */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Unprocessable Content */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Too Many Requests */
+      429: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Service Unavailable */
+      503: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+    };
+  };
+  list_addresses_api_v1_me_addresses_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['SavedAddressList'];
+        };
+      };
+      /** @description Unauthorized */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Forbidden */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Service Unavailable */
+      503: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+    };
+  };
+  create_address_api_v1_me_addresses_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['SavedAddressRequest'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['SavedAddress'];
+        };
+      };
+      /** @description Unauthorized */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Forbidden */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Conflict */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Unprocessable Content */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Too Many Requests */
+      429: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Service Unavailable */
+      503: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+    };
+  };
+  replace_address_api_v1_me_addresses__address_id__put: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        address_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['SavedAddressRequest'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['SavedAddress'];
+        };
+      };
+      /** @description Unauthorized */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Forbidden */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Not Found */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Unprocessable Content */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Too Many Requests */
+      429: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Service Unavailable */
+      503: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+    };
+  };
+  delete_address_api_v1_me_addresses__address_id__delete: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        address_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Unauthorized */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Forbidden */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Not Found */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Unprocessable Content */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Too Many Requests */
+      429: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Service Unavailable */
+      503: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+    };
+  };
+  set_language_api_v1_me_language_put: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['SetLanguageRequest'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['UserEnvelope'];
+        };
+      };
+      /** @description Unauthorized */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Forbidden */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Not Found */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Unprocessable Content */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Too Many Requests */
+      429: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Service Unavailable */
+      503: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+    };
+  };
   list_orders_api_v1_orders_get: {
     parameters: {
       query?: {
         page?: number;
         page_size?: number;
+        status_group?: components['schemas']['OrderStatusGroup'];
       };
       header?: never;
       path?: never;

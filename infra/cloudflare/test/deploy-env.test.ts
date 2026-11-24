@@ -10,8 +10,6 @@ const staging = {
   MM_TELEGRAM_BOT_ID: '1234567890',
   MM_CSRF_TRUSTED_ORIGINS: 'https://shop.staging.example.test,https://admin.staging.example.test',
 };
-const DIGEST = `registry.cloudflare.com/fake-account/muniramarket-core-api@sha256:${'a'.repeat(64)}`;
-
 const variables = (env: Record<string, string | undefined>, mode: 'staging' | 'production') =>
   validateDeployEnv(mode, env).map((p) => p.variable);
 
@@ -60,20 +58,13 @@ describe('validateDeployEnv', () => {
     ).toEqual(['MM_CSRF_TRUSTED_ORIGINS']);
   });
 
-  it('requires a digest-pinned image and a release in production, and real hostnames', () => {
+  it('requires a release in production, and real hostnames', () => {
     const problems = variables(staging, 'production');
-    expect(problems).toContain('CORE_API_IMAGE');
     expect(problems).toContain('APP_RELEASE');
     expect(problems).toContain('MM_WEB_HOSTNAME');
-    expect(
-      variables(
-        { ...staging, CORE_API_IMAGE: 'registry.cloudflare.com/fake-account/api:latest' },
-        'staging',
-      ),
-    ).toEqual(['CORE_API_IMAGE']);
-    expect(
-      variables({ ...staging, CORE_API_IMAGE: DIGEST, APP_RELEASE: 'sha-0123abc' }, 'staging'),
-    ).toEqual([]);
+    expect(variables({ ...staging, APP_RELEASE: 'sha-0123abc' }, 'staging')).toEqual([]);
+    // No container image any more: a leftover CORE_API_IMAGE is simply ignored.
+    expect(variables({ ...staging, CORE_API_IMAGE: 'anything' }, 'staging')).toEqual([]);
   });
 
   it('pins production to the registered OIDC hostnames and the single bot', () => {
@@ -84,7 +75,6 @@ describe('validateDeployEnv', () => {
       MM_API_HOSTNAME: 'api.muniramarket.uz',
       MM_TELEGRAM_BOT_ID: '9038491407',
       MM_CSRF_TRUSTED_ORIGINS: 'https://muniramarket.uz,https://admin.muniramarket.uz',
-      CORE_API_IMAGE: DIGEST,
       APP_RELEASE: 'sha-0123abc',
     };
     expect(validateDeployEnv('production', production)).toEqual([]);

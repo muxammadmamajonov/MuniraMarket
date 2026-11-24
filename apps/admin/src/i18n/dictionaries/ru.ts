@@ -4,9 +4,7 @@ import { csvDict } from './sections/csv';
 import { dashboardDict } from './sections/dashboard';
 import { productsDict } from './sections/products';
 import { sharedDict } from './sections/shared';
-import { slotsDict } from './sections/slots';
 import { usersDict } from './sections/users';
-import { zonesDict } from './sections/zones';
 import type { Dictionary } from './types';
 
 export const ru: Dictionary = {
@@ -16,6 +14,7 @@ export const ru: Dictionary = {
   },
   header: {
     appName: 'MuniraMarket Admin',
+    brandTag: 'Панель управления',
     logout: 'Выйти',
     language: { label: 'Язык', names: { uz: 'O‘zbekcha', ru: 'Русский' } },
   },
@@ -39,12 +38,16 @@ export const ru: Dictionary = {
     sessionFailed: 'Не удалось проверить сессию.',
     callbackTitle: 'Вход не выполнен',
     callbackStatus: {
-      failed: 'Не удалось войти через Telegram. Попробуйте ещё раз.',
-      cancelled: 'Вход отменён.',
-      blocked: 'Ваша учётная запись заблокирована.',
-      unavailable: 'Сервис временно недоступен. Попробуйте чуть позже.',
+      failed: 'Ссылка для входа устарела или не прошла проверку. Войдите через Telegram заново.',
+      cancelled: 'Вход в Telegram был отклонён. При желании попробуйте ещё раз.',
+      blocked: 'Ваша учётная запись заблокирована. Обратитесь к администратору.',
+      unavailable: 'Сервис временно недоступен. Попробуйте ещё раз через минуту.',
     },
     callbackBack: 'На главную',
+    tryAgain: 'Попробовать снова',
+    supportCode: 'Код для поддержки: {code}',
+    supportCodeHint: 'Если ошибка повторяется, отправьте этот код администратору.',
+    staffOnly: 'Только для сотрудников MuniraMarket.',
   },
   orders: {
     title: 'Заказы',
@@ -74,20 +77,19 @@ export const ru: Dictionary = {
     notFoundMessage: 'Такого заказа нет.',
     loading: 'Загрузка заказа…',
     createdAt: 'Создан',
-    deliverySlot: 'Окно доставки',
     payment: 'Способ оплаты',
     items: { title: 'Товары', sku: 'Артикул' },
-    totals: { subtotal: 'Сумма товаров', delivery: 'Доставка', total: 'Итого' },
+    totals: { subtotal: 'Сумма товаров', total: 'Итого' },
     recipient: { title: 'Получатель', name: 'Имя', phone: 'Телефон' },
     address: {
       title: 'Адрес',
-      district: 'Район',
       street: 'Улица',
       house: 'Дом',
       apartment: 'Квартира',
       entrance: 'Подъезд',
       floor: 'Этаж',
       landmark: 'Ориентир',
+      callYandex: 'Вызвать Яндекс',
     },
     comment: 'Комментарий',
     cancelReason: 'Причина отмены',
@@ -114,6 +116,31 @@ export const ru: Dictionary = {
     errors: {
       invalidTransition: 'Переход в этот статус невозможен. Обновите заказ.',
       failed: 'Не удалось изменить статус. Попробуйте ещё раз.',
+    },
+    adjust: {
+      button: 'Не хватает',
+      title: 'Товара не хватает',
+      description:
+        'Укажите, сколько осталось в магазине. Сумма пересчитается, клиент получит сообщение в Telegram.',
+      quantityLabel: 'Есть в наличии',
+      quantityHint: 'В заказе: {quantity}. Если нет совсем, укажите 0.',
+      reasonLabel: 'Причина',
+      reasons: ['Закончился в магазине', 'Плохое качество', 'Не хватает количества'],
+      reasonInvalid: 'Причина: от 3 до 300 символов.',
+      markOutOfStock: 'Отметить товар как закончившийся',
+      markOutOfStockHint: 'Остаток станет 0, на сайте товар будет «нет в наличии».',
+      confirm: 'Сохранить',
+      dismiss: 'Отмена',
+      adjustedFrom: 'Было: {quantity}',
+      done: 'Заказ изменён, клиенту отправлено сообщение.',
+      cancelledAll: 'Все товары закончились, заказ отменён.',
+      historyTitle: 'Изменения количества',
+      outOfStockNote: 'отмечен как закончившийся',
+      errors: {
+        notAdjustable: 'На этом этапе заказ изменить нельзя.',
+        invalidQuantity: 'Количество не может быть больше, чем в заказе.',
+        failed: 'Не удалось изменить. Попробуйте ещё раз.',
+      },
     },
   },
   status: {
@@ -167,8 +194,6 @@ export const ru: Dictionary = {
   products: productsDict.ru,
   categories: categoriesDict.ru,
   csv: csvDict.ru,
-  zones: zonesDict.ru,
-  slots: slotsDict.ru,
   users: usersDict.ru,
   audit: auditDict.ru,
 };

@@ -119,6 +119,7 @@ describe('tgcloud/ runtime constraints', () => {
       .sort();
     expect(importers).toEqual([
       'endpoints/getProfile.js',
+      'handlers/callback_query.js',
       'handlers/message.js',
       'lib/miniapp/profile.js',
       'lib/notifications/orderStatus.js',

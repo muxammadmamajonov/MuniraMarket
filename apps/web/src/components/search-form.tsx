@@ -1,6 +1,5 @@
 import type { Locale } from '@muniramarket/contracts';
 import type { Dictionary } from '@/i18n';
-import { SearchIcon } from './icons';
 import { SearchField } from './search-field';
 import { FOCUS_RING, PRESS } from './ui-classes';
 
@@ -32,13 +31,13 @@ export function SearchForm({ locale, dict, defaultValue = '', className }: Searc
         label={dict.search.label}
         clearLabel={dict.search.clear}
       />
+      {/* Phones submit with the keyboard's Search key (`enterKeyHint`), like native apps; the
+          button is for wider screens, where a mouse user expects one. */}
       <button
         type="submit"
-        className={`inline-flex min-h-12 min-w-12 items-center justify-center rounded-2xl bg-primary px-3 font-semibold sm:px-4 text-primary-foreground hover:bg-primary-hover ${PRESS} ${FOCUS_RING}`}
+        className={`hidden min-h-12 items-center justify-center rounded-2xl bg-foreground px-5 font-semibold text-background hover:opacity-90 sm:inline-flex ${PRESS} ${FOCUS_RING}`}
       >
-        {/* Icon only on the narrowest phones so the placeholder is not cut off. */}
-        <SearchIcon width={22} height={22} className="sm:hidden" />
-        <span className="sr-only sm:not-sr-only">{dict.search.submit}</span>
+        {dict.search.submit}
       </button>
     </form>
   );

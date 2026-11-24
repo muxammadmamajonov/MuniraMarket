@@ -11,10 +11,10 @@ export type CheckoutFailure =
   | { kind: 'insufficient_stock'; available: number | null }
   | { kind: 'product_inactive' }
   | { kind: 'cart_empty' }
-  | { kind: 'below_min_order' }
-  | { kind: 'district_not_served' }
   /** The customer already has the maximum number of unconfirmed (NEW) orders. */
   | { kind: 'too_many_open_orders' }
+  /** The account phone is not verified yet (shared from Telegram in the phone card). */
+  | { kind: 'phone_verification_required' }
   | { kind: 'validation'; fields: FormErrors; unmapped: number }
   /** Wait `seconds`, then the same request (and key) may be sent again. */
   | { kind: 'rate_limited'; seconds: number }
@@ -24,14 +24,7 @@ export type CheckoutFailure =
   | { kind: 'network' }
   | { kind: 'server' }
   /** The key was already used for a different body; a new key is needed. */
-  | { kind: 'key_conflict' }
-  /**
-   * The delivery slot could not be booked: it filled up, no longer exists, or none was sent for a
-   * zone that needs one. Handled next to the slot picker, not in the general notice.
-   */
-  | { kind: 'slot'; reason: SlotFailureReason };
-
-export type SlotFailureReason = 'full' | 'unavailable' | 'required';
+  | { kind: 'key_conflict' };
 
 /** Used when `Retry-After` is missing. */
 export const DEFAULT_RETRY_SECONDS = 10;
@@ -57,12 +50,10 @@ export function classifyCheckoutError(error: unknown): CheckoutFailure {
       return { kind: 'product_inactive' };
     case 'cart_empty':
       return { kind: 'cart_empty' };
-    case 'below_min_order':
-      return { kind: 'below_min_order' };
-    case 'district_not_served':
-      return { kind: 'district_not_served' };
     case 'too_many_open_orders':
       return { kind: 'too_many_open_orders' };
+    case 'phone_verification_required':
+      return { kind: 'phone_verification_required' };
     case 'validation_error': {
       const { fields, unmapped } = serverFieldErrors(error.details);
       return { kind: 'validation', fields, unmapped };
@@ -77,12 +68,6 @@ export function classifyCheckoutError(error: unknown): CheckoutFailure {
       return { kind: 'blocked' };
     case 'idempotency_key_conflict':
       return { kind: 'key_conflict' };
-    case 'slot_full':
-      return { kind: 'slot', reason: 'full' };
-    case 'slot_unavailable':
-      return { kind: 'slot', reason: 'unavailable' };
-    case 'slot_required':
-      return { kind: 'slot', reason: 'required' };
     case 'network_error':
       return { kind: 'network' };
     default:

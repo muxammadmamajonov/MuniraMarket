@@ -2,6 +2,7 @@ import { isLocale } from '@muniramarket/contracts';
 import { notFound } from 'next/navigation';
 import { CartView } from '@/components/cart-view';
 import { PageContainer } from '@/components/page-container';
+import { SiteHeader } from '@/components/site-header';
 import { getDictionary } from '@/i18n';
 
 /*
@@ -15,11 +16,13 @@ export default async function CartPage({ params }: PageProps<'/[locale]/cart'>) 
   const dict = getDictionary(locale);
 
   return (
-    <main className="flex-1">
-      <PageContainer className="flex flex-col gap-4 py-6">
-        <h1 className="text-2xl font-bold tracking-tight">{dict.cart.title}</h1>
-        <CartView />
-      </PageContainer>
-    </main>
+    <>
+      <SiteHeader locale={locale} dict={dict} title={dict.pageTitles.cart} />
+      <main className="flex-1">
+        <PageContainer className="flex flex-col gap-4 py-4">
+          <CartView />
+        </PageContainer>
+      </main>
+    </>
   );
 }

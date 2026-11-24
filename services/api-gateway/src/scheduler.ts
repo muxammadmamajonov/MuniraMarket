@@ -1,51 +1,42 @@
 import { createCoreApiClient } from '../../telegram/tgcloud/lib/coreApi/client.js';
 import { CoreApiError } from '../../telegram/tgcloud/lib/coreApi/errors.js';
 import { MIN_SECRET_BYTES } from '../../telegram/tgcloud/lib/coreApi/signer.js';
-import { drainOrderNotifications } from '../../telegram/tgcloud/lib/notifications/outbox.js';
-import { createTelegramBotTransport } from '../../telegram/tgcloud/lib/notifications/transport.js';
-import { type FetchFn, createBotApi } from './botApi';
 
 /**
  * What the gateway's Cloudflare Cron Trigger does on every tick (`scheduled()` in index.ts).
  *
- * Telegram Serverless has no scheduler (https://core.telegram.org/bots/serverless documents only
- * update handlers, Mini App endpoints, `lib/` and `schema.js`), so the order-notification outbox
- * (ADR 0008) is drained from here instead, with the SAME dependency-free modules the bot ships
- * (`services/telegram/tgcloud/lib/`): signer, Core API client, drain and Bot API transport.
+ * The Cron Trigger stays on Cloudflare (no Neon Function Trigger), but on the Workers Free plan an
+ * invocation has 10 ms of CPU, so it does no batch work itself. It only signs (ADR 0003, empty
+ * actor) and forwards two POSTs through the in-process `scheduler` entrance:
  *
- * - Every minute: `drainOrderNotifications` (customer status messages + staff group alerts).
- * - Every 15th minute (UTC, from `controller.scheduledTime`): `POST internal/maintenance/cleanup`.
+ * - every minute: `internal/scheduler/notifications/drain`. The Core API Function claims the
+ *   notification outbox (ADR 0008), sends the Telegram messages and reports outcomes, all next to
+ *   Postgres; the response carries counts only.
+ * - every 15th minute (UTC, from `controller.scheduledTime`): `internal/maintenance/cleanup`
+ *   (expired sessions, rate limits, nonces, OIDC states).
  *
- * Requests go to the container through `forward(..., 'scheduler')` in-process: no network hop,
- * never the public hostname. They are signed per ADR 0003 with an EMPTY actor using the
- * `SERVICE_AUTH_KEYS` entry named by `SCHEDULER_SERVICE_KEY_ID`.
+ * Waiting for the Function is wall-clock time, not CPU. HMAC signing of a few hundred bytes is
+ * microseconds.
  *
- * Trade-offs, accepted deliberately:
- * - A per-minute cron keeps at least one container instance awake around the clock (it never
- *   reaches `CONTAINER_SLEEP_AFTER_MINUTES` of idleness). That is the cost of sub-minute-ish
- *   notification latency without any traffic-driven drain.
- * - Cloudflare Cron Triggers are best effort: a tick can be late, skipped, or (rarely) overlap
- *   the previous one. That is safe: the outbox lease plus the `attempt` fencing token make
- *   concurrent drains deliver each message at least once and never let a stale worker overwrite
- *   an outcome; a skipped tick only delays delivery to the next one. Cleanup is idempotent.
- * - Every failure is caught and logged (no PII, no token, no secret, no response body), so one
- *   bad tick never affects the next.
+ * Retry safety: Cloudflare cron is best effort (late, skipped or overlapping ticks). The outbox
+ * lease plus the `attempt` fencing token make overlapping drains deliver each message at least
+ * once and never let a stale worker overwrite an outcome; a message whose outcome was not reported
+ * is claimable again when its 60 s lease ends, so nothing is lost when a tick fails mid-way.
+ * Cleanup is idempotent. Every failure is caught and logged (class/status/code only).
  */
 
 /** Never resolved: requests are handed to `forward()` in-process, the host only fills the URL. */
 export const SCHEDULER_BASE_URL = 'https://core-api.scheduler.invalid';
 export const DEFAULT_SCHEDULER_KEY_ID = 'scheduler';
 export const CLEANUP_EVERY_MINUTES = 15;
-/** Messages per claim and claims per tick: up to 100 deliveries a minute. */
-export const DRAIN_LIMIT = 20;
-export const DRAIN_MAX_BATCHES = 5;
-const CLEANUP_PATH = '/api/v1/internal/maintenance/cleanup';
+export const DRAIN_PATH = '/api/v1/internal/scheduler/notifications/drain';
+export const CLEANUP_PATH = '/api/v1/internal/maintenance/cleanup';
 const KEY_ID = /^[A-Za-z0-9_-]{1,32}$/;
 
 export interface SchedulerEnv {
-  SERVICE_AUTH_KEYS?: string;
+  /** The `scheduler` entry's secret; the Function's `SERVICE_AUTH_KEYS` holds the same pair. */
+  SCHEDULER_SERVICE_SECRET?: string;
   SCHEDULER_SERVICE_KEY_ID?: string;
-  TELEGRAM_BOT_TOKEN?: string;
 }
 
 export type LogFn = (
@@ -56,35 +47,18 @@ export type LogFn = (
 
 export type SigningKey =
   | { ok: true; keyId: string; secret: string }
-  | {
-      ok: false;
-      reason: 'keys_missing' | 'key_id_invalid' | 'key_not_found' | 'secret_too_short';
-    };
+  | { ok: false; reason: 'secret_missing' | 'key_id_invalid' | 'secret_too_short' };
 
-/**
- * Picks the scheduler's signing key from `SERVICE_AUTH_KEYS` (`key_id:secret[,key_id:secret]`,
- * parsed like the Core API does). Fails closed; the reason never contains a key or a secret.
- */
-export function selectSigningKey(
-  serviceAuthKeys: string | undefined,
-  configuredKeyId: string | undefined,
-): SigningKey {
-  const keyId = configuredKeyId?.trim() || DEFAULT_SCHEDULER_KEY_ID;
+/** Fails closed; the reason never contains the key or the secret. */
+export function selectSigningKey(env: SchedulerEnv): SigningKey {
+  const keyId = env.SCHEDULER_SERVICE_KEY_ID?.trim() || DEFAULT_SCHEDULER_KEY_ID;
   if (!KEY_ID.test(keyId)) return { ok: false, reason: 'key_id_invalid' };
-  const raw = serviceAuthKeys ?? '';
-  if (raw.trim() === '') return { ok: false, reason: 'keys_missing' };
-  for (const entry of raw.split(',')) {
-    const trimmed = entry.trim();
-    const separator = trimmed.indexOf(':');
-    if (separator <= 0) continue;
-    if (trimmed.slice(0, separator) !== keyId) continue;
-    const secret = trimmed.slice(separator + 1);
-    if (new TextEncoder().encode(secret).length < MIN_SECRET_BYTES) {
-      return { ok: false, reason: 'secret_too_short' };
-    }
-    return { ok: true, keyId, secret };
+  const secret = env.SCHEDULER_SERVICE_SECRET ?? '';
+  if (secret.trim() === '') return { ok: false, reason: 'secret_missing' };
+  if (new TextEncoder().encode(secret).length < MIN_SECRET_BYTES) {
+    return { ok: false, reason: 'secret_too_short' };
   }
-  return { ok: false, reason: 'key_not_found' };
+  return { ok: true, keyId, secret };
 }
 
 /** Whether this tick also runs the cleanup (minutes 0, 15, 30, 45 UTC). */
@@ -100,11 +74,7 @@ type CoreFetchInit = {
   signal?: AbortSignal;
 };
 
-/**
- * Adapts the Core API client's `fetch` to the in-process `forward()`: the request never leaves
- * the Worker. The client's own timeout is disabled (`timeoutMs: 0`); `forward()` bounds every
- * upstream request itself, and a cold container start must not be cut short.
- */
+/** Adapts the signing client's `fetch` to the in-process `forward()`. */
 export function schedulerFetch(forward: (request: Request) => Promise<Response>) {
   return async (url: string, init: CoreFetchInit = {}): Promise<Response> => {
     const requestInit: RequestInit = { method: init.method ?? 'GET' };
@@ -123,28 +93,45 @@ export function errorFields(error: unknown): Record<string, unknown> {
   return { error: 'non-error thrown' };
 }
 
+const SUMMARY_KEYS = [
+  'claimed',
+  'delivered',
+  'blocked',
+  'retried',
+  'failed',
+  'skipped',
+  'report_failed',
+] as const;
+
+/** Counts only (no ids, chat ids or order numbers), whatever the response contained. */
+export function summaryCounts(body: unknown): Record<string, number> {
+  const counts: Record<string, number> = {};
+  if (typeof body !== 'object' || body === null) return counts;
+  for (const key of SUMMARY_KEYS) {
+    const value = (body as Record<string, unknown>)[key];
+    if (typeof value === 'number' && Number.isSafeInteger(value) && value >= 0) counts[key] = value;
+  }
+  return counts;
+}
+
 export interface TickDeps {
   env: SchedulerEnv;
   /** `controller.scheduledTime` (epoch ms). */
   scheduledTime: number;
-  /** `forward(request, env, exports, 'scheduler')`. */
+  /** `forward(request, ..., 'scheduler')`. */
   forward: (request: Request) => Promise<Response>;
-  /** Outbound fetch, used only for the Bot API. */
-  fetch: FetchFn;
   log: LogFn;
   now?: () => number;
 }
 
 export type StepResult = 'ok' | 'failed' | 'skipped' | 'not_due';
 
-/**
- * One Cron Trigger tick. Never rejects: every failure is logged and reported in the result.
- */
+/** One Cron Trigger tick. Never rejects: every failure is logged and reported in the result. */
 export async function runScheduledTick(
   deps: TickDeps,
 ): Promise<{ drain: StepResult; cleanup: StepResult }> {
-  const { env, log } = deps;
-  const key = selectSigningKey(env.SERVICE_AUTH_KEYS, env.SCHEDULER_SERVICE_KEY_ID);
+  const { log } = deps;
+  const key = selectSigningKey(deps.env);
   if (!key.ok) {
     log('error', 'scheduler: signing key unavailable, tick skipped', { reason: key.reason });
     return { drain: 'skipped', cleanup: 'skipped' };
@@ -155,6 +142,7 @@ export async function runScheduledTick(
     coreApi = createCoreApiClient({
       fetch: schedulerFetch(deps.forward),
       config: { baseUrl: SCHEDULER_BASE_URL, keyId: key.keyId, secret: key.secret },
+      // `forward()` bounds every scheduler request itself.
       timeoutMs: 0,
       ...(deps.now ? { now: deps.now } : {}),
     });
@@ -164,26 +152,13 @@ export async function runScheduledTick(
   }
 
   let drain: StepResult;
-  const token = env.TELEGRAM_BOT_TOKEN ?? '';
-  if (token.trim() === '') {
-    log('error', 'scheduler: TELEGRAM_BOT_TOKEN is not configured, drain skipped');
-    drain = 'skipped';
-  } else {
-    try {
-      const summary = await drainOrderNotifications({
-        coreApi,
-        transport: createTelegramBotTransport({ api: createBotApi(token, deps.fetch) }),
-        limit: DRAIN_LIMIT,
-        maxBatches: DRAIN_MAX_BATCHES,
-        ...(deps.now ? { now: deps.now } : {}),
-      });
-      // Counts only: no ids, chat ids or order numbers.
-      if (summary.claimed > 0) log('info', 'scheduler: outbox drained', { ...summary });
-      drain = 'ok';
-    } catch (error) {
-      log('error', 'scheduler: outbox drain failed', errorFields(error));
-      drain = 'failed';
-    }
+  try {
+    const summary = summaryCounts(await coreApi.request('POST', DRAIN_PATH));
+    if ((summary['claimed'] ?? 0) > 0) log('info', 'scheduler: outbox drained', summary);
+    drain = 'ok';
+  } catch (error) {
+    log('error', 'scheduler: outbox drain failed', errorFields(error));
+    drain = 'failed';
   }
 
   let cleanup: StepResult = 'not_due';

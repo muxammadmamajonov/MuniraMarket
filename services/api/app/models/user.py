@@ -1,4 +1,6 @@
-from sqlalchemy import BigInteger, Boolean, String, text
+from datetime import date, datetime
+
+from sqlalchemy import BigInteger, Boolean, CheckConstraint, Date, DateTime, String, text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
@@ -12,19 +14,45 @@ class User(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     first_name: Mapped[str] = mapped_column(String(255), nullable=False)
     last_name: Mapped[str | None] = mapped_column(String(255))
     username: Mapped[str | None] = mapped_column(String(64))
+    # Never sent to clients (only a masked ``phone_hint``). Either the user's own Telegram contact
+    # (verified) or a number typed in the shop profile (unverified, normalised ``+998XXXXXXXXX``).
     phone: Mapped[str | None] = mapped_column(String(32))
+    phone_verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # ``telegram_contact`` (own contact shared with the bot) or ``otp`` (code provider).
+    phone_verification_method: Mapped[str | None] = mapped_column(String(32))
     language: Mapped[Language] = mapped_column(
         pg_enum(Language, "language"),
         nullable=False,
         default=Language.UZ,
         server_default=text("'uz'"),
     )
+    # Set when the user explicitly chose ``language`` (bot onboarding or the shop profile).
+    language_confirmed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     role: Mapped[UserRole] = mapped_column(
         pg_enum(UserRole, "user_role"),
         nullable=False,
         default=UserRole.CUSTOMER,
         server_default=text("'customer'"),
     )
+    # Optional, from the shop profile (``PATCH /me``).
+    birth_date: Mapped[date | None] = mapped_column(Date)
+    # Set once the user edits their name in the shop: from then on a Telegram sign-in no longer
+    # overwrites ``first_name`` / ``last_name`` (it still refreshes ``username``).
+    name_edited_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     is_blocked: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default=text("false")
+    )
+
+    __table_args__ = (
+        CheckConstraint(
+            "phone_verification_method IS NULL "
+            "OR phone_verification_method IN ('telegram_contact', 'otp')",
+            name="phone_verification_method_known",
+        ),
+        CheckConstraint(
+            "(phone_verified_at IS NULL AND phone_verification_method IS NULL) "
+            "OR (phone_verified_at IS NOT NULL AND phone_verification_method IS NOT NULL "
+            "AND phone IS NOT NULL)",
+            name="phone_verified_consistent",
+        ),
     )

@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { INPUT } from './classes';
+import { INPUT_ON_PAGE } from './classes';
 
 /**
  * Search field of a list. Typing updates the URL after a short pause, Enter immediately; a URL that
@@ -67,7 +67,7 @@ export function SearchBox({
           const next = event.target.value;
           timer.current = setTimeout(() => push(next), delayMs);
         }}
-        className={INPUT}
+        className={INPUT_ON_PAGE}
       />
     </form>
   );

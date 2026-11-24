@@ -1,4 +1,4 @@
-/** Slug rule shared by categories, products and zones (`^[a-z0-9]+(?:-[a-z0-9]+)*$`). */
+/** Slug rule shared by categories and products (`^[a-z0-9]+(?:-[a-z0-9]+)*$`). */
 export const SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 export const SKU_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
 

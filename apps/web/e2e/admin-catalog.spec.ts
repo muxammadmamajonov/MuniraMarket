@@ -18,7 +18,7 @@ import {
  * fails halfway), so the other specs keep seeing the seed data.
  *
  * `demo-sabzi` is used because no other spec buys or asserts it: `checkout.spec.ts` and
- * `checkout-slots.spec.ts` rely on the `demo-olma` price.
+ * `checkout-reload.spec.ts` rely on the `demo-olma` price.
  *
  * The admin and the storefront live on different origins of the same host (localhost ports), and
  * cookies are not port-specific, so the admin gets its own browser context.

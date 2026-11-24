@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { readYandexMapsApiKey } from './config';
+import { readYandexMapsGeocoderApiKey, readYandexMapsJavaScriptApiKey } from './config';
 import { autoloadYandexScript, makeYMaps } from './test-helpers';
 import {
   MapsLoadError,
@@ -8,8 +8,9 @@ import {
   yandexMapsScriptUrl,
 } from './yandex-loader';
 
-// Placeholder only: the shape of a key, not a real one. Nothing is ever sent to Yandex in tests.
+// Placeholders only: real-looking key shapes, never sent to Yandex in tests.
 const KEY = '00000000-0000-4000-8000-000000000000';
+const COMPACT_KEY = 'test_yandex_key_000000==';
 
 function scripts(): HTMLScriptElement[] {
   return Array.from(document.querySelectorAll('script[data-mm-yandex-maps]'));
@@ -22,13 +23,22 @@ afterEach(() => {
   delete window.ymaps3;
 });
 
-describe('readYandexMapsApiKey', () => {
-  it('accepts only a UUID-shaped key and treats anything else as missing', () => {
-    expect(readYandexMapsApiKey({})).toBeNull();
-    expect(readYandexMapsApiKey({ YANDEX_MAPS_API_KEY: '' })).toBeNull();
-    expect(readYandexMapsApiKey({ YANDEX_MAPS_API_KEY: 'not-a-key' })).toBeNull();
-    expect(readYandexMapsApiKey({ YANDEX_MAPS_API_KEY: `${KEY}"><script>` })).toBeNull();
-    expect(readYandexMapsApiKey({ YANDEX_MAPS_API_KEY: ` ${KEY} ` })).toBe(KEY);
+describe('Yandex key configuration', () => {
+  it('reads the JavaScript and Geocoder keys independently, rejecting malformed values', () => {
+    expect(readYandexMapsJavaScriptApiKey({})).toBeNull();
+    expect(readYandexMapsGeocoderApiKey({ YANDEX_MAPS_GEOCODER_API_KEY: '' })).toBeNull();
+    expect(
+      readYandexMapsJavaScriptApiKey({ YANDEX_MAPS_JAVASCRIPT_API_KEY: 'not-a-key' }),
+    ).toBeNull();
+    expect(
+      readYandexMapsGeocoderApiKey({ YANDEX_MAPS_GEOCODER_API_KEY: `${KEY}"><script>` }),
+    ).toBeNull();
+    expect(readYandexMapsJavaScriptApiKey({ YANDEX_MAPS_JAVASCRIPT_API_KEY: ` ${KEY} ` })).toBe(
+      KEY,
+    );
+    expect(readYandexMapsGeocoderApiKey({ YANDEX_MAPS_GEOCODER_API_KEY: COMPACT_KEY })).toBe(
+      COMPACT_KEY,
+    );
   });
 });
 
@@ -38,7 +48,7 @@ describe('yandexMapsScriptUrl', () => {
     expect(uz.origin).toBe('https://api-maps.yandex.ru');
     expect(uz.pathname).toBe('/v3/');
     expect(uz.searchParams.get('apikey')).toBe(KEY);
-    expect(uz.searchParams.get('lang')).toBe('uz_UZ');
+    expect(uz.searchParams.get('lang')).toBe('ru_RU');
     expect(new URL(yandexMapsScriptUrl(KEY, 'ru')).searchParams.get('lang')).toBe('ru_RU');
   });
 });

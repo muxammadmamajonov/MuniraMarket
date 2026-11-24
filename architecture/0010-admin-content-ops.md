@@ -1,6 +1,7 @@
 # ADR 0010 — Back-office roles, audit log, catalog CSV and delivery slots
 
-- Status: accepted
+- Status: accepted; zones and delivery slots were removed by
+  [ADR 0017](0017-yandex-go-courier-delivery.md)
 
 ## Context
 

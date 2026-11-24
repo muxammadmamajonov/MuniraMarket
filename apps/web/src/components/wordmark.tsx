@@ -48,10 +48,12 @@ export interface WordmarkProps {
 export function Wordmark({ name }: WordmarkProps) {
   return (
     <span role="img" aria-label={name} className="inline-flex items-center gap-1">
-      <MuniraMark className="size-9 shrink-0" />
+      <MuniraMark className="size-9 shrink-0 [:root[data-tg-fullscreen]_&]:size-8" />
+      {/* In Telegram's fullscreen control row it must fit between the native Close and "…"
+          buttons: one line at 15px from 375px, the stacked 13px lockup on narrower phones. */}
       <span
         aria-hidden="true"
-        className="flex flex-col text-[13px] leading-[0.95] font-black tracking-[-0.01em] whitespace-nowrap min-[400px]:flex-row min-[400px]:gap-[0.3em] min-[400px]:text-[17px]"
+        className="flex flex-col text-[13px] leading-[0.95] font-black tracking-[-0.01em] whitespace-nowrap min-[400px]:flex-row min-[400px]:gap-[0.3em] min-[400px]:text-[17px] [:root[data-tg-fullscreen]_&]:text-[13px] min-[375px]:[:root[data-tg-fullscreen]_&]:flex-row min-[375px]:[:root[data-tg-fullscreen]_&]:gap-[0.3em] min-[375px]:[:root[data-tg-fullscreen]_&]:text-[15px]"
       >
         <span className="text-(--mm-color-wordmark-primary)">MUNIRA</span>
         <span className="text-(--mm-color-wordmark-secondary)">MARKET</span>

@@ -5,18 +5,17 @@ from app.api.routes import (
     admin_catalog,
     admin_csv,
     admin_dashboard,
-    admin_delivery,
     admin_orders,
     admin_users,
     auth,
     cart,
     catalog,
-    delivery,
     health,
     internal_maintenance,
     internal_notifications,
     internal_staff_chat,
     internal_telegram,
+    me,
     neon_auth,
     orders,
 )
@@ -30,12 +29,11 @@ api_router.include_router(internal_notifications.router)
 api_router.include_router(internal_staff_chat.router)
 api_router.include_router(internal_maintenance.router)
 api_router.include_router(catalog.router)
-api_router.include_router(delivery.router)
+api_router.include_router(me.router)
 api_router.include_router(cart.router)
 api_router.include_router(orders.checkout_router)
 api_router.include_router(orders.router)
 api_router.include_router(admin_orders.router)
-api_router.include_router(admin_delivery.router)
 api_router.include_router(admin_dashboard.router)
 api_router.include_router(admin_catalog.router)
 api_router.include_router(admin_csv.router)

@@ -7,8 +7,8 @@
  *
  * Contrast (WCAG 2.2, checked with the relative-luminance formula):
  *   light  white on primary #A8121B 7.6:1 · white on hover #860C13 10.1:1 · foreground on
- *          background 18:1 · muted #5F5D5A on background 6.2:1, on surface-muted 5.7:1 ·
- *          danger #B42318 on background 6.2:1 · brand-ink #A3121F on background 7.4:1
+ *          background #F5F3EF 17:1 · muted #5F5D5A on background 6.1:1, on surface-muted 5.7:1 ·
+ *          danger #B42318 on background 5.9:1 · brand-ink #A3121F on background 7.0:1
  *   dark   white on primary #CC1822 5.6:1 · white on hover #A8121B 7.6:1 · primary against the
  *          #121214 page 3.3:1 (non-text, >= 3:1) · muted #A8A6A3 on surface-muted 6.2:1 ·
  *          danger #FF8A8F on surface 7.5:1 · brand-ink #FF9EA2 on brand-soft 8.8:1
@@ -29,7 +29,8 @@
   --mm-brand-near-black: #141416;
   --mm-brand-off-white: #faf8f5;
 
-  --mm-color-background: #faf8f5;
+  /* A warm grey page under borderless white grouped surfaces (see `--mm-color-hairline`). */
+  --mm-color-background: #f5f3ef;
   --mm-color-surface: #ffffff;
   --mm-color-surface-muted: #f2efea;
   --mm-color-foreground: #141416;
@@ -53,6 +54,8 @@
   --mm-color-success: #16704a;
   --mm-color-success-soft: #e8f4ee;
   --mm-color-overlay: rgb(20 20 22 / 0.5);
+  /* Inset divider between rows inside a white group. */
+  --mm-color-hairline: rgb(20 20 22 / 0.08);
 
   --mm-radius-md: 0.75rem;
   --mm-font-sans:
@@ -86,6 +89,7 @@
     --mm-color-success: #7ad3a6;
     --mm-color-success-soft: #13261d;
     --mm-color-overlay: rgb(0 0 0 / 0.6);
+    --mm-color-hairline: rgb(255 255 255 / 0.08);
   }
 }
 
@@ -111,5 +115,6 @@
   --color-success: var(--mm-color-success);
   --color-success-soft: var(--mm-color-success-soft);
   --color-overlay: var(--mm-color-overlay);
+  --color-hairline: var(--mm-color-hairline);
   --font-sans: var(--mm-font-sans);
 }

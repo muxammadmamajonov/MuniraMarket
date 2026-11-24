@@ -104,19 +104,26 @@ def test_values_become_short_scalars() -> None:
 
 
 def test_dates_lists_and_times() -> None:
+    # Values of any kind are reduced to scalars (field names are still allow-listed).
     details = safe_details(
-        "slot",
+        "product",
         {
-            "slot_date": (None, date(2026, 11, 1)),
-            "starts_at": (None, time(9, 0)),
-            "cutoff_at": (None, datetime(2026, 11, 1, 6, 0, tzinfo=UTC)),
+            "sku": (None, date(2026, 11, 1)),
+            "slug": (None, time(9, 0)),
+            "image_url": (None, datetime(2026, 11, 1, 6, 0, tzinfo=UTC)),
+            "name_uz": (["b", "a"], ("c",)),
         },
     )
-    assert details["changes"]["slot_date"]["to"] == "2026-11-01"
-    assert details["changes"]["starts_at"]["to"] == "09:00:00"
-    assert details["changes"]["cutoff_at"]["to"].startswith("2026-11-01T06:00")
-    zones = safe_details("zone", {"districts": (["b", "a"], ("c",))})
-    assert zones["changes"]["districts"] == {"from": "a,b", "to": "c"}
+    assert details["changes"]["sku"]["to"] == "2026-11-01"
+    assert details["changes"]["slug"]["to"] == "09:00:00"
+    assert details["changes"]["image_url"]["to"].startswith("2026-11-01T06:00")
+    assert details["changes"]["name_uz"] == {"from": "a,b", "to": "c"}
+
+
+def test_removed_entity_types_keep_no_fields() -> None:
+    # Delivery zones/slots no longer exist: their old field names are not allow-listed anywhere.
+    assert safe_details("zone", {"slug": (None, "demo")}) == {}
+    assert safe_details("slot", {"capacity": (None, 5)}) == {}
 
 
 def test_diff_fields() -> None:
@@ -138,6 +145,10 @@ def test_diff_fields() -> None:
         "https://x0.example.com/a.png",
         "https://123.example.com/a.png",
         "https://cdn.0xide.com/a.png",
+        # The storefront's own photos (demo catalog): fixed same-origin paths.
+        "/products/banan.webp",
+        "/products/bolgar-qalampiri-400.webp",
+        "/categories/mevalar-sabzavotlar.webp",
     ],
 )
 def test_valid_image_urls(url: str) -> None:
@@ -168,6 +179,12 @@ def test_valid_image_urls(url: str) -> None:
         "https://cdn.example.123/a.png",
         "https://" + "a" * 2048 + ".com/",
         "https:///a.png",
+        "/products/banan.png",
+        "/products/../admin.webp",
+        "/products/banan.webp\n",
+        "/products/Banan.webp",
+        "/uploads/a.webp",
+        "products/banan.webp",
         # Hosts a browser parses as IPv4 (WHATWG "ends in a number"), or hex-numeric labels.
         "https://127.0.0.0x1/",
         "https://0x7f.0x0.0x0.0x1/",

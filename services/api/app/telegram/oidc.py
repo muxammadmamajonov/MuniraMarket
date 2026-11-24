@@ -58,6 +58,8 @@ MAX_ID_TOKEN_BYTES: Final = 16 * 1024
 _B64URL_RE = re.compile(r"[A-Za-z0-9_-]+")
 _KID_RE = re.compile(r"[A-Za-z0-9._:-]{1,128}")
 _CODE_RE = re.compile(r"[A-Za-z0-9._~+/=-]{1,1024}")
+_TELEGRAM_USER_ID_RE = re.compile(r"[1-9][0-9]{0,15}")
+_MAX_SAFE_INTEGER = 9_007_199_254_740_991
 _MAX_NAME_LENGTH = 255
 _MAX_USERNAME_LENGTH = 64
 
@@ -298,6 +300,20 @@ def _int_claim(claims: Mapping[str, Any], name: str) -> int:
     return value
 
 
+def _telegram_user_id_claim(claims: Mapping[str, Any]) -> int:
+    """Accept Telegram's numeric or canonical decimal-string OIDC ``id`` claim."""
+    value = claims.get("id")
+    if isinstance(value, bool):
+        raise OidcError("claim_id_invalid")
+    if isinstance(value, int) and 0 < value <= _MAX_SAFE_INTEGER:
+        return value
+    if isinstance(value, str) and _TELEGRAM_USER_ID_RE.fullmatch(value):
+        user_id = int(value)
+        if user_id <= _MAX_SAFE_INTEGER:
+            return user_id
+    raise OidcError("claim_id_invalid")
+
+
 def _optional_text(claims: Mapping[str, Any], name: str, max_length: int) -> str | None:
     value = claims.get(name)
     if not isinstance(value, str):
@@ -365,9 +381,7 @@ def verify_id_token(
     ):
         raise OidcError("nonce_mismatch")
 
-    telegram_user_id = _int_claim(claims, "id")
-    if telegram_user_id <= 0:
-        raise OidcError("claim_id_invalid")
+    telegram_user_id = _telegram_user_id_claim(claims)
     first_name = _optional_text(claims, "given_name", _MAX_NAME_LENGTH) or _optional_text(
         claims, "name", _MAX_NAME_LENGTH
     )

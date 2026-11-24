@@ -45,4 +45,23 @@ describe('CategoryRail', () => {
     const { container } = render(<CategoryRail categories={[]} locale="uz" label="x" />);
     expect(container).toBeEmptyDOMElement();
   });
+
+  it('shows the category photo instead of the icon tile, ringed when current', () => {
+    render(
+      <CategoryRail
+        categories={[{ ...categories[0]!, image_url: '/categories/mevalar.webp' }, categories[1]!]}
+        locale="uz"
+        label="Kategoriyalar"
+        activeSlug="meva"
+      />,
+    );
+    const [withPhoto, withIcon] = screen.getAllByRole('link');
+    const img = withPhoto?.querySelector('img');
+    expect(img).toHaveAttribute('src', '/categories/mevalar.webp');
+    // Decorative: the link is named by its text, the photo is hidden from assistive tech.
+    expect(img?.closest('[aria-hidden="true"]')).not.toBeNull();
+    expect(img?.closest('[aria-hidden="true"]')).toHaveClass('ring-primary');
+    expect(withPhoto?.querySelector('svg[data-icon]')).toBeNull();
+    expect(withIcon?.querySelector('svg[data-icon]')).not.toBeNull();
+  });
 });

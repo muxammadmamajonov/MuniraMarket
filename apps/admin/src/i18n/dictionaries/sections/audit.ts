@@ -1,14 +1,6 @@
 import type { Locale } from '@muniramarket/contracts';
 
-export const AUDIT_ENTITY_TYPES = [
-  'category',
-  'product',
-  'catalog',
-  'zone',
-  'slot',
-  'user',
-  'order',
-] as const;
+export const AUDIT_ENTITY_TYPES = ['category', 'product', 'catalog', 'user', 'order'] as const;
 export type AuditEntityType = (typeof AUDIT_ENTITY_TYPES)[number];
 
 export const AUDIT_ACTIONS = [
@@ -20,12 +12,6 @@ export const AUDIT_ACTIONS = [
   'product.archive',
   'product.restore',
   'catalog.import',
-  'zone.create',
-  'zone.update',
-  'zone.delete',
-  'slot.create',
-  'slot.update',
-  'slot.delete',
   'user.role_change',
   'user.block',
   'user.unblock',
@@ -59,7 +45,6 @@ export interface AuditDict {
     unchanged: string;
     has_reason: string;
     order_number: string;
-    district_count: string;
     sku: string;
     slug: string;
   };
@@ -89,8 +74,6 @@ export const auditDict: Record<Locale, AuditDict> = {
       category: 'Kategoriya',
       product: 'Mahsulot',
       catalog: 'Katalog',
-      zone: 'Hudud',
-      slot: 'Vaqt oralig‘i',
       user: 'Foydalanuvchi',
       order: 'Buyurtma',
     },
@@ -103,12 +86,6 @@ export const auditDict: Record<Locale, AuditDict> = {
       'product.archive': 'Mahsulot arxivlandi',
       'product.restore': 'Mahsulot tiklandi',
       'catalog.import': 'Katalog import qilindi',
-      'zone.create': 'Hudud yaratildi',
-      'zone.update': 'Hudud o‘zgartirildi',
-      'zone.delete': 'Hudud o‘chirildi',
-      'slot.create': 'Oraliq yaratildi',
-      'slot.update': 'Oraliq o‘zgartirildi',
-      'slot.delete': 'Oraliq o‘chirildi',
       'user.role_change': 'Rol o‘zgartirildi',
       'user.block': 'Foydalanuvchi bloklandi',
       'user.unblock': 'Foydalanuvchi blokdan chiqarildi',
@@ -125,7 +102,6 @@ export const auditDict: Record<Locale, AuditDict> = {
       unchanged: 'o‘zgarmadi',
       has_reason: 'sabab ko‘rsatilgan',
       order_number: 'buyurtma',
-      district_count: 'tumanlar soni',
       sku: 'artikul',
       slug: 'slug',
     },
@@ -153,8 +129,6 @@ export const auditDict: Record<Locale, AuditDict> = {
       category: 'Категория',
       product: 'Товар',
       catalog: 'Каталог',
-      zone: 'Зона',
-      slot: 'Слот',
       user: 'Пользователь',
       order: 'Заказ',
     },
@@ -167,12 +141,6 @@ export const auditDict: Record<Locale, AuditDict> = {
       'product.archive': 'Товар в архиве',
       'product.restore': 'Товар восстановлен',
       'catalog.import': 'Импорт каталога',
-      'zone.create': 'Зона создана',
-      'zone.update': 'Зона изменена',
-      'zone.delete': 'Зона удалена',
-      'slot.create': 'Слот создан',
-      'slot.update': 'Слот изменён',
-      'slot.delete': 'Слот удалён',
       'user.role_change': 'Роль изменена',
       'user.block': 'Пользователь заблокирован',
       'user.unblock': 'Пользователь разблокирован',
@@ -189,7 +157,6 @@ export const auditDict: Record<Locale, AuditDict> = {
       unchanged: 'без изменений',
       has_reason: 'причина указана',
       order_number: 'заказ',
-      district_count: 'районов',
       sku: 'артикул',
       slug: 'slug',
     },

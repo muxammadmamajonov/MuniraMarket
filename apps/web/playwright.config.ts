@@ -34,7 +34,7 @@ import { defineConfig, devices } from '@playwright/test';
  *
  * Every spec signs in once or twice and the Core API allows 10 logins per minute per IP, in fixed
  * one-minute windows (`AUTH_LOGIN` in `services/api/app/security/rate_limit.py`). The storefront
- * specs use 7 Mini App logins; each admin sign-in costs 2 (`oidc/start` and the callback), so the
+ * specs use 8 Mini App logins; each admin sign-in costs 2 (`oidc/start` and the callback), so the
  * admin specs use 5. Together that is more than one window allows, so CI runs the two groups
  * separately with `E2E_SKIP_ADMIN=1` first, then `admin-` after the next minute starts. Locally,
  * likewise wait about a minute between runs against the same API.

@@ -7,8 +7,8 @@ from typing import Protocol
 from sqlalchemy import BigInteger, Numeric, cast, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.domain.delivery import tashkent_date, tashkent_instant
 from app.domain.order_status import OrderStatus
+from app.domain.tashkent import tashkent_date, tashkent_instant
 from app.models.order import Order, OrderStatusHistory
 
 

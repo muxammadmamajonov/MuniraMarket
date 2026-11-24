@@ -124,6 +124,10 @@ def test_valid_token_yields_the_telegram_id_not_sub() -> None:
     assert identity.username == "munira_test"
 
 
+def test_valid_token_accepts_a_decimal_string_telegram_id() -> None:
+    assert verify(make_token(claims(id=str(TG_ID)))).telegram_user_id == TG_ID
+
+
 def test_name_falls_back_to_name_claim() -> None:
     identity = verify(make_token(claims(given_name=None, family_name=None)))
     assert identity.first_name == "Munira Test"
@@ -150,7 +154,9 @@ def test_audience_list_requires_azp() -> None:
         ({"nonce": "other-nonce"}, "nonce_mismatch"),
         ({"nonce": None}, "nonce_mismatch"),
         ({"id": None}, "claim_id_invalid"),
-        ({"id": "987654321"}, "claim_id_invalid"),
+        ({"id": "000987654321"}, "claim_id_invalid"),
+        ({"id": "not-a-telegram-id"}, "claim_id_invalid"),
+        ({"id": "9007199254740992"}, "claim_id_invalid"),
         ({"id": 0}, "claim_id_invalid"),
         ({"id": True}, "claim_id_invalid"),
         ({"name": None, "given_name": None}, "claim_name_missing"),

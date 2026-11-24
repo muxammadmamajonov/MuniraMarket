@@ -1,14 +1,12 @@
 import { cx } from '@muniramarket/ui';
 import type { ReactNode } from 'react';
 
+// Brand tokens only (packages/ui/src/styles/tokens.css): each pair is AA in light and dark.
 const TONES = {
-  error:
-    'border-red-300 bg-red-50 text-red-900 dark:border-red-800 dark:bg-red-950 dark:text-red-100',
-  success:
-    'border-green-300 bg-green-50 text-green-900 dark:border-green-800 dark:bg-green-950 dark:text-green-100',
-  info: 'border-border bg-surface-muted text-foreground',
-  warning:
-    'border-amber-300 bg-amber-50 text-amber-900 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-100',
+  error: 'bg-danger-soft text-danger',
+  success: 'bg-success-soft text-success',
+  info: 'bg-surface-muted text-foreground',
+  warning: 'bg-warning-soft text-warning',
 } as const;
 
 /**
@@ -30,7 +28,11 @@ export function Alert({
     <div
       role={tone === 'error' ? 'alert' : 'status'}
       data-testid={testId}
-      className={cx('rounded-xl border px-3 py-2 text-sm break-words', TONES[tone], className)}
+      className={cx(
+        'rounded-2xl px-4 py-3 text-sm font-medium break-words',
+        TONES[tone],
+        className,
+      )}
     >
       {children}
     </div>

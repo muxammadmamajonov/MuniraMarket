@@ -41,13 +41,3 @@ export function formatDate(isoDate: string): string {
   const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(isoDate);
   return match === null ? isoDate : `${match[3]}.${match[2]}.${match[1]}`;
 }
-
-/** `14:00:00` or `14:00` -> `14:00`. */
-export function formatTime(value: string): string {
-  return value.slice(0, 5);
-}
-
-/** A booked/offered delivery window: `31.10.2026, 14:00–16:00`. */
-export function formatSlotWindow(date: string, startsAt: string, endsAt: string): string {
-  return `${formatDate(date)}, ${formatTime(startsAt)}–${formatTime(endsAt)}`;
-}

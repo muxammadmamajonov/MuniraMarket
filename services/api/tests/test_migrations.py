@@ -184,7 +184,8 @@ async def _constraints(engine: AsyncEngine, table: str) -> set[str]:
 
 
 async def test_checkout_revision_downgrades_to_0002_and_back(empty_engine: AsyncEngine) -> None:
-    await upgrade(empty_engine)
+    # The zone tables and columns of 0003 exist until 0007 drops them.
+    await upgrade(empty_engine, "0006")
     after_upgrade = await _tables(empty_engine)
     assert after_upgrade >= CHECKOUT_TABLES
     order_columns = await _columns(empty_engine, "orders")
@@ -205,9 +206,10 @@ async def test_checkout_revision_downgrades_to_0002_and_back(empty_engine: Async
     )
     assert await _scalar(empty_engine, "SELECT version_num FROM alembic_version") == "0002"
 
-    await upgrade(empty_engine)
+    await upgrade(empty_engine, "0006")
     assert await _tables(empty_engine) == after_upgrade
     assert await _columns(empty_engine, "orders") == order_columns
+    await upgrade(empty_engine)
     assert await _model_differences(empty_engine) == []
 
 
@@ -242,7 +244,8 @@ def _order_params(user_id: object, number: str, **overrides: object) -> dict[str
 
 
 async def test_checkout_constraints(empty_engine: AsyncEngine) -> None:
-    await upgrade(empty_engine)
+    # As of 0006 (the delivery fee, zone and district constraints are dropped by 0007).
+    await upgrade(empty_engine, "0006")
     async with empty_engine.connect() as conn:
         user_id = (
             await conn.execute(
@@ -373,7 +376,7 @@ async def test_an_already_migrated_schema_on_the_search_path_is_never_touched() 
 
         await upgrade(my_engine)
         assert await _scalar(my_engine, tables_in, schema=mine) == 2
-        assert await _scalar(my_engine, "SELECT version_num FROM alembic_version") == "0005"
+        assert await _scalar(my_engine, "SELECT version_num FROM alembic_version") == "0009"
 
         await truncate_app_tables(my_engine)
         assert await _scalar(my_engine, count_other) == 1
@@ -429,7 +432,8 @@ async def _audit_triggers(engine: AsyncEngine) -> list[tuple[str, str]]:
 
 
 async def test_admin_revision_downgrades_to_0003_and_back(empty_engine: AsyncEngine) -> None:
-    await upgrade(empty_engine)
+    # The slot table and columns of 0004 exist until 0007 drops them.
+    await upgrade(empty_engine, "0006")
     after_upgrade = await _tables(empty_engine)
     assert after_upgrade >= ADMIN_TABLES
     assert await _columns(empty_engine, "orders") >= SLOT_ORDER_COLUMNS
@@ -449,8 +453,9 @@ async def test_admin_revision_downgrades_to_0003_and_back(empty_engine: AsyncEng
     assert await _audit_triggers(empty_engine) == []
     assert await _scalar(empty_engine, "SELECT version_num FROM alembic_version") == "0003"
 
-    await upgrade(empty_engine)
+    await upgrade(empty_engine, "0006")
     assert await _tables(empty_engine) == after_upgrade
+    await upgrade(empty_engine)
     assert await _model_differences(empty_engine) == []
 
 
@@ -519,7 +524,8 @@ async def test_audit_log_is_append_only(empty_engine: AsyncEngine) -> None:
 
 
 async def test_admin_check_constraints(empty_engine: AsyncEngine) -> None:
-    await upgrade(empty_engine)
+    # As of 0006 (delivery slots are dropped by 0007).
+    await upgrade(empty_engine, "0006")
     async with empty_engine.connect() as conn:
         zone_id = (
             await conn.execute(
@@ -588,3 +594,414 @@ async def test_admin_check_constraints(empty_engine: AsyncEngine) -> None:
                     product_sql,
                     {"cat": category_id, "sku": "bad", "active": True, "archived": archived},
                 )
+
+
+# --- 0007: Yandex Go courier delivery (no zones, fees or slots) -----------------------------------
+
+DELIVERY_TABLES = {"delivery_zones", "delivery_zone_districts", "delivery_slots"}
+DELIVERY_ORDER_COLUMNS = {
+    "delivery_fee_uzs",
+    "delivery_zone_id",
+    "delivery_slot_id",
+    "delivery_slot_date",
+    "delivery_slot_starts_at",
+    "delivery_slot_ends_at",
+}
+_ORDER_0007_SQL = text(
+    "INSERT INTO orders (number, user_id, subtotal_uzs, total_uzs, item_count, payment_method, "
+    "recipient_name, recipient_phone, address_snapshot, idempotency_key, "
+    "idempotency_request_hash) VALUES (:number, :user_id, :subtotal, :total, 1, "
+    "'cash_on_delivery', 'Demo Mijoz', '+998001234567', "
+    '\'{"lat": 41.311081, "lon": 69.240562, "street": "Demo", "house": "1"}\'::jsonb, '
+    ":key, :hash) RETURNING id"
+)
+
+
+async def _order_totals(engine: AsyncEngine) -> dict[str, tuple[int, int]]:
+    async with engine.connect() as conn:
+        rows = await conn.execute(text("SELECT number, subtotal_uzs, total_uzs FROM orders"))
+        return {row.number: (row.subtotal_uzs, row.total_uzs) for row in rows}
+
+
+async def _indexes(engine: AsyncEngine, table: str) -> set[str]:
+    async with engine.connect() as conn:
+        rows = await conn.execute(
+            text(
+                "SELECT indexname FROM pg_indexes "
+                "WHERE schemaname = current_schema() AND tablename = :table"
+            ),
+            {"table": table},
+        )
+        return {row[0] for row in rows}
+
+
+async def test_courier_delivery_revision_keeps_historical_totals_and_downgrades(
+    empty_engine: AsyncEngine,
+) -> None:
+    """0007 drops zones, slots and the delivery fee column without touching any order total;
+    the downgrade gives the fee back as ``total - subtotal``."""
+    await upgrade(empty_engine, "0006")
+    async with empty_engine.begin() as conn:
+        user_id = (
+            await conn.execute(
+                text(
+                    "INSERT INTO users (telegram_user_id, first_name) "
+                    "VALUES (2001, 'Demo') RETURNING id"
+                )
+            )
+        ).scalar_one()
+        zone_id = (
+            await conn.execute(
+                text(
+                    "INSERT INTO delivery_zones (slug, name_uz, name_ru, delivery_fee_uzs, "
+                    "opens_at, closes_at) VALUES ('demo-z', 'D', 'Д', 15000, '09:00', '21:00') "
+                    "RETURNING id"
+                )
+            )
+        ).scalar_one()
+        await conn.execute(
+            text("INSERT INTO delivery_zone_districts (district, zone_id) VALUES ('c', :zone)"),
+            {"zone": zone_id},
+        )
+        slot_id = (
+            await conn.execute(
+                text(
+                    "INSERT INTO delivery_slots (zone_id, slot_date, starts_at, ends_at, "
+                    "capacity, reserved_count, cutoff_at) VALUES (:zone, '2026-11-02', "
+                    "'10:00', '13:00', 5, 1, '2026-11-02T03:00:00Z') RETURNING id"
+                ),
+                {"zone": zone_id},
+            )
+        ).scalar_one()
+        # A historical order that paid a 15 000 fee, booked in a slot of the zone ...
+        paid = (await conn.execute(_ORDER_SQL, _order_params(user_id, "H-1"))).scalar_one()
+        await conn.execute(
+            text(
+                "UPDATE orders SET delivery_zone_id = :zone, delivery_slot_id = :slot, "
+                "delivery_slot_date = '2026-11-02', delivery_slot_starts_at = '10:00', "
+                "delivery_slot_ends_at = '13:00' WHERE id = :id"
+            ),
+            {"zone": zone_id, "slot": slot_id, "id": paid},
+        )
+        # ... and one that had free delivery.
+        await conn.execute(
+            _ORDER_SQL, _order_params(user_id, "H-2", subtotal=400_000, fee=0, total=400_000)
+        )
+
+    await upgrade(empty_engine, "0007")
+    assert await _scalar(empty_engine, "SELECT version_num FROM alembic_version") == "0007"
+    assert not (await _tables(empty_engine) & DELIVERY_TABLES)
+    assert not (DELIVERY_ORDER_COLUMNS & await _columns(empty_engine, "orders"))
+    assert "ix_orders_delivery_slot_id" not in await _indexes(empty_engine, "orders")
+    # Historical totals still include the fee that was charged.
+    assert await _order_totals(empty_engine) == {
+        "H-1": (50_000, 65_000),
+        "H-2": (400_000, 400_000),
+    }
+    order_constraints = await _constraints(empty_engine, "orders")
+    assert "ck_orders_total_covers_subtotal" in order_constraints
+    assert not (
+        {"ck_orders_total_is_sum", "ck_orders_delivery_fee_non_negative"} & order_constraints
+    )
+    # The address snapshot is untouched (no rewrite of JSONB).
+    assert (
+        await _scalar(empty_engine, "SELECT address_snapshot FROM orders WHERE number = 'H-1'")
+        == {}
+    )
+
+    async with empty_engine.connect() as conn:
+        params = {"user_id": user_id, "key": "key-N-1", "hash": "0" * 64}
+        # A courier-era order: total == subtotal.
+        await conn.execute(
+            _ORDER_0007_SQL, {**params, "number": "N-1", "subtotal": 30_000, "total": 30_000}
+        )
+        with pytest.raises(IntegrityError, match="ck_orders_total_covers_subtotal"):
+            async with conn.begin_nested():
+                await conn.execute(
+                    _ORDER_0007_SQL,
+                    {
+                        **params,
+                        "number": "N-2",
+                        "key": "key-N-2",
+                        "subtotal": 30_000,
+                        "total": 29_999,
+                    },
+                )
+        await conn.commit()
+
+    await downgrade(empty_engine, "0006")
+    assert await _scalar(empty_engine, "SELECT version_num FROM alembic_version") == "0006"
+    assert await _tables(empty_engine) >= DELIVERY_TABLES
+    assert await _columns(empty_engine, "orders") >= DELIVERY_ORDER_COLUMNS
+    assert "ix_orders_delivery_slot_id" in await _indexes(empty_engine, "orders")
+    for table in DELIVERY_TABLES:
+        assert await _scalar(empty_engine, f"SELECT count(*) FROM {table}") == 0  # noqa: S608
+    async with empty_engine.connect() as conn:
+        rows = (
+            await conn.execute(
+                text(
+                    "SELECT number, subtotal_uzs, delivery_fee_uzs, total_uzs, delivery_zone_id, "
+                    "delivery_slot_id, delivery_slot_date FROM orders ORDER BY number"
+                )
+            )
+        ).all()
+    # The fee is back as total - subtotal; zone and slot links are gone for good.
+    assert [tuple(row) for row in rows] == [
+        ("H-1", 50_000, 15_000, 65_000, None, None, None),
+        ("H-2", 400_000, 0, 400_000, None, None, None),
+        ("N-1", 30_000, 0, 30_000, None, None, None),
+    ]
+    order_constraints = await _constraints(empty_engine, "orders")
+    assert {"ck_orders_total_is_sum", "ck_orders_delivery_fee_non_negative"} <= order_constraints
+    assert "ck_orders_total_covers_subtotal" not in order_constraints
+    assert {
+        "fk_orders_delivery_zone_id_delivery_zones",
+        "fk_orders_delivery_slot_id_delivery_slots",
+    } <= order_constraints
+    async with empty_engine.connect() as conn:
+        with pytest.raises(IntegrityError, match="ck_orders_total_is_sum"):
+            await conn.execute(_ORDER_SQL, _order_params(user_id, "D-1", total=1))
+
+    await upgrade(empty_engine)
+    assert await _order_totals(empty_engine) == {
+        "H-1": (50_000, 65_000),
+        "H-2": (400_000, 400_000),
+        "N-1": (30_000, 30_000),
+    }
+    assert await _model_differences(empty_engine) == []
+
+
+# --- 0008: profile hub (birth date, user-edited name, saved addresses) ----------------------------
+
+_ADDRESS_SQL = text(
+    "INSERT INTO user_addresses (user_id, label, lat, lon, street, house, is_default) "
+    "VALUES (:user_id, :label, :lat, :lon, 'Amir Temur', '1', :is_default) RETURNING id"
+)
+
+
+async def test_profile_revision_adds_addresses_and_downgrades(empty_engine: AsyncEngine) -> None:
+    """0008 adds two nullable user columns and ``user_addresses`` (cascade on user delete, at
+    most one default per user, coordinate ranges); the downgrade drops them, users stay."""
+    await upgrade(empty_engine, "0007")
+    async with empty_engine.begin() as conn:
+        user_id = (
+            await conn.execute(
+                text(
+                    "INSERT INTO users (telegram_user_id, first_name, last_name) "
+                    "VALUES (3001, 'Aziza', 'K') RETURNING id"
+                )
+            )
+        ).scalar_one()
+    assert "user_addresses" not in await _tables(empty_engine)
+
+    await upgrade(empty_engine, "0008")
+    assert await _scalar(empty_engine, "SELECT version_num FROM alembic_version") == "0008"
+    assert {"birth_date", "name_edited_at"} <= await _columns(empty_engine, "users")
+    assert (
+        await _scalar(
+            empty_engine,
+            "SELECT birth_date IS NULL AND name_edited_at IS NULL FROM users WHERE id = :id",
+            id=user_id,
+        )
+        is True
+    )
+    assert await _indexes(empty_engine, "user_addresses") >= {
+        "pk_user_addresses",
+        "ix_user_addresses_user_id",
+        "uq_user_addresses_user_id_default",
+    }
+    assert await _constraints(empty_engine, "user_addresses") >= {
+        "ck_user_addresses_lat_range",
+        "ck_user_addresses_lon_range",
+        "fk_user_addresses_user_id_users",
+    }
+
+    base = {"user_id": user_id, "label": None, "lat": 41.311081, "lon": 69.240562}
+    async with empty_engine.connect() as conn:
+        await conn.execute(_ADDRESS_SQL, {**base, "label": "Uy", "is_default": True})
+        await conn.execute(_ADDRESS_SQL, {**base, "is_default": False})
+        await conn.execute(_ADDRESS_SQL, {**base, "is_default": False})
+        with pytest.raises(IntegrityError, match="uq_user_addresses_user_id_default"):
+            async with conn.begin_nested():
+                await conn.execute(_ADDRESS_SQL, {**base, "is_default": True})
+        for bad, constraint in (
+            ({"lat": 90.000001}, "ck_user_addresses_lat_range"),
+            ({"lon": -180.5}, "ck_user_addresses_lon_range"),
+        ):
+            with pytest.raises(IntegrityError, match=constraint):
+                async with conn.begin_nested():
+                    await conn.execute(_ADDRESS_SQL, {**base, **bad, "is_default": False})
+        await conn.commit()
+    assert await _scalar(empty_engine, "SELECT count(*) FROM user_addresses") == 3
+
+    # Deleting the user deletes their addresses.
+    async with empty_engine.begin() as conn:
+        other = (
+            await conn.execute(
+                text(
+                    "INSERT INTO users (telegram_user_id, first_name) "
+                    "VALUES (3002, 'Other') RETURNING id"
+                )
+            )
+        ).scalar_one()
+        await conn.execute(_ADDRESS_SQL, {**base, "user_id": other, "is_default": True})
+        await conn.execute(text("DELETE FROM users WHERE id = :id"), {"id": other})
+    assert await _scalar(empty_engine, "SELECT count(*) FROM user_addresses") == 3
+
+    async with empty_engine.begin() as conn:
+        await conn.execute(
+            text(
+                "UPDATE users SET birth_date = '1990-05-17', name_edited_at = now() WHERE id = :id"
+            ),
+            {"id": user_id},
+        )
+
+    await downgrade(empty_engine, "0007")
+    assert await _scalar(empty_engine, "SELECT version_num FROM alembic_version") == "0007"
+    assert "user_addresses" not in await _tables(empty_engine)
+    assert not ({"birth_date", "name_edited_at"} & await _columns(empty_engine, "users"))
+    assert (
+        await _scalar(empty_engine, "SELECT first_name FROM users WHERE id = :id", id=user_id)
+        == "Aziza"
+    )
+
+    await upgrade(empty_engine)
+    assert await _scalar(empty_engine, "SELECT count(*) FROM user_addresses") == 0
+    assert await _model_differences(empty_engine) == []
+
+
+# --- 0009: safety stock and order-line shortage adjustments (ADR 0018) ---------------------------
+
+
+async def test_shortage_revision_adds_safety_stock_and_adjustments_and_downgrades(
+    empty_engine: AsyncEngine,
+) -> None:
+    """0009 adds ``products.safety_stock`` (default 0), lets an order line (and an order's item
+    count) reach 0 and logs adjustments; the downgrade puts zeroed lines back to their original
+    quantity so the old ``> 0`` checks hold again."""
+    await upgrade(empty_engine, "0008")
+    async with empty_engine.begin() as conn:
+        category_id = (
+            await conn.execute(
+                text(
+                    "INSERT INTO categories (slug, name_uz, name_ru) "
+                    "VALUES ('mevalar', 'Mevalar', 'Фрукты') RETURNING id"
+                )
+            )
+        ).scalar_one()
+        product_id = (
+            await conn.execute(
+                text(
+                    "INSERT INTO products (category_id, sku, slug, name_uz, name_ru, unit, "
+                    "price_uzs, stock_quantity) VALUES (:category_id, 'OLMA', 'olma', 'Olma', "
+                    "'Яблоко', 'kg', 15000, 1) RETURNING id"
+                ),
+                {"category_id": category_id},
+            )
+        ).scalar_one()
+        user_id = (
+            await conn.execute(
+                text(
+                    "INSERT INTO users (telegram_user_id, first_name) "
+                    "VALUES (4001, 'Demo') RETURNING id"
+                )
+            )
+        ).scalar_one()
+        order_id = (
+            await conn.execute(
+                text(
+                    "INSERT INTO orders (number, user_id, subtotal_uzs, total_uzs, item_count, "
+                    "payment_method, recipient_name, recipient_phone, address_snapshot, "
+                    "idempotency_key, idempotency_request_hash) VALUES ('S-1', :user_id, 30000, "
+                    "30000, 2, 'cash_on_delivery', 'Demo', '+998001234567', '{}'::jsonb, 'k-S-1', "
+                    ":hash) RETURNING id"
+                ),
+                {"user_id": user_id, "hash": "0" * 64},
+            )
+        ).scalar_one()
+        item_id = (
+            await conn.execute(
+                text(
+                    "INSERT INTO order_items (order_id, product_id, sku, name_uz, name_ru, unit, "
+                    "unit_price_uzs, quantity, line_total_uzs) VALUES (:order_id, :product_id, "
+                    "'OLMA', 'Olma', 'Яблоко', 'kg', 15000, 2, 30000) RETURNING id"
+                ),
+                {"order_id": order_id, "product_id": product_id},
+            )
+        ).scalar_one()
+
+    await upgrade(empty_engine, "0009")
+    assert await _scalar(empty_engine, "SELECT version_num FROM alembic_version") == "0009"
+    assert await _scalar(empty_engine, "SELECT safety_stock FROM products") == 0
+    assert {"original_quantity", "adjusted_at"} <= await _columns(empty_engine, "order_items")
+    assert await _constraints(empty_engine, "products") >= {"ck_products_safety_stock_non_negative"}
+    assert await _constraints(empty_engine, "order_item_adjustments") >= {
+        "pk_order_item_adjustments",
+        "ck_order_item_adjustments_quantity_decreases",
+        "ck_order_item_adjustments_reason_not_blank",
+        "fk_order_item_adjustments_order_id_orders",
+        "fk_order_item_adjustments_order_item_id_order_items",
+    }
+    assert await _model_differences(empty_engine) == []
+
+    adjustment_sql = text(
+        "INSERT INTO order_item_adjustments (order_id, order_item_id, product_id, from_quantity, "
+        "to_quantity, reason, marked_out_of_stock, actor_role) VALUES (:order_id, :item_id, "
+        ":product_id, :from_q, :to_q, :reason, true, 'operator')"
+    )
+    base = {"order_id": order_id, "item_id": item_id, "product_id": product_id}
+    async with empty_engine.connect() as conn:
+        for sql, constraint in (
+            ("UPDATE products SET safety_stock = -1", "ck_products_safety_stock_non_negative"),
+            (
+                "UPDATE order_items SET original_quantity = 1",
+                "ck_order_items_original_quantity_covers_quantity",
+            ),
+            (
+                "UPDATE order_items SET quantity = -1, unit_price_uzs = 0, line_total_uzs = 0",
+                "ck_order_items_quantity_non_negative",
+            ),
+            ("UPDATE orders SET item_count = -1", "ck_orders_item_count_non_negative"),
+        ):
+            with pytest.raises(IntegrityError, match=constraint):
+                async with conn.begin_nested():
+                    await conn.execute(text(sql))
+        for params, constraint in (
+            ({"from_q": 2, "to_q": 2, "reason": "yo'q"}, "quantity_decreases"),
+            ({"from_q": 2, "to_q": -1, "reason": "yo'q"}, "quantity_decreases"),
+            ({"from_q": 2, "to_q": 0, "reason": "  "}, "reason_not_blank"),
+        ):
+            with pytest.raises(IntegrityError, match=constraint):
+                async with conn.begin_nested():
+                    await conn.execute(adjustment_sql, {**base, **params})
+        # The goods ran out: the line goes to 0 (the order's item count too).
+        await conn.execute(adjustment_sql, {**base, "from_q": 2, "to_q": 0, "reason": "tugadi"})
+        await conn.execute(
+            text(
+                "UPDATE order_items SET original_quantity = 2, quantity = 0, line_total_uzs = 0, "
+                "adjusted_at = now()"
+            )
+        )
+        await conn.execute(
+            text("UPDATE orders SET item_count = 0, subtotal_uzs = 0, total_uzs = 0")
+        )
+        await conn.commit()
+
+    assert await _scalar(empty_engine, "SELECT count(*) FROM order_item_adjustments") == 1
+
+    await downgrade(empty_engine, "0008")
+    assert "order_item_adjustments" not in await _tables(empty_engine)
+    assert "safety_stock" not in await _columns(empty_engine, "products")
+    assert not ({"original_quantity", "adjusted_at"} & await _columns(empty_engine, "order_items"))
+    assert (
+        await _scalar(
+            empty_engine, "SELECT quantity::text || '/' || line_total_uzs::text FROM order_items"
+        )
+        == "2/30000"
+    )
+    assert await _scalar(empty_engine, "SELECT item_count FROM orders") == 2
+    assert await _constraints(empty_engine, "order_items") >= {"ck_order_items_quantity_positive"}
+    assert await _constraints(empty_engine, "orders") >= {"ck_orders_item_count_positive"}
+
+    await upgrade(empty_engine)
+    assert await _model_differences(empty_engine) == []

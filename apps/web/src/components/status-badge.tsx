@@ -1,14 +1,14 @@
 import type { OrderStatus } from '@muniramarket/contracts';
 import { cx } from '@muniramarket/ui';
 
-/** Brand-token tones: in-flight states stay neutral or amber, only the end states carry colour. */
+/** Brand-token tones, no green: in-flight states neutral or amber, delivered charcoal, new and cancelled red. */
 const TONES: Record<OrderStatus, string> = {
   NEW: 'bg-brand-soft text-brand-ink',
   CONFIRMED: 'bg-surface-muted text-foreground',
   PICKING: 'bg-warning-soft text-warning',
   READY_FOR_DELIVERY: 'bg-surface-muted text-foreground',
   OUT_FOR_DELIVERY: 'bg-warning-soft text-warning',
-  DELIVERED: 'bg-success-soft text-success',
+  DELIVERED: 'bg-foreground text-background',
   CANCELLED: 'bg-danger-soft text-danger',
 };
 
@@ -25,7 +25,7 @@ export function StatusBadge({ status, label, className }: StatusBadgeProps) {
     <span
       data-status={status}
       className={cx(
-        'inline-flex shrink-0 items-center whitespace-nowrap rounded-full px-2.5 py-1 text-sm font-semibold',
+        'inline-flex shrink-0 items-center whitespace-nowrap rounded-full px-2.5 py-0.5 text-[13px] leading-5 font-semibold',
         TONES[status],
         className,
       )}

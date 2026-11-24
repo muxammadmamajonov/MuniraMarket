@@ -148,6 +148,7 @@ class AdminProductRecord:
     price_uzs: int
     old_price_uzs: int | None
     stock_quantity: int | None
+    safety_stock: int
     image_url: str | None
     sort_order: int
     is_active: bool
@@ -259,6 +260,7 @@ def _product_record(product: Product) -> AdminProductRecord:
         price_uzs=product.price_uzs,
         old_price_uzs=product.old_price_uzs,
         stock_quantity=product.stock_quantity,
+        safety_stock=product.safety_stock,
         image_url=product.image_url,
         sort_order=product.sort_order,
         is_active=product.is_active,
@@ -707,6 +709,7 @@ class SqlAlchemyAdminCatalogRepository:
                 price_uzs=product.price_uzs,
                 old_price_uzs=product.old_price_uzs,
                 stock_quantity=product.stock_quantity,
+                safety_stock=product.safety_stock,
                 is_active=product.is_active,
                 sort_order=product.sort_order,
                 image_url=product.image_url,

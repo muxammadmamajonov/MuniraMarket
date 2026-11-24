@@ -1,27 +1,28 @@
 import type { Dictionary } from '@/i18n';
-import { WalletIcon } from './icons';
+import { PinIcon, WalletIcon } from './icons';
 
 /**
- * A calm note about how paying works, using only what the app does: payment on delivery. Delivery
- * itself (fee and hours per district) is explained by the district chooser at the top of the page.
+ * A calm note about how ordering works, using only what the app does: a Yandex Go courier brings
+ * the order, the customer pays for the goods on delivery and pays the courier for the delivery.
  * No offers, discounts or promises.
  */
 export function DeliveryInfo({ dict }: { dict: Dictionary }) {
   const { info } = dict.home;
   const items = [
+    { key: 'courier', icon: <PinIcon />, title: info.courierTitle, text: info.courierText },
     { key: 'payment', icon: <WalletIcon />, title: info.paymentTitle, text: info.paymentText },
   ];
   return (
     <section
       aria-label={info.paymentTitle}
       data-testid="delivery-info"
-      className="grid gap-4 rounded-2xl border border-border bg-surface p-4"
+      className="grid gap-4 rounded-3xl bg-surface px-4 py-3.5"
     >
       {items.map((item) => (
         <div key={item.key} className="flex items-start gap-3">
           <span
             aria-hidden="true"
-            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-surface text-brand-ink"
+            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-brand-soft text-brand-ink"
           >
             {item.icon}
           </span>

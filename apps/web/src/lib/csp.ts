@@ -1,4 +1,9 @@
-import { YANDEX_MAPS_API_ORIGIN, YANDEX_MAPS_DATA_ORIGIN } from './maps/config';
+import {
+  YANDEX_MAPS_API_ORIGIN,
+  YANDEX_MAPS_DATA_ORIGIN,
+  YANDEX_MAPS_GEOCODER_ORIGIN,
+  YANDEX_MAPS_STATIC_ORIGIN,
+} from './maps/config';
 
 /**
  * Content Security Policy for HTML pages, built per request in `src/proxy.ts`.
@@ -13,16 +18,19 @@ import { YANDEX_MAPS_API_ORIGIN, YANDEX_MAPS_DATA_ORIGIN } from './maps/config';
  * script or iframe is loaded for it, so nothing may be framed (`frame-src 'none'`). The top-level
  * navigation to Telegram (`location.assign`) is not governed by `form-action`.
  *
- * Yandex Maps hosts are added only when a Maps key is configured (`yandexMaps`): the official API
- * host in `script-src` (for browsers that ignore `'strict-dynamic'`) and `connect-src`, its data
- * hosts in `connect-src`, and `blob:` workers, which the API uses to render vector tiles. Tiles
- * that arrive as images are already covered by `img-src https:`.
+ * Yandex Maps hosts are added only when a JavaScript API key is configured (`yandexMaps`): the
+ * official API host in `script-src` (for browsers that ignore `'strict-dynamic'`) and
+ * `connect-src`, its data hosts and `blob:` workers. The Geocoder HTTP host is added separately
+ * only when a Geocoder key is present (`yandexGeocoder`). Tiles that arrive as images are already
+ * covered by `img-src https:`.
  */
 
 export interface CspOptions {
   nonce: string;
   /** Allow the Yandex Maps JavaScript API (only when a key is configured). */
   yandexMaps?: boolean;
+  /** Allow the Yandex Geocoder HTTP API only when its separate key is configured. */
+  yandexGeocoder?: boolean;
   /** Adds `'unsafe-eval'` to `script-src`; React's dev tooling needs it. Never in production. */
   isDevelopment?: boolean;
 }
@@ -38,10 +46,24 @@ export function generateNonce(): string {
 // The nonce is interpolated into a response header, so refuse anything that is not base64.
 const NONCE_PATTERN = /^[A-Za-z0-9+/_-]+={0,2}$/;
 
+/**
+ * The nonce in a policy built by `buildContentSecurityPolicy`, or `undefined` when there is none.
+ *
+ * `src/proxy.ts` forwards the policy on the request headers; the root layout reads the nonce back
+ * from it to hand to `<Script>` explicitly. Next applies the nonce on the server by itself, but the
+ * client copy of `<Script>` never learns it, so without the prop the client renders no `nonce`
+ * while the server HTML has one, and React reports a hydration mismatch.
+ */
+export function nonceFromContentSecurityPolicy(policy: string | null): string | undefined {
+  const nonce = policy?.match(/'nonce-([^']+)'/)?.[1];
+  return nonce !== undefined && NONCE_PATTERN.test(nonce) ? nonce : undefined;
+}
+
 export function buildContentSecurityPolicy({
   nonce,
   isDevelopment = false,
   yandexMaps = false,
+  yandexGeocoder = false,
 }: CspOptions): string {
   if (!NONCE_PATTERN.test(nonce)) throw new Error('CSP nonce must be a base64 string.');
 
@@ -61,13 +83,20 @@ export function buildContentSecurityPolicy({
     // Inline styles are allowed because a nonce cannot cover `style=""` attributes (React `style`
     // props, and the map library's own elements). Style injection can't run script, and scripts
     // stay locked down above.
-    ['style-src', ["'self'", "'unsafe-inline'"]],
+    [
+      'style-src',
+      ["'self'", "'unsafe-inline'", ...(yandexMaps ? [YANDEX_MAPS_STATIC_ORIGIN] : [])],
+    ],
     ['img-src', ["'self'", 'data:', 'blob:', 'https:']],
     ['font-src', ["'self'"]],
     // The browser only talks to this origin: the API is reached through the same-origin proxy.
     [
       'connect-src',
-      ["'self'", ...(yandexMaps ? [YANDEX_MAPS_API_ORIGIN, YANDEX_MAPS_DATA_ORIGIN] : [])],
+      [
+        "'self'",
+        ...(yandexMaps ? [YANDEX_MAPS_API_ORIGIN, YANDEX_MAPS_DATA_ORIGIN] : []),
+        ...(yandexMaps && yandexGeocoder ? [YANDEX_MAPS_GEOCODER_ORIGIN] : []),
+      ],
     ],
     ...(yandexMaps ? ([['worker-src', ["'self'", 'blob:']]] as Array<[string, string[]]>) : []),
     // Nothing is framed: sign-in is a top-level redirect and the Yandex Maps API needs no frame.

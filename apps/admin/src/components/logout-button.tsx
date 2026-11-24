@@ -31,7 +31,7 @@ export function LogoutButton({ className }: { className?: string }) {
         {dict.header.logout}
       </Button>
       {failed ? (
-        <span role="alert" className="text-sm text-red-700 dark:text-red-300">
+        <span role="alert" className="text-sm text-danger">
           {dict.errors.serviceUnavailable}
         </span>
       ) : null}

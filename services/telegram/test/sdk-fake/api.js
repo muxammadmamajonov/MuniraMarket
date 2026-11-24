@@ -34,7 +34,9 @@ export function createRecordingApi() {
         calls.push({ method: prop, params });
         const responder = responders.get(prop);
         if (responder) return responder(params);
-        return prop === 'sendMessage' ? { message_id: 1 } : {};
+        if (prop === 'sendMessage') return { message_id: 1 };
+        // Like the Bot API: `deleteMessage` returns `true` on success.
+        return prop === 'deleteMessage' ? true : {};
       };
     },
   });

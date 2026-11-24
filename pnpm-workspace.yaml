@@ -3,8 +3,14 @@ packages:
   - packages/*
   - services/telegram
   - services/api-gateway
-  - services/neon-functions
+  - services/core-api-function
   - infra/cloudflare
+
+# Patches for transitive development dependencies reported by `pnpm audit`.
+# These apply workspace-wide and are covered by the full CI suite.
+overrides:
+  fflate: 0.7.5
+  minimatch@10.2.6: 11.0.1
 
 # Dependency build scripts are denied unless listed here explicitly.
 allowBuilds:
@@ -13,3 +19,11 @@ allowBuilds:
   # Cloudflare's Workers runtime (used by `cf dev` / vinext dev). Its postinstall only verifies the
   # platform binary shipped as an optional dependency; it is not needed to install it.
   workerd: false
+  # esbuild (Core API Function bundle check). Its postinstall only verifies the platform binary
+  # shipped as an optional dependency.
+  esbuild: false
+
+minimumReleaseAgeExclude:
+  - hono@4.13.17
+  - '@neon/config@1.13.0'
+  - '@neon/sdk@7.11.0'

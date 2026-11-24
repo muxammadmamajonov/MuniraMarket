@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { buildContentSecurityPolicy, generateNonce } from './csp';
+import { buildContentSecurityPolicy, generateNonce, nonceFromContentSecurityPolicy } from './csp';
+import { YANDEX_MAPS_GEOCODER_ORIGIN, YANDEX_MAPS_STATIC_ORIGIN } from './maps/config';
 
 function directive(policy: string, name: string): string[] {
   const part = policy.split('; ').find((entry) => entry.startsWith(`${name} `));
@@ -13,6 +14,25 @@ describe('generateNonce', () => {
     const b = generateNonce();
     expect(a).toMatch(/^[A-Za-z0-9+/]{22}==$/);
     expect(a).not.toBe(b);
+  });
+});
+
+describe('nonceFromContentSecurityPolicy', () => {
+  it('reads back the nonce of a built policy', () => {
+    const nonce = generateNonce();
+    for (const isDevelopment of [false, true]) {
+      const policy = buildContentSecurityPolicy({ nonce, isDevelopment, yandexMaps: true });
+      expect(nonceFromContentSecurityPolicy(policy)).toBe(nonce);
+    }
+  });
+
+  it('is undefined without a policy or a nonce source', () => {
+    expect(nonceFromContentSecurityPolicy(null)).toBeUndefined();
+    expect(nonceFromContentSecurityPolicy("script-src 'self'")).toBeUndefined();
+  });
+
+  it('refuses a nonce that is not base64', () => {
+    expect(nonceFromContentSecurityPolicy("script-src 'nonce-a\"><x'")).toBeUndefined();
   });
 });
 
@@ -78,19 +98,33 @@ describe('buildContentSecurityPolicy', () => {
 
   it('allows no Yandex host unless a Maps key is configured', () => {
     expect(production).not.toContain('yandex');
+    expect(directive(production, 'connect-src')).not.toContain(YANDEX_MAPS_GEOCODER_ORIGIN);
     expect(production).not.toContain('worker-src');
   });
 
-  it('with a Maps key, allows only the official Yandex Maps hosts', () => {
+  it('with only a Maps key, allows only the official map hosts', () => {
     const withMaps = buildContentSecurityPolicy({ nonce, yandexMaps: true });
     expect(directive(withMaps, 'script-src')).toContain('https://api-maps.yandex.ru');
+    expect(directive(withMaps, 'style-src')).toContain(YANDEX_MAPS_STATIC_ORIGIN);
     expect(directive(withMaps, 'connect-src')).toEqual([
       "'self'",
       'https://api-maps.yandex.ru',
       'https://*.maps.yandex.net',
     ]);
+    expect(directive(withMaps, 'connect-src')).not.toContain(YANDEX_MAPS_GEOCODER_ORIGIN);
+    expect(YANDEX_MAPS_GEOCODER_ORIGIN).toBe('https://geocode-maps.yandex.ru');
+    expect(YANDEX_MAPS_STATIC_ORIGIN).toBe('https://yastatic.net');
     expect(directive(withMaps, 'worker-src')).toEqual(["'self'", 'blob:']);
     expect(directive(withMaps, 'frame-src')).toEqual(["'none'"]);
     expect(directive(withMaps, 'script-src')).not.toContain("'unsafe-inline'");
+  });
+
+  it("adds Yandex's lookup hosts only when both Maps and Geocoder are configured", () => {
+    const withGeocoder = buildContentSecurityPolicy({
+      nonce,
+      yandexMaps: true,
+      yandexGeocoder: true,
+    });
+    expect(directive(withGeocoder, 'connect-src')).toContain(YANDEX_MAPS_GEOCODER_ORIGIN);
   });
 });

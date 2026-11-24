@@ -53,6 +53,14 @@ function directives(csp: string | null): Map<string, string[]> {
   return map;
 }
 
+function isTelegramWebOrigin(value: string): boolean {
+  try {
+    return new URL(value).origin === 'https://web.telegram.org';
+  } catch {
+    return false;
+  }
+}
+
 async function errorCode(response: Response): Promise<string | undefined> {
   try {
     const body = (await response.json()) as { error?: { code?: string } };
@@ -77,7 +85,7 @@ const checks: Check[] = [
       expect(!script.includes("'unsafe-inline'"), "script-src allows 'unsafe-inline'");
       expect(local || !script.includes("'unsafe-eval'"), "script-src allows 'unsafe-eval'");
       const ancestors = csp.get('frame-ancestors') ?? [];
-      expect(ancestors.includes('https://web.telegram.org'), 'Telegram Web cannot frame the app');
+      expect(ancestors.some(isTelegramWebOrigin), 'Telegram Web cannot frame the app');
       expect(!ancestors.includes('*'), 'frame-ancestors allows everyone');
       expect(csp.get('object-src')?.includes("'none'"), "object-src is not 'none'");
       expect(response.headers.get('x-content-type-options') === 'nosniff', 'no nosniff');
@@ -141,7 +149,7 @@ if (!local) {
     {
       name: 'Core API reachable through the storefront (health, readiness, catalog)',
       run: async () => {
-        for (const path of ['health', 'health/ready', 'categories', 'delivery/zones']) {
+        for (const path of ['health', 'health/ready', 'categories', 'products']) {
           const response = await get(`${web}/api/v1/${path}`);
           expect(response.status === 200, `${path}: status ${response.status}`);
           await response.body?.cancel();
@@ -182,18 +190,28 @@ if (!local) {
         expect(health.status === 200, `health: status ${health.status}`);
         expect(health.headers.get('x-request-id'), 'no X-Request-ID on API responses');
         await health.body?.cancel();
-        for (const path of ['products', 'openapi.json', 'docs', 'admin/orders', 'auth/session']) {
+        for (const path of [
+          'products',
+          'openapi.json',
+          'docs',
+          'admin/orders',
+          'auth/session',
+          // Drained inside the Function since the Neon move; never public.
+          'internal/telegram/notifications/claim',
+          'internal/scheduler/notifications/drain',
+          'internal/maintenance/cleanup',
+        ]) {
           const response = await get(`${api}/api/v1/${path}`);
           expect(response.status === 404, `${path}: status ${response.status}`);
           await response.body?.cancel();
         }
-        const claim = await get(`${api}/api/v1/internal/telegram/notifications/claim`, {
+        const sync = await get(`${api}/api/v1/internal/telegram/session`, {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
-          body: '{"limit":1}',
+          body: '{}',
         });
-        expect(claim.status === 401, `unsigned claim: status ${claim.status}`);
-        await claim.body?.cancel();
+        expect(sync.status === 401, `unsigned user sync: status ${sync.status}`);
+        await sync.body?.cancel();
       },
     });
   }

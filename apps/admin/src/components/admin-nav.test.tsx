@@ -29,7 +29,7 @@ describe('role-aware navigation', () => {
     expect(within(quick).getByRole('button', { name: 'Меню' })).toBeInTheDocument();
   });
 
-  it('shows an admin catalog, delivery, users and audit as well', async () => {
+  it('shows an admin catalog, users and audit as well', async () => {
     installFakeApi(sessionHandler('admin'));
     renderAdmin(<p>page</p>);
     await screen.findByText('page');
@@ -39,8 +39,6 @@ describe('role-aware navigation', () => {
       'Товары',
       'Категории',
       'Импорт и экспорт',
-      'Зоны',
-      'Слоты',
       'Пользователи',
       'Журнал аудита',
     ]);
@@ -53,8 +51,6 @@ describe('role-aware navigation', () => {
       '/ru/catalog/products',
       '/ru/catalog/categories',
       '/ru/catalog/import',
-      '/ru/delivery/zones',
-      '/ru/delivery/slots',
       '/ru/users',
       '/ru/audit',
     ]);

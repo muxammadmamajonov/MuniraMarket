@@ -4,9 +4,7 @@ import { csvDict } from './sections/csv';
 import { dashboardDict } from './sections/dashboard';
 import { productsDict } from './sections/products';
 import { sharedDict } from './sections/shared';
-import { slotsDict } from './sections/slots';
 import { usersDict } from './sections/users';
-import { zonesDict } from './sections/zones';
 import type { Dictionary } from './types';
 
 export const uz: Dictionary = {
@@ -16,6 +14,7 @@ export const uz: Dictionary = {
   },
   header: {
     appName: 'MuniraMarket Admin',
+    brandTag: 'Boshqaruv paneli',
     logout: 'Chiqish',
     language: { label: 'Til', names: { uz: 'O‘zbekcha', ru: 'Русский' } },
   },
@@ -39,12 +38,17 @@ export const uz: Dictionary = {
     sessionFailed: 'Sessiyani tekshirib bo‘lmadi.',
     callbackTitle: 'Kirish amalga oshmadi',
     callbackStatus: {
-      failed: 'Telegram orqali kirib bo‘lmadi. Qayta urinib ko‘ring.',
-      cancelled: 'Kirish bekor qilindi.',
-      blocked: 'Hisobingiz bloklangan.',
-      unavailable: 'Xizmat vaqtincha ishlamayapti. Birozdan keyin qayta urinib ko‘ring.',
+      failed:
+        'Kirish havolasi eskirgan yoki tasdiqlanmadi. Telegram orqali qaytadan kirib ko‘ring.',
+      cancelled: 'Telegram’da kirish rad etildi. Xohlasangiz, qayta urinib ko‘ring.',
+      blocked: 'Hisobingiz bloklangan. Administratorga murojaat qiling.',
+      unavailable: 'Xizmat vaqtincha ishlamayapti. Bir daqiqadan so‘ng qayta urinib ko‘ring.',
     },
     callbackBack: 'Bosh sahifaga qaytish',
+    tryAgain: 'Qayta urinish',
+    supportCode: 'Yordam kodi: {code}',
+    supportCodeHint: 'Xato takrorlansa, shu kodni administratorga yuboring.',
+    staffOnly: 'Faqat MuniraMarket xodimlari uchun.',
   },
   orders: {
     title: 'Buyurtmalar',
@@ -74,20 +78,19 @@ export const uz: Dictionary = {
     notFoundMessage: 'Bunday buyurtma yo‘q.',
     loading: 'Buyurtma yuklanmoqda…',
     createdAt: 'Yaratilgan',
-    deliverySlot: 'Yetkazib berish oralig‘i',
     payment: 'To‘lov usuli',
     items: { title: 'Mahsulotlar', sku: 'Artikul' },
-    totals: { subtotal: 'Mahsulotlar summasi', delivery: 'Yetkazib berish', total: 'Jami' },
+    totals: { subtotal: 'Mahsulotlar summasi', total: 'Jami' },
     recipient: { title: 'Qabul qiluvchi', name: 'Ism', phone: 'Telefon' },
     address: {
       title: 'Manzil',
-      district: 'Tuman',
       street: 'Ko‘cha',
       house: 'Uy',
       apartment: 'Xonadon',
       entrance: 'Kirish',
       floor: 'Qavat',
       landmark: 'Mo‘ljal',
+      callYandex: 'Yandex chaqirish',
     },
     comment: 'Izoh',
     cancelReason: 'Bekor qilish sababi',
@@ -114,6 +117,31 @@ export const uz: Dictionary = {
     errors: {
       invalidTransition: 'Bu holatga o‘tish mumkin emas. Buyurtmani yangilang.',
       failed: 'Holatni o‘zgartirib bo‘lmadi. Qayta urinib ko‘ring.',
+    },
+    adjust: {
+      button: 'Yetmayapti',
+      title: 'Mahsulot yetmayapti',
+      description:
+        'Do‘konda qolgan miqdorni kiriting. Summa qayta hisoblanadi va mijozga Telegram orqali xabar boradi.',
+      quantityLabel: 'Bor miqdor',
+      quantityHint: 'Buyurtmada: {quantity}. Umuman yo‘q bo‘lsa, 0 kiriting.',
+      reasonLabel: 'Sabab',
+      reasons: ['Do‘konda tugab qolgan', 'Sifati yaroqsiz', 'Yetarli miqdor yo‘q'],
+      reasonInvalid: 'Sabab 3 dan 300 belgigacha bo‘lsin.',
+      markOutOfStock: 'Mahsulotni tugagan deb belgilash',
+      markOutOfStockHint: 'Qoldiq 0 bo‘ladi va mahsulot saytda “tugagan” bo‘lib qoladi.',
+      confirm: 'Saqlash',
+      dismiss: 'Bekor qilish',
+      adjustedFrom: 'Avval: {quantity}',
+      done: 'Buyurtma o‘zgartirildi, mijozga xabar yuborildi.',
+      cancelledAll: 'Hamma mahsulot tugagani uchun buyurtma bekor qilindi.',
+      historyTitle: 'Miqdor o‘zgarishlari',
+      outOfStockNote: 'omborda tugagan deb belgilandi',
+      errors: {
+        notAdjustable: 'Bu bosqichda buyurtmani o‘zgartirib bo‘lmaydi.',
+        invalidQuantity: 'Miqdor buyurtmadagidan ko‘p bo‘lishi mumkin emas.',
+        failed: 'O‘zgartirib bo‘lmadi. Qayta urinib ko‘ring.',
+      },
     },
   },
   status: {
@@ -167,8 +195,6 @@ export const uz: Dictionary = {
   products: productsDict.uz,
   categories: categoriesDict.uz,
   csv: csvDict.uz,
-  zones: zonesDict.uz,
-  slots: slotsDict.uz,
   users: usersDict.uz,
   audit: auditDict.uz,
 };

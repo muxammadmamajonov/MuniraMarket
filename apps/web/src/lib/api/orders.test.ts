@@ -1,7 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { apiError, order, orderSummary, quote, respond } from '@/lib/checkout/test-fixtures';
 import { ApiRequestError } from './errors';
-import { getDeliveryZones } from './delivery';
 import {
   ORDER_TIMEOUT_MS,
   QUOTE_TIMEOUT_MS,
@@ -19,11 +18,11 @@ function fetcher(response: Response | (() => Response)) {
 }
 
 const REQUEST = {
-  address: { district: 'yunusobod', street: 'Demo ko‘cha', house: '12' },
+  address: { lat: 41.311081, lon: 69.240562, street: 'Demo ko‘cha', house: '12' },
   recipient_name: 'Ali Valiyev',
   recipient_phone: '+998001234567',
   payment_method: 'cash_on_delivery',
-  expected_total_uzs: 75000,
+  expected_total_uzs: 60000,
 } as const;
 
 describe('createOrder', () => {
@@ -97,13 +96,15 @@ describe('createOrder', () => {
 });
 
 describe('quoteCheckout', () => {
-  it('POSTs only the district', async () => {
+  it('POSTs without a body (the quote does not depend on the address)', async () => {
     const apiFetch = fetcher(respond(quote()));
-    await quoteCheckout(apiFetch, 'mirobod');
+    const result = await quoteCheckout(apiFetch);
     const [path, init] = apiFetch.mock.calls[0] ?? [];
     expect(path).toBe('/checkout/quote');
     expect(init?.method).toBe('POST');
-    expect(JSON.parse(String(init?.body))).toEqual({ district: 'mirobod' });
+    expect(init?.body).toBeUndefined();
+    expect(init?.headers).toBeUndefined();
+    expect(result.total_uzs).toBe(result.subtotal_uzs);
   });
 });
 
@@ -122,7 +123,7 @@ describe('timeouts: a stalled connection must not leave "sending" stuck forever'
     const timeout = vi.spyOn(AbortSignal, 'timeout');
     const apiFetch = fetcher(respond(order(), 201));
     await createOrder(apiFetch, REQUEST, 'test-idempotency-key-0001');
-    await quoteCheckout(fetcher(respond(quote())), 'mirobod');
+    await quoteCheckout(fetcher(respond(quote())));
     expect(timeout.mock.calls).toEqual([[ORDER_TIMEOUT_MS], [QUOTE_TIMEOUT_MS]]);
     expect(ORDER_TIMEOUT_MS).toBe(30_000);
     expect(QUOTE_TIMEOUT_MS).toBe(20_000);
@@ -193,13 +194,5 @@ describe('orders reads and cancel', () => {
       status: 404,
       code: 'order_not_found',
     });
-  });
-});
-
-describe('getDeliveryZones', () => {
-  it('GETs the public zone list', async () => {
-    const apiFetch = fetcher(respond({ items: [], timezone: 'Asia/Tashkent' }));
-    expect((await getDeliveryZones(apiFetch)).timezone).toBe('Asia/Tashkent');
-    expect(apiFetch.mock.calls[0]).toEqual(['/delivery/zones', { method: 'GET' }]);
   });
 });

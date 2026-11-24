@@ -102,20 +102,40 @@ describe('AdminShell session and role gate', () => {
     expect(api.to('/api/v1/admin/')).toHaveLength(0);
   });
 
-  it('shows an inline alert when the sign-in cannot be started', async () => {
-    installFakeApi(noSession, oidcConfig(true), (call) =>
-      call.path === '/api/v1/auth/telegram/oidc/start'
-        ? apiError(503, 'service_unavailable')
-        : undefined,
+  it('shows an inline alert with a support code and "try again" when the sign-in cannot be started', async () => {
+    let starts = 0;
+    installFakeApi(noSession, oidcConfig(true), (call) => {
+      if (call.path !== '/api/v1/auth/telegram/oidc/start') return undefined;
+      starts += 1;
+      return starts === 1
+        ? apiError(503, 'service_unavailable', {}, 'a1b2c3d4e5f60718293a4b5c6d7e8f90')
+        : json({ authorization_url: 'https://oauth.telegram.org/auth?x=1' });
+    });
+    renderAdmin(<OrdersList />, 'uz');
+    fireEvent.click(await screen.findByRole('button', { name: 'Telegram orqali kirish' }));
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent('Xizmat vaqtincha ishlamayapti');
+    expect(screen.getByTestId('support-code')).toHaveTextContent('Yordam kodi: a1b2c3d4');
+    expect(navigation.navigateTo).not.toHaveBeenCalled();
+    const retry = screen.getByRole('button', { name: 'Qayta urinish' });
+    expect(retry).toHaveAttribute('aria-busy', 'false');
+
+    fireEvent.click(retry);
+    await waitFor(() =>
+      expect(navigation.navigateTo).toHaveBeenCalledWith('https://oauth.telegram.org/auth?x=1'),
     );
+    expect(screen.queryByTestId('login-error')).toBeNull();
+  });
+
+  it('shows no support code when the request never got an answer', async () => {
+    installFakeApi(noSession, oidcConfig(true), (call) => {
+      if (call.path === '/api/v1/auth/telegram/oidc/start') throw new TypeError('offline');
+      return undefined;
+    });
     renderAdmin(<OrdersList />, 'uz');
     fireEvent.click(await screen.findByRole('button', { name: 'Telegram orqali kirish' }));
     expect(await screen.findByRole('alert')).toHaveTextContent('Xizmat vaqtincha ishlamayapti');
-    expect(navigation.navigateTo).not.toHaveBeenCalled();
-    expect(screen.getByRole('button', { name: 'Telegram orqali kirish' })).toHaveAttribute(
-      'aria-busy',
-      'false',
-    );
+    expect(screen.queryByTestId('support-code')).toBeNull();
   });
 
   it('says clearly that sign-in is not configured when Telegram sign-in is disabled', async () => {

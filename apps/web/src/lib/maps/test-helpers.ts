@@ -1,5 +1,6 @@
 import { vi, type Mock } from 'vitest';
-import type { LngLat, YMapProps, YMaps3 } from './yandex-types';
+import type { AddressComponent, GeocoderResult } from './reverse-geocode';
+import type { LngLat, YMapListenerProps, YMapProps, YMaps3 } from './yandex-types';
 
 /**
  * A fake `window.ymaps3` for tests. Test-only; not imported by app code. Nothing here (or in any
@@ -20,10 +21,19 @@ export interface FakeMap {
 export interface FakeYMaps {
   api: YMaps3;
   maps: FakeMap[];
+  /** Every `YMapListener` added to a map; call `onActionStart` to simulate a drag. */
+  listeners: YMapListenerProps[];
 }
 
 export function makeYMaps(): FakeYMaps {
   const maps: FakeMap[] = [];
+  const listeners: YMapListenerProps[] = [];
+
+  class YMapListener {
+    constructor(props: YMapListenerProps) {
+      listeners.push(props);
+    }
+  }
 
   class YMap {
     readonly fake: FakeMap;
@@ -74,9 +84,83 @@ export function makeYMaps(): FakeYMaps {
     YMap,
     YMapDefaultSchemeLayer: class {},
     YMapDefaultFeaturesLayer: class {},
+    YMapListener,
   } as unknown as YMaps3;
 
-  return { api, maps };
+  return { api, maps, listeners };
+}
+
+/** Address components of a Tashkent house, most general first, as the Geocoder lists them. */
+export function houseComponents(street: string, house: string): AddressComponent[] {
+  return [
+    { kind: 'country', name: 'Узбекистан' },
+    { kind: 'province', name: 'Ташкент' },
+    { kind: 'locality', name: 'Ташкент' },
+    { kind: 'street', name: street },
+    { kind: 'house', name: house },
+  ];
+}
+
+/** A Geocoder result for a house on a street: name "<street>, <house>". */
+export function houseResult(street: string, house: string): GeocoderResult {
+  return { name: `${street}, ${house}`, components: houseComponents(street, house) };
+}
+
+/**
+ * The Geocoder HTTP API's JSON for `result` (`null`: nothing found). Only the parts the parser
+ * reads, in their real places (`GeoObject.name`, `metaDataProperty.GeocoderMetaData.Address`).
+ */
+export function geocoderBody(result: GeocoderResult | null): unknown {
+  return {
+    response: {
+      GeoObjectCollection: {
+        featureMember:
+          result === null
+            ? []
+            : [
+                {
+                  GeoObject: {
+                    name: result.name,
+                    description: 'Ташкент, Узбекистан',
+                    metaDataProperty: {
+                      GeocoderMetaData: {
+                        kind: 'house',
+                        text: `Узбекистан, Ташкент, ${result.name}`,
+                        Address: {
+                          country_code: 'UZ',
+                          formatted: `Узбекистан, Ташкент, ${result.name}`,
+                          Components: result.components,
+                        },
+                      },
+                    },
+                  },
+                },
+              ],
+      },
+    },
+  };
+}
+
+/** What the fake Geocoder answers for a `geocode` parameter (`"lng,lat"`). */
+export type GeocoderAnswer = (geocode: string) => Promise<GeocoderResult | null | Response>;
+
+/**
+ * Makes the Geocoder HTTP boundary deterministic: every `fetch` is answered by `answer` (nothing
+ * found by default; return a `Response` for an HTTP failure, or reject for a network failure).
+ * Nothing reaches Yandex. `answer.mock.calls` are the `geocode` parameters looked up.
+ */
+export function mockGeocoderFetch(): {
+  answer: Mock<GeocoderAnswer>;
+  fetch: ReturnType<typeof vi.spyOn>;
+} {
+  const answer = vi.fn<GeocoderAnswer>(() => Promise.resolve(null));
+  const fetch = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+    const url = new URL(String(input));
+    const result = await answer(url.searchParams.get('geocode') ?? '');
+    if (result instanceof Response) return result;
+    return new Response(JSON.stringify(geocoderBody(result)), { status: 200 });
+  });
+  return { answer, fetch };
 }
 
 /**

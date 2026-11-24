@@ -8,6 +8,7 @@ import {
   sessionHandler,
   type FakeHandler,
 } from '@/test-utils/fake-api';
+import { openOptions } from '@/test-utils/select';
 import { IDS, category, subcategory } from '@/test-utils/fixtures';
 import { setLocation } from '@/test-utils/navigation';
 import { CategoriesView } from './categories-view';
@@ -29,7 +30,7 @@ describe('CategoriesView', () => {
     const rows = await screen.findAllByTestId('category-row');
     expect(rows[0]).toHaveTextContent('Фрукты');
     expect(rows[1]).toHaveTextContent('Яблоки');
-    expect(rows[1]?.style.marginInlineStart).toBe('1.25rem');
+    expect(rows[1]?.style.paddingInlineStart).toBe('2.5rem');
     expect(rows[0]).toHaveTextContent('Товаров: 2');
     expect(rows[0]).toHaveTextContent('Вложенных: 1');
   });
@@ -45,9 +46,7 @@ describe('CategoriesView', () => {
         .catch(() => screen.getAllByRole('button', { name: 'Изменить' })[0]!),
     );
     const dialog = await screen.findByRole('dialog', { name: 'Редактирование категории' });
-    const options = within(
-      dialog.querySelector('[data-testid="category-parent"]') as HTMLElement,
-    ).getAllByRole('option');
+    const options = openOptions(within(dialog).getByTestId('category-parent'));
     // "Фрукты" is being edited: neither it nor its child "Яблоки" can be its parent.
     expect(options.map((option) => option.textContent)).toEqual(['Верхний уровень (без родителя)']);
     fireEvent.change(within(dialog).getByTestId('category-name-uz'), {

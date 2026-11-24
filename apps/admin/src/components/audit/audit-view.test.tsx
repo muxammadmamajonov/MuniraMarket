@@ -1,6 +1,7 @@
 import { act, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { installFakeApi, json, renderAdmin, sessionHandler } from '@/test-utils/fake-api';
+import { openOptions } from '@/test-utils/select';
 import { auditEntry, page } from '@/test-utils/fixtures';
 import { setLocation } from '@/test-utils/navigation';
 import { AuditView } from './audit-view';
@@ -72,12 +73,36 @@ describe('AuditView', () => {
     );
     expect(await screen.findByText('По фильтрам записей не найдено.')).toBeInTheDocument();
     // The action list narrows to the chosen entity type.
-    const actions = within(screen.getByTestId('audit-action-filter')).getAllByRole('option');
+    const actions = openOptions('audit-action-filter');
     expect(actions.map((option) => option.textContent)).toEqual([
       'Все действия',
       'Роль изменена',
       'Пользователь заблокирован',
       'Пользователь разблокирован',
     ]);
+  });
+
+  it('renders old rows of entity types the app no longer has by their raw codes', async () => {
+    installFakeApi(sessionHandler('admin'), (call) =>
+      call.path.startsWith('/api/v1/admin/audit')
+        ? json(
+            page([
+              auditEntry({
+                action: 'retired.delete',
+                entity_type: 'retired',
+                entity_id: 'r1',
+                details: { changes: { name_ru: { from: 'A', to: null } }, legacy_count: 3 },
+              }),
+            ]),
+          )
+        : undefined,
+    );
+    renderAdmin(<AuditView />);
+    const row = await screen.findByTestId('audit-row');
+    expect(row).toHaveTextContent('retired.delete');
+    expect(row).toHaveTextContent('retired');
+    expect(row).toHaveTextContent('name_ru: A → —');
+    expect(row).toHaveTextContent('legacy_count: 3');
+    expect(document.body.textContent).not.toContain('undefined');
   });
 });

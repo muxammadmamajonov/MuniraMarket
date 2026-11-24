@@ -521,6 +521,7 @@ async def test_export(client: httpx.AsyncClient, catalog: RecordingRepository) -
             price_uzs=1000,
             old_price_uzs=None,
             stock_quantity=None,
+            safety_stock=2,
             is_active=True,
             sort_order=0,
             image_url=None,
@@ -534,7 +535,7 @@ async def test_export(client: httpx.AsyncClient, catalog: RecordingRepository) -
     text = response.content.decode("utf-8")
     assert text.startswith(BOM)
     assert '"\'=HYPERLINK(""https://evil.example"")"' in text
-    assert text.endswith(',"0","","2026-10-01T09:00:00.000000+00:00"\r\n')
+    assert text.endswith(',"","2","true","0","","2026-10-01T09:00:00.000000+00:00"\r\n')
 
 
 @pytest.mark.parametrize("content_type", [None, "application/json", "text/plain"])

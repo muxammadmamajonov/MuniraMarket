@@ -1,7 +1,10 @@
 """Product/category image URLs: syntactic validation only.
 
 Real uploads (object storage) come with the deployment phase. Until then an admin may paste an
-``https`` URL of an already-hosted image, or leave it empty (the UI shows a placeholder). The
+``https`` URL of an already-hosted image, or leave it empty (the UI shows a placeholder). The one
+exception to "absolute ``https``" is a storefront photo path (``/products/<name>.webp`` or
+``/categories/<name>.webp``, the demo catalog's photos served by the storefront itself): a fixed
+same-origin path cannot point a browser anywhere else. The
 server **never fetches** the URL (no SSRF surface); it only refuses URLs that are not plain public
 ``https`` links, so a browser rendering them cannot be pointed at internal hosts or be handed
 credentials, scripts or ``data:`` payloads.
@@ -19,6 +22,9 @@ _HOST_LABEL = re.compile(r"^(?!-)[a-z0-9-]{1,63}(?<!-)$")
 _NUMERIC_LABEL = re.compile(r"^(0[xX][0-9a-fA-F]*|[0-9]+)$")
 _HEX_LABEL = re.compile(r"^0[xX][0-9a-fA-F]*$")
 _FORBIDDEN_SUFFIXES: Final = (".local", ".localhost", ".internal", ".lan", ".home", ".corp")
+STOREFRONT_PHOTO_PATH: Final = re.compile(
+    r"/(?:products|categories)/[a-z0-9]+(?:-[a-z0-9]+)*\.webp"
+)
 
 
 class InvalidImageUrlError(ValueError):
@@ -27,6 +33,8 @@ class InvalidImageUrlError(ValueError):
 
 def validate_image_url(raw: str) -> str:
     """Return the URL unchanged if it is acceptable, else raise ``InvalidImageUrlError``."""
+    if STOREFRONT_PHOTO_PATH.fullmatch(raw):
+        return raw
     if len(raw) > MAX_IMAGE_URL_LENGTH:
         raise InvalidImageUrlError("too long")
     if any(ch.isspace() or ord(ch) < 0x20 or ord(ch) == 0x7F for ch in raw):

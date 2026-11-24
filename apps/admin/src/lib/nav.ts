@@ -1,17 +1,9 @@
 import type { Locale } from '@muniramarket/contracts';
 
 export type NavItemId =
-  | 'dashboard'
-  | 'orders'
-  | 'products'
-  | 'categories'
-  | 'import'
-  | 'zones'
-  | 'slots'
-  | 'users'
-  | 'audit';
+  'dashboard' | 'orders' | 'products' | 'categories' | 'import' | 'users' | 'audit';
 
-export type NavGroup = 'main' | 'catalog' | 'delivery' | 'system';
+export type NavGroup = 'main' | 'catalog' | 'system';
 
 export interface NavItem {
   id: NavItemId;
@@ -27,8 +19,6 @@ export const NAV_ITEMS: readonly NavItem[] = [
   { id: 'products', path: '/catalog/products', group: 'catalog', adminOnly: true },
   { id: 'categories', path: '/catalog/categories', group: 'catalog', adminOnly: true },
   { id: 'import', path: '/catalog/import', group: 'catalog', adminOnly: true },
-  { id: 'zones', path: '/delivery/zones', group: 'delivery', adminOnly: true },
-  { id: 'slots', path: '/delivery/slots', group: 'delivery', adminOnly: true },
   { id: 'users', path: '/users', group: 'system', adminOnly: true },
   { id: 'audit', path: '/audit', group: 'system', adminOnly: true },
 ];
